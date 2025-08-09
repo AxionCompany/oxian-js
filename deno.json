@@ -1,0 +1,27 @@
+{
+  "name": "@oxian/oxian-js",
+  "version": "0.0.1",
+  "exports": {
+    ".": "./cli.ts",
+    "./server": "./src/server/server.ts",
+    "./config": "./src/config/types.ts",
+    "./runtime": "./src/runtime/module_loader.ts"
+  },
+  "publish": {
+    "include": [
+      "cli.ts",
+      "src/**",
+      "deno.json",
+      "README.md",
+      "LICENSE*"
+    ],
+    "exclude": [
+      "tests/**",
+      "routes/**",
+      "oxian-framework-spec.md"
+    ]
+  },
+  "imports": {
+    "std/": "https://deno.land/std@0.224.0/"
+  }
+} 
