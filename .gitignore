@@ -1,0 +1,27 @@
+# Deno
+deno.lock
+deno_dir/
+.DS_Store
+
+# Logs
+*.log
+
+# Env files
+.env
+.env.*
+
+# OS
+Thumbs.db
+
+# Node (if present for tooling)
+node_modules/
+
+# VSCode
+.vscode/
+
+# Test coverage
+coverage/
+
+# Build output
+dist/
+build/
