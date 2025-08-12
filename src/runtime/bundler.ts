@@ -2,6 +2,7 @@ import type { Loader } from "../loader/types.ts";
 import { bundle } from "@deno/emit";
 import { resolveLocalUrl } from "../loader/local.ts";
 import { parse as parseJsonc } from "@std/jsonc/parse";
+import { createCache } from "@deno/cache-dir";
 
 const bundleCache = new Map<string, { code: string; expiresAt: number }>();
 const cachedImportMapByRoot = new Map<string, { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> } | null>();
@@ -10,8 +11,6 @@ let defaultProjectRoot: string | undefined;
 export function setBundlerProjectRoot(root: string) {
     defaultProjectRoot = root;
 }
-
-
 
 async function getProjectImportMap(loaders: Loader[], projectRoot?: string): Promise<{ imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> } | undefined> {
     const root = projectRoot ?? defaultProjectRoot ?? Deno.cwd();
@@ -50,25 +49,38 @@ export async function bundleModule(entry: URL, loaders: Loader[], ttlMs = 60_000
         return cached.code;
     }
 
-    // const importMap = await getProjectImportMap(loaders, projectRoot);
+    const importMap = await getProjectImportMap(loaders, projectRoot);
+
+    const denoCache = createCache({ allowRemote: true, cacheSetting: "use" });
 
     try {
         const result = await bundle(entry.toString(), {
-            load: async (specifier: string) => {                
+            load: async (specifier: string, isDynamic?: boolean) => {
+                // First try our custom loaders
                 try {
                     const url = new URL(specifier);
                     const ldr = loaders.find((l) => l.canHandle(url));
-                    console.log('specifier', specifier, url, ldr);
-                    if (!ldr) {
-                        console.log('no loader for', specifier);
-                        return {
-                            kind: "external",
-                            specifier: specifier,
-                        }
+                    if (ldr) {
+                        const { content } = await ldr.load(url);
+                        return { kind: "module", specifier: url.toString(), content } as { kind: "module"; specifier: string; content: string };
                     }
                 } catch {
-                    return undefined as unknown as { kind: "module"; specifier: string; content: string };
+                    // not a URL or not handled; fall back to cache
                 }
+                // Fallback to Deno cache loader (supports file/http and other schemes handled by Deno CLI)
+                const res = await denoCache.load(specifier, isDynamic, "use");
+                if (res) {
+                    if (res.kind === "external") {
+                        return { kind: "external", specifier: res.specifier } as { kind: "external"; specifier: string };
+                    }
+                    // deno_cache_dir returns either "module" with content
+                    // @ts-ignore - duck type LoadResponse
+                    if (res.content) {
+                        // @ts-ignore
+                        return { kind: "module", specifier: res.specifier, content: res.content } as { kind: "module"; specifier: string; content: string };
+                    }
+                }
+                return undefined as unknown as { kind: "module"; specifier: string; content: string };
             },
             cacheSetting: "use",
             allowRemote: true,
@@ -77,7 +89,7 @@ export async function bundleModule(entry: URL, loaders: Loader[], ttlMs = 60_000
                 inlineSources: true,
             },
             type: "module",
-            // importMap
+            importMap
         } as unknown as Record<string, unknown>);
 
         const code = (result as unknown as { code?: string }).code;
