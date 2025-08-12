@@ -1,6 +1,6 @@
 import type { Context, Handler } from "../core/types.ts";
 import { OxianHttpError } from "../core/types.ts";
-import type { ResponseState } from "../utils/response.ts";
+import { ResponseState } from "../utils/response.ts";
 
 function toHttpResponse(result: unknown, state: ResponseState): void {
   if (state.body !== undefined) return;
@@ -32,6 +32,28 @@ export function shapeError(err: unknown): { status: number; body: unknown } {
   return { status: 500, body: { error: { message: "Internal Server Error" } } };
 }
 
+async function callHandlerWithCompatibility(modExport: unknown, data: Record<string, unknown>, context: Context, state: ResponseState, handlerMode: string | undefined): Promise<unknown> {
+  if (handlerMode === "this") {
+    const { logDeprecation } = await import("../logging/logger.ts");
+    logDeprecation("handlerMode 'this' is deprecated. Please migrate to (data, context)");
+    if (typeof modExport !== "function") throw new Error("Invalid handler export");
+    const bound = (modExport as Function).bind(context.dependencies);
+    // provide (data, { response })
+    return await bound(data, { response: context.response });
+  }
+  if (handlerMode === "factory") {
+    const { logDeprecation } = await import("../logging/logger.ts");
+    logDeprecation("handlerMode 'factory' is deprecated. Please migrate to (data, context)");
+    if (typeof modExport !== "function") throw new Error("Invalid factory export");
+    const fn = (modExport as Function)(context.dependencies);
+    if (typeof fn !== "function") throw new Error("Factory did not return a function");
+    return await (fn as Function)(data, { response: context.response });
+  }
+  // default:
+  if (typeof modExport !== "function") throw new Error("Invalid handler export");
+  return await (modExport as Function)(data, context);
+}
+
 export async function runHandler(
   handler: Handler,
   data: Record<string, unknown>,
@@ -39,12 +61,22 @@ export async function runHandler(
   state: ResponseState,
 ): Promise<{ result?: unknown; error?: unknown }> {
   const isStreaming = () => state.body && typeof (state.body as any).getReader === "function";
+  const isSse = () => (state.headers.get("content-type") || "").startsWith("text/event-stream");
   try {
-    const maybePromise = handler(data, context);
+    // Determine compatibility mode from context (stored under oxian later if needed)
+    const handlerMode = (context as any).compat?.handlerMode;
+    const maybePromise = callHandlerWithCompatibility(handler as unknown as unknown, data, context, state, handlerMode);
     if (isStreaming() && typeof (maybePromise as any)?.then === "function") {
       (maybePromise as Promise<unknown>)
         .then((result) => {
-          // If handler returned a value, write it as the last chunk and close
+          if (isSse()) {
+            if (result !== undefined && state.streamWrite) {
+              const payload = typeof result === "string" || result instanceof Uint8Array ? result : JSON.stringify(result);
+              state.streamWrite(payload);
+            }
+            // SSE remains open; do not auto-close
+            return;
+          }
           if (result !== undefined && state.streamWrite) {
             if (typeof result === "string" || result instanceof Uint8Array) {
               state.streamWrite(result);
@@ -52,6 +84,7 @@ export async function runHandler(
               state.streamWrite(JSON.stringify(result));
             }
           }
+          // Auto-close for non-SSE streams when handler settles
           state.streamClose?.();
         })
         .catch((err) => {
@@ -64,6 +97,20 @@ export async function runHandler(
       return { result: undefined };
     }
     const result = await maybePromise;
+    if (isStreaming()) {
+      if (!isSse()) {
+        // If handler returned synchronously, auto-close stream when it completes
+        if (result !== undefined && state.streamWrite) {
+          if (typeof result === "string" || result instanceof Uint8Array) {
+            state.streamWrite(result);
+          } else {
+            state.streamWrite(JSON.stringify(result));
+          }
+        }
+        state.streamClose?.();
+        return { result: undefined };
+      }
+    }
     toHttpResponse(result, state);
     return { result };
   } catch (err) {

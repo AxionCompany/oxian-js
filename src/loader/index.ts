@@ -2,6 +2,7 @@ import type { Loader } from "./types.ts";
 import { createLocalLoader, resolveLocalUrl } from "./local.ts";
 import { createGithubLoader } from "./github.ts";
 import { createHttpLoader } from "./http.ts";
+import { isAbsolute, toFileUrl } from "@std/path";
 
 export type LoaderManager = {
   resolveUrl: (pathOrUrl: string) => URL;
@@ -19,6 +20,7 @@ export function createLoaderManager(root: string, tokenEnv?: string): LoaderMana
       try {
         return new URL(pathOrUrl);
       } catch {
+        if (isAbsolute(pathOrUrl)) return toFileUrl(pathOrUrl);
         return resolveLocalUrl(root, pathOrUrl);
       }
     },

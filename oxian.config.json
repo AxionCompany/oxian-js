@@ -1,0 +1,36 @@
+{
+  "root": ".",
+  "basePath": "/",
+  "loaders": {
+    "local": { "enabled": true },
+    "github": { "enabled": true, "tokenEnv": "GITHUB_TOKEN", "cacheTtlSec": 60 }
+  },
+  "runtime": {
+    "hotReload": true,
+    "dependencies": {
+      "initial": { "feature": "on" },
+      "merge": "shallow"
+    }
+  },
+  "server": {
+    "port": 8080
+  },
+  "routing": {
+    "routesDir": "routes",
+    "trailingSlash": "preserve",
+    "discovery": "eager"
+  },
+  "security": {
+    "cors": {
+      "allowedOrigins": ["*"],
+      "allowedHeaders": ["authorization", "content-type"],
+      "methods": ["GET", "POST", "PUT", "DELETE", "PATCH"]
+    },
+    "defaultHeaders": { "x-powered-by": "oxian" },
+    "scrubHeaders": ["authorization", "cookie", "set-cookie"]
+  },
+  "logging": {
+    "level": "info",
+    "requestIdHeader": "x-request-id"
+  }
+} 

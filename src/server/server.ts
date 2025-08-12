@@ -9,7 +9,10 @@ import { composeDependencies } from "../runtime/dependencies.ts";
 import { runInterceptorsBefore, runInterceptorsAfter } from "../runtime/interceptors.ts";
 import { runMiddlewares } from "../runtime/middlewares.ts";
 import { resolveRouter } from "../runtime/router_resolver.ts";
-import { buildLocalChain, buildRemoteChain, discoverPipelineFilesGeneric } from "../runtime/pipeline_discovery.ts";
+import { buildLocalChain, buildRemoteChain, discoverPipelineFiles} from "../runtime/pipeline_discovery.ts";
+import { setBundlerProjectRoot } from "../runtime/bundler.ts";
+import { createLoaderManager } from "../loader/index.ts";
+import { importModule } from "../runtime/importer.ts";
 
 function applyTrailingSlash(path: string, mode: "always" | "never" | "preserve" | undefined): string {
   if (mode === "preserve" || !mode) return path;
@@ -31,10 +34,44 @@ function applyCorsAndDefaults(headers: Headers, config: EffectiveConfig) {
   }
 }
 
+async function loadBootstrapDeps(config: EffectiveConfig): Promise<Record<string, unknown>> {
+  const runtimeDeps = config.runtime?.dependencies;
+  let deps: Record<string, unknown> = { ...(runtimeDeps?.initial ?? {}) };
+  if (runtimeDeps?.bootstrapModule) {
+    const lm = createLoaderManager(config.root ?? Deno.cwd());
+    const url = lm.resolveUrl(runtimeDeps.bootstrapModule);
+    const mod = await importModule(url, lm.getLoaders(), 60_000, config.root ?? Deno.cwd());
+    const factory = (mod as any).default ?? (mod as any).createDependencies;
+    if (typeof factory === "function") {
+      const produced = await factory(config);
+      if (produced && typeof produced === "object") deps = { ...deps, ...(produced as Record<string, unknown>) };
+    } else if (mod && typeof mod === "object") {
+      deps = { ...deps, ...(mod as Record<string, unknown>) };
+    }
+  }
+  // Freeze readonly keys
+  if (runtimeDeps?.readonly?.length) {
+    for (const key of runtimeDeps.readonly) {
+      if (key in deps) {
+        try { Object.freeze((deps as any)[key]); } catch {}
+      }
+    }
+  }
+  return deps;
+}
+
 export async function startServer(opts: { config: EffectiveConfig; source?: string }) {
   const { config, source } = opts;
+  setBundlerProjectRoot(config.root ?? Deno.cwd());
   const logger = createLogger(config.logging?.level ?? "info");
+  // make logger globally available for deprecation messages
+  // and obey deprecations flag
+  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  (await import("../logging/logger.ts")).setCurrentLogger(logger, { deprecations: config.logging?.deprecations !== false });
   const resolved = await resolveRouter(config, source);
+
+  // Preload config-defined dependencies (worker-lifecycle)
+  const hvInitialDeps = await loadBootstrapDeps(config);
 
   const server = Deno.serve({ port: config.server?.port ?? 8080 }, async (req) => {
     const startedAt = performance.now();
@@ -80,6 +117,8 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         dependencies: {},
         response: controller,
         oxian: { route: (match as any)?.route?.pattern ?? path, startedAt },
+        // pass compatibility options for handler modes
+        ...(config.compatibility ? { compat: config.compatibility } as any : {}),
       };
 
       if (!match) {
@@ -96,14 +135,14 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
       let files;
       if (resolved.isRemote && resolved.routesRootUrl) {
         const chain = buildRemoteChain(resolved.routesRootUrl, (match as any).route.fileUrl);
-        files = await discoverPipelineFilesGeneric(chain, async (urlOrPath) => {
+        files = await discoverPipelineFiles(chain, async (urlOrPath) => {
           if (typeof urlOrPath === "string") return false;
           const st = await resolved.loaderManager.getActiveLoader(resolved.routesRootUrl!).stat?.(urlOrPath);
           return !!st?.isFile;
         });
       } else {
         const chain = buildLocalChain(config.root ?? Deno.cwd(), config.routing?.routesDir ?? "routes", (match as any).route.fileUrl);
-        files = await discoverPipelineFilesGeneric(chain, async (urlOrPath) => {
+        files = await discoverPipelineFiles(chain, async (urlOrPath) => {
           if (typeof urlOrPath !== "string") return false;
           try {
             const st = await Deno.stat(urlOrPath);
@@ -114,7 +153,12 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
 
       try {
         const loaders = resolved.loaderManager.getLoaders();
-        context.dependencies = await composeDependencies(files, {}, loaders);
+        // Inject config-defined deps as the base
+        const baseDeps = { ...hvInitialDeps };
+        context.dependencies = baseDeps;
+        // Compose route dependencies on top
+        const composed = await composeDependencies(files, {}, loaders, { allowShared: config.compatibility?.allowShared });
+        context.dependencies = { ...baseDeps, ...composed };
         {
           const result = await runInterceptorsBefore(files.interceptorFiles, data, context, loaders);
           data = result.data;

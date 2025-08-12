@@ -1,5 +1,5 @@
 /// <reference lib="deno.ns" />
-import { delay } from "https://deno.land/std@0.224.0/async/delay.ts";
+import { delay } from "jsr:@std/async/delay";
 
 async function waitForReady(url: string, timeoutMs = 5000) {
   const start = Date.now();

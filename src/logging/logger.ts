@@ -16,6 +16,23 @@ export function createLogger(level: LogLevel = "info") {
   };
 }
 
+let currentLogger: ReturnType<typeof createLogger> | null = null;
+let deprecationsEnabled = true;
+
+export function setCurrentLogger(logger: ReturnType<typeof createLogger>, opts?: { deprecations?: boolean }) {
+  currentLogger = logger;
+  if (opts && typeof opts.deprecations === "boolean") deprecationsEnabled = opts.deprecations;
+}
+
+export function logDeprecation(msg: string, meta?: Record<string, unknown>) {
+  if (!deprecationsEnabled) return;
+  if (currentLogger) {
+    currentLogger.warn(`[deprecation] ${msg}`, meta);
+  } else {
+    console.warn(`[oxian] DEPRECATED: ${msg}`);
+  }
+}
+
 export function redactHeaders(headers: Headers, scrub: string[] = []) {
   const lower = new Set(scrub.map((s) => s.toLowerCase()));
   const out: Record<string, string> = {};

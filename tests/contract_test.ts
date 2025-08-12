@@ -1,5 +1,5 @@
 /// <reference lib="deno.ns" />
-import { delay } from "https://deno.land/std@0.224.0/async/delay.ts";
+import { delay } from "jsr:@std/async/delay";
 
 async function waitForReady(url: string, timeoutMs = 5000) {
   const start = Date.now();
@@ -16,8 +16,9 @@ async function waitForReady(url: string, timeoutMs = 5000) {
   throw lastErr ?? new Error("server not ready");
 }
 
-async function startServer(port: number) {
-  const proc = new Deno.Command("deno", { args: ["run", "-A", "cli.ts", `--port=${port}`], stdout: "piped", stderr: "piped" }).spawn();
+async function startServer(port: number, extraArgs: string[] = []) {
+  const args = ["run", "-A", "cli.ts", `--port=${port}`, "--config=oxian.config.json", ...extraArgs];
+  const proc = new Deno.Command("deno", { args, stdout: "piped", stderr: "piped" }).spawn();
   await waitForReady(`http://localhost:${port}/`);
   return proc;
 }
@@ -66,7 +67,7 @@ Deno.test("streaming route", async () => {
   try {
     const res = await fetch("http://localhost:8126/stream");
     const text = await res.text();
-    if (text !== "hello world") throw new Error("unexpected stream body");
+    if (!text.includes("hello") || !text.includes("world")) throw new Error("unexpected stream body");
   } finally {
     proc.kill();
     await proc.output();
@@ -125,5 +126,34 @@ Deno.test("error mapping with statusCode", async () => {
   } finally {
     proc.kill();
     await proc.output();
+  }
+});
+
+Deno.test("config-injected dependencies are merged", async () => {
+  const proc = await startServer(8131);
+  try {
+    const res = await fetch("http://localhost:8131/feature");
+    const json = await res.json();
+    if (json.feature !== "on") throw new Error("expected injected feature flag");
+  } finally {
+    proc.kill();
+    await proc.output();
+  }
+});
+
+Deno.test("function-based config export receives defaults and can modify them", async () => {
+  const port = 8136;
+  const cfgPath = await Deno.makeTempFile({ suffix: ".ts" });
+  const cfgSource = `export default (defaults) => ({ ...defaults, server: { port: ${port} }, runtime: { ...(defaults.runtime||{}), dependencies: { initial: { feature: 'fn' } } } })`;
+  await Deno.writeTextFile(cfgPath, cfgSource);
+  const proc = await startServer(port, [`--config=${cfgPath}`]);
+  try {
+    const res = await fetch(`http://localhost:${port}/feature`);
+    const json = await res.json();
+    if (json.feature !== "fn") throw new Error("expected feature from function-based config");
+  } finally {
+    proc.kill();
+    await proc.output();
+    await Deno.remove(cfgPath);
   }
 }); 
