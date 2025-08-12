@@ -68,6 +68,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
         maybeHostDenoConfig = (await import(hostDenoCfg, { with: { type: "json" } })).default;
         console.log(`[hv] loaded host deno config`, { maybeHostDenoConfig });
       } catch (e) {
+        console.error(`[hv] error loading host deno config`, { e });
         // ignore
       }
       const mergedImportMap = {
