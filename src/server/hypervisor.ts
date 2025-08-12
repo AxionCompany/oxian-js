@@ -40,7 +40,7 @@ async function startProcessWorker(port: number, baseArgs: string[], cfgPath?: st
     `--port=${port}`,
     ...scriptArgs.filter((a) => !a.startsWith("--port=")),
   ];
-  const proc = new Deno.Command("deno", { args: [...denoArgs, ...finalScriptArgs], stdout: "null", stderr: "null" }).spawn();
+  const proc = new Deno.Command(Deno.execPath(), { args: [...denoArgs, ...finalScriptArgs], stdout: "null", stderr: "null" }).spawn();
   for (let i = 0; i < 50; i++) {
     try { const r = await fetch(`http://localhost:${port}/`, { method: "HEAD" }); if (r.ok || r.status >= 200) break; } catch {}
     await new Promise((r) => setTimeout(r, 50));
