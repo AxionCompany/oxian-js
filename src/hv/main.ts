@@ -62,19 +62,12 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     const denoArgs: string[] = ["run", "-A", ...denoOptions];
     if (!denoOptions.includes("--config") && hostDenoCfg) {
       // load hostDenoConfig, merge with denoJson and pass as dataUrl to --config
-      let maybeHostDenoConfig;
+      let maybeHostDenoConfig = { imports: {}, scopes: {} };
       try {
         maybeHostDenoConfig = (await import(hostDenoCfg, { with: { type: "json" } })).default;
       } catch (e) {
-        // fallback: try as text and parse as JSON
-        const text = await (await import(hostDenoCfg, { with: { type: "text" } })).default;
-        try {
-          maybeHostDenoConfig = JSON.parse(text);
-        } catch {
-          maybeHostDenoConfig = {};
-        }
+        // ignore
       }
-
       const mergedImportMap = {
         imports: {
           ...denoJson.imports,
@@ -99,21 +92,33 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       ...Deno.args.filter((a) => a.startsWith("--source=") || a.startsWith("--config=")),
     ];
 
+
+    console.log(`[hv] starting worker`, { project, port, denoArgs, finalScriptArgs });
     const proc = new Deno.Command(Deno.execPath(), {
       args: [...denoArgs, ...finalScriptArgs],
       // stdout: "null",
       // stderr: "null"
     }).spawn();
     // Wait until ready
-
-    for (let i = 0; i < 50; i++) {
-      await new Promise((r) => setTimeout(r, 5000));
-      try { const r = await fetch(`http://localhost:${port}/`, { method: "HEAD" }); if (r.ok || r.status >= 200) break; } catch { }
-      console.log('waiting for port', port)
+    
+    {
+      const maxWaitMs = 10_000;
+      const start = Date.now();
+      let ready = false;
+      while (Date.now() - start < maxWaitMs) {
+        try {
+          const r = await fetch(`http://localhost:${port}/`, { method: "HEAD" });
+          if (r.ok || r.status >= 200) { ready = true; break; }
+        } catch { /* ignore until ready */ }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if (!ready) console.error(`[hv] worker not ready`, { project, port, waitedMs: Date.now() - start });
+      else console.log(`[hv] worker ready`, { project, port });
     }
     pools.set(project, { port, proc, rr: rrPicker([{ port, proc }]) });
   }
 
+  console.log(`[hv] public listening`, { port: publicPort });
   const server = Deno.serve({ port: publicPort }, async (req) => {
     const url = new URL(req.url);
 
@@ -157,9 +162,12 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     }
 
     try {
+      console.log(`[hv] proxy`, { method: req.method, url: url.toString(), selected, target });
       const res = await fetch(target, { method: req.method, headers, body: req.body });
+      console.log(`[hv] proxy_res`, { status: res.status, statusText: res.statusText, target });
       return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
     } catch (e) {
+      console.error(`[hv] proxy_err`, { target, err: (e as Error)?.message });
       const body = JSON.stringify({ error: { message: (e as Error).message || "Upstream error" } });
       return new Response(body, { status: 502, headers: { "content-type": "application/json; charset=utf-8" } });
     }

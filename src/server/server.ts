@@ -68,10 +68,12 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
   // eslint-disable-next-line @typescript-eslint/no-unused-expressions
   (await import("../logging/logger.ts")).setCurrentLogger(logger, { deprecations: config.logging?.deprecations !== false });
   const resolved = await resolveRouter(config, source);
+  console.log('[server] resolved router', { isRemote: resolved.isRemote, routes: resolved.router?.routes?.length });
 
   // Preload config-defined dependencies (worker-lifecycle)
   const hvInitialDeps = await loadBootstrapDeps(config);
 
+  console.log('[server] listening', { port: config.server?.port ?? 8080 });
   const server = Deno.serve({ port: config.server?.port ?? 8080 }, async (req) => {
     const startedAt = performance.now();
     const hdrRequestId = config.logging?.requestIdHeader ? req.headers.get(config.logging.requestIdHeader) : undefined;
