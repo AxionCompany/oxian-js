@@ -40,8 +40,12 @@ if (import.meta.main) {
     runDev(config, source);
   }
 
+  config.root = import.meta.resolve(config.root ?? Deno.cwd());
+
   // hypervisor is now the default runner unless explicitly disabled
-  const bypassHv = args.hypervisor === false || config.runtime?.hv?.enabled === false;
+  const hypervisorArg = args.hypervisor as boolean | string | undefined;
+  const hypervisorDisabled = (hypervisorArg === false) || (hypervisorArg === "false");
+  const bypassHv = hypervisorDisabled || config.runtime?.hv?.enabled === false;
   if (!bypassHv) {
     const { startHypervisor } = await import("./src/server/hypervisor.ts");
     const baseArgs: string[] = [];

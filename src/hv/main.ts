@@ -1,5 +1,6 @@
 import type { EffectiveConfig } from "../config/types.ts";
 import denoJson from "../../deno.json" with { type: "json" };
+import { getLocalRootPath } from "../utils/root.ts";
 
 function splitBaseArgs(baseArgs: string[]): { denoOptions: string[]; scriptArgs: string[] } {
   const denoOptions: string[] = [];
@@ -51,9 +52,13 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
 
   console.log(`[hv] starting hypervisor`, { config, baseArgs });
   // Determine deno config to forward
-  const hostDenoCfg = (Deno.args.find((a) => a.startsWith("--deno-config="))?.split("=")[1])
+  let hostDenoCfg = (Deno.args.find((a) => a.startsWith("--deno-config="))?.split("=")[1])
     || hv.denoConfig
-    || await detectHostDenoConfig(config.root ?? `file://${Deno.cwd()}`);
+    || await detectHostDenoConfig(getLocalRootPath(config.root));
+
+  if (hostDenoCfg) {
+    hostDenoCfg = import.meta.resolve(hostDenoCfg);
+  }
 
 
   for (let idx = 0; idx < projects.length; idx++) {

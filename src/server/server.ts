@@ -1,4 +1,4 @@
-import { EffectiveConfig } from "../config/types.ts";
+import type { EffectiveConfig } from "../config/types.ts";
 import { createLogger, makeRequestLog } from "../logging/logger.ts";
 import { createResponseController, finalizeResponse } from "../utils/response.ts";
 import { parseQuery, parseRequestBody, mergeData } from "../utils/request.ts";
@@ -12,6 +12,7 @@ import { resolveRouter } from "../runtime/router_resolver.ts";
 import { buildLocalChain, buildRemoteChain, discoverPipelineFiles} from "../runtime/pipeline_discovery.ts";
 import { createLoaderManager } from "../loader/index.ts";
 import { importModule } from "../runtime/importer.ts";
+import { getLocalRootPath } from "../utils/root.ts";
 
 function applyTrailingSlash(path: string, mode: "always" | "never" | "preserve" | undefined): string {
   if (mode === "preserve" || !mode) return path;
@@ -39,7 +40,7 @@ async function loadBootstrapDeps(config: EffectiveConfig): Promise<Record<string
   if (runtimeDeps?.bootstrapModule) {
     const lm = createLoaderManager(config.root ?? Deno.cwd());
     const url = lm.resolveUrl(runtimeDeps.bootstrapModule);
-    const mod = await importModule(url, lm.getLoaders(), 60_000, config.root ?? Deno.cwd());
+    const mod = await importModule(url, lm.getLoaders(), 60_000, getLocalRootPath(config.root));
     const factory = (mod as any).default ?? (mod as any).createDependencies;
     if (typeof factory === "function") {
       const produced = await factory(config);
@@ -142,7 +143,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
           return !!st?.isFile;
         });
       } else {
-        const chain = buildLocalChain(config.root ?? Deno.cwd(), config.routing?.routesDir ?? "routes", (match as any).route.fileUrl);
+        const chain = buildLocalChain(getLocalRootPath(config.root), config.routing?.routesDir ?? "routes", (match as any).route.fileUrl);
         files = await discoverPipelineFiles(chain, async (urlOrPath) => {
           if (typeof urlOrPath !== "string") return false;
           try {
