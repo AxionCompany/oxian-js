@@ -11,6 +11,8 @@ export function setBundlerProjectRoot(root: string) {
     defaultProjectRoot = root;
 }
 
+
+
 async function getProjectImportMap(loaders: Loader[], projectRoot?: string): Promise<{ imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> } | undefined> {
     const root = projectRoot ?? defaultProjectRoot ?? Deno.cwd();
     if (cachedImportMapByRoot.has(root)) return cachedImportMapByRoot.get(root) ?? undefined;
@@ -52,16 +54,18 @@ export async function bundleModule(entry: URL, loaders: Loader[], ttlMs = 60_000
 
     try {
         const result = await bundle(entry.toString(), {
-            load: async (specifier: string) => {
-
+            load: async (specifier: string) => {                
                 try {
                     const url = new URL(specifier);
                     const ldr = loaders.find((l) => l.canHandle(url));
+                    console.log('specifier', specifier, url, ldr);
                     if (!ldr) {
-                        return undefined as unknown as { kind: "module"; specifier: string; content: string };
+                        console.log('no loader for', specifier);
+                        return {
+                            kind: "external",
+                            specifier: specifier,
+                        }
                     }
-                    const { content } = await ldr.load(url);
-                    return { kind: "module", specifier: url.toString(), content } as { kind: "module"; specifier: string; content: string };
                 } catch {
                     return undefined as unknown as { kind: "module"; specifier: string; content: string };
                 }
@@ -73,7 +77,7 @@ export async function bundleModule(entry: URL, loaders: Loader[], ttlMs = 60_000
                 inlineSources: true,
             },
             type: "module",
-            importMap
+            // importMap
         } as unknown as Record<string, unknown>);
 
         const code = (result as unknown as { code?: string }).code;
