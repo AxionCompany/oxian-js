@@ -43,7 +43,7 @@ export type Interceptors = {
 export type LoaderMediaType = "ts" | "js" | "tsx" | "jsx" | "json";
 
 export type Loader = {
-  scheme: "local" | "github";
+  scheme: "local" | "github" | "http" | "https" | "file";
   canHandle: (url: URL) => boolean;
   load: (url: URL) => Promise<{ content: string; mediaType: LoaderMediaType }>;
   listDir?: (url: URL) => Promise<string[]>;
