@@ -49,10 +49,11 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
 
   const pools = new Map<string, { port: number; proc: Deno.ChildProcess; rr: () => { port: number; proc: Deno.ChildProcess } }>();
 
+  console.log(`[hv] starting hypervisor`, { config, baseArgs });
   // Determine deno config to forward
   const hostDenoCfg = (Deno.args.find((a) => a.startsWith("--deno-config="))?.split("=")[1])
     || hv.denoConfig
-    || await detectHostDenoConfig(config.root ?? Deno.cwd());
+    || await detectHostDenoConfig(config.root ?? `file://${Deno.cwd()}`);
 
 
   for (let idx = 0; idx < projects.length; idx++) {
