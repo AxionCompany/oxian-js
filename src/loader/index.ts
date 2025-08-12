@@ -14,7 +14,11 @@ export function createLoaderManager(root: string, tokenEnv?: string): LoaderMana
   const local = createLocalLoader(root);
   const github = createGithubLoader(tokenEnv);
   const http = createHttpLoader();
-  const loaders = [local, github, http];
+  const loaders = [
+    local,
+    github,
+    http
+  ];
   return {
     resolveUrl(pathOrUrl: string): URL {
       try {
