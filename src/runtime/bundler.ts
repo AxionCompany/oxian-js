@@ -68,12 +68,11 @@ export async function bundleModule(entry: URL, loaders: Loader[], ttlMs = 60_000
             },
             cacheSetting: "use",
             allowRemote: true,
-            // compilerOptions: {
-            //     // inlineSources: true,
-            //     inlineSourceMap: true,
-            //     // sourceMap: true,
-            //     type: "module",
-            // },
+            compilerOptions: {
+                inlineSourceMap: true,
+                inlineSources: true,
+            },
+            type: "module",
             importMap
         } as unknown as Record<string, unknown>);
 

@@ -5,6 +5,7 @@ export function createHttpLoader(): Loader {
     return {
         scheme: "github", // not used; placeholder
         canHandle: (url: URL) => {
+            // avoid bundling jsr.io
             if (['jsr.io'].includes(url.host)) return false;
             return url.protocol === "http:" || url.protocol === "https:"
         },
