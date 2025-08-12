@@ -6,7 +6,7 @@ import { resolveRouter } from "./src/runtime/router_resolver.ts";
 
 if (import.meta.main) {
   const args = parseArgs(Deno.args, {
-    string: ["config", "source", "port"],
+    string: ["config", "source", "port", "deno-config"],
     boolean: ["help", "hypervisor", "test"],
     alias: { h: "help", hv: "hypervisor" },
     default: {},
@@ -15,7 +15,7 @@ if (import.meta.main) {
   const cmd = args._[0] as string | undefined;
 
   if (args.help) {
-    console.log(`Oxian CLI\n\nUsage:\n  deno run -A cli.ts [--config=oxian.config.ts] [--port=8080] [--source=...] [--hypervisor]\n\nCommands:\n  routes        Print resolved routes\n  start         Start server (same as default)\n  dev           Start server with dev options (watch, hot-reload)\n`);
+    console.log(`Oxian CLI\n\nUsage:\n  deno run -A cli.ts [--config=oxian.config.ts] [--port=8080] [--source=...] [--hypervisor] [--deno-config=path/to/deno.json]\n\nCommands:\n  routes        Print resolved routes\n  start         Start server (same as default)\n  dev           Start server with dev options (watch, hot-reload)\n`);
     Deno.exit(0);
   }
 
@@ -44,7 +44,16 @@ if (import.meta.main) {
   // hypervisor mode
   if (args.hypervisor || config.runtime?.hv?.enabled) {
     const { startHypervisor } = await import("./src/server/hypervisor.ts");
-    await startHypervisor(config, Deno.args.filter((a) => a.startsWith("--config=") || a.startsWith("--source=")));
+    const baseArgs: string[] = [];
+    // forward user-provided Deno CLI config path so child processes resolve import maps automatically
+    if (typeof args["deno-config"] === "string") {
+      baseArgs.push(`--deno-config=${args["deno-config"]}`);
+    }
+    await startHypervisor(config, [
+      ...baseArgs,
+      // also forward app-specific flags we already support
+      ...Deno.args.filter((a) => a.startsWith("--source=") || a.startsWith("--config=") || a.startsWith("--provider=")),
+    ]);
     Deno.exit(0);
   }
 

@@ -4,9 +4,7 @@ import { detectMediaType } from "./types.ts";
 export function createHttpLoader(): Loader {
     return {
         scheme: "github", // not used; placeholder
-        canHandle: (url: URL) => {
-            // avoid bundling jsr.io
-            if (['jsr.io'].includes(url.host)) return false;
+        canHandle: (url: URL) => { return false
             return url.protocol === "http:" || url.protocol === "https:"
         },
         async load(url: URL) {

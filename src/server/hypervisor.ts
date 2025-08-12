@@ -5,10 +5,42 @@ import { importModule } from "../runtime/importer.ts";
 
 type WorkerProc = { port: number; proc: Deno.ChildProcess | null; inflight: number; healthy: boolean; kind: "process" | "thread"; thread?: Worker };
 
+function splitBaseArgs(baseArgs: string[]): { denoOptions: string[]; scriptArgs: string[] } {
+  const denoOptions: string[] = [];
+  const scriptArgs: string[] = [];
+  for (const a of baseArgs) {
+    if (a.startsWith("--deno-config=")) {
+      const cfg = a.split("=")[1];
+      if (cfg) {
+        denoOptions.push("--config", cfg);
+      }
+      continue;
+    }
+    // allow explicit import-map forwarding if ever needed
+    if (a.startsWith("--deno-import-map=")) {
+      const im = a.split("=")[1];
+      if (im) denoOptions.push("--import-map", im);
+      continue;
+    }
+    // all others are script args (e.g., --source=..., --config=... for app config)
+    scriptArgs.push(a);
+  }
+  return { denoOptions, scriptArgs };
+}
+
 async function startProcessWorker(port: number, baseArgs: string[], cfgPath?: string): Promise<WorkerProc> {
-  const args = ["run", "-A", "cli.ts", `--port=${port}`, ...baseArgs.filter((a) => !a.startsWith("--port="))];
-  if (cfgPath) args.push(`--config=${cfgPath}`);
-  const proc = new Deno.Command("deno", { args, stdout: "null", stderr: "null" }).spawn();
+  const { denoOptions, scriptArgs } = splitBaseArgs(baseArgs);
+  // prefer deno-config from baseArgs; else if cfgPath provided (from provider), use it
+  const denoArgs: string[] = ["run", "-A", ...denoOptions];
+  if (!denoOptions.some((o) => o === "--config") && cfgPath) {
+    denoArgs.push("--config", cfgPath);
+  }
+  denoArgs.push("cli.ts");
+  const finalScriptArgs = [
+    `--port=${port}`,
+    ...scriptArgs.filter((a) => !a.startsWith("--port=")),
+  ];
+  const proc = new Deno.Command("deno", { args: [...denoArgs, ...finalScriptArgs], stdout: "null", stderr: "null" }).spawn();
   for (let i = 0; i < 50; i++) {
     try { const r = await fetch(`http://localhost:${port}/`, { method: "HEAD" }); if (r.ok || r.status >= 200) break; } catch {}
     await new Promise((r) => setTimeout(r, 50));
