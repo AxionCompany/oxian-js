@@ -2,12 +2,12 @@ import { join, toFileUrl, fromFileUrl } from "@std/path";
 import type { Loader } from "./types.ts";
 import { detectMediaType } from "./types.ts";
 
-export function createLocalLoader(root: string): Loader {
-  const rootUrl = toFileUrl(root.endsWith("/") ? root : root + "/");
+export function createLocalLoader(root: URL): Loader {
+  const rootUrl = root;
   return {
     scheme: "local",
     canHandle: (url: URL) => {
-      return url.protocol === rootUrl.protocol && url.pathname.startsWith(rootUrl.pathname)
+      return url.protocol === "file:" && url.pathname.startsWith(rootUrl.pathname)
     },
     async load(url: URL) {
       const path = fromFileUrl(url);
@@ -34,7 +34,22 @@ export function createLocalLoader(root: string): Loader {
   };
 }
 
-export function resolveLocalUrl(root: string, ...segments: string[]): URL {
-  const path = join(root, ...segments);
-  return toFileUrl(path);
-} 
+export function resolveLocalUrl(root: string | URL, ...segments: string[]): URL {
+  // If root is a string that looks like a URL, resolve segments against it
+  if (typeof root === "string") {
+    try {
+      const base = new URL(root);
+      const withSlash = base.toString().endsWith("/") ? base : new URL(base.toString() + "/");
+      const combined = segments.join("/");
+      return new URL(combined, withSlash);
+    } catch {
+      // Not a URL string, treat as filesystem path
+      const path = join(root, ...segments);
+      return toFileUrl(path);
+    }
+  }
+  // Root is a URL
+  const withSlash = root.toString().endsWith("/") ? root : new URL(root.toString() + "/");
+  const combined = segments.join("/");
+  return new URL(combined, withSlash);
+}

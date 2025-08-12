@@ -110,14 +110,15 @@ export async function loadConfig(opts: { configPath?: string } = {}): Promise<Ef
 
   userConfig = applyEnvOverrides(userConfig);
 
-  // Normalize root to an absolute path
+  // Normalize root to an absolute path and expose as a file URL string for consistency
   const cfgRoot = userConfig.root ?? DEFAULTS.root;
   const rootAbs = pathIsAbsolute(cfgRoot) ? cfgRoot : pathResolve(Deno.cwd(), cfgRoot);
+  const rootUrlStr = toFileUrl(rootAbs).toString();
 
   const effective: EffectiveConfig = {
     ...DEFAULTS,
     ...userConfig,
-    root: rootAbs,
+    root: rootUrlStr,
     basePath: userConfig.basePath ?? DEFAULTS.basePath,
     server: { ...DEFAULTS.server, ...(userConfig.server ?? {}) },
     logging: { ...DEFAULTS.logging, ...(userConfig.logging ?? {}) },

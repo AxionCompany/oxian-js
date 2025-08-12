@@ -10,8 +10,9 @@ export type LoaderManager = {
   getLoaders: () => Loader[];
 };
 
-export function createLoaderManager(root: string, tokenEnv?: string): LoaderManager {
-  const local = createLocalLoader(root);
+export function createLoaderManager(root: string | URL, tokenEnv?: string): LoaderManager {
+  const rootUrl = typeof root === "string" ? (() => { try { return new URL(root); } catch { return toFileUrl(root); } })() : root;
+  const local = createLocalLoader(rootUrl);
   const github = createGithubLoader(tokenEnv);
   const http = createHttpLoader();
   const loaders = [
@@ -25,7 +26,7 @@ export function createLoaderManager(root: string, tokenEnv?: string): LoaderMana
         return new URL(pathOrUrl);
       } catch {
         if (isAbsolute(pathOrUrl)) return toFileUrl(pathOrUrl);
-        return resolveLocalUrl(root, pathOrUrl);
+        return resolveLocalUrl(rootUrl, pathOrUrl);
       }
     },
     getActiveLoader(url: URL): Loader {

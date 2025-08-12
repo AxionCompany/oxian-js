@@ -1,7 +1,10 @@
-import { EffectiveConfig } from "../config/types.ts";
-import { buildRouter, Router } from "../router/router.ts";
-import { buildRemoteRouter, RemoteRouter } from "../router/remote_router.ts";
+import type { EffectiveConfig } from "../config/types.ts";
+import { buildRouter } from "../router/router.ts";
+import type { Router } from "../router/router.ts";
+import { buildRemoteRouter } from "../router/remote_router.ts";
+import type { RemoteRouter } from "../router/remote_router.ts";
 import { createLoaderManager } from "../loader/index.ts";
+import { getLocalRootPath } from "../utils/root.ts";
 import { createLazyRouterLocal, createLazyRouterRemote } from "../router/lazy_matcher.ts";
 
 export type ResolvedRouter = {
@@ -18,10 +21,10 @@ export async function resolveRouter(config: EffectiveConfig, source?: string): P
 
   if (!source) {
     if (discovery === "lazy") {
-      const lazy = createLazyRouterLocal(config.root ?? Deno.cwd(), routesDir) as unknown as Router & { __asyncMatch?: (path: string) => Promise<ReturnType<Router["match"]>> };
+      const lazy = createLazyRouterLocal(getLocalRootPath(config.root), routesDir) as unknown as Router & { __asyncMatch?: (path: string) => Promise<ReturnType<Router["match"]>> };
       return { router: lazy, loaderManager: lm, isRemote: false } as ResolvedRouter;
     }
-    const router = await buildRouter({ root: config.root ?? Deno.cwd(), routesDir });
+    const router = await buildRouter({ root: getLocalRootPath(config.root), routesDir });
     return { router, loaderManager: lm, isRemote: false } as ResolvedRouter;
   }
 
