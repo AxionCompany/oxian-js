@@ -25,7 +25,8 @@
     "@std/path": "jsr:@std/path@1.1.1",
     "@std/cli/parse-args": "jsr:@std/cli@1.0.21/parse-args",
     "@deno/emit": "jsr:@deno/emit@0.46.0",
-    "@std/jsonc/parse": "jsr:@std/jsonc@1.0.2/parse"
+    "@std/jsonc/parse": "jsr:@std/jsonc@1.0.2/parse",
+    "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64"
   },
   "lock": false
 } 
