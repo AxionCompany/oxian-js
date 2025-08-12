@@ -3,7 +3,7 @@ import { createCache } from "@deno/cache-dir";
 import { createGraph } from "@deno/graph";
 import { resolveLocalUrl } from "../loader/local.ts";
 import { parse as parseJsonc } from "@std/jsonc/parse";
-import { parseFromJson } from "../utils/import_map.ts";
+import { parseFromJson } from "../utils/import_map/index.ts";
 
 const cachedResolverByRoot = new Map<string, ((specifier: string, referrer?: string) => string) | null>();
 
