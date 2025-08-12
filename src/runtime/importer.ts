@@ -3,10 +3,9 @@ import { createCache } from "@deno/cache-dir";
 import { createGraph } from "@deno/graph";
 import { resolveLocalUrl } from "../loader/local.ts";
 import { parse as parseJsonc } from "@std/jsonc/parse";
-import { parseFromJson } from "../utils/import_map/index.ts";
+import { createImportMapResolver } from "../utils/import_map/index.ts";
 
 const cachedResolverByRoot = new Map<string, ((specifier: string, referrer?: string) => string) | null>();
-
 
 async function getProjectImportResolver(loaders: Loader[], projectRoot?: string): Promise<((specifier: string, referrer?: string) => string) | undefined> {
     const root = projectRoot ?? Deno.cwd();
@@ -16,13 +15,15 @@ async function getProjectImportResolver(loaders: Loader[], projectRoot?: string)
     for (const name of candidates) {
         try {
             const baseUrl = resolveLocalUrl(root, name);
+            console.log(name, 'baseUrl', baseUrl);
             const ldr = loaders.find((l) => l.canHandle(baseUrl));
             if (!ldr) continue;
             const { content } = await ldr.load(baseUrl);
             const isJsonc = name.endsWith(".jsonc");
-            const jsonText = isJsonc ? JSON.stringify(parseJsonc(content)) : content;
-            const resolved = await parseFromJson(baseUrl, jsonText);
-            const resolver = resolved.resolve.bind(resolved) as (specifier: string, referrer?: string) => string;
+            const parsed = isJsonc ? (parseJsonc(content) as Record<string, unknown>) : (JSON.parse(content) as Record<string, unknown>);
+            const imports = (parsed["imports"] ?? undefined) as Record<string, string> | undefined;
+            const scopes = (parsed["scopes"] ?? undefined) as Record<string, Record<string, string>> | undefined;
+            const resolver = createImportMapResolver(baseUrl, imports, scopes);
             cachedResolverByRoot.set(root, resolver);
             return resolver;
         } catch {
@@ -34,6 +35,7 @@ async function getProjectImportResolver(loaders: Loader[], projectRoot?: string)
 }
 
 export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000, projectRoot?: string): Promise<Record<string, unknown>> {
+    console.log('importModule', url, loaders, _ttlMs, projectRoot);
     const rootSpecifier = url.toString();
     const cache = createCache({ allowRemote: true, cacheSetting: "use" });
     const resolveFn = await getProjectImportResolver(loaders, projectRoot);
