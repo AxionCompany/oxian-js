@@ -1,4 +1,4 @@
-import { fromFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { fromFileUrl } from "@std/path";
 import { importModule } from "./importer.ts";
 import { createLoaderManager } from "../loader/index.ts";
 
@@ -20,11 +20,11 @@ async function getMtimeMs(fileUrl: URL): Promise<number | undefined> {
   }
 }
 
-export async function loadRouteModule(fileUrl: URL): Promise<LoadedModule> {
+export async function loadRouteModule(fileUrl: URL, projectRoot: string = Deno.cwd()): Promise<LoadedModule> {
   if (fileUrl.protocol !== "file:") {
-    const lm = createLoaderManager(Deno.cwd());
+    const lm = createLoaderManager(projectRoot);
     const loaders = lm.getLoaders();
-    return await importModule(fileUrl, loaders);
+    return await importModule(fileUrl, loaders, 60_000, projectRoot);
   }
   const mtime = await getMtimeMs(fileUrl);
   const cacheKey = `${fileUrl.toString()}?v=${mtime ?? "0"}`;

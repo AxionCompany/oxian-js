@@ -1,4 +1,4 @@
-import { join, toFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { join, toFileUrl } from "@std/path";
 
 export type RouteRecord = {
   pattern: string; // e.g., /users/:id

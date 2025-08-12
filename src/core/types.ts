@@ -2,7 +2,13 @@ export type Data = Record<string, unknown>;
 
 export type ResponseController = {
   send: (body: unknown, init?: Partial<{ status: number; headers: Record<string, string>; statusText: string }>) => void;
-  stream: (init?: Partial<{ status: number; headers: Record<string, string>; statusText: string }>) => (chunk: Uint8Array | string) => void;
+  stream: (init?: Partial<{ status: number; headers: Record<string, string>; statusText: string }>) => ((chunk: Uint8Array | string) => void) & { close?: () => void; done?: Promise<void> };
+  sse: (init?: Partial<{ status: number; headers: Record<string, string>; retry?: number }>) => {
+    send: (data: unknown, opts?: { event?: string; id?: string; retry?: number }) => void;
+    comment: (text: string) => void;
+    close: () => void;
+    done: Promise<void>;
+  };
   status: (code: number) => void;
   headers: (headers: Record<string, string>) => void;
   statusText: (text: string) => void;

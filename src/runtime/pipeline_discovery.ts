@@ -1,4 +1,4 @@
-import { dirname, join, fromFileUrl, toFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { dirname, join, fromFileUrl, toFileUrl } from "@std/path";
 
 export type PipelineFiles = {
   dependencyFiles: URL[];
@@ -6,7 +6,7 @@ export type PipelineFiles = {
   interceptorFiles: URL[];
 };
 
-export async function discoverPipelineFilesGeneric(
+export async function discoverPipelineFiles(
   chain: Array<string | URL>,
   statFile: (urlOrPath: string | URL) => Promise<boolean>,
 ): Promise<PipelineFiles> {

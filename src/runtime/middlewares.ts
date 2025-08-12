@@ -7,7 +7,7 @@ export async function runMiddlewares(files: URL[], data: Data, context: Context,
   let currentContext = { ...context } as Context;
 
   for (const fileUrl of files) {
-    const mod = fileUrl.protocol === "file:" ? await import(fileUrl.toString()) : await importModule(fileUrl, loaders ?? []);
+    const mod = await importModule(fileUrl, loaders ?? [], 60_000);
     const mw = ((mod as any).default ?? (mod as any).middleware) as unknown;
     if (typeof mw === "function") {
       const result = await (mw as Middleware)(currentData, currentContext);
