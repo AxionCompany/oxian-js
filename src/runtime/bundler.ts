@@ -50,7 +50,7 @@ export async function bundleModule(entry: URL, loaders: Loader[], ttlMs = 60_000
         return cached.code;
     }
 
-    const importMap = await getProjectImportMap(loaders, projectRoot);
+    // const importMap = await getProjectImportMap(loaders, projectRoot);
 
     try {
         const result = await bundle(entry.toString(), {
