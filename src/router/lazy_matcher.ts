@@ -1,4 +1,4 @@
-import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { join } from "@std/path";
 import type { Router, RouteMatch, RouteRecord } from "./router.ts";
 import type { Loader } from "../loader/types.ts";
 

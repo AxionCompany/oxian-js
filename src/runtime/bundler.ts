@@ -1,8 +1,7 @@
 import type { Loader } from "../loader/types.ts";
 import { bundle } from "@deno/emit";
 import { resolveLocalUrl } from "../loader/local.ts";
-import { parse as parseJsonc } from "jsr:@std/jsonc/parse";
-import { allowedNodeEnvironmentFlags } from "node:process";
+import { parse as parseJsonc } from "@std/jsonc/parse";
 
 const bundleCache = new Map<string, { code: string; expiresAt: number }>();
 const cachedImportMapByRoot = new Map<string, { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> } | null>();

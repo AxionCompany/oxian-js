@@ -1,5 +1,4 @@
-import { join, toFileUrl } from "https://deno.land/std@0.224.0/path/mod.ts";
-import { fromFileUrl } from "https://deno.land/std@0.224.0/path/from_file_url.ts";
+import { join, toFileUrl, fromFileUrl } from "@std/path";
 import type { Loader } from "./types.ts";
 import { detectMediaType } from "./types.ts";
 
