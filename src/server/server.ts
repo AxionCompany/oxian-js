@@ -62,6 +62,7 @@ async function loadBootstrapDeps(config: EffectiveConfig): Promise<Record<string
 export async function startServer(opts: { config: EffectiveConfig; source?: string }) {
   const { config, source } = opts;
   const logger = createLogger(config.logging?.level ?? "info");
+
   // make logger globally available for deprecation messages
   // and obey deprecations flag
   // eslint-disable-next-line @typescript-eslint/no-unused-expressions

@@ -30,22 +30,7 @@ Deno.test({ name: "hypervisor: basic proxy and streaming", sanitizeOps: false, s
   }
 });
 
-Deno.test({ name: "hypervisor: provider routes project by prefix", sanitizeOps: false, sanitizeResources: false }, async () => {
-  const port = 8141;
-  const providerPath = await Deno.makeTempFile({ suffix: ".ts" });
-  await Deno.writeTextFile(providerPath, `export const pickProject = () => ({ project: 'projA', stripPathPrefix: '/a' });`);
-  const proc = new Deno.Command("deno", { args: ["run", "-A", "cli.ts", `--port=${port}`, "--hypervisor", `--provider=module:${providerPath}`], stdout: "piped", stderr: "piped" }).spawn();
-  try {
-    await waitForReady(`http://localhost:${port}/`);
-    const res = await fetch(`http://localhost:${port}/a/feature`);
-    const json = await res.json();
-    if (typeof json !== "object") throw new Error("unexpected provider response");
-  } finally {
-    try { proc.kill(); } catch {}
-    try { await proc.output(); } catch {}
-    await Deno.remove(providerPath);
-  }
-});
+// Provider-based routing removed in new HV design (config-only). Test omitted.
 
 Deno.test({ name: "hypervisor: sticky routing by header", sanitizeOps: false, sanitizeResources: false }, async () => {
   const port = 8142;

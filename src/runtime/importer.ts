@@ -15,7 +15,6 @@ async function getProjectImportResolver(loaders: Loader[], projectRoot?: string)
     for (const name of candidates) {
         try {
             const baseUrl = resolveLocalUrl(root, name);
-            console.log(name, 'baseUrl', baseUrl);
             const ldr = loaders.find((l) => l.canHandle(baseUrl));
             if (!ldr) continue;
             const { content } = await ldr.load(baseUrl);
@@ -35,9 +34,11 @@ async function getProjectImportResolver(loaders: Loader[], projectRoot?: string)
 }
 
 export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000, projectRoot?: string): Promise<Record<string, unknown>> {
-    console.log('importModule', url, loaders, _ttlMs, projectRoot);
+    // debug: importModule call context
+    // console.debug('importModule', url.toString(), { ttl: _ttlMs, root: projectRoot });
+    console.log('importModule', url.toString(), { ttl: _ttlMs, root: projectRoot });
     const rootSpecifier = url.toString();
-    const cache = createCache({ allowRemote: true, cacheSetting: "use" });
+    const cache = createCache({ allowRemote: true, cacheSetting: "reload" });
     const resolveFn = await getProjectImportResolver(loaders, projectRoot);
 
     await createGraph(rootSpecifier, {
@@ -52,7 +53,7 @@ export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000,
             } catch {
                 // not a URL, let cache try
             }
-            const res = await cache.load(specifier, isDynamic, "use");
+            const res = await cache.load(specifier, isDynamic, "reload");
             if (res) return res as unknown as { kind: "module" | "external"; specifier: string; content?: string };
             return undefined as unknown as { kind: "module"; specifier: string; content: string };
         },
@@ -60,5 +61,6 @@ export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000,
         resolve: resolveFn,
     } as unknown as Record<string, unknown>);
 
+    console.log('importModule', rootSpecifier);
     return await import(rootSpecifier);
 } 
