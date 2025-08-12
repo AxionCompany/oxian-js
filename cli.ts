@@ -21,6 +21,7 @@ if (import.meta.main) {
 
   const config = await loadConfig({ configPath: args.config });
 
+
   const port = typeof args.port === "string" ? Number(args.port) : undefined;
   if (port !== undefined && !Number.isNaN(port)) {
     config.server = config.server ?? {};
@@ -34,15 +35,14 @@ if (import.meta.main) {
     Deno.exit(0);
   }
 
-
   if (cmd === "dev") {
     const { runDev } = await import("./src/cli/dev.ts");
-    await runDev(config, source);
-    Deno.exit(0);
+    runDev(config, source);
   }
 
-  // hypervisor mode
-  if (args.hypervisor || config.runtime?.hv?.enabled) {
+  // hypervisor is now the default runner unless explicitly disabled
+  const bypassHv = args.hypervisor === false || config.runtime?.hv?.enabled === false;
+  if (!bypassHv) {
     const { startHypervisor } = await import("./src/server/hypervisor.ts");
     const baseArgs: string[] = [];
     // forward user-provided Deno CLI config path so child processes resolve import maps automatically
@@ -56,6 +56,8 @@ if (import.meta.main) {
     ]);
     Deno.exit(0);
   }
+
+  console.log('starting server', config, source)
 
   // start/dev default to starting the server
   await startServer({ config, source });

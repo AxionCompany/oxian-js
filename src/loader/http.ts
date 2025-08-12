@@ -3,9 +3,9 @@ import { detectMediaType } from "./types.ts";
 
 export function createHttpLoader(): Loader {
     return {
-        scheme: "github", // not used; placeholder
-        canHandle: (url: URL) => { return false
-            return url.protocol === "http:" || url.protocol === "https:"
+        scheme: "http",
+        canHandle: (url: URL) => {
+            return url.protocol === "http:" || url.protocol === "https:";
         },
         async load(url: URL) {
             const res = await fetch(url);

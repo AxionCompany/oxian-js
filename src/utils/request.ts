@@ -28,7 +28,7 @@ export async function parseRequestBody(req: Request): Promise<unknown> {
 export function parseQuery(url: URL): { params: URLSearchParams; record: Record<string, string | string[]> } {
     const params = url.searchParams;
     const record: Record<string, string | string[]> = {};
-    for (const [k, v] of Object.entries(params)) {
+    for (const [k, v] of params) {
         const existing = record[k];
         if (existing === undefined) record[k] = v;
         else if (Array.isArray(existing)) existing.push(v);
