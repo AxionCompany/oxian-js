@@ -6,5 +6,7 @@ export async function GET(_data: Data, { response }: Context) {
   write("hello\n");
   await new Promise((r) => setTimeout(r, 2000));
   write("world\n");
-  return 
+  // Explicitly close the stream so clients like proxying HV finish reading
+  write("");
+  return;
 } 

@@ -49,15 +49,20 @@ if (import.meta.main) {
     if (typeof args["deno-config"] === "string") {
       baseArgs.push(`--deno-config=${args["deno-config"]}`);
     }
+    // ensure child processes do NOT start the hypervisor again
+    console.log('[cli] starting hypervisor', { port: config.server?.port, source, bypassHv });
     await startHypervisor(config, [
       ...baseArgs,
       // also forward app-specific flags we already support
-      ...Deno.args.filter((a) => a.startsWith("--source=") || a.startsWith("--config=") || a.startsWith("--provider=")),
+      ...Deno.args
+        .filter((a) => a.startsWith("--source=") || a.startsWith("--config=") || a.startsWith("--provider=") || a.startsWith("--port="))
+        .map((a) => a)
+        .concat(["--hypervisor=false"]),
     ]);
     Deno.exit(0);
   }
 
-  console.log('starting server', config, source)
+  console.log('[cli] starting server', { port: config.server?.port, source })
 
   // start/dev default to starting the server
   await startServer({ config, source });
