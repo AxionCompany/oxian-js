@@ -10,7 +10,6 @@ import { runInterceptorsBefore, runInterceptorsAfter } from "../runtime/intercep
 import { runMiddlewares } from "../runtime/middlewares.ts";
 import { resolveRouter } from "../runtime/router_resolver.ts";
 import { buildLocalChain, buildRemoteChain, discoverPipelineFiles} from "../runtime/pipeline_discovery.ts";
-import { setBundlerProjectRoot } from "../runtime/bundler.ts";
 import { createLoaderManager } from "../loader/index.ts";
 import { importModule } from "../runtime/importer.ts";
 
@@ -62,7 +61,6 @@ async function loadBootstrapDeps(config: EffectiveConfig): Promise<Record<string
 
 export async function startServer(opts: { config: EffectiveConfig; source?: string }) {
   const { config, source } = opts;
-  setBundlerProjectRoot(config.root ?? Deno.cwd());
   const logger = createLogger(config.logging?.level ?? "info");
   // make logger globally available for deprecation messages
   // and obey deprecations flag

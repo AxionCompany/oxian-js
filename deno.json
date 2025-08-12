@@ -1,6 +1,6 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "exports": {
     ".": "./cli.ts",
     "./server": "./src/server/server.ts",
@@ -24,7 +24,6 @@
   "imports": {
     "@std/path": "jsr:@std/path@1.1.1",
     "@std/cli/parse-args": "jsr:@std/cli@1.0.21/parse-args",
-    "@deno/emit": "jsr:@deno/emit@0.46.0",
     "@std/jsonc/parse": "jsr:@std/jsonc@1.0.2/parse",
     "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64",
     "@deno/cache-dir": "jsr:@deno/cache-dir@0.24.0",
