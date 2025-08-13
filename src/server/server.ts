@@ -93,6 +93,13 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
 
       path = applyTrailingSlash(path, config.routing?.trailingSlash);
 
+      // Lightweight health endpoint to avoid triggering route pipeline during readiness probes
+      if (req.method === "HEAD" && path === "/_health") {
+        const res = new Response(null, { status: 200 });
+        logger.info("request", makeRequestLog({ requestId, route: path, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+        return res;
+      }
+
       const lazyAsync = (resolved.router as any).__asyncMatch as undefined | ((p: string) => Promise<any>);
       const match = lazyAsync ? await lazyAsync(path) : resolved.router.match(path);
 

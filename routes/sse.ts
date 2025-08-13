@@ -1,7 +1,7 @@
 import type { Context, Data } from "../src/core/types.ts";
 
-export async function GET(_data: Data, { response }: Context) {
-  const sse = response.sse({ retry: 1000 });
+export async function GET(_data: Data, { response, oxian }: Context) {
+  const sse = response.sse({ retry: 1000, keepOpen: true });
   let i = 0;
   const interval = setInterval(() => {
     i++;
