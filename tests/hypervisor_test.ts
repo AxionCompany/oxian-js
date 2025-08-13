@@ -15,7 +15,7 @@ async function waitForReady(url: string, timeoutMs = 5000) {
 
 Deno.test({ name: "hypervisor: basic proxy and streaming", sanitizeOps: false, sanitizeResources: false }, async () => {
   const port = 8140;
-  const proc = new Deno.Command("deno", { args: ["run", "-A", "cli.ts", `--port=${port}`, "--hypervisor"], stdout: "piped", stderr: "piped" }).spawn();
+  const proc = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "cli.ts", `--port=${port}`, "--hypervisor"], stdout: "piped", stderr: "piped" }).spawn();
   try {
     await waitForReady(`http://localhost:${port}/`);
     let res = await fetch(`http://localhost:${port}/`);
@@ -26,7 +26,7 @@ Deno.test({ name: "hypervisor: basic proxy and streaming", sanitizeOps: false, s
     if (!text.includes("hello") || !text.includes("world")) throw new Error("unexpected stream body through HV");
   } finally {
     try { proc.kill(); } catch {}
-    try { await proc.output(); } catch {}
+    try { await proc.status; } catch {}
   }
 });
 
@@ -34,7 +34,7 @@ Deno.test({ name: "hypervisor: basic proxy and streaming", sanitizeOps: false, s
 
 Deno.test({ name: "hypervisor: sticky routing by header", sanitizeOps: false, sanitizeResources: false }, async () => {
   const port = 8142;
-  const proc = new Deno.Command("deno", { args: ["run", "-A", "cli.ts", `--port=${port}`, "--hypervisor"], stdout: "piped", stderr: "piped" }).spawn();
+  const proc = new Deno.Command(Deno.execPath(), { args: ["run", "-A", "cli.ts", `--port=${port}`, "--hypervisor"], stdout: "piped", stderr: "piped" }).spawn();
   try {
     await waitForReady(`http://localhost:${port}/`);
     const hdr = { "x-session-id": "abc" };
@@ -51,6 +51,6 @@ Deno.test({ name: "hypervisor: sticky routing by header", sanitizeOps: false, sa
     }
   } finally {
     try { proc.kill(); } catch {}
-    try { await proc.output(); } catch {}
+    try { await proc.status; } catch {}
   }
 }); 
