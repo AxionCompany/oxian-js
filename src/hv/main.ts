@@ -40,6 +40,20 @@ function rrPicker<T>(arr: T[]) {
   return () => { const v = arr[i % Math.max(arr.length, 1)]; i++; return v; };
 }
 
+async function findAvailablePort(startPort: number, maxTries = 50): Promise<number> {
+  for (let i = 0; i < maxTries; i++) {
+    const port = startPort + i;
+    try {
+      const l = Deno.listen({ port });
+      l.close();
+      return port;
+    } catch {
+      // try next
+    }
+  }
+  return startPort;
+}
+
 export async function startHypervisor(config: EffectiveConfig, baseArgs: string[] = []) {
   const hv = config.runtime?.hv ?? {};
   const publicPort = config.server?.port ?? 8080;
@@ -60,10 +74,9 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     hostDenoCfg = import.meta.resolve(hostDenoCfg);
   }
 
-
   for (let idx = 0; idx < projects.length; idx++) {
     const project = projects[idx];
-    const port = basePort + idx;
+    const port = await findAvailablePort(basePort + idx);
     const { denoOptions, scriptArgs } = splitBaseArgs(baseArgs);
     const denoArgs: string[] = ["run", "-A", ...denoOptions];
     if (!denoOptions.includes("--config") && hostDenoCfg) {
@@ -105,9 +118,16 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     console.log(`[hv] starting worker`, { project, port, denoArgs, finalScriptArgs });
     const proc = new Deno.Command(Deno.execPath(), {
       args: [...denoArgs, ...finalScriptArgs],
-      // stdout: "null",
-      // stderr: "null"
+      stdout: "piped",
+      stderr: "piped"
     }).spawn();
+    // Drain child stdio to prevent backpressure/hangs (do not await)
+    try {
+      proc.stdout?.pipeTo(new WritableStream({ write() {} })).catch(() => {});
+    } catch { /* ignore drain errors */ }
+    try {
+      proc.stderr?.pipeTo(new WritableStream({ write() {} })).catch(() => {});
+    } catch { /* ignore drain errors */ }
     // Wait until ready
     
     {
@@ -116,7 +136,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       let ready = false;
       while (Date.now() - start < maxWaitMs) {
         try {
-          const r = await fetch(`http://localhost:${port}/`, { method: "HEAD" });
+          const r = await fetch(`http://localhost:${port}/`, { method: "HEAD", signal: AbortSignal.timeout(500) });
           if (r.ok || r.status >= 200) { ready = true; break; }
         } catch { /* ignore until ready */ }
         await new Promise((r) => setTimeout(r, 100));
@@ -184,6 +204,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
 
   await server.finished;
   for (const p of pools.values()) {
-    try { p.proc.kill(); await p.proc.output(); } catch { }
+    try { p.proc.kill(); } catch { }
+    try { await p.proc.status; } catch { }
   }
 } 

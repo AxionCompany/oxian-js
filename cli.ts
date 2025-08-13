@@ -40,8 +40,6 @@ if (import.meta.main) {
     runDev(config, source);
   }
 
-  config.root = import.meta.resolve(config.root ?? Deno.cwd());
-
   // hypervisor is now the default runner unless explicitly disabled
   const hypervisorArg = args.hypervisor as boolean | string | undefined;
   const hypervisorDisabled = (hypervisorArg === false) || (hypervisorArg === "false");
