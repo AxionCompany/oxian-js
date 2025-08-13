@@ -31,7 +31,7 @@ async function detectHostDenoConfig(root: string): Promise<string | undefined> {
       const p = `${root.endsWith("/") ? root.slice(0, -1) : root}/${name}`;
       await Deno.stat(p);
       return p;
-    } catch { }
+    } catch (_err) { /* no local deno config at this candidate */ }
   }
   return undefined;
 }
@@ -41,7 +41,7 @@ function rrPicker<T>(arr: T[]) {
   return () => { const v = arr[i % Math.max(arr.length, 1)]; i++; return v; };
 }
 
-async function findAvailablePort(startPort: number, maxTries = 50): Promise<number> {
+function findAvailablePort(startPort: number, maxTries = 50): number {
   for (let i = 0; i < maxTries; i++) {
     const port = startPort + i;
     try {
@@ -60,12 +60,24 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
   const publicPort = config.server?.port ?? 8080;
   const basePort = hv.workerBasePort ?? 9101;
 
+  type HvSelectionRule = {
+    project: string;
+    default?: boolean;
+    when?: {
+      pathPrefix?: string;
+      hostEquals?: string;
+      hostPrefix?: string;
+      hostSuffix?: string;
+      method?: string;
+      header?: Record<string, string | RegExp>;
+    };
+  };
+
   // Determine projects from config (simplest: single default)
   const projects = hv.projects && Object.keys(hv.projects).length > 0 ? Object.keys(hv.projects) : ["default"];
 
   const pools = new Map<string, { port: number; proc: Deno.ChildProcess; rr: () => { port: number; proc: Deno.ChildProcess } }>();
 
-  console.log(`[hv] starting hypervisor`, { config, baseArgs });
   // Determine deno config to forward
   let hostDenoCfg = (Deno.args.find((a) => a.startsWith("--deno-config="))?.split("=")[1])
     || hv.denoConfig
@@ -89,14 +101,13 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     const { denoOptions, scriptArgs } = splitBaseArgs(baseArgs);
     const denoArgs: string[] = ["run", "-A", ...denoOptions];
     if (!denoOptions.includes("--config") && hostDenoCfg) {
+
       // load hostDenoConfig, merge with denoJson and pass as dataUrl to --config
       let maybeHostDenoConfig = { imports: {}, scopes: {} };
-      console.log(`[hv] loading host deno config`, { hostDenoCfg });
       try {
         maybeHostDenoConfig = (await import(hostDenoCfg, { with: { type: "json" } })).default;
-        console.log(`[hv] loaded host deno config`, { maybeHostDenoConfig });
-      } catch (e) {
-        console.error(`[hv] error loading host deno config`, { e });
+      } catch (e: unknown) {
+        console.error(`[hv] error loading host deno config`, { error: (e as Error)?.message });
         // ignore
       }
       const mergedImportMap = {
@@ -105,16 +116,18 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
           ...(maybeHostDenoConfig || {}).imports
         },
         scopes: {
-          ...((denoJson as any)?.scopes || {}),
+          ...(((denoJson as unknown as { scopes?: Record<string, unknown> })?.scopes) || {}),
           ...(maybeHostDenoConfig || {}).scopes
         }
       }
+
       // data: URL must be a valid JSON string, not a Uint8Array
       const jsonStr = JSON.stringify(mergedImportMap);
       const dataUrl = `data:application/json;base64,${btoa(jsonStr)}`;
       denoArgs.push(`--import-map=${dataUrl}`);
 
     }
+
     denoArgs.push(`${import.meta.resolve('../../cli.ts')}`);
     const finalScriptArgs = [
       `--port=${port}`,
@@ -123,29 +136,21 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       ...Deno.args.filter((a) => a.startsWith("--source=") || a.startsWith("--config=")),
     ];
 
-
-    console.log(`[hv] starting worker`, { project, port, denoArgs, finalScriptArgs });
     const proc = new Deno.Command(Deno.execPath(), {
       args: [...denoArgs, ...finalScriptArgs],
-      stdout: "piped",
-      stderr: "piped"
+      stdin: "null",    // child does not read from our TTY
+      stdout: "inherit", // write directly to parent TTY (no double piping)
+      stderr: "inherit",
     }).spawn();
-    // Drain child stdio to prevent backpressure/hangs (do not await)
-    try {
-      proc.stdout?.pipeTo(new WritableStream({ write() {} })).catch(() => {});
-    } catch { /* ignore drain errors */ }
-    try {
-      proc.stderr?.pipeTo(new WritableStream({ write() {} })).catch(() => {});
-    } catch { /* ignore drain errors */ }
-    // Wait until ready
-    
+
+
     {
       const maxWaitMs = 10_000;
       const start = Date.now();
       let ready = false;
       while (Date.now() - start < maxWaitMs) {
         try {
-          const r = await fetch(`http://localhost:${port}/`, { method: "HEAD", signal: AbortSignal.timeout(500) });
+          const r = await fetch(`http://localhost:${port}/_health`, { method: "HEAD", signal: AbortSignal.timeout(500) });
           if (r.ok || r.status >= 200) { ready = true; break; }
         } catch { /* ignore until ready */ }
         await new Promise((r) => setTimeout(r, 100));
@@ -163,20 +168,24 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     // Very simple selection: pathPrefix based on hv.projects[NAME].routing.basePath
     let selected = "default";
     if (hv.select && Array.isArray(hv.select)) {
-      for (const rule of hv.select) {
-        if ((rule as any).default) { selected = (rule as any).project; continue; }
-        const r = rule as { project: string; when: { pathPrefix?: string; hostEquals?: string; hostPrefix?: string; hostSuffix?: string; method?: string; header?: Record<string, string | RegExp> } };
+      const rules = hv.select as HvSelectionRule[];
+      for (const rule of rules) {
+        if (rule.default) { selected = rule.project; continue; }
+        const r = rule;
         let ok = true;
-        if (r.when.pathPrefix && !url.pathname.startsWith(r.when.pathPrefix)) ok = false;
-        if (r.when.method && req.method !== r.when.method) ok = false;
-        if (r.when.hostEquals && url.hostname !== r.when.hostEquals) ok = false;
-        if (r.when.hostPrefix && !url.hostname.startsWith(r.when.hostPrefix)) ok = false;
-        if (r.when.hostSuffix && !url.hostname.endsWith(r.when.hostSuffix)) ok = false;
-        if (r.when.header) {
+        if (r.when?.pathPrefix && !url.pathname.startsWith(r.when.pathPrefix)) ok = false;
+        if (r.when?.method && req.method !== r.when.method) ok = false;
+        if (r.when?.hostEquals && url.hostname !== r.when.hostEquals) ok = false;
+        if (r.when?.hostPrefix && !url.hostname.startsWith(r.when.hostPrefix)) ok = false;
+        if (r.when?.hostSuffix && !url.hostname.endsWith(r.when.hostSuffix)) ok = false;
+        if (r.when?.header) {
           for (const [k, v] of Object.entries(r.when.header)) {
-            const hv = req.headers.get(k);
-            if (v instanceof RegExp) { if (!hv || !v.test(hv)) ok = false; }
-            else { if (hv !== v) ok = false; }
+            const hvVal = req.headers.get(k);
+            if (v instanceof RegExp) {
+              if (!hvVal || !(v as RegExp).test(hvVal)) ok = false;
+            } else {
+              if (hvVal !== (v as string)) ok = false;
+            }
           }
         }
         if (ok) { selected = r.project; break; }
@@ -201,7 +210,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
 
     try {
       console.log(`[hv] proxy`, { method: req.method, url: url.toString(), selected, target });
-      const res = await fetch(target, { method: req.method, headers, body: req.body });
+      const res = await fetch(target, { method: req.method, headers, body: req.body, signal: (req as Request).signal });
       console.log(`[hv] proxy_res`, { status: res.status, statusText: res.statusText, target });
       return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
     } catch (e) {
@@ -213,7 +222,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
 
   await server.finished;
   for (const p of pools.values()) {
-    try { p.proc.kill(); } catch { }
-    try { await p.proc.status; } catch { }
+    try { p.proc.kill(); } catch (_e) { /* ignore kill error */ }
+    try { await p.proc.status; } catch (_e) { /* ignore status error */ }
   }
 } 

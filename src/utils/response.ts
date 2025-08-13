@@ -1,4 +1,4 @@
-import { ResponseController } from "../core/types.ts";
+import type { ResponseController } from "../core/types.ts";
 
 export type ResponseState = {
   status: number;
@@ -7,6 +7,8 @@ export type ResponseState = {
   body?: unknown;
   streamWrite?: (chunk: Uint8Array | string) => void;
   streamClose?: () => void;
+  // internal flag to control SSE lifecycle
+  sseKeepOpen?: boolean;
 };
 
 export function createResponseController(): { controller: ResponseController; state: ResponseState } {
@@ -23,7 +25,21 @@ export function createResponseController(): { controller: ResponseController; st
       if (init?.statusText) state.statusText = init.statusText;
       state.body = body;
     },
-    stream(init) {
+    stream(initOrChunk) {
+      // If first arg is a chunk, ensure stream is open and write without closing.
+      if (typeof initOrChunk === "string" || initOrChunk instanceof Uint8Array) {
+        // If stream is not open yet, open it with defaults
+        if (!(state.body instanceof ReadableStream)) {
+          const w = controller.stream({});
+          // w is the writer; will be used below to write the chunk
+          (w as ((chunk: Uint8Array | string) => void))(initOrChunk);
+        } else if (state.streamWrite) {
+          state.streamWrite(initOrChunk);
+        }
+        return;
+      }
+
+      const init = initOrChunk;
       if (init?.status !== undefined) state.status = init.status;
       if (init?.headers) for (const [k, v] of Object.entries(init.headers)) state.headers.set(k, v);
       if (init?.statusText) state.statusText = init.statusText;
@@ -44,18 +60,19 @@ export function createResponseController(): { controller: ResponseController; st
       const writeFnBase = (chunk: Uint8Array | string) => {
         if (!streamController) return;
         if (typeof chunk === "string") {
-          if (chunk === "") { try { streamController.close(); } catch {} streamController = null; resolveDone?.(); return; }
+          if (chunk === "") { try { streamController.close(); } catch (_e) { /* ignore close error */ } streamController = null; resolveDone?.(); return; }
           streamController.enqueue(encoder.encode(chunk));
           return;
         }
-        if (chunk.byteLength === 0) { try { streamController.close(); } catch {} streamController = null; resolveDone?.(); return; }
+        if (chunk.byteLength === 0) { try { streamController.close(); } catch (_e) { /* ignore close error */ } streamController = null; resolveDone?.(); return; }
         streamController.enqueue(chunk);
       };
 
-      const writeFn: any = writeFnBase;
+      type WriteFn = ((chunk: Uint8Array | string) => void) & { close?: () => void; done?: Promise<void> };
+      const writeFn: WriteFn = writeFnBase as WriteFn;
 
       state.streamWrite = writeFnBase;
-      state.streamClose = () => { if (!streamController) return; try { streamController.close(); } catch {} streamController = null; resolveDone?.(); };
+      state.streamClose = () => { if (!streamController) return; try { streamController.close(); } catch (_e) { /* ignore close error */ } streamController = null; resolveDone?.(); };
 
       // Expose explicit close() and done for convenience
       writeFn.close = state.streamClose;
@@ -65,6 +82,7 @@ export function createResponseController(): { controller: ResponseController; st
     },
     sse(init) {
       state.status = init?.status ?? 200;
+      state.sseKeepOpen = init?.keepOpen === true;
       // set SSE headers
       state.headers.set("content-type", "text/event-stream; charset=utf-8");
       state.headers.set("cache-control", "no-cache");
@@ -99,7 +117,7 @@ export function createResponseController(): { controller: ResponseController; st
           writeLine(""); // dispatch
         },
         comment: (text: string) => writeLine(`:${text}`),
-        close: () => { if (!streamController) return; try { streamController.close(); } catch {} streamController = null; resolveDone?.(); },
+        close: () => { if (!streamController) return; try { streamController.close(); } catch (_e) { /* ignore close error */ } streamController = null; resolveDone?.(); },
         get done() { return done; },
       };
 

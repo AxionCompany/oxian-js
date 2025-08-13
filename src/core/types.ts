@@ -2,8 +2,12 @@ export type Data = Record<string, unknown>;
 
 export type ResponseController = {
   send: (body: unknown, init?: Partial<{ status: number; headers: Record<string, string>; statusText: string }>) => void;
-  stream: (init?: Partial<{ status: number; headers: Record<string, string>; statusText: string }>) => ((chunk: Uint8Array | string) => void) & { close?: () => void; done?: Promise<void> };
-  sse: (init?: Partial<{ status: number; headers: Record<string, string>; retry?: number }>) => {
+  // If called with init only (or no arg), returns a writer function for incremental streaming.
+  // If called with a string/Uint8Array, writes once and closes the stream (no return value).
+  stream: (
+    initOrChunk?: Partial<{ status: number; headers: Record<string, string>; statusText: string }> | Uint8Array | string,
+  ) => (((chunk: Uint8Array | string) => void) & { close?: () => void; done?: Promise<void> }) | void;
+  sse: (init?: Partial<{ status: number; headers: Record<string, string>; retry?: number; keepOpen?: boolean }>) => {
     send: (data: unknown, opts?: { event?: string; id?: string; retry?: number }) => void;
     comment: (text: string) => void;
     close: () => void;

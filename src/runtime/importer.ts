@@ -34,9 +34,10 @@ async function getProjectImportResolver(loaders: Loader[], projectRoot?: string)
 }
 
 export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000, projectRoot?: string): Promise<Record<string, unknown>> {
-    // debug: importModule call context
-    // console.debug('importModule', url.toString(), { ttl: _ttlMs, root: projectRoot });
-    console.log('importModule', url.toString(), { ttl: _ttlMs, root: projectRoot });
+    // debug: importModule call context (guarded by OXIAN_DEBUG)
+    if (Deno.env.get("OXIAN_DEBUG") === "1") {
+        console.log('importModule', url.toString(), { ttl: _ttlMs, root: projectRoot });
+    }
     const rootSpecifier = url.toString();
     const cache = createCache({ allowRemote: true, cacheSetting: "reload" });
     const resolveFn = await getProjectImportResolver(loaders, projectRoot);
@@ -61,6 +62,8 @@ export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000,
         resolve: resolveFn,
     } as unknown as Record<string, unknown>);
 
-    console.log('importModule', rootSpecifier);
+    if (Deno.env.get("OXIAN_DEBUG") === "1") {
+        console.log('importModule', rootSpecifier);
+    }
     return await import(rootSpecifier);
 } 
