@@ -1,6 +1,7 @@
 import type { EffectiveConfig } from "../config/types.ts";
 import denoJson from "../../deno.json" with { type: "json" };
 import { getLocalRootPath } from "../utils/root.ts";
+import { isAbsolute, toFileUrl, join } from "@std/path";
 
 function splitBaseArgs(baseArgs: string[]): { denoOptions: string[]; scriptArgs: string[] } {
   const denoOptions: string[] = [];
@@ -71,7 +72,15 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     || await detectHostDenoConfig(getLocalRootPath(config.root));
 
   if (hostDenoCfg) {
-    hostDenoCfg = import.meta.resolve(hostDenoCfg);
+    // Normalize to URL string without relying on import.meta.resolve (works under jsr)
+    try {
+      // If already a URL, keep as-is
+      const u = new URL(hostDenoCfg);
+      hostDenoCfg = u.toString();
+    } catch {
+      const path = isAbsolute(hostDenoCfg) ? hostDenoCfg : join(Deno.cwd(), hostDenoCfg);
+      hostDenoCfg = toFileUrl(path).toString();
+    }
   }
 
   for (let idx = 0; idx < projects.length; idx++) {
