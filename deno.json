@@ -1,11 +1,12 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.5.19",
+  "version": "0.5.20",
   "exports": {
     ".": "./cli.ts",
     "./server": "./src/server/server.ts",
     "./config": "./src/config/types.ts",
-    "./runtime": "./src/runtime/module_loader.ts"
+    "./runtime": "./src/runtime/module_loader.ts",
+    "./types": "./src/types.ts"
   },
   "publish": {
     "include": [
