@@ -1,3 +1,34 @@
+/**
+ * @fileoverview Type definitions for Oxian framework configuration.
+ * 
+ * This module exports TypeScript type definitions that define the complete
+ * configuration schema for Oxian applications. It includes settings for
+ * server configuration, routing, security, logging, runtime behavior,
+ * hypervisor settings, and compatibility options.
+ * 
+ * @module config/types
+ */
+
+/**
+ * Complete configuration schema for Oxian applications.
+ * 
+ * This type defines all available configuration options for an Oxian application,
+ * including server settings, routing behavior, security policies, logging configuration,
+ * runtime options, hypervisor settings, and compatibility modes.
+ * 
+ * @example
+ * ```typescript
+ * const config: OxianConfig = {
+ *   server: { port: 8080 },
+ *   routing: { routesDir: "routes", trailingSlash: "never" },
+ *   security: {
+ *     cors: { allowedOrigins: ["*"] },
+ *     defaultHeaders: { "x-powered-by": "Oxian" }
+ *   },
+ *   logging: { level: "info" }
+ * };
+ * ```
+ */
 export type OxianConfig = {
   root?: string;
   basePath?: string;
@@ -110,4 +141,23 @@ export type OxianConfig = {
   };
 };
 
+/**
+ * Effective configuration type with required fields.
+ * 
+ * This type represents the final configuration after all defaults have been applied.
+ * It ensures that certain critical configuration fields are always present by making
+ * them required, while keeping all other OxianConfig fields optional.
+ * 
+ * @example
+ * ```typescript
+ * // After loading and applying defaults
+ * const effectiveConfig: EffectiveConfig = {
+ *   root: "/app",
+ *   basePath: "/",
+ *   server: { port: 8080 },
+ *   logging: { level: "info" },
+ *   // ... other optional fields
+ * };
+ * ```
+ */
 export type EffectiveConfig = Required<Pick<OxianConfig, "root" | "basePath" | "server" | "logging">> & OxianConfig; 
