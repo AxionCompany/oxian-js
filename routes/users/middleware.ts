@@ -1,4 +1,4 @@
-import type { Context, Data } from "../../src/core/types.ts";
+import type { Context, Data } from "oxian-js/types.ts";
 
 export default function (data: Data, context: Context) {
   const auth = context.request.headers.get("authorization");

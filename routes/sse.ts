@@ -1,4 +1,4 @@
-import type { Context, Data } from "../src/core/types.ts";
+import type { Context, Data } from "oxian-js/types.ts";
 
 export async function GET(_data: Data, { response, oxian }: Context) {
   const sse = response.sse({ retry: 1000, keepOpen: true });
