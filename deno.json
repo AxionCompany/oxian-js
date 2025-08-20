@@ -1,6 +1,6 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.5.20",
+  "version": "0.5.21",
   "exports": {
     ".": "./cli.ts",
     "./server": "./src/server/server.ts",
@@ -23,6 +23,7 @@
     ]
   },
   "imports": {
+    "oxian-js/": "./src/",
     "@std/path": "jsr:@std/path@1.1.1",
     "@std/cli/parse-args": "jsr:@std/cli@1.0.21/parse-args",
     "@std/jsonc/parse": "jsr:@std/jsonc@1.0.2/parse",
