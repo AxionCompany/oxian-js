@@ -1,0 +1,725 @@
+# 🚀 Hypervisor - Multi-Process Scaling
+
+The Oxian Hypervisor is a powerful production feature that enables horizontal scaling by running multiple worker processes and load balancing requests between them. It's designed for high-traffic scenarios where you need better performance, fault isolation, and multi-tenancy.
+
+## Overview
+
+The hypervisor architecture consists of:
+
+- **🎯 Main Process** - Acts as a reverse proxy and load balancer
+- **⚡ Worker Processes** - Multiple Oxian instances running your routes
+- **🔀 Request Router** - Intelligent request routing based on rules
+- **💚 Health Monitoring** - Automatic health checks and worker management
+
+```
+┌─────────────────┐    ┌──────────────┐
+│   Client        │────│  Hypervisor  │
+│   Requests      │    │  (Port 8080) │
+└─────────────────┘    └──────┬───────┘
+                              │
+                    ┌─────────┼─────────┐
+                    │         │         │
+              ┌─────▼───┐ ┌───▼───┐ ┌───▼───┐
+              │Worker 1 │ │Worker 2│ │Worker N│
+              │Port 9101│ │Port 9102│ │Port 910N│
+              └─────────┘ └───────┘ └───────┘
+```
+
+## Quick Start
+
+### Basic Hypervisor Setup
+
+The hypervisor is enabled by default. To run with hypervisor:
+
+```bash
+# Run with hypervisor (default behavior)
+deno run -A jsr:@oxian/oxian-js
+
+# Explicitly enable hypervisor
+deno run -A jsr:@oxian/oxian-js --hypervisor
+
+# Disable hypervisor (single process)
+deno run -A jsr:@oxian/oxian-js --hypervisor=false
+```
+
+### Configuration
+
+Configure the hypervisor in `oxian.config.json`:
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "enabled": true,
+      "workers": 4,
+      "strategy": "round_robin",
+      "workerBasePort": 9101,
+      "proxy": {
+        "timeoutMs": 30000,
+        "passRequestId": true
+      },
+      "health": {
+        "path": "/_health",
+        "intervalMs": 5000,
+        "timeoutMs": 2000
+      }
+    }
+  }
+}
+```
+
+## Configuration Options
+
+### Core Settings
+
+```typescript
+{
+  "runtime": {
+    "hv": {
+      // Enable/disable hypervisor
+      "enabled": boolean,
+      
+      // Number of worker processes ("auto" = CPU cores)
+      "workers": number | "auto",
+      
+      // Load balancing strategy
+      "strategy": "round_robin" | "least_busy" | "sticky",
+      
+      // Header for sticky sessions (when strategy = "sticky")
+      "stickyHeader": string,
+      
+      // Base port for workers (9101, 9102, etc.)
+      "workerBasePort": number
+    }
+  }
+}
+```
+
+### Proxy Settings
+
+```typescript
+{
+  "runtime": {
+    "hv": {
+      "proxy": {
+        // Request timeout to workers
+        "timeoutMs": 30000,
+        
+        // Forward request ID to workers
+        "passRequestId": true
+      },
+      
+      // Request-level timeouts
+      "timeouts": {
+        "connectMs": 5000,
+        "headersMs": 10000,
+        "idleMs": 30000,
+        "totalMs": 60000
+      }
+    }
+  }
+}
+```
+
+### Health Monitoring
+
+```typescript
+{
+  "runtime": {
+    "hv": {
+      "health": {
+        // Health check endpoint
+        "path": "/_health",
+        
+        // Check interval
+        "intervalMs": 5000,
+        
+        // Health check timeout
+        "timeoutMs": 2000
+      }
+    }
+  }
+}
+```
+
+## Multi-Project Support
+
+The hypervisor supports hosting multiple projects/applications with intelligent routing:
+
+### Project Configuration
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "projects": {
+        "api": {
+          "routing": {
+            "basePath": "/api"
+          }
+        },
+        "admin": {
+          "routing": {
+            "basePath": "/admin"
+          }
+        },
+        "docs": {
+          "routing": {
+            "basePath": "/docs"
+          }
+        }
+      },
+      "select": [
+        {
+          "project": "api",
+          "when": {
+            "pathPrefix": "/api"
+          }
+        },
+        {
+          "project": "admin",
+          "when": {
+            "pathPrefix": "/admin"
+          }
+        },
+        {
+          "project": "docs",
+          "when": {
+            "pathPrefix": "/docs"
+          }
+        },
+        {
+          "project": "api",
+          "default": true
+        }
+      ]
+    }
+  }
+}
+```
+
+### Selection Rules
+
+Route requests to different projects based on various criteria:
+
+```json
+{
+  "select": [
+    {
+      "project": "api-v2",
+      "when": {
+        "pathPrefix": "/v2",
+        "method": "GET"
+      }
+    },
+    {
+      "project": "admin",
+      "when": {
+        "hostEquals": "admin.example.com"
+      }
+    },
+    {
+      "project": "docs",
+      "when": {
+        "hostPrefix": "docs."
+      }
+    },
+    {
+      "project": "special",
+      "when": {
+        "header": {
+          "x-api-version": "beta",
+          "authorization": "Bearer .*"
+        }
+      }
+    },
+    {
+      "project": "main",
+      "default": true
+    }
+  ]
+}
+```
+
+**Selection Criteria:**
+- `pathPrefix` - Route based on URL path
+- `hostEquals` - Exact hostname match
+- `hostPrefix` - Hostname starts with
+- `hostSuffix` - Hostname ends with
+- `method` - HTTP method
+- `header` - Header values (string or RegExp)
+- `default` - Fallback project
+
+## Load Balancing Strategies
+
+### Round Robin (Default)
+
+Distributes requests evenly across workers:
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "strategy": "round_robin"
+    }
+  }
+}
+```
+
+Perfect for:
+- ✅ Stateless applications
+- ✅ Even load distribution
+- ✅ Simple setup
+
+### Sticky Sessions
+
+Routes requests from the same client to the same worker:
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "strategy": "sticky",
+      "stickyHeader": "x-session-id"
+    }
+  }
+}
+```
+
+Perfect for:
+- ✅ Session-based applications
+- ✅ WebSocket connections
+- ✅ Stateful services
+
+### Least Busy
+
+Routes to the worker with fewest active connections:
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "strategy": "least_busy"
+    }
+  }
+}
+```
+
+Perfect for:
+- ✅ Variable request processing times
+- ✅ Optimal resource utilization
+- ✅ High-performance scenarios
+
+## Auto-Scaling
+
+Configure automatic scaling based on load:
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "autoscale": {
+        "enabled": true,
+        "min": 2,
+        "max": 10,
+        "targetInflightPerWorker": 10,
+        "maxAvgLatencyMs": 100,
+        "scaleUpCooldownMs": 30000,
+        "scaleDownCooldownMs": 60000,
+        "idleTtlMs": 300000
+      }
+    }
+  }
+}
+```
+
+**Auto-scaling Triggers:**
+- **Load-based** - Scale up when `targetInflightPerWorker` exceeded
+- **Latency-based** - Scale up when `maxAvgLatencyMs` exceeded
+- **Time-based** - Scale down after `idleTtlMs` idle time
+
+## Development vs Production
+
+### Development Mode
+
+```bash
+# Development with hypervisor
+deno run -A jsr:@oxian/oxian-js dev
+
+# Development without hypervisor (faster startup)
+deno run -A jsr:@oxian/oxian-js dev --hypervisor=false
+```
+
+Development config:
+```json
+{
+  "runtime": {
+    "hv": {
+      "workers": 2,
+      "strategy": "round_robin"
+    }
+  }
+}
+```
+
+### Production Mode
+
+```bash
+# Production with optimized hypervisor
+deno run -A jsr:@oxian/oxian-js start
+```
+
+Production config:
+```json
+{
+  "runtime": {
+    "hv": {
+      "workers": "auto",
+      "strategy": "least_busy",
+      "autoscale": {
+        "enabled": true,
+        "min": 4,
+        "max": 20
+      },
+      "health": {
+        "intervalMs": 2000
+      }
+    }
+  }
+}
+```
+
+## Monitoring & Observability
+
+### Health Checks
+
+Workers expose health endpoints:
+
+```bash
+# Check main hypervisor
+curl http://localhost:8080/_health
+
+# Check individual worker
+curl http://localhost:9101/_health
+```
+
+### Logging
+
+The hypervisor provides structured logging:
+
+```json
+{
+  "timestamp": "2024-01-20T10:30:00.000Z",
+  "level": "info",
+  "message": "[hv] proxy",
+  "data": {
+    "method": "GET",
+    "url": "http://localhost:8080/api/users",
+    "selected": "api",
+    "target": "http://localhost:9101/users",
+    "requestId": "req_abc123"
+  }
+}
+```
+
+Enable debug logging:
+
+```bash
+OXIAN_LOG_LEVEL=debug deno run -A jsr:@oxian/oxian-js
+```
+
+### Metrics
+
+Monitor key metrics:
+
+- **Request Rate** - Requests per second per worker
+- **Response Time** - Average latency per worker
+- **Error Rate** - Error percentage per worker  
+- **Active Connections** - Current connections per worker
+- **Health Status** - Worker availability
+
+## Worker Lifecycle
+
+### Startup Process
+
+1. **Hypervisor starts** on main port (8080)
+2. **Workers spawn** on sequential ports (9101, 9102, ...)
+3. **Health checks** verify worker readiness
+4. **Load balancer** starts routing requests
+
+### Worker Health
+
+Workers are considered healthy when:
+- ✅ Process is running
+- ✅ Health endpoint responds (200 OK)
+- ✅ Response time < timeout threshold
+
+### Graceful Shutdown
+
+1. **SIGTERM** sent to hypervisor
+2. **Stop accepting** new requests
+3. **Drain** existing requests
+4. **Shutdown workers** gracefully
+5. **Close** all connections
+
+## Advanced Patterns
+
+### Custom Health Checks
+
+Implement custom health logic:
+
+```ts
+// routes/_health.ts
+export function GET(_, { dependencies }) {
+  const { db, redis } = dependencies;
+  
+  // Check dependencies
+  const dbOk = await db.ping();
+  const redisOk = await redis.ping();
+  
+  if (!dbOk || !redisOk) {
+    throw { statusCode: 503, message: "Dependencies unavailable" };
+  }
+  
+  return { 
+    status: "healthy",
+    dependencies: { db: dbOk, redis: redisOk },
+    timestamp: new Date().toISOString()
+  };
+}
+```
+
+### Worker-Specific Configuration
+
+Different configs per worker:
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "projects": {
+        "high-memory": {
+          "worker": {
+            "pool": { "max": 2 }
+          }
+        },
+        "cpu-intensive": {
+          "worker": {
+            "pool": { "max": 8 }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### Request Context Forwarding
+
+Forward context between hypervisor and workers:
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "proxy": {
+        "passRequestId": true,
+        "forwardHeaders": [
+          "x-correlation-id",
+          "x-user-id",
+          "x-tenant-id"
+        ]
+      }
+    }
+  }
+}
+```
+
+## Performance Tuning
+
+### Worker Count
+
+```bash
+# Check CPU cores
+nproc
+
+# Set worker count
+{
+  "runtime": {
+    "hv": {
+      "workers": 8  // Usually CPU cores * 1-2
+    }
+  }
+}
+```
+
+### Memory Optimization
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "autoscale": {
+        "idleTtlMs": 180000,  // Scale down after 3 min idle
+        "min": 1,             // Minimum workers
+        "max": 16             // Maximum workers
+      }
+    }
+  }
+}
+```
+
+### Network Optimization
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "timeouts": {
+        "connectMs": 1000,    // Fast connection timeout
+        "headersMs": 5000,    // Header timeout
+        "totalMs": 30000      // Total request timeout
+      }
+    }
+  }
+}
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Workers not starting:**
+```bash
+# Check port availability
+netstat -tlnp | grep 910
+
+# Check worker logs
+OXIAN_LOG_LEVEL=debug deno run -A jsr:@oxian/oxian-js
+```
+
+**High latency:**
+```bash
+# Increase worker count
+{
+  "runtime": {
+    "hv": {
+      "workers": 16
+    }
+  }
+}
+```
+
+**Memory issues:**
+```bash
+# Enable auto-scaling
+{
+  "runtime": {
+    "hv": {
+      "autoscale": {
+        "enabled": true,
+        "max": 4
+      }
+    }
+  }
+}
+```
+
+### Debug Commands
+
+```bash
+# List all processes
+ps aux | grep deno
+
+# Check port usage
+lsof -i :8080
+lsof -i :9101
+
+# Monitor hypervisor
+curl -s http://localhost:8080/_health | jq
+
+# Check worker directly
+curl -s http://localhost:9101/_health | jq
+```
+
+## Best Practices
+
+### ✅ Do
+
+- Use hypervisor for production deployments
+- Monitor worker health and metrics  
+- Configure appropriate timeouts
+- Enable auto-scaling for variable load
+- Use sticky sessions for stateful apps
+- Set up proper logging and monitoring
+
+### ❌ Don't
+
+- Don't use hypervisor for simple development
+- Don't set too many workers on small instances
+- Don't forget to configure health checks
+- Don't ignore worker failures
+- Don't mix stateful and stateless workers
+
+## Examples
+
+### High-Traffic API
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "enabled": true,
+      "workers": "auto",
+      "strategy": "least_busy",
+      "autoscale": {
+        "enabled": true,
+        "min": 4,
+        "max": 20,
+        "targetInflightPerWorker": 50
+      },
+      "health": {
+        "intervalMs": 1000
+      }
+    }
+  }
+}
+```
+
+### Multi-Tenant SaaS
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "projects": {
+        "tenant-a": {
+          "routing": { "basePath": "/tenant-a" }
+        },
+        "tenant-b": {
+          "routing": { "basePath": "/tenant-b" }
+        }
+      },
+      "select": [
+        {
+          "project": "tenant-a",
+          "when": { "pathPrefix": "/tenant-a" }
+        },
+        {
+          "project": "tenant-b", 
+          "when": { "pathPrefix": "/tenant-b" }
+        }
+      ]
+    }
+  }
+}
+```
+
+---
+
+The hypervisor is a powerful tool for scaling Oxian applications. Start simple and gradually add complexity as your needs grow. For most applications, the default configuration provides excellent performance and reliability.
+
+**Next Steps:**
+- [Configuration Guide](./configuration.md)
+- [Deployment Best Practices](./deployment.md)
+- [Monitoring & Observability](./monitoring.md)
