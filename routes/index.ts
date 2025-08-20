@@ -1,4 +1,4 @@
-import type { Context, Data } from "../src/core/types.ts";
+import type { Context, Data } from "oxian-js/types.ts";
 import fs from "node:fs";
 
 export async function GET(data: Data, context: Context) {
