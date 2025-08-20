@@ -1,3 +1,14 @@
+/**
+ * @fileoverview Main CLI entry point for the Oxian framework.
+ * 
+ * This module provides the command-line interface for Oxian applications, supporting
+ * server startup, development mode, route inspection, and hypervisor mode. It handles
+ * argument parsing, configuration loading, and delegates to appropriate server
+ * startup mechanisms.
+ * 
+ * @module cli
+ */
+
 import { parseArgs } from "@std/cli/parse-args";
 import { loadConfig } from "./src/config/load.ts";
 import { startServer } from "./src/server/server.ts";
