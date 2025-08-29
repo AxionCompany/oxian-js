@@ -13,7 +13,18 @@ export async function composeDependencies(
   loaders?: Loader[],
   opts?: { allowShared?: boolean },
 ): Promise<Record<string, unknown>> {
-  const key = files.dependencyFiles.map((u) => u.toString()).join("|") + "|" + files.middlewareFiles.length + "|" + files.interceptorFiles.length + `|shared=${opts?.allowShared !== false}`;
+  async function getMtime(url: URL): Promise<number | undefined> {
+    try {
+      const active = (loaders ?? []).find((l) => l.canHandle(url));
+      const st = await (active?.stat?.(url) ?? Promise.resolve(undefined));
+      return (st as { mtime?: number } | undefined)?.mtime;
+    } catch {
+      return undefined;
+    }
+  }
+
+  const depKeyParts = await Promise.all(files.dependencyFiles.map(async (u) => `${u.toString()}@${(await getMtime(u)) ?? 0}`));
+  const key = depKeyParts.join("|") + "|" + files.middlewareFiles.length + "|" + files.interceptorFiles.length + `|shared=${opts?.allowShared !== false}`;
   if (depsCache.has(key)) return depsCache.get(key)!;
 
   const resolveMod = async (url: URL) => await importModule(url, loaders ?? [], 60_000);
@@ -34,7 +45,8 @@ export async function composeDependencies(
         logDeprecation(`shared.* detected at ${u}. Please rename to dependencies.ts`);
         const factory = (mod as any).default ?? (mod as any).shared;
         if (typeof factory === "function") {
-          const cacheKey = u.toString();
+          const mt = await getMtime(u);
+          const cacheKey = `${u.toString()}?v=${mt ?? 0}`;
           if (!factoryCache.has(cacheKey)) {
             const res = await factory(contextForFactory);
             if (res && typeof res === "object") factoryCache.set(cacheKey, res as Record<string, unknown>);
@@ -50,7 +62,8 @@ export async function composeDependencies(
     const mod = await resolveMod(fileUrl);
     const factory = (mod as any).default ?? (mod as any).dependencies;
     if (typeof factory === "function") {
-      const cacheKey = fileUrl.toString();
+      const mt = await getMtime(fileUrl);
+      const cacheKey = `${fileUrl.toString()}?v=${mt ?? 0}`;
       if (!factoryCache.has(cacheKey)) {
         const result = await factory(contextForFactory);
         if (result && typeof result === "object") factoryCache.set(cacheKey, result as Record<string, unknown>);

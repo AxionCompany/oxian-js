@@ -33,12 +33,29 @@ async function getProjectImportResolver(loaders: Loader[], projectRoot?: string)
     return undefined;
 }
 
+async function mtimeForUrl(url: URL, loaders: Loader[]): Promise<number | undefined> {
+    try {
+        const active = loaders.find((l) => l.canHandle(url));
+        const st = await (active?.stat?.(url) ?? Promise.resolve(undefined));
+        return (st as { mtime?: number } | undefined)?.mtime;
+    } catch {
+        return undefined;
+    }
+}
+
 export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000, projectRoot?: string): Promise<Record<string, unknown>> {
     // debug: importModule call context (guarded by OXIAN_DEBUG)
     if (Deno.env.get("OXIAN_DEBUG") === "1") {
         console.log('importModule', url.toString(), { ttl: _ttlMs, root: projectRoot });
     }
-    const rootSpecifier = url.toString();
+    let rootSpecifier = url.toString();
+    // Dev-friendly cache busting for local files: append mtime as query param
+    if (url.protocol === "file:") {
+        const mt = await mtimeForUrl(url, loaders);
+        const u = new URL(url.toString());
+        u.searchParams.set("v", String(mt ?? 0));
+        rootSpecifier = u.toString();
+    }
     const cache = createCache({ allowRemote: true, cacheSetting: "reload" });
     const resolveFn = await getProjectImportResolver(loaders, projectRoot);
 

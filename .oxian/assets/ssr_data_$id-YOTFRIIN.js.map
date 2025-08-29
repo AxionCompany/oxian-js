@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../routes/ssr/data/[id].tsx", "entries/ssr_data_$id.ts"],
+  "sourcesContent": ["/**\n * Dynamic route with server data fetching.\n */\n\nimport type { Context } from \"oxian-js/types.ts\";\n\nexport async function getServerSideProps(ctx: Context) {\n  const { id } = ctx.request.pathParams;\n  const item = { id, title: `Item ${id}`, time: Date.now() };\n  return { item };\n}\n\nexport default function ItemPage(props: { item: { id: string; title: string; time: number } }) {\n  return (\n    <main style={{ fontFamily: \"sans-serif\", padding: 24 }}>\n      <h1>{props.item.title}</h1>\n      <p>ID: {props.item.id}</p>\n      <p>Server time: {new Date(props.item.time).toISOString()}</p>\n    </main>\n  );\n}\n\n\n", "import * as PageModule from \"file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/routes/ssr/data/[id].tsx\";\nimport { hydrate } from \"file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/src/ssr/client/runtime.ts\";\nhydrate(PageModule);\n"],
+  "mappings": ";;;;;;AAAA;AAAA;AAAA;AAAA;AAAA;AAMA,eAAsB,mBAAmB,KAAc;AACrD,QAAM,EAAE,GAAG,IAAI,IAAI,QAAQ;AAC3B,QAAM,OAAO,EAAE,IAAI,OAAO,QAAQ,EAAE,IAAI,MAAM,KAAK,IAAI,EAAE;AACzD,SAAO,EAAE,KAAK;AAChB;AAEe,SAAR,SAA0B,OAA8D;AAC7F,SACE,oCAAC,UAAK,OAAO,EAAE,YAAY,cAAc,SAAS,GAAG,KACnD,oCAAC,YAAI,MAAM,KAAK,KAAM,GACtB,oCAAC,WAAE,QAAK,MAAM,KAAK,EAAG,GACtB,oCAAC,WAAE,iBAAc,IAAI,KAAK,MAAM,KAAK,IAAI,EAAE,YAAY,CAAE,CAC3D;AAEJ;;;AClBA,QAAQ,UAAU;",
+  "names": []
+}

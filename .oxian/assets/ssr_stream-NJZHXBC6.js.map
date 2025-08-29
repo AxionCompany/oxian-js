@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../routes/ssr/stream.tsx", "entries/ssr_stream.ts"],
+  "sourcesContent": ["/**\n * Demonstrates SSR streaming (server config must enable streaming).\n */\n\nexport async function getServerSideProps() {\n  return { chunks: [\"Hello\", \" \", \"from\", \" \", \"streaming\", \"!\"] };\n}\n\nexport default function StreamPage(props: { chunks: string[] }) {\n  return (\n    <main style={{ fontFamily: \"sans-serif\", padding: 24 }}>\n      <h1>Streaming SSR</h1>\n      <p>{props.chunks.join(\"\")}</p>\n    </main>\n  );\n}\n\n\n", "import * as PageModule from \"file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/routes/ssr/stream.tsx\";\nimport { hydrate } from \"file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/src/ssr/client/runtime.ts\";\nhydrate(PageModule);\n"],
+  "mappings": ";;;;;;AAAA;AAAA;AAAA;AAAA;AAAA;AAIA,eAAsB,qBAAqB;AACzC,SAAO,EAAE,QAAQ,CAAC,SAAS,KAAK,QAAQ,KAAK,aAAa,GAAG,EAAE;AACjE;AAEe,SAAR,WAA4B,OAA6B;AAC9D,SACE,oCAAC,UAAK,OAAO,EAAE,YAAY,cAAc,SAAS,GAAG,KACnD,oCAAC,YAAG,eAAa,GACjB,oCAAC,WAAG,MAAM,OAAO,KAAK,EAAE,CAAE,CAC5B;AAEJ;;;ACbA,QAAQ,cAAU;",
+  "names": []
+}

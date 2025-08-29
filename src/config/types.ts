@@ -54,6 +54,14 @@ export type OxianConfig = {
       stickyHeader?: string; // used when strategy = sticky
       workerBasePort?: number; // default 9100
       proxy?: { timeoutMs?: number; passRequestId?: boolean };
+      // Optional bounded in-memory queue to buffer requests while workers start/swap
+      // Defaults: enabled=true, maxItems=100, maxBodyBytes=1048576 (1MB), maxWaitMs=2000
+      queue?: {
+        enabled?: boolean;
+        maxItems?: number;
+        maxBodyBytes?: number;
+        maxWaitMs?: number;
+      };
       health?: { path?: string; intervalMs?: number; timeoutMs?: number };
       autoscale?: {
         enabled?: boolean;

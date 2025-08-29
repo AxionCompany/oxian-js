@@ -1,0 +1,9 @@
+{
+  "pages": {
+    "file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/routes/ssr/data/[id].tsx": "/_oxian/assets/ssr_data_$id-YOTFRIIN.js",
+    "file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/routes/ssr/stream.tsx": "/_oxian/assets/ssr_stream-NJZHXBC6.js",
+    "file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/routes/ssr/counter.tsx": "/_oxian/assets/ssr_counter-NY356QDS.js",
+    "file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/routes/ssr/layout.tsx": "/_oxian/assets/ssr_layout-WKDOPTTN.js",
+    "file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/routes/home.tsx": "/_oxian/assets/home-FIUKU2ZO.js"
+  }
+}
