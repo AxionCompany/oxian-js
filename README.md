@@ -36,12 +36,12 @@ mkdir routes
 Create `routes/index.ts`:
 
 ```ts
-export function GET() {
-  return { message: "Hello, Oxian!" };
-}
+import type { Context, Data } from "oxian-js/types.ts";
+import fs from "node:fs";
 
-export function POST({ name }) {
-  return { greeting: `Hello, ${name}!` };
+export async function GET(data: Data, context: Context) {
+  const dir = fs.readdirSync('.')
+  return { hello: "world", dir };
 }
 ```
 
@@ -99,8 +99,13 @@ export function POST({ name, email }) {
 **Dynamic routes:**
 ```ts
 // routes/users/[id].ts
-export function GET({ id }) {
-  return { user: { id, name: "John" } };
+import type { Context, Data } from "oxian-js/types.ts";
+
+export function GET({ id, mw }: Data, { dependencies }: Context) {
+  const { db } = dependencies as { db: { users: Map<string, { id: string; name: string }> } };
+  const user = db.users.get(String(id));
+  if (!user) throw { message: "Not found", statusCode: 404, statusText: "Not Found" };
+  return { ...user, mw };
 }
 ```
 
@@ -184,11 +189,14 @@ Inject shared services and utilities using `dependencies.ts` files:
 
 ```ts
 // routes/dependencies.ts
-export default async function() {
-  const db = await createDatabase();
-  const redis = await createRedisClient();
+export default async function () {
+  const users = new Map<string, { id: string; name: string }>([
+    ["1", { id: "1", name: "Ada" }],
+    ["2", { id: "2", name: "Linus" }],
+  ]);
+  const db = { users ,};
   
-  return { db, redis };
+  return { db } as const;
 }
 ```
 
@@ -220,17 +228,13 @@ routes/
 Add request/response processing with `middleware.ts`:
 
 ```ts
-// routes/middleware.ts
-export default function(data, context) {
-  // Add request ID to response headers
-  context.response.headers({
-    "x-request-id": context.requestId
-  });
+// routes/users/middleware.ts
+import type { Context, Data } from "oxian-js/types.ts";
 
-  // Modify request data
-  return {
-    data: { ...data, timestamp: Date.now() }
-  };
+export default function (data: Data, context: Context) {
+  const auth = context.request.headers.get("authorization");
+  if (!auth) throw { message: "Unauthorized", statusCode: 401, statusText: "Unauthorized" };
+  return { data: { ...data, scope: "users" } };
 }
 ```
 
