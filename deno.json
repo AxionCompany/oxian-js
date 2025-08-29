@@ -11,6 +11,7 @@
   "publish": {
     "include": [
       "cli.ts",
+      "llm.txt",
       "src/**",
       "deno.json",
       "README.md",

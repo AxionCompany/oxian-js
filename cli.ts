@@ -17,17 +17,43 @@ import { resolveRouter } from "./src/runtime/router_resolver.ts";
 
 if (import.meta.main) {
   const args = parseArgs(Deno.args, {
-    string: ["config", "source", "port", "deno-config"],
-    boolean: ["help", "hypervisor", "test"],
-    alias: { h: "help", hv: "hypervisor" },
+    string: ["config", "source", "port", "deno-config", "out"],
+    boolean: ["help", "hypervisor", "test", "force"],
+    alias: { h: "help", hv: "hypervisor", f: "force" },
     default: {},
   });
 
   const cmd = args._[0] as string | undefined;
 
   if (args.help) {
-    console.log(`Oxian CLI\n\nUsage:\n  deno run -A cli.ts [--config=oxian.config.ts] [--port=8080] [--source=...] [--hypervisor] [--deno-config=path/to/deno.json]\n\nCommands:\n  routes        Print resolved routes\n  start         Start server (same as default)\n  dev           Start server with dev options (watch, hot-reload)\n`);
+    console.log(`Oxian CLI\n\nUsage:\n  deno run -A cli.ts [--config=oxian.config.ts] [--port=8080] [--source=...] [--hypervisor] [--deno-config=path/to/deno.json]\n\nCommands:\n  routes           Print resolved routes\n  start            Start server (same as default)\n  dev              Start server with dev options (watch, hot-reload)\n  init-llm         Copy llm.txt to your repo (use --out=FILE and --force to overwrite)\n`);
     Deno.exit(0);
+  }
+
+  // Handle init-llm before loading config
+  if (cmd === "init-llm") {
+    const outPath = typeof args.out === "string" && args.out.trim().length > 0 ? args.out : "llm.txt";
+    const force = !!args.force;
+    try {
+      const src = new URL("./llm.txt", import.meta.url);
+      const content = await Deno.readTextFile(src);
+      const shouldWrite = true;
+      try {
+        await Deno.stat(outPath);
+        if (!force) {
+          console.error(`[cli] ${outPath} already exists. Use --force to overwrite.`);
+          Deno.exit(2);
+        }
+      } catch { /* not exists */ }
+      if (shouldWrite) {
+        await Deno.writeTextFile(outPath, content);
+        console.log(`[cli] wrote ${outPath}`);
+        Deno.exit(0);
+      }
+    } catch (e) {
+      console.error(`[cli] init-llm error`, (e as Error)?.message);
+      Deno.exit(1);
+    }
   }
 
   const config = await loadConfig({ configPath: args.config });
