@@ -36,12 +36,12 @@ mkdir routes
 Create `routes/index.ts`:
 
 ```ts
-import type { Context, Data } from "oxian-js/types.ts";
-import fs from "node:fs";
+export function GET() {
+  return { message: "Hello, Oxian!" };
+}
 
-export async function GET(data: Data, context: Context) {
-  const dir = fs.readdirSync('.')
-  return { hello: "world", dir };
+export function POST({ name }) {
+  return { greeting: `Hello, ${name}!` };
 }
 ```
 
@@ -99,13 +99,8 @@ export function POST({ name, email }) {
 **Dynamic routes:**
 ```ts
 // routes/users/[id].ts
-import type { Context, Data } from "oxian-js/types.ts";
-
-export function GET({ id, mw }: Data, { dependencies }: Context) {
-  const { db } = dependencies as { db: { users: Map<string, { id: string; name: string }> } };
-  const user = db.users.get(String(id));
-  if (!user) throw { message: "Not found", statusCode: 404, statusText: "Not Found" };
-  return { ...user, mw };
+export function GET({ id }) {
+  return { user: { id, name: "John" } };
 }
 ```
 
@@ -189,14 +184,11 @@ Inject shared services and utilities using `dependencies.ts` files:
 
 ```ts
 // routes/dependencies.ts
-export default async function () {
-  const users = new Map<string, { id: string; name: string }>([
-    ["1", { id: "1", name: "Ada" }],
-    ["2", { id: "2", name: "Linus" }],
-  ]);
-  const db = { users ,};
+export default async function() {
+  const db = await createDatabase();
+  const redis = await createRedisClient();
   
-  return { db } as const;
+  return { db, redis };
 }
 ```
 
@@ -228,13 +220,17 @@ routes/
 Add request/response processing with `middleware.ts`:
 
 ```ts
-// routes/users/middleware.ts
-import type { Context, Data } from "oxian-js/types.ts";
+// routes/middleware.ts
+export default function(data, context) {
+  // Add request ID to response headers
+  context.response.headers({
+    "x-request-id": context.requestId
+  });
 
-export default function (data: Data, context: Context) {
-  const auth = context.request.headers.get("authorization");
-  if (!auth) throw { message: "Unauthorized", statusCode: 401, statusText: "Unauthorized" };
-  return { data: { ...data, scope: "users" } };
+  // Modify request data
+  return {
+    data: { ...data, timestamp: Date.now() }
+  };
 }
 ```
 
@@ -828,13 +824,15 @@ export function GET(_, { dependencies }) {
 
 ## 📚 Examples
 
-Check out these complete examples:
+Explore example routes included in this repo:
 
-- [Simple CRUD API](./examples/crud-api)
-- [Authentication with JWT](./examples/auth-api)
-- [Real-time Chat with SSE](./examples/chat-api)
-- [File Upload API](./examples/upload-api)
-- [GraphQL Integration](./examples/graphql-api)
+- Basic index route: `routes/index.ts`
+- Dynamic params: `routes/users/[id].ts`
+- SSE stream: `routes/sse.ts`
+- Streaming response: `routes/stream.ts`
+- DI composition: `routes/dep-compose/dependencies.ts` and `routes/dep-compose/leaf/index.ts`
+- Middleware & interceptors: `routes/middleware.ts`, `routes/interceptors.ts`, `routes/users/middleware.ts`, `routes/order/a/interceptors.ts`
+- Catch-all docs: `routes/docs/[...slug].ts`
 
 ## 🤝 Contributing
 
