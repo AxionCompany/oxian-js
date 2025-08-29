@@ -10,7 +10,7 @@ Golden Rules
 1) Place API files under the configured routes directory (default: routes/).
 2) Export HTTP-method-named functions (GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD) or a default export as a handler.
 3) Prefer placing long-lived resources (DB/clients) in dependencies.ts factories, not inside handlers.
-4) Use standard Web APIs (Request, Response, Headers) and ESM. Avoid Node-only APIs.
+4) Use standard Web APIs (fetch, etc) and ESM. Avoid Node-only APIs.
 5) Keep files idempotent; hot reload swaps workers and re-imports modules.
 
 Quick Start
