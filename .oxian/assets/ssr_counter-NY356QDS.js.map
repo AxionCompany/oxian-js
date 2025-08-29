@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": ["../../routes/ssr/counter.tsx", "entries/ssr_counter.ts"],
-  "sourcesContent": ["/**\n * Simple client-hydrated counter.\n */\n\nexport function getServerSideProps() {\n  return { initial: 1 };\n}\n\nexport default function Counter(props: { initial: number }) {\n  let count = props.initial;\n  return (\n    <main style={{ fontFamily: \"sans-serif\", padding: 24 }}>\n      <h1>Counter</h1>\n      <p>Initial from server: {props.initial}</p>\n      <button onClick={(e) => {\n        count++;\n        (e.currentTarget.nextSibling as HTMLElement).textContent = String(count);\n      }}>+1</button>\n      <span style={{ marginLeft: 12 }}>{count}</span>\n    </main>\n  );\n}\n\n\n", "import * as PageModule from \"file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/routes/ssr/counter.tsx\";\nimport { hydrate } from \"file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/src/ssr/client/runtime.ts\";\nhydrate(PageModule);\n"],
-  "mappings": ";;;;;;AAAA;AAAA;AAAA;AAAA;AAAA;AAIO,SAAS,qBAAqB;AACnC,SAAO,EAAE,SAAS,EAAE;AACtB;AAEe,SAAR,QAAyB,OAA4B;AAC1D,MAAI,QAAQ,MAAM;AAClB,SACE,oCAAC,UAAK,OAAO,EAAE,YAAY,cAAc,SAAS,GAAG,KACnD,oCAAC,YAAG,SAAO,GACX,oCAAC,WAAE,yBAAsB,MAAM,OAAQ,GACvC,oCAAC,YAAO,SAAS,CAAC,MAAM;AACtB;AACA,IAAC,EAAE,cAAc,YAA4B,cAAc,OAAO,KAAK;AAAA,EACzE,KAAG,IAAE,GACL,oCAAC,UAAK,OAAO,EAAE,YAAY,GAAG,KAAI,KAAM,CAC1C;AAEJ;;;ACnBA,QAAQ,eAAU;",
-  "names": []
-}

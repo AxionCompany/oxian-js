@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": ["../../routes/ssr/layout.tsx", "entries/ssr_layout.ts"],
-  "sourcesContent": ["/**\n * Layout demo page with nested content.\n */\n\nexport default function LayoutDemo() {\n  return (\n    <main style={{ fontFamily: \"sans-serif\", padding: 24 }}>\n      <h1>Layout Demo</h1>\n      <p>This is a static SSR page.</p>\n    </main>\n  );\n}\n\n\n", "import * as PageModule from \"file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/routes/ssr/layout.tsx\";\nimport { hydrate } from \"file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/src/ssr/client/runtime.ts\";\nhydrate(PageModule);\n"],
-  "mappings": ";;;;;;AAAA;AAAA;AAAA;AAAA;AAIe,SAAR,aAA8B;AACnC,SACE,oCAAC,UAAK,OAAO,EAAE,YAAY,cAAc,SAAS,GAAG,KACnD,oCAAC,YAAG,aAAW,GACf,oCAAC,WAAE,4BAA0B,CAC/B;AAEJ;;;ACTA,QAAQ,cAAU;",
-  "names": []
-}

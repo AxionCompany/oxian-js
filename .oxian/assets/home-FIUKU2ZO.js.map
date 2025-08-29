@@ -1,7 +1,0 @@
-{
-  "version": 3,
-  "sources": ["../../routes/home.tsx", "entries/home.ts"],
-  "sourcesContent": ["/**\n * Example SSR page: renders a greeting and current time, hydrates on the client.\n */\n\nexport async function getServerSideProps() {\n  return { message: \"Hello from Oxian SSR\", now: new Date().toISOString() };\n}\n\nexport default function Page(props: { message: string; now: string }) {\n  return (\n    <main style={{ fontFamily: \"sans-serif\", padding: 24 }}>\n      <h1>{props.message}</h1>\n      <p>Server time: {props.now}</p>\n      <button type=\"button\" onClick={() => alert(\"Hydration works!\")}>Click me</button>\n    </main>\n  );\n}\n\n\n", "import * as PageModule from \"file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/routes/home.tsx\";\nimport { hydrate } from \"file:///Users/vfssantos/Documents/Projetos/COPILOTZ/app/oxian-js/src/ssr/client/runtime.ts\";\nhydrate(PageModule);\n"],
-  "mappings": ";;;;;;AAAA;AAAA;AAAA;AAAA;AAAA;AAIA,eAAsB,qBAAqB;AACzC,SAAO,EAAE,SAAS,wBAAwB,MAAK,oBAAI,KAAK,GAAE,YAAY,EAAE;AAC1E;AAEe,SAAR,KAAsB,OAAyC;AACpE,SACE,oCAAC,UAAK,OAAO,EAAE,YAAY,cAAc,SAAS,GAAG,KACnD,oCAAC,YAAI,MAAM,OAAQ,GACnB,oCAAC,WAAE,iBAAc,MAAM,GAAI,GAC3B,oCAAC,YAAO,MAAK,UAAS,SAAS,MAAM,MAAM,kBAAkB,KAAG,UAAQ,CAC1E;AAEJ;;;ACdA,QAAQ,YAAU;",
-  "names": []
-}
