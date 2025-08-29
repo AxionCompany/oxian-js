@@ -36,7 +36,8 @@ if (import.meta.main) {
     const force = !!args.force;
     try {
       const src = new URL("./llm.txt", import.meta.url);
-      const content = await Deno.readTextFile(src);
+      const {default: content} = await import(src.toString(), { with: { type: "text" } });
+      console.log(content);
       const shouldWrite = true;
       try {
         await Deno.stat(outPath);

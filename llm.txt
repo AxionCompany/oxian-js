@@ -27,14 +27,18 @@ routes/
 
 Example `routes/index.ts`:
 ```ts
-export function GET() {
+import { Data, Context } from 'oxian-js' // import types for type-safety
+
+export function GET(data: Data, context: Context) {
   return { message: "Hello, Oxian!" };
 }
 ```
 
 Example `routes/users/[id].ts`:
 ```ts
-export async function GET({ id }: Record<string, unknown>) {
+import { Data, Context } from 'oxian-js' // import types for type-safety
+
+export async function GET({ id }: Data) {
   return { user: { id } };
 }
 ```
@@ -304,7 +308,15 @@ Production Notes
 
 Where To Look In This Repo
 --------------------------
-- Server: `src/server/server.ts`
+When using the published package, import from these exported modules:
+- Main CLI: `jsr:@oxian/oxian-js` or `@oxian/oxian-js`
+- Server API: `@oxian/oxian-js/server` (startServer function)
+- Configuration types: `@oxian/oxian-js/config` (OxianConfig, EffectiveConfig types)
+- Runtime/module loader: `@oxian/oxian-js/runtime` (loadRouteModule, clearModuleCache functions)
+- Core types: `@oxian/oxian-js/types` (Handler, Context, Data, OxianHttpError, etc.)
+
+Internal source reference (for contributors):
+- Server implementation: `src/server/server.ts`
 - Router: `src/router/`
 - Runtime (pipeline/deps/mw/interceptors): `src/runtime/`
 - Hypervisor: `src/hv/main.ts`
