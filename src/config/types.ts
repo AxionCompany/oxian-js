@@ -77,6 +77,12 @@ export type OxianConfig = {
       denoConfig?: string;
       // Request lifecycle timeouts (proxy-level)
       timeouts?: { connectMs?: number; headersMs?: number; idleMs?: number; totalMs?: number };
+      // Web dev/prod integration
+      web?: {
+        devProxyTarget?: string; // e.g., http://localhost:5173
+        staticDir?: string;      // e.g., "dist"
+        staticCacheControl?: string; // e.g., "public, max-age=31536000, immutable"
+      };
       // Config-only multi-project support
       projects?: Record<string, {
         source?: string;
