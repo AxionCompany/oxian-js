@@ -20,10 +20,13 @@ if (import.meta.main) {
     string: ["config", "source", "port", "deno-config", "out"],
     boolean: ["help", "hypervisor", "test", "force"],
     alias: { h: "help", hv: "hypervisor", f: "force" },
-    default: {},
+    default: {
+      hypervisor: true,
+    },
   });
 
   const cmd = args._[0] as string | undefined;
+
 
   if (args.help) {
     console.log(`Oxian CLI\n\nUsage:\n  deno run -A cli.ts [--config=oxian.config.ts] [--port=8080] [--source=...] [--hypervisor] [--deno-config=path/to/deno.json]\n\nCommands:\n  routes           Print resolved routes\n  start            Start server (same as default)\n  dev              Start server with dev options (watch, hot-reload)\n  init-llm         Copy llm.txt to your repo (use --out=FILE and --force to overwrite)\n`);

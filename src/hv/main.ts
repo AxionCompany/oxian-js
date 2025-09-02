@@ -113,6 +113,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       const hostImports = ((maybeHostDenoConfig as { imports?: Record<string, string> })?.imports) ?? {};
       const hostScopes = ((maybeHostDenoConfig as { scopes?: Record<string, Record<string, string>> })?.scopes) ?? {};
       const mergedImportMap = {
+        // ...maybeHostDenoConfig,
         imports: {
           ...(denoJson.imports || {}),
           ...hostImports,
@@ -178,7 +179,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     pools.set(project, existing);
     notifyProjectReady(project);
     // Flush any queued requests for this project
-    await flushQueue(project).catch(() => {});
+    await flushQueue(project).catch(() => { });
     try { oldProc.kill(); } catch (_e) { /* ignore kill */ }
     console.log(`[hv] old worker terminated`, { project, oldPort });
   }
@@ -371,7 +372,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       const watcher = Deno.watchFs([watchDir], { recursive: true });
       console.log(`[hv] watching`, { dir: watchDir });
       let timer: number | undefined;
-      ;(async () => {
+      ; (async () => {
         for await (const _ev of watcher) {
           if (timer) clearTimeout(timer);
           timer = setTimeout(async () => {

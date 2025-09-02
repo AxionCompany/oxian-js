@@ -3,7 +3,7 @@ export default async function () {
     ["1", { id: "1", name: "Ada" }],
     ["2", { id: "2", name: "Linus" }],
   ]);
-  const db = { users ,};
+  const db = { users , test: "test"};
   
   return { db } as const;
 } 
