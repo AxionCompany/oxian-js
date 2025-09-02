@@ -1,7 +1,8 @@
 import type { EffectiveConfig } from "../config/types.ts";
 import denoJson from "../../deno.json" with { type: "json" };
 import { getLocalRootPath } from "../utils/root.ts";
-import { isAbsolute, toFileUrl, join } from "@std/path";
+import { isAbsolute, toFileUrl, join, fromFileUrl } from "@std/path";
+import { parse as parseJsonc } from "@std/jsonc/parse";
 
 function splitBaseArgs(baseArgs: string[]): { denoOptions: string[]; scriptArgs: string[] } {
   const denoOptions: string[] = [];
@@ -106,14 +107,30 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     if (!denoOptions.includes("--config") && hostDenoCfg) {
       let maybeHostDenoConfig = { imports: {}, scopes: {} } as Record<string, unknown>;
       try {
-        // Ensure Windows paths are normalized to file URLs
-        const hdcUrlStr = (() => {
-          try { return new URL(hostDenoCfg!).toString(); } catch {
-            const abs = isAbsolute(hostDenoCfg!) ? hostDenoCfg! : join(Deno.cwd(), hostDenoCfg!);
-            return toFileUrl(abs).toString();
+        // Robust read: files (including Windows paths), file URLs, or http(s)
+        const readJson = async (input: string): Promise<Record<string, unknown>> => {
+          try {
+            const u = new URL(input);
+            if (u.protocol === "file:") {
+              const text = await Deno.readTextFile(fromFileUrl(u));
+              const isJsonc = u.pathname.endsWith(".jsonc");
+              return isJsonc ? (parseJsonc(text) as Record<string, unknown>) : (JSON.parse(text) as Record<string, unknown>);
+            }
+            if (u.protocol === "http:" || u.protocol === "https:") {
+              const res = await fetch(u);
+              const text = await res.text();
+              return JSON.parse(text) as Record<string, unknown>;
+            }
+            // Fallback to dynamic import for other schemes
+            return (await import(u.toString(), { with: { type: "json" } })).default as Record<string, unknown>;
+          } catch {
+            const abs = isAbsolute(input) ? input : join(Deno.cwd(), input);
+            const text = await Deno.readTextFile(abs);
+            const isJsonc = abs.endsWith(".jsonc");
+            return isJsonc ? (parseJsonc(text) as Record<string, unknown>) : (JSON.parse(text) as Record<string, unknown>);
           }
-        })();
-        maybeHostDenoConfig = (await import(hdcUrlStr, { with: { type: "json" } })).default as Record<string, unknown>;
+        };
+        maybeHostDenoConfig = await readJson(hostDenoCfg);
       } catch (e: unknown) {
         console.error(`[hv] error loading host deno config`, { error: (e as Error)?.message });
       }
