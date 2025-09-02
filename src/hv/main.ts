@@ -106,7 +106,14 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     if (!denoOptions.includes("--config") && hostDenoCfg) {
       let maybeHostDenoConfig = { imports: {}, scopes: {} } as Record<string, unknown>;
       try {
-        maybeHostDenoConfig = (await import(hostDenoCfg, { with: { type: "json" } })).default as Record<string, unknown>;
+        // Ensure Windows paths are normalized to file URLs
+        const hdcUrlStr = (() => {
+          try { return new URL(hostDenoCfg!).toString(); } catch {
+            const abs = isAbsolute(hostDenoCfg!) ? hostDenoCfg! : join(Deno.cwd(), hostDenoCfg!);
+            return toFileUrl(abs).toString();
+          }
+        })();
+        maybeHostDenoConfig = (await import(hdcUrlStr, { with: { type: "json" } })).default as Record<string, unknown>;
       } catch (e: unknown) {
         console.error(`[hv] error loading host deno config`, { error: (e as Error)?.message });
       }
@@ -190,14 +197,19 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     || await detectHostDenoConfig(getLocalRootPath(config.root));
 
   if (hostDenoCfg) {
-    // Normalize to URL string without relying on import.meta.resolve (works under jsr)
+    // Normalize to URL string; support Windows drive-letter paths
     try {
-      // If already a URL, keep as-is
       const u = new URL(hostDenoCfg);
       hostDenoCfg = u.toString();
     } catch {
       const path = isAbsolute(hostDenoCfg) ? hostDenoCfg : join(Deno.cwd(), hostDenoCfg);
-      hostDenoCfg = toFileUrl(path).toString();
+      try {
+        hostDenoCfg = toFileUrl(path).toString();
+      } catch {
+        // Fallback: manually construct file URL for Windows-like paths
+        const normalized = path.replace(/\\/g, "/");
+        hostDenoCfg = normalized.startsWith("/") ? `file://${normalized}` : `file:///${normalized}`;
+      }
     }
   }
 
