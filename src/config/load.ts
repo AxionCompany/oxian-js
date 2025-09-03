@@ -16,12 +16,23 @@ function fileExists(path: string): Promise<boolean> {
   return Deno.stat(path).then(() => true).catch(() => false);
 }
 
+function looksLikeUrl(s: string): boolean {
+  // Handle non-standard schemes we support that URL() won't parse
+  if (/^(github|jsr|npm):/.test(s)) return true;
+  try {
+    const u = new URL(s);
+    return ["http:", "https:", "file:", "data:", "blob:"].includes(u.protocol);
+  } catch {
+    return false;
+  }
+}
+
 async function findConfigPath(explicit?: string): Promise<string | undefined> {
   if (explicit) {
-    // If it looks like a URL scheme we return as-is for loader
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(explicit)) return explicit;
-    // Ensure absolute path for toFileUrl (Windows-aware)
+    // Prefer absolute-path detection first (Windows-aware)
     if (pathIsAbsolute(explicit)) return explicit;
+    // If it looks like a URL we return as-is for loader
+    if (looksLikeUrl(explicit)) return explicit;
     return join(Deno.cwd(), explicit);
   }
   const candidates = [
@@ -99,7 +110,7 @@ export async function loadConfig(opts: { configPath?: string } = {}): Promise<Ef
   const configPath = await findConfigPath(opts.configPath);
   let userConfig: OxianConfig = {};
   if (configPath) {
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(configPath)) {
+    if (looksLikeUrl(configPath)) {
       userConfig = await loadRemoteConfig(configPath);
     } else if (configPath.endsWith(".json")) {
       userConfig = await loadFromJson(configPath);
