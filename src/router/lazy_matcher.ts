@@ -1,4 +1,4 @@
-import { join } from "@std/path";
+import { join, toFileUrl } from "@std/path";
 import type { Router, RouteMatch, RouteRecord } from "./router.ts";
 import type { Loader } from "../loader/types.ts";
 
@@ -79,7 +79,7 @@ export function createLazyRouterLocal(root: string, routesDir: string): Router &
             route: {
               pattern: "/" + patternParts.join("/"),
               segments: toSegments("/" + patternParts.join("/")),
-              fileUrl: new URL("file://" + join(curDir, directFile)),
+              fileUrl: toFileUrl(join(curDir, directFile)),
             },
             params,
           };
@@ -90,7 +90,7 @@ export function createLazyRouterLocal(root: string, routesDir: string): Router &
           params[name] = decodeURIComponent(seg);
           patternParts.push(":" + name);
           return {
-            route: { pattern: "/" + patternParts.join("/"), segments: toSegments("/" + patternParts.join("/")), fileUrl: new URL("file://" + join(curDir, paramFile)) },
+            route: { pattern: "/" + patternParts.join("/"), segments: toSegments("/" + patternParts.join("/")), fileUrl: toFileUrl(join(curDir, paramFile)) },
             params,
           };
         }
@@ -127,7 +127,7 @@ export function createLazyRouterLocal(root: string, routesDir: string): Router &
         route: {
           pattern: "/" + (patternParts.join("/") || ""),
           segments: toSegments("/" + (patternParts.join("/") || "")),
-          fileUrl: new URL("file://" + join(curDir, indexFile)),
+          fileUrl: toFileUrl(join(curDir, indexFile)),
         },
         params,
       };
@@ -136,7 +136,7 @@ export function createLazyRouterLocal(root: string, routesDir: string): Router &
     if (catchAllFile) {
       params["slug"] = parts.join("/");
       return {
-        route: { pattern: "/*", segments: toSegments("/*"), fileUrl: new URL("file://" + catchAllFile) },
+        route: { pattern: "/*", segments: toSegments("/*"), fileUrl: toFileUrl(catchAllFile) },
         params,
       };
     }

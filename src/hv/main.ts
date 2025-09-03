@@ -287,11 +287,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       }
     }
 
-    let pathname = url.pathname;
-    const basePath = hv.projects?.[selected]?.routing?.basePath;
-    if (basePath && basePath !== "/" && pathname.startsWith(basePath)) {
-      pathname = pathname.slice(basePath.length) || "/";
-    }
+    const pathname = url.pathname;
 
     const target = `http://localhost:${pool.port}${pathname}${url.search}`;
 
@@ -329,11 +325,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       }
       try {
         const url = new URL(req.url);
-        let pathname = url.pathname;
-        const basePath = hv.projects?.[project]?.routing?.basePath;
-        if (basePath && basePath !== "/" && pathname.startsWith(basePath)) {
-          pathname = pathname.slice(basePath.length) || "/";
-        }
+        const pathname = url.pathname;
         const target = `http://localhost:${pool.port}${pathname}${url.search}`;
         const res = await fetch(target, { method: req.method, headers: req.headers, body: req.body });
         resolve(new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers }));
