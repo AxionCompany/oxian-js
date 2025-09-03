@@ -52,6 +52,9 @@ async function loadFromModule(path: string): Promise<OxianConfig> {
   const rootForLoader = pathIsAbsolute(path) ? dirname(path) : Deno.cwd();
   const lm = createLoaderManager(rootForLoader);
   const url = lm.resolveUrl(path);
+  if (Deno.env.get("OXIAN_DEBUG") === "1") {
+    console.log('[config] loadFromModule', { path, rootForLoader, url: url.toString() });
+  }
   const mod = await importModule(url, lm.getLoaders(), 60_000, Deno.cwd());
   const exp = (mod.default ?? (mod as any).config ?? mod) as unknown;
   if (typeof exp === "function") {
@@ -76,6 +79,9 @@ async function loadFromJson(path: string): Promise<OxianConfig> {
 async function loadRemoteConfig(pathOrUrl: string): Promise<OxianConfig> {
   const lm = createLoaderManager(Deno.cwd());
   const url = lm.resolveUrl(pathOrUrl);
+  if (Deno.env.get("OXIAN_DEBUG") === "1") {
+    console.log('[config] loadRemoteConfig', { pathOrUrl, url: url.toString() });
+  }
   const loader = lm.getActiveLoader(url);
   // JSON via loader directly
   if (url.pathname.endsWith(".json")) {

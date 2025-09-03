@@ -208,6 +208,9 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       const path = isAbsolute(hostDenoCfg) ? hostDenoCfg : join(Deno.cwd(), hostDenoCfg);
       hostDenoCfg = toFileUrl(path).toString();
     }
+    if (Deno.env.get("OXIAN_DEBUG") === "1") {
+      console.log('[hv] hostDenoCfg(normalized)', { hostDenoCfg });
+    }
   }
 
   const { denoOptions, scriptArgs } = splitBaseArgs(baseArgs);
