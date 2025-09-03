@@ -1,8 +1,7 @@
 import type { EffectiveConfig } from "../config/types.ts";
 import denoJson from "../../deno.json" with { type: "json" };
 import { getLocalRootPath } from "../utils/root.ts";
-import { isAbsolute, toFileUrl, join, fromFileUrl } from "@std/path";
-import { parse as parseJsonc } from "@std/jsonc/parse";
+import { isAbsolute, toFileUrl, join } from "@std/path";
 
 function splitBaseArgs(baseArgs: string[]): { denoOptions: string[]; scriptArgs: string[] } {
   const denoOptions: string[] = [];
@@ -29,7 +28,7 @@ async function detectHostDenoConfig(root: string): Promise<string | undefined> {
   const candidates = ["deno.json", "deno.jsonc"];
   for (const name of candidates) {
     try {
-      const p = `${root.endsWith("/") ? root.slice(0, -1) : root}/${name}`;
+      const p = join(root, name);
       await Deno.stat(p);
       return p;
     } catch (_err) { /* no local deno config at this candidate */ }
@@ -107,30 +106,16 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     if (!denoOptions.includes("--config") && hostDenoCfg) {
       let maybeHostDenoConfig = { imports: {}, scopes: {} } as Record<string, unknown>;
       try {
-        // Robust read: files (including Windows paths), file URLs, or http(s)
-        const readJson = async (input: string): Promise<Record<string, unknown>> => {
-          try {
-            const u = new URL(input);
-            if (u.protocol === "file:") {
-              const text = await Deno.readTextFile(fromFileUrl(u));
-              const isJsonc = u.pathname.endsWith(".jsonc");
-              return isJsonc ? (parseJsonc(text) as Record<string, unknown>) : (JSON.parse(text) as Record<string, unknown>);
-            }
-            if (u.protocol === "http:" || u.protocol === "https:") {
-              const res = await fetch(u);
-              const text = await res.text();
-              return JSON.parse(text) as Record<string, unknown>;
-            }
-            // Fallback to dynamic import for other schemes
-            return (await import(u.toString(), { with: { type: "json" } })).default as Record<string, unknown>;
-          } catch {
-            const abs = isAbsolute(input) ? input : join(Deno.cwd(), input);
-            const text = await Deno.readTextFile(abs);
-            const isJsonc = abs.endsWith(".jsonc");
-            return isJsonc ? (parseJsonc(text) as Record<string, unknown>) : (JSON.parse(text) as Record<string, unknown>);
-          }
-        };
-        maybeHostDenoConfig = await readJson(hostDenoCfg);
+        // Ensure a proper URL for import() on Windows
+        let cfgUrl = hostDenoCfg;
+        try {
+          const u = new URL(cfgUrl);
+          cfgUrl = u.toString();
+        } catch {
+          const path = isAbsolute(cfgUrl) ? cfgUrl : join(Deno.cwd(), cfgUrl);
+          cfgUrl = toFileUrl(path).toString();
+        }
+        maybeHostDenoConfig = (await import(cfgUrl, { with: { type: "json" } })).default as Record<string, unknown>;
       } catch (e: unknown) {
         console.error(`[hv] error loading host deno config`, { error: (e as Error)?.message });
       }
@@ -214,19 +199,14 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     || await detectHostDenoConfig(getLocalRootPath(config.root));
 
   if (hostDenoCfg) {
-    // Normalize to URL string; support Windows drive-letter paths
+    // Normalize to URL string without relying on import.meta.resolve (works under jsr)
     try {
+      // If already a URL, keep as-is
       const u = new URL(hostDenoCfg);
       hostDenoCfg = u.toString();
     } catch {
       const path = isAbsolute(hostDenoCfg) ? hostDenoCfg : join(Deno.cwd(), hostDenoCfg);
-      try {
-        hostDenoCfg = toFileUrl(path).toString();
-      } catch {
-        // Fallback: manually construct file URL for Windows-like paths
-        const normalized = path.replace(/\\/g, "/");
-        hostDenoCfg = normalized.startsWith("/") ? `file://${normalized}` : `file:///${normalized}`;
-      }
+      hostDenoCfg = toFileUrl(path).toString();
     }
   }
 
@@ -287,7 +267,11 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       }
     }
 
-    const pathname = url.pathname;
+    let pathname = url.pathname;
+    const basePath = hv.projects?.[selected]?.routing?.basePath;
+    if (basePath && basePath !== "/" && pathname.startsWith(basePath)) {
+      pathname = pathname.slice(basePath.length) || "/";
+    }
 
     const target = `http://localhost:${pool.port}${pathname}${url.search}`;
 
@@ -325,7 +309,11 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       }
       try {
         const url = new URL(req.url);
-        const pathname = url.pathname;
+        let pathname = url.pathname;
+        const basePath = hv.projects?.[project]?.routing?.basePath;
+        if (basePath && basePath !== "/" && pathname.startsWith(basePath)) {
+          pathname = pathname.slice(basePath.length) || "/";
+        }
         const target = `http://localhost:${pool.port}${pathname}${url.search}`;
         const res = await fetch(target, { method: req.method, headers: req.headers, body: req.body });
         resolve(new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers }));

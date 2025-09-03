@@ -14,9 +14,7 @@ export type Router = {
 };
 
 function parseRoutePathFromFile(rootRoutesDir: string, absFilePath: string): string | null {
-  const normalizedRoot = rootRoutesDir.replace(/\\/g, "/");
-  const normalizedAbs = absFilePath.replace(/\\/g, "/");
-  const rel = normalizedAbs.substring(normalizedRoot.length);
+  const rel = absFilePath.substring(rootRoutesDir.length).replaceAll("\\", "/");
   if (!rel.endsWith(".ts") && !rel.endsWith(".js") && !rel.endsWith(".tsx") && !rel.endsWith(".jsx")) return null;
   const noExt = rel.replace(/\.(tsx?|jsx?)$/, "");
   let path = noExt;
@@ -57,8 +55,10 @@ async function discoverFiles(dir: string): Promise<string[]> {
 
 export async function buildRouter(opts: { root: string; routesDir?: string }): Promise<Router> {
   const routesRoot = join(opts.root, opts.routesDir ?? "routes");
-  // Normalize Windows backslashes when filtering for route files
-  const files = (await discoverFiles(routesRoot)).filter((f) => /(\/|\\)(index|\[|[^_].*)\.(tsx?|jsx?)$/.test(f));
+  const files = (await discoverFiles(routesRoot)).filter((f) => {
+    const norm = f.replaceAll("\\", "/");
+    return /\/(index|\[|[^_].*)\.(tsx?|jsx?)$/.test(norm);
+  });
   const pipelineNames = new Set(["dependencies.ts", "middleware.ts", "interceptors.ts"]);
   const routeRecords: RouteRecord[] = [];
   for (const file of files) {
