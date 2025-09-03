@@ -47,7 +47,8 @@ async function mtimeForUrl(url: URL, loaders: Loader[]): Promise<number | undefi
 export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000, projectRoot?: string): Promise<Record<string, unknown>> {
     // debug: importModule call context (guarded by OXIAN_DEBUG)
     if (Deno.env.get("OXIAN_DEBUG") === "1") {
-        console.log('importModule', url.toString(), { ttl: _ttlMs, root: projectRoot });
+        console.log('importModule(version)', { importer: import.meta.url });
+        console.log('importModule(input)', url?.toString?.() ?? String(url), { typeof: typeof url, isUrl: url instanceof URL, ttl: _ttlMs, root: projectRoot });
     }
     // Normalize incoming specifier to a proper URL (Windows-safe)
     let rootSpecifier = url.toString();
@@ -77,6 +78,9 @@ export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000,
         } else {
             rootSpecifier = resolvedUrl.toString();
         }
+    }
+    if (Deno.env.get("OXIAN_DEBUG") === "1") {
+        console.log('importModule(normalized)', { resolved: resolvedUrl?.toString?.() ?? null, rootSpecifier });
     }
     const cache = createCache({ allowRemote: true, cacheSetting: "reload" });
     const resolveFn = await getProjectImportResolver(loaders, projectRoot);
