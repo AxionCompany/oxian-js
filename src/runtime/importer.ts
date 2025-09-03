@@ -51,21 +51,22 @@ export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000,
         console.log('importModule(input)', url?.toString?.() ?? String(url), { typeof: typeof url, isUrl: url instanceof URL, ttl: _ttlMs, root: projectRoot });
     }
     // Normalize incoming specifier to a proper URL (Windows-safe)
-    let rootSpecifier = url.toString();
+    let rootSpecifier = "";
     let resolvedUrl: URL | undefined = undefined;
-    try {
-        resolvedUrl = new URL(rootSpecifier);
-    } catch {
-        // If it looks like an absolute filesystem path, convert to file URL
-        if (pathIsAbsolute(rootSpecifier)) {
-            resolvedUrl = toFileUrl(rootSpecifier);
-        } else if (/^[a-zA-Z]:[\\\/]/.test(rootSpecifier)) {
-            // Handle Windows drive-prefixed paths explicitly
-            resolvedUrl = toFileUrl(rootSpecifier);
-        } else if (projectRoot) {
-            // Resolve relative path against project root, then convert
-            const abs = pathIsAbsolute(projectRoot) ? join(projectRoot, rootSpecifier) : join(Deno.cwd(), projectRoot, rootSpecifier);
-            resolvedUrl = toFileUrl(abs);
+    // If we got a URL object, use it directly; otherwise coerce to file URL/path
+    if (url instanceof URL) {
+        resolvedUrl = url;
+    } else {
+        let raw = (url as unknown as { toString(): string })?.toString?.() ?? String(url as unknown);
+        if (/^[a-zA-Z]:[\\\/]/.test(raw) || pathIsAbsolute(raw)) {
+            resolvedUrl = toFileUrl(raw);
+        } else {
+            try { resolvedUrl = new URL(raw); } catch {
+                if (projectRoot) {
+                    const abs = pathIsAbsolute(projectRoot) ? join(projectRoot, raw) : join(Deno.cwd(), projectRoot, raw);
+                    resolvedUrl = toFileUrl(abs);
+                }
+            }
         }
     }
     if (resolvedUrl) {
