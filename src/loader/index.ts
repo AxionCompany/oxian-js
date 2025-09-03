@@ -22,28 +22,11 @@ export function createLoaderManager(root: string | URL, tokenEnv?: string): Load
   ];
   return {
     resolveUrl(pathOrUrl: string): URL {
-      if (Deno.env.get("OXIAN_DEBUG") === "1") {
-        console.log('[loader] resolveUrl(input)', { pathOrUrl, root: rootUrl.toString ? rootUrl.toString() : String(rootUrl) });
-      }
       try {
-        const u = new URL(pathOrUrl);
-        if (Deno.env.get("OXIAN_DEBUG") === "1") {
-          console.log('[loader] resolveUrl(parsed)', { href: u.toString(), protocol: u.protocol });
-        }
-        return u;
+        return new URL(pathOrUrl);
       } catch {
-        if (isAbsolute(pathOrUrl) || /^[a-zA-Z]:[\\\/]/.test(pathOrUrl)) {
-          const f = toFileUrl(pathOrUrl);
-          if (Deno.env.get("OXIAN_DEBUG") === "1") {
-            console.log('[loader] resolveUrl(fileUrl)', { href: f.toString() });
-          }
-          return f;
-        }
-        const r = resolveLocalUrl(rootUrl, pathOrUrl);
-        if (Deno.env.get("OXIAN_DEBUG") === "1") {
-          console.log('[loader] resolveUrl(local)', { href: r.toString() });
-        }
-        return r;
+        if (isAbsolute(pathOrUrl)) return toFileUrl(pathOrUrl);
+        return resolveLocalUrl(rootUrl, pathOrUrl);
       }
     },
     getActiveLoader(url: URL): Loader {

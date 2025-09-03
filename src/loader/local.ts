@@ -1,4 +1,4 @@
-import { join, toFileUrl, fromFileUrl, isAbsolute as pathIsAbsolute } from "@std/path";
+import { join, toFileUrl, fromFileUrl } from "@std/path";
 import type { Loader } from "./types.ts";
 import { detectMediaType } from "./types.ts";
 
@@ -49,11 +49,6 @@ export function resolveLocalUrl(root: string | URL, ...segments: string[]): URL 
     }
   }
   // Root is a URL
-  // If the first segment is an absolute filesystem path (Windows-safe), return it as file URL directly
-  const first = segments[0];
-  if (first && pathIsAbsolute(first)) {
-    return toFileUrl(first);
-  }
   const withSlash = root.toString().endsWith("/") ? root : new URL(root.toString() + "/");
   const combined = segments.join("/");
   return new URL(combined, withSlash);

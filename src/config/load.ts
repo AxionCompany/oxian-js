@@ -16,23 +16,15 @@ function fileExists(path: string): Promise<boolean> {
   return Deno.stat(path).then(() => true).catch(() => false);
 }
 
-function looksLikeUrl(s: string): boolean {
-  // Handle non-standard schemes we support that URL() won't parse
-  if (/^(github|jsr|npm):/.test(s)) return true;
-  try {
-    const u = new URL(s);
-    return ["http:", "https:", "file:", "data:", "blob:"].includes(u.protocol);
-  } catch {
-    return false;
-  }
-}
-
 async function findConfigPath(explicit?: string): Promise<string | undefined> {
   if (explicit) {
-    // Prefer absolute-path detection first (Windows-aware)
-    if (pathIsAbsolute(explicit)) return explicit;
-    // If it looks like a URL we return as-is for loader
-    if (looksLikeUrl(explicit)) return explicit;
+    // Windows drive letter absolute paths (e.g., C:\path or C:/path)
+    if (/^[A-Za-z]:[\\\/]/.test(explicit)) return explicit;
+    // If it looks like a URL scheme we return as-is for loader
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(explicit)) return explicit;
+    // POSIX absolute
+    if (explicit.startsWith("/")) return explicit;
+    // Relative -> absolute
     return join(Deno.cwd(), explicit);
   }
   const candidates = [
@@ -51,17 +43,8 @@ async function findConfigPath(explicit?: string): Promise<string | undefined> {
 async function loadFromModule(path: string): Promise<OxianConfig> {
   const rootForLoader = pathIsAbsolute(path) ? dirname(path) : Deno.cwd();
   const lm = createLoaderManager(rootForLoader);
-  const url = lm.resolveUrl(path);
-  // If resolveUrl returned a URL-like string without scheme (Windows drive), coerce to file URL
-  try {
-    // no-op if parseable
-    new URL(url.toString());
-  } catch {
-    // shouldn't happen because resolveUrl returns URL, but keep guard for jsr
-  }
-  if (Deno.env.get("OXIAN_DEBUG") === "1") {
-    console.log('[config] loadFromModule', { path, rootForLoader, url: url.toString() });
-  }
+  // Normalize Windows paths to file URLs before import
+  const url = path.startsWith("file:") ? new URL(path) : toFileUrl(pathIsAbsolute(path) ? path : join(Deno.cwd(), path));
   const mod = await importModule(url, lm.getLoaders(), 60_000, Deno.cwd());
   const exp = (mod.default ?? (mod as any).config ?? mod) as unknown;
   if (typeof exp === "function") {
@@ -85,10 +68,10 @@ async function loadFromJson(path: string): Promise<OxianConfig> {
 
 async function loadRemoteConfig(pathOrUrl: string): Promise<OxianConfig> {
   const lm = createLoaderManager(Deno.cwd());
-  const url = lm.resolveUrl(pathOrUrl);
-  if (Deno.env.get("OXIAN_DEBUG") === "1") {
-    console.log('[config] loadRemoteConfig', { pathOrUrl, url: url.toString() });
-  }
+  // Normalize raw filesystem paths to file URLs for importer
+  const url = /^[A-Za-z]:[\\\/]/.test(pathOrUrl)
+    ? toFileUrl(pathOrUrl)
+    : lm.resolveUrl(pathOrUrl);
   const loader = lm.getActiveLoader(url);
   // JSON via loader directly
   if (url.pathname.endsWith(".json")) {
@@ -123,7 +106,7 @@ export async function loadConfig(opts: { configPath?: string } = {}): Promise<Ef
   const configPath = await findConfigPath(opts.configPath);
   let userConfig: OxianConfig = {};
   if (configPath) {
-    if (looksLikeUrl(configPath)) {
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(configPath)) {
       userConfig = await loadRemoteConfig(configPath);
     } else if (configPath.endsWith(".json")) {
       userConfig = await loadFromJson(configPath);

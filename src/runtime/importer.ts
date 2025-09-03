@@ -1,5 +1,5 @@
 import type { Loader } from "../loader/types.ts";
-import { isAbsolute as pathIsAbsolute, toFileUrl, join } from "@std/path";
+import { isAbsolute, toFileUrl, join } from "@std/path";
 import { createCache } from "@deno/cache-dir";
 import { createGraph } from "@deno/graph";
 import { resolveLocalUrl } from "../loader/local.ts";
@@ -44,55 +44,38 @@ async function mtimeForUrl(url: URL, loaders: Loader[]): Promise<number | undefi
     }
 }
 
-export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000, projectRoot?: string): Promise<Record<string, unknown>> {
+function normalizeToUrl(input: string | URL, projectRoot?: string): URL {
+    if (input instanceof URL) return input;
+    // If already a URL-like string
+    try { return new URL(input as string); } catch { /* not a URL */ }
+    const pathStr = input as string;
+    // Absolute filesystem path (handles Windows drive letters)
+    if (isAbsolute(pathStr)) {
+        return toFileUrl(pathStr);
+    }
+    // Relative path: resolve against projectRoot or cwd
+    const base = projectRoot ?? Deno.cwd();
+    try {
+        return new URL(pathStr, toFileUrl(isAbsolute(base) ? base : join(Deno.cwd(), base)).toString());
+    } catch {
+        // Fallback: join
+        return toFileUrl(join(base, pathStr));
+    }
+}
+
+export async function importModule(url: URL | string, loaders: Loader[], _ttlMs = 60_000, projectRoot?: string): Promise<Record<string, unknown>> {
     // debug: importModule call context (guarded by OXIAN_DEBUG)
     if (Deno.env.get("OXIAN_DEBUG") === "1") {
-        console.log('importModule(version)', { importer: import.meta.url });
-        console.log('importModule(input)', url?.toString?.() ?? String(url), { typeof: typeof url, isUrl: url instanceof URL, ttl: _ttlMs, root: projectRoot });
+        try { console.log('importModule', (url as URL).toString(), { ttl: _ttlMs, root: projectRoot }); } catch { console.log('importModule', String(url), { ttl: _ttlMs, root: projectRoot }); }
     }
-    // Normalize incoming specifier to a proper URL (Windows-safe)
-    let rootSpecifier = "";
-    let resolvedUrl: URL | undefined = undefined;
-    const rawInput = (url as unknown as { toString(): string })?.toString?.() ?? String(url as unknown);
-    const allowed = new Set(["file:", "http:", "https:", "jsr:", "npm:", "data:", "blob:"]);
-    // Try to parse as URL first
-    try {
-        const candidate = new URL(rawInput);
-        if (allowed.has(candidate.protocol)) {
-            resolvedUrl = candidate;
-        } else {
-            // Looks like a URL but with unsupported scheme (e.g., "c:") → treat as path
-            resolvedUrl = undefined;
-        }
-    } catch {
-        // not a URL, keep undefined
-    }
-    // If not a valid URL, coerce from filesystem path
-    if (!resolvedUrl) {
-        if (/^[a-zA-Z]:[\\\/]/.test(rawInput) || pathIsAbsolute(rawInput) || rawInput.startsWith("/") || rawInput.startsWith("\\")) {
-            resolvedUrl = toFileUrl(rawInput);
-        } else if (projectRoot) {
-            const abs = pathIsAbsolute(projectRoot) ? join(projectRoot, rawInput) : join(Deno.cwd(), projectRoot, rawInput);
-            resolvedUrl = toFileUrl(abs);
-        }
-    }
-    if (resolvedUrl) {
-        // Dev-friendly cache busting for local files: append mtime as query param
-        if (resolvedUrl.protocol === "file:") {
-            const mt = await mtimeForUrl(resolvedUrl, loaders);
-            const u = new URL(resolvedUrl.toString());
-            u.searchParams.set("v", String(mt ?? 0));
-            rootSpecifier = u.toString();
-        } else {
-            rootSpecifier = resolvedUrl.toString();
-        }
-    } else {
-        // Last resort: assume file path
-        const assumed = projectRoot ? (pathIsAbsolute(projectRoot) ? join(projectRoot, rawInput) : join(Deno.cwd(), projectRoot, rawInput)) : rawInput;
-        rootSpecifier = toFileUrl(assumed).toString();
-    }
-    if (Deno.env.get("OXIAN_DEBUG") === "1") {
-        console.log('importModule(normalized)', { resolved: resolvedUrl?.toString?.() ?? null, rootSpecifier });
+    const asUrl = normalizeToUrl(url as string | URL, projectRoot);
+    let rootSpecifier = asUrl.toString();
+    // Dev-friendly cache busting for local files: append mtime as query param
+    if (asUrl.protocol === "file:") {
+        const mt = await mtimeForUrl(asUrl, loaders);
+        const u = new URL(asUrl.toString());
+        u.searchParams.set("v", String(mt ?? 0));
+        rootSpecifier = u.toString();
     }
     const cache = createCache({ allowRemote: true, cacheSetting: "reload" });
     const resolveFn = await getProjectImportResolver(loaders, projectRoot);
