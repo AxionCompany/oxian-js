@@ -53,20 +53,27 @@ export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000,
     // Normalize incoming specifier to a proper URL (Windows-safe)
     let rootSpecifier = "";
     let resolvedUrl: URL | undefined = undefined;
-    // If we got a URL object, use it directly; otherwise coerce to file URL/path
-    if (url instanceof URL) {
-        resolvedUrl = url;
-    } else {
-        let raw = (url as unknown as { toString(): string })?.toString?.() ?? String(url as unknown);
-        if (/^[a-zA-Z]:[\\\/]/.test(raw) || pathIsAbsolute(raw)) {
-            resolvedUrl = toFileUrl(raw);
+    const rawInput = (url as unknown as { toString(): string })?.toString?.() ?? String(url as unknown);
+    const allowed = new Set(["file:", "http:", "https:", "jsr:", "npm:", "data:", "blob:"]);
+    // Try to parse as URL first
+    try {
+        const candidate = new URL(rawInput);
+        if (allowed.has(candidate.protocol)) {
+            resolvedUrl = candidate;
         } else {
-            try { resolvedUrl = new URL(raw); } catch {
-                if (projectRoot) {
-                    const abs = pathIsAbsolute(projectRoot) ? join(projectRoot, raw) : join(Deno.cwd(), projectRoot, raw);
-                    resolvedUrl = toFileUrl(abs);
-                }
-            }
+            // Looks like a URL but with unsupported scheme (e.g., "c:") → treat as path
+            resolvedUrl = undefined;
+        }
+    } catch {
+        // not a URL, keep undefined
+    }
+    // If not a valid URL, coerce from filesystem path
+    if (!resolvedUrl) {
+        if (/^[a-zA-Z]:[\\\/]/.test(rawInput) || pathIsAbsolute(rawInput) || rawInput.startsWith("/") || rawInput.startsWith("\\")) {
+            resolvedUrl = toFileUrl(rawInput);
+        } else if (projectRoot) {
+            const abs = pathIsAbsolute(projectRoot) ? join(projectRoot, rawInput) : join(Deno.cwd(), projectRoot, rawInput);
+            resolvedUrl = toFileUrl(abs);
         }
     }
     if (resolvedUrl) {
@@ -79,6 +86,10 @@ export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000,
         } else {
             rootSpecifier = resolvedUrl.toString();
         }
+    } else {
+        // Last resort: assume file path
+        const assumed = projectRoot ? (pathIsAbsolute(projectRoot) ? join(projectRoot, rawInput) : join(Deno.cwd(), projectRoot, rawInput)) : rawInput;
+        rootSpecifier = toFileUrl(assumed).toString();
     }
     if (Deno.env.get("OXIAN_DEBUG") === "1") {
         console.log('importModule(normalized)', { resolved: resolvedUrl?.toString?.() ?? null, rootSpecifier });

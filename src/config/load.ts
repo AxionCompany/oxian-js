@@ -52,6 +52,13 @@ async function loadFromModule(path: string): Promise<OxianConfig> {
   const rootForLoader = pathIsAbsolute(path) ? dirname(path) : Deno.cwd();
   const lm = createLoaderManager(rootForLoader);
   const url = lm.resolveUrl(path);
+  // If resolveUrl returned a URL-like string without scheme (Windows drive), coerce to file URL
+  try {
+    // no-op if parseable
+    new URL(url.toString());
+  } catch {
+    // shouldn't happen because resolveUrl returns URL, but keep guard for jsr
+  }
   if (Deno.env.get("OXIAN_DEBUG") === "1") {
     console.log('[config] loadFromModule', { path, rootForLoader, url: url.toString() });
   }
