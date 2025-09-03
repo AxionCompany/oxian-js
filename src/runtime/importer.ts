@@ -1,4 +1,5 @@
 import type { Loader } from "../loader/types.ts";
+import { isAbsolute as pathIsAbsolute, toFileUrl, join } from "@std/path";
 import { createCache } from "@deno/cache-dir";
 import { createGraph } from "@deno/graph";
 import { resolveLocalUrl } from "../loader/local.ts";
@@ -48,13 +49,34 @@ export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000,
     if (Deno.env.get("OXIAN_DEBUG") === "1") {
         console.log('importModule', url.toString(), { ttl: _ttlMs, root: projectRoot });
     }
+    // Normalize incoming specifier to a proper URL (Windows-safe)
     let rootSpecifier = url.toString();
-    // Dev-friendly cache busting for local files: append mtime as query param
-    if (url.protocol === "file:") {
-        const mt = await mtimeForUrl(url, loaders);
-        const u = new URL(url.toString());
-        u.searchParams.set("v", String(mt ?? 0));
-        rootSpecifier = u.toString();
+    let resolvedUrl: URL | undefined = undefined;
+    try {
+        resolvedUrl = new URL(rootSpecifier);
+    } catch {
+        // If it looks like an absolute filesystem path, convert to file URL
+        if (pathIsAbsolute(rootSpecifier)) {
+            resolvedUrl = toFileUrl(rootSpecifier);
+        } else if (/^[a-zA-Z]:[\\\/]/.test(rootSpecifier)) {
+            // Handle Windows drive-prefixed paths explicitly
+            resolvedUrl = toFileUrl(rootSpecifier);
+        } else if (projectRoot) {
+            // Resolve relative path against project root, then convert
+            const abs = pathIsAbsolute(projectRoot) ? join(projectRoot, rootSpecifier) : join(Deno.cwd(), projectRoot, rootSpecifier);
+            resolvedUrl = toFileUrl(abs);
+        }
+    }
+    if (resolvedUrl) {
+        // Dev-friendly cache busting for local files: append mtime as query param
+        if (resolvedUrl.protocol === "file:") {
+            const mt = await mtimeForUrl(resolvedUrl, loaders);
+            const u = new URL(resolvedUrl.toString());
+            u.searchParams.set("v", String(mt ?? 0));
+            rootSpecifier = u.toString();
+        } else {
+            rootSpecifier = resolvedUrl.toString();
+        }
     }
     const cache = createCache({ allowRemote: true, cacheSetting: "reload" });
     const resolveFn = await getProjectImportResolver(loaders, projectRoot);
