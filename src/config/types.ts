@@ -1,3 +1,34 @@
+/**
+ * @fileoverview Type definitions for Oxian framework configuration.
+ * 
+ * This module exports TypeScript type definitions that define the complete
+ * configuration schema for Oxian applications. It includes settings for
+ * server configuration, routing, security, logging, runtime behavior,
+ * hypervisor settings, and compatibility options.
+ * 
+ * @module config/types
+ */
+
+/**
+ * Complete configuration schema for Oxian applications.
+ * 
+ * This type defines all available configuration options for an Oxian application,
+ * including server settings, routing behavior, security policies, logging configuration,
+ * runtime options, hypervisor settings, and compatibility modes.
+ * 
+ * @example
+ * ```typescript
+ * const config: OxianConfig = {
+ *   server: { port: 8080 },
+ *   routing: { routesDir: "routes", trailingSlash: "never" },
+ *   security: {
+ *     cors: { allowedOrigins: ["*"] },
+ *     defaultHeaders: { "x-powered-by": "Oxian" }
+ *   },
+ *   logging: { level: "info" }
+ * };
+ * ```
+ */
 export type OxianConfig = {
   root?: string;
   basePath?: string;
@@ -23,6 +54,14 @@ export type OxianConfig = {
       stickyHeader?: string; // used when strategy = sticky
       workerBasePort?: number; // default 9100
       proxy?: { timeoutMs?: number; passRequestId?: boolean };
+      // Optional bounded in-memory queue to buffer requests while workers start/swap
+      // Defaults: enabled=true, maxItems=100, maxBodyBytes=1048576 (1MB), maxWaitMs=2000
+      queue?: {
+        enabled?: boolean;
+        maxItems?: number;
+        maxBodyBytes?: number;
+        maxWaitMs?: number;
+      };
       health?: { path?: string; intervalMs?: number; timeoutMs?: number };
       autoscale?: {
         enabled?: boolean;
@@ -38,6 +77,12 @@ export type OxianConfig = {
       denoConfig?: string;
       // Request lifecycle timeouts (proxy-level)
       timeouts?: { connectMs?: number; headersMs?: number; idleMs?: number; totalMs?: number };
+      // Web dev/prod integration
+      web?: {
+        devProxyTarget?: string; // e.g., http://localhost:5173
+        staticDir?: string;      // e.g., "dist"
+        staticCacheControl?: string; // e.g., "public, max-age=31536000, immutable"
+      };
       // Config-only multi-project support
       projects?: Record<string, {
         source?: string;
@@ -110,4 +155,23 @@ export type OxianConfig = {
   };
 };
 
+/**
+ * Effective configuration type with required fields.
+ * 
+ * This type represents the final configuration after all defaults have been applied.
+ * It ensures that certain critical configuration fields are always present by making
+ * them required, while keeping all other OxianConfig fields optional.
+ * 
+ * @example
+ * ```typescript
+ * // After loading and applying defaults
+ * const effectiveConfig: EffectiveConfig = {
+ *   root: "/app",
+ *   basePath: "/",
+ *   server: { port: 8080 },
+ *   logging: { level: "info" },
+ *   // ... other optional fields
+ * };
+ * ```
+ */
 export type EffectiveConfig = Required<Pick<OxianConfig, "root" | "basePath" | "server" | "logging">> & OxianConfig; 

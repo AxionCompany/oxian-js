@@ -18,10 +18,13 @@ function fileExists(path: string): Promise<boolean> {
 
 async function findConfigPath(explicit?: string): Promise<string | undefined> {
   if (explicit) {
+    // Windows drive letter absolute paths (e.g., C:\path or C:/path)
+    if (/^[A-Za-z]:[\\\/]/.test(explicit)) return explicit;
     // If it looks like a URL scheme we return as-is for loader
     if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(explicit)) return explicit;
-    // Ensure absolute path for toFileUrl
+    // POSIX absolute
     if (explicit.startsWith("/")) return explicit;
+    // Relative -> absolute
     return join(Deno.cwd(), explicit);
   }
   const candidates = [
@@ -40,7 +43,8 @@ async function findConfigPath(explicit?: string): Promise<string | undefined> {
 async function loadFromModule(path: string): Promise<OxianConfig> {
   const rootForLoader = pathIsAbsolute(path) ? dirname(path) : Deno.cwd();
   const lm = createLoaderManager(rootForLoader);
-  const url = lm.resolveUrl(path);
+  // Normalize Windows paths to file URLs before import
+  const url = path.startsWith("file:") ? new URL(path) : toFileUrl(pathIsAbsolute(path) ? path : join(Deno.cwd(), path));
   const mod = await importModule(url, lm.getLoaders(), 60_000, Deno.cwd());
   const exp = (mod.default ?? (mod as any).config ?? mod) as unknown;
   if (typeof exp === "function") {
@@ -64,7 +68,10 @@ async function loadFromJson(path: string): Promise<OxianConfig> {
 
 async function loadRemoteConfig(pathOrUrl: string): Promise<OxianConfig> {
   const lm = createLoaderManager(Deno.cwd());
-  const url = lm.resolveUrl(pathOrUrl);
+  // Normalize raw filesystem paths to file URLs for importer
+  const url = /^[A-Za-z]:[\\\/]/.test(pathOrUrl)
+    ? toFileUrl(pathOrUrl)
+    : lm.resolveUrl(pathOrUrl);
   const loader = lm.getActiveLoader(url);
   // JSON via loader directly
   if (url.pathname.endsWith(".json")) {

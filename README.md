@@ -498,6 +498,64 @@ deno -A jsr:@oxian/oxian-js dev
 
 Changes to routes, dependencies, middleware, and interceptors trigger automatic reloads.
 
+## 🧩 Using with Vite (Frontend + Oxian)
+
+Oxian works great alongside Vite. In development, run both servers and let Oxian proxy non-API requests to Vite. In production, serve static files from Vite's `dist/` as a fallback when a request doesn't match any API route.
+
+### Dev setup
+
+1) Run Vite on its default port (5173):
+
+```bash
+npm run dev
+```
+
+2) Run Oxian hypervisor on a different port (e.g., 8080) and configure a basePath for APIs, e.g., `/api`:
+
+```json
+// oxian.config.json
+{
+  "server": { "port": 8080 },
+  "basePath": "/api",
+  "routing": { "routesDir": "routes", "discovery": "lazy" },
+  "runtime": {
+    "hv": {
+      "web": { "devProxyTarget": "http://localhost:5173" }
+    }
+  }
+}
+```
+
+With this, requests that don't match an Oxian API route can be proxied to the Vite dev server (configuration wiring described in docs). Your frontend fetches can target `/api/...` to hit Oxian and everything else serves your Vite app.
+
+### Production setup
+
+Build your frontend and let Oxian serve static assets for non-API routes:
+
+```bash
+npm run build  # produces dist/
+```
+
+```json
+// oxian.config.json
+{
+  "server": { "port": 8080 },
+  "basePath": "/api",
+  "runtime": {
+    "hv": {
+      "web": {
+        "staticDir": "dist",
+        "staticCacheControl": "public, max-age=31536000, immutable"
+      }
+    }
+  }
+}
+```
+
+Oxian will try API routes under `/api`; if no match, it serves files from `dist/`. If a file is not found and no staticDir is configured, a 404 is returned.
+
+For more details and advanced options, see [Using Oxian with Vite](./docs/integrations-vite.md).
+
 ## 📝 TypeScript Support
 
 Oxian is built with TypeScript-first design:
@@ -766,13 +824,15 @@ export function GET(_, { dependencies }) {
 
 ## 📚 Examples
 
-Check out these complete examples:
+Explore example routes included in this repo:
 
-- [Simple CRUD API](./examples/crud-api)
-- [Authentication with JWT](./examples/auth-api)
-- [Real-time Chat with SSE](./examples/chat-api)
-- [File Upload API](./examples/upload-api)
-- [GraphQL Integration](./examples/graphql-api)
+- Basic index route: `routes/index.ts`
+- Dynamic params: `routes/users/[id].ts`
+- SSE stream: `routes/sse.ts`
+- Streaming response: `routes/stream.ts`
+- DI composition: `routes/dep-compose/dependencies.ts` and `routes/dep-compose/leaf/index.ts`
+- Middleware & interceptors: `routes/middleware.ts`, `routes/interceptors.ts`, `routes/users/middleware.ts`, `routes/order/a/interceptors.ts`
+- Catch-all docs: `routes/docs/[...slug].ts`
 
 ## 🤝 Contributing
 

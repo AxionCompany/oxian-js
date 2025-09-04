@@ -1,6 +1,6 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.5.23",
+  "version": "0.6.18",
   "exports": {
     ".": "./cli.ts",
     "./server": "./src/server/server.ts",
@@ -11,6 +11,7 @@
   "publish": {
     "include": [
       "cli.ts",
+      "llm.txt",
       "src/**",
       "deno.json",
       "README.md",
@@ -22,6 +23,9 @@
       "oxian-framework-spec.md"
     ]
   },
+  "unstable":[
+    "raw-imports"
+  ],
   "imports": {
     "oxian-js/": "./src/",
     "@std/path": "jsr:@std/path@1.1.1",

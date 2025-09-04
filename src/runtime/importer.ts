@@ -1,4 +1,5 @@
 import type { Loader } from "../loader/types.ts";
+import { isAbsolute, toFileUrl, join } from "@std/path";
 import { createCache } from "@deno/cache-dir";
 import { createGraph } from "@deno/graph";
 import { resolveLocalUrl } from "../loader/local.ts";
@@ -33,12 +34,49 @@ async function getProjectImportResolver(loaders: Loader[], projectRoot?: string)
     return undefined;
 }
 
-export async function importModule(url: URL, loaders: Loader[], _ttlMs = 60_000, projectRoot?: string): Promise<Record<string, unknown>> {
+async function mtimeForUrl(url: URL, loaders: Loader[]): Promise<number | undefined> {
+    try {
+        const active = loaders.find((l) => l.canHandle(url));
+        const st = await (active?.stat?.(url) ?? Promise.resolve(undefined));
+        return (st as { mtime?: number } | undefined)?.mtime;
+    } catch {
+        return undefined;
+    }
+}
+
+function normalizeToUrl(input: string | URL, projectRoot?: string): URL {
+    if (input instanceof URL) return input;
+    // If already a URL-like string
+    try { return new URL(input as string); } catch { /* not a URL */ }
+    const pathStr = input as string;
+    // Absolute filesystem path (handles Windows drive letters)
+    if (isAbsolute(pathStr)) {
+        return toFileUrl(pathStr);
+    }
+    // Relative path: resolve against projectRoot or cwd
+    const base = projectRoot ?? Deno.cwd();
+    try {
+        return new URL(pathStr, toFileUrl(isAbsolute(base) ? base : join(Deno.cwd(), base)).toString());
+    } catch {
+        // Fallback: join
+        return toFileUrl(join(base, pathStr));
+    }
+}
+
+export async function importModule(url: URL | string, loaders: Loader[], _ttlMs = 60_000, projectRoot?: string): Promise<Record<string, unknown>> {
     // debug: importModule call context (guarded by OXIAN_DEBUG)
     if (Deno.env.get("OXIAN_DEBUG") === "1") {
-        console.log('importModule', url.toString(), { ttl: _ttlMs, root: projectRoot });
+        try { console.log('importModule', (url as URL).toString(), { ttl: _ttlMs, root: projectRoot }); } catch { console.log('importModule', String(url), { ttl: _ttlMs, root: projectRoot }); }
     }
-    const rootSpecifier = url.toString();
+    const asUrl = normalizeToUrl(url as string | URL, projectRoot);
+    let rootSpecifier = asUrl.toString();
+    // Dev-friendly cache busting for local files: append mtime as query param
+    if (asUrl.protocol === "file:") {
+        const mt = await mtimeForUrl(asUrl, loaders);
+        const u = new URL(asUrl.toString());
+        u.searchParams.set("v", String(mt ?? 0));
+        rootSpecifier = u.toString();
+    }
     const cache = createCache({ allowRemote: true, cacheSetting: "reload" });
     const resolveFn = await getProjectImportResolver(loaders, projectRoot);
 
