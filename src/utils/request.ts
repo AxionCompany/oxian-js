@@ -1,4 +1,5 @@
-import { Data } from "../core/types.ts";
+import type { Data } from "../core/types.ts";
+import { encodeBase64 } from "@std/encoding/base64";
 
 export async function parseRequestBody(req: Request): Promise<unknown> {
     const ct = req.headers.get("content-type") ?? "";
@@ -11,11 +12,41 @@ export async function parseRequestBody(req: Request): Promise<unknown> {
         if (ct.includes("text/plain")) {
             return await req.text();
         }
-        if (ct.includes("application/x-www-form-urlencoded") || ct.includes("multipart/form-data")) {
+        if (ct.includes("application/x-www-form-urlencoded")) {
             const formData = await req.formData();
             const data: Record<string, unknown> = {};
-            for (const [k, v] of Object.entries(formData)) {
-                data[k] = v;
+            for (const [key, value] of formData) {
+                // URL-encoded forms yield strings
+                const existing = data[key];
+                if (existing === undefined) data[key] = value as string;
+                else if (Array.isArray(existing)) (existing as unknown[]).push(value as string);
+                else data[key] = [existing, value as string];
+            }
+            return data;
+        }
+        if (ct.includes("multipart/form-data")) {
+            const formData = await req.formData();
+            const data: Record<string, unknown> = {};
+            for (const [key, value] of formData) {
+                if (value instanceof File) {
+                    const buffer = new Uint8Array(await value.arrayBuffer());
+                    const base64 = encodeBase64(buffer);
+                    const fileData = {
+                        filename: value.name,
+                        contentType: value.type,
+                        size: value.size,
+                        base64,
+                    };
+                    const existing = data[key];
+                    if (existing === undefined) data[key] = fileData;
+                    else if (Array.isArray(existing)) (existing as unknown[]).push(fileData);
+                    else data[key] = [existing, fileData];
+                } else {
+                    const existing = data[key];
+                    if (existing === undefined) data[key] = value as string;
+                    else if (Array.isArray(existing)) (existing as unknown[]).push(value as string);
+                    else data[key] = [existing, value as string];
+                }
             }
             return data;
         }
