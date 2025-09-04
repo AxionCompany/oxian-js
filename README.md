@@ -184,6 +184,8 @@ export function POST({ userId, avatar }) {
 }
 ```
 
+Note: The original unparsed request body bytes are available at `context.request.rawBody` as a `Uint8Array`.
+
 ### Context Object
 
 The `context` provides request details and response utilities:

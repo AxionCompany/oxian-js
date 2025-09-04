@@ -5,7 +5,6 @@ Welcome to the Oxian-js documentation. This guide will help you master every asp
 ## 🚀 Getting Started
 
 - [**Getting Started**](./getting-started.md) - Installation, first project, and quick setup
-- [**Project Structure**](./project-structure.md) - How to organize your Oxian projects
 
 ## 🏗️ Core Concepts
 
@@ -32,14 +31,10 @@ Welcome to the Oxian-js documentation. This guide will help you master every asp
 
 - [**API Reference**](./api-reference.md) - Complete TypeScript API documentation
 - [**Best Practices**](./best-practices.md) - Patterns, performance, security
-- [**Migration Guide**](./migration.md) - Upgrading between versions
-- [**Troubleshooting**](./troubleshooting.md) - Common issues and solutions
 
 ## 🎯 Examples
 
-- [**Example Projects**](./examples/) - Complete example applications
-- [**Recipes**](./recipes/) - Common patterns and solutions
-- [**Integrations**](./integrations/) - Third-party service integrations
+- [**Example Projects**](../examples/) - Complete example applications
 
 ---
 
