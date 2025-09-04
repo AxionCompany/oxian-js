@@ -109,6 +109,43 @@ export function POST({ name, email, age }) {
 }
 ```
 
+### Request Body Parsing Details
+
+Oxian parses bodies based on `Content-Type` and merges into `data` with the precedence: path > query > body.
+
+- **application/json**: Parsed JSON. Empty body → `undefined`.
+- **text/plain**: Raw string.
+- **application/x-www-form-urlencoded**: Key/value object where duplicate keys produce arrays of strings.
+- **multipart/form-data**:
+  - Text fields are strings; duplicate keys produce arrays of strings.
+  - File fields are transformed into objects that include base64-encoded content and metadata:
+    ```ts
+    type UploadedFile = {
+      filename: string;
+      contentType: string;
+      size: number;
+      base64: string; // file bytes encoded as base64
+    };
+    ```
+  - Multiple files for the same field become arrays of `UploadedFile`.
+
+Example handler receiving multipart form-data:
+
+```ts
+// routes/assets.ts
+export function POST({ title, file }) {
+  // title: string | string[]
+  // file: UploadedFile | UploadedFile[]
+  const f = Array.isArray(file) ? file[0] : file;
+  return {
+    title: Array.isArray(title) ? title[0] : title,
+    filename: f?.filename,
+    bytes: f?.size,
+    contentType: f?.contentType
+  };
+}
+```
+
 ### Parameter Precedence Example
 
 ```ts

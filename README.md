@@ -141,6 +141,49 @@ export function PUT({ id, role, name }) {
 }
 ```
 
+### Request Body Parsing
+
+Oxian parses request bodies based on `Content-Type` and merges them into `data` (lowest priority), with query and path params overriding as shown above.
+
+- **application/json**: Parsed JSON object. Empty body → `undefined`.
+- **text/plain**: Raw string.
+- **application/x-www-form-urlencoded**: Key/value object. Duplicate keys become arrays. Values are strings.
+- **multipart/form-data**:
+  - Text fields: strings; duplicate keys become arrays of strings.
+  - File fields: objects with base64 content and metadata:
+    ```ts
+    type UploadedFile = {
+      filename: string;
+      contentType: string;
+      size: number;
+      base64: string; // file bytes encoded as base64
+    };
+    ```
+  - If a file field appears multiple times, `data[field]` is an array of `UploadedFile`.
+
+Example (multipart upload):
+
+```bash
+curl -X POST \
+  -F "avatar=@./avatar.png" \
+  -F "userId=123" \
+  http://localhost:8080/upload
+```
+
+```ts
+// routes/upload.ts
+export function POST({ userId, avatar }) {
+  // avatar is either UploadedFile or UploadedFile[] depending on how many files were sent
+  const file = Array.isArray(avatar) ? avatar[0] : avatar;
+  return {
+    userId,
+    filename: file?.filename,
+    size: file?.size,
+    preview: file?.base64?.slice(0, 24) // sample usage
+  };
+}
+```
+
 ### Context Object
 
 The `context` provides request details and response utilities:
