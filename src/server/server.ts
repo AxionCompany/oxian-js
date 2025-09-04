@@ -1,3 +1,14 @@
+/**
+ * @fileoverview Core HTTP server implementation for the Oxian framework.
+ * 
+ * This module provides the main server functionality, including request handling,
+ * routing, middleware execution, dependency injection, and response processing.
+ * It orchestrates the complete request lifecycle from incoming HTTP requests
+ * to final responses.
+ * 
+ * @module server
+ */
+
 import type { EffectiveConfig } from "../config/types.ts";
 import { createLogger, makeRequestLog } from "../logging/logger.ts";
 import { createResponseController, finalizeResponse } from "../utils/response.ts";
@@ -60,6 +71,27 @@ async function loadBootstrapDeps(config: EffectiveConfig): Promise<Record<string
   return deps;
 }
 
+/**
+ * Starts the Oxian HTTP server with the provided configuration.
+ * 
+ * This function initializes and starts a complete HTTP server that handles routing,
+ * middleware execution, dependency injection, interceptors, and request/response
+ * processing. It supports both local and remote routing, CORS configuration,
+ * security headers, and comprehensive logging.
+ * 
+ * @param opts - Configuration options for the server
+ * @param opts.config - The effective Oxian configuration object
+ * @param opts.source - Optional source directory or URL for routes
+ * 
+ * @example
+ * ```typescript
+ * import { startServer } from "@oxian/oxian-js/server";
+ * import { loadConfig } from "@oxian/oxian-js/config";
+ * 
+ * const config = await loadConfig();
+ * await startServer({ config });
+ * ```
+ */
 export async function startServer(opts: { config: EffectiveConfig; source?: string }) {
   const { config, source } = opts;
   const logger = createLogger(config.logging?.level ?? "info");

@@ -1,0 +1,326 @@
+Oxian LLM Authoring Guide
+=========================
+
+Purpose
+-------
+This document teaches LLMs how to generate and modify code for Oxian projects safely and effectively. Oxian turns simple ESM files into API endpoints with optional middleware, interceptors, and dependency composition.
+
+Golden Rules
+------------
+1) Place API files under the configured routes directory (default: routes/).
+2) Export HTTP-method-named functions (GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD) or a default export as a handler.
+3) Prefer placing long-lived resources (DB/clients) in dependencies.ts factories, not inside handlers.
+4) Use standard Web APIs (fetch, etc) and ESM. Avoid Node-only APIs.
+5) Keep files idempotent; hot reload swaps workers and re-imports modules.
+
+Quick Start
+-----------
+Create a minimal project structure:
+
+```
+routes/
+  index.ts
+  users/
+    [id].ts
+  dependencies.ts
+```
+
+Example `routes/index.ts`:
+```ts
+import { Data, Context } from 'oxian-js' // import types for type-safety
+
+export function GET(data: Data, context: Context) {
+  return { message: "Hello, Oxian!" };
+}
+```
+
+Example `routes/users/[id].ts`:
+```ts
+import { Data, Context } from 'oxian-js' // import types for type-safety
+
+export async function GET({ id }: Data) {
+  return { user: { id } };
+}
+```
+
+Start Oxian-js framework 
+```bash
+deno run -A jsr:@oxian/oxian-js
+```
+or, for development mode with reload watcher
+```bash
+deno run -A jsr:@oxian/oxian-js dev
+```
+
+Call endpoint (dynamic param example):
+```bash
+curl http://localhost:8080/users/123
+```
+
+Handler Contract
+----------------
+Signature:
+```ts
+export type Handler = (data: Record<string, unknown>, context: Context) => unknown | void | Promise<unknown | void>;
+```
+
+Data merge order (highest precedence last): body < query < path params.
+
+Context shape (subset):
+```ts
+type Context = {
+  requestId: string;
+  request: { method: string; url: string; headers: Headers; pathParams: Record<string,string>; query: Record<string,string|string[]>; body: unknown; raw: Request };
+  dependencies: Record<string, unknown>;
+  response: {
+    send: (body: unknown, init?: { status?: number; headers?: Record<string,string>; statusText?: string }) => void;
+    stream: (initOrChunk?: { status?: number; headers?: Record<string,string>; statusText?: string } | Uint8Array | string) => (((chunk: Uint8Array | string) => void) & { close?: () => void; done?: Promise<void> }) | void;
+    sse: (init?: { status?: number; headers?: Record<string,string>; retry?: number; keepOpen?: boolean }) => { send: (data: unknown, opts?: { event?: string; id?: string; retry?: number }) => void; comment: (text: string) => void; close: () => void; done: Promise<void> };
+    status: (code: number) => void; headers: (h: Record<string,string>) => void; statusText: (t: string) => void;
+  };
+  oxian: { route: string; startedAt: number };
+};
+```
+
+Sending Responses
+-----------------
+1) Return a value: it will be serialized (JSON by default) unless you return a Response/stream.
+2) Or use `context.response.send(body, init)` to set status/headers explicitly.
+3) Streaming: `const write = response.stream({ headers: { "content-type": "text/plain" } }); write("chunk"); write.close?.();`
+4) SSE: `const sse = response.sse({ retry: 1000, keepOpen: true }); sse.send({ tick: 1 }, { event: "ticks" }); sse.close();`
+
+Dependencies (DI)
+------------------
+Define `dependencies.ts` at any level to provide/inherit services down the tree. Default export should be a function returning an object.
+
+Example `routes/dependencies.ts`:
+```ts
+export default async function () {
+  const users = new Map<string, { id: string; name: string }>([["1", { id: "1", name: "Ada" }]]);
+  const db = { users };
+  return { db } as const;
+}
+```
+
+Use in handlers: `const { db } = context.dependencies as { db: { users: Map<string, unknown> } };`
+
+Middleware
+----------
+File: `middleware.ts` (default export is a function). It can modify `data` and/or `context`.
+```ts
+export default function(data, context) {
+  return { data: { ...data, timestamp: Date.now() } };
+}
+```
+
+Interceptors
+------------
+File: `interceptors.ts` supports `beforeRun` and `afterRun`.
+```ts
+export async function beforeRun(data, context) { return { data: { ...data, start: Date.now() } }; }
+export async function afterRun(resultOrError, context) { /* log or transform */ }
+```
+
+Routing Conventions
+-------------------
+- `index.ts` maps to `/path/`
+- `[id].ts` maps to `/path/:id`
+- `[...slug].ts` maps to `/path/*` with `slug`
+- Supported extensions: .ts, .tsx, .js, .jsx
+
+Errors
+------
+- Throw `new OxianHttpError(message, { statusCode, code, details })` for structured errors.
+- Or throw `{ message, statusCode }`.
+- In debug (`OXIAN_DEBUG=1`), stack traces are included in responses.
+
+Configuration (oxian.config.json)
+---------------------------------
+Common fields:
+```json
+{
+  "server": { "port": 8080 },
+  "basePath": "/api",
+  "routing": { "routesDir": "routes", "discovery": "lazy" },
+  "runtime": {
+    "hotReload": true,
+    "hv": {
+      "queue": { "enabled": true, "maxItems": 100, "maxBodyBytes": 1048576, "maxWaitMs": 2000 },
+      "web": { "devProxyTarget": "http://localhost:5173", "staticDir": "dist", "staticCacheControl": "public, max-age=31536000, immutable" }
+    }
+  },
+  "logging": { "level": "info", "requestIdHeader": "x-request-id" },
+  "security": { "cors": { "allowedOrigins": ["*"] } }
+}
+```
+
+Configuration deep-dive
+-----------------------
+This section describes the most relevant configuration keys. The full, authoritative schema lives in `src/config/types.ts`.
+
+- server
+  - port: Number. Public listening port for Oxian (or the hypervisor proxy).
+
+- basePath
+  - String. URL prefix for API routes. If set to `/api`, then `/users` becomes `/api/users`.
+
+- routing
+  - routesDir: String. Directory where API files live (default `routes`).
+  - discovery: `"eager" | "lazy"`. Eager scans files at startup; lazy discovers on demand (faster cold start in dev).
+  - trailingSlash: `"always" | "never" | "preserve"`. Normalizes request path before matching.
+
+- loaders
+  - local.enabled: Boolean. Enable/disable local file loader (default enabled).
+  - github.enabled: Boolean. Enable GitHub loader.
+  - github.tokenEnv: String. Environment variable name holding a GitHub token for private repos.
+
+- runtime
+  - hotReload: Boolean. Enables dev hot reload behavior.
+  - dependencies:
+    - initial: Record<string, unknown>. Pre-injected dependency values.
+    - bootstrapModule: String. Module exporting a default or `createDependencies(config)` to produce dependencies at boot.
+    - readonly: string[]. Keys to freeze after bootstrap.
+  - hv (hypervisor): process-based proxy/load balancer that spawns workers and proxies requests.
+    - enabled: Boolean. When false, the CLI runs the server directly without the hypervisor.
+    - workers: Number | "auto". Desired worker count.
+    - strategy: `"round_robin" | "least_busy" | "sticky"` (sticky uses `stickyHeader`).
+    - stickyHeader: String. Header name used for sticky routing.
+    - workerBasePort: Number. Base port to allocate worker processes.
+    - proxy: { timeoutMs?: number; passRequestId?: boolean }. Proxy behavior and automatic request-id forwarding.
+    - queue: { enabled?: boolean; maxItems?: number; maxBodyBytes?: number; maxWaitMs?: number }.
+      - Bounded in-memory queue to buffer requests while workers (re)start.
+    - health: { path?: string; intervalMs?: number; timeoutMs?: number }. Upstream worker health checks.
+    - autoscale: { enabled?: boolean; min?: number; max?: number; targetInflightPerWorker?: number; maxAvgLatencyMs?: number; scaleUpCooldownMs?: number; scaleDownCooldownMs?: number; idleTtlMs?: number }.
+    - denoConfig: String. Path/URL to forward host Deno config/import maps to workers.
+    - timeouts: { connectMs?: number; headersMs?: number; idleMs?: number; totalMs?: number }.
+    - web: { devProxyTarget?: string; staticDir?: string; staticCacheControl?: string }.
+      - devProxyTarget: When a request does not match API routes in dev, proxy to Vite.
+      - staticDir: In prod, serve non-API requests from a static directory (e.g., `dist`).
+      - staticCacheControl: Cache-control header for static assets.
+    - projects: Multi-project configuration with per-project routing basePath and overrides.
+
+- permissions
+  - net | read | write | env | ffi | hrtime | sys: Boolean | string[]. Future enforcement via hypervisor.
+
+- security
+  - cors: { allowedOrigins: string[]; allowedHeaders?: string[]; methods?: string[] }.
+  - defaultHeaders: Record<string, string>. Headers applied to all responses.
+  - scrubHeaders: string[]. Redact these headers in logs.
+
+- logging
+  - level: `"debug" | "info" | "warn" | "error"`.
+  - requestIdHeader: String. Header used to propagate request id.
+  - deprecations: Boolean. Show/hide deprecation warnings.
+
+- compatibility
+  - handlerMode: `"default" | "this" | "factory"` (legacy compatibility helpers).
+  - allowShared: Boolean. Allow deprecated `shared.ts` discovery (default true when undefined).
+
+Example: complete (JSON)
+------------------------
+```json
+{
+  "server": { "port": 8080 },
+  "basePath": "/api",
+  "routing": { "routesDir": "routes", "discovery": "lazy", "trailingSlash": "preserve" },
+  "loaders": {
+    "github": { "enabled": true, "tokenEnv": "GITHUB_TOKEN" }
+  },
+  "runtime": {
+    "hotReload": true,
+    "dependencies": {
+      "initial": { "appName": "oxian-app" },
+      "bootstrapModule": "./bootstrap/deps.ts",
+      "readonly": ["appName"]
+    },
+    "hv": {
+      "enabled": true,
+      "workers": "auto",
+      "strategy": "round_robin",
+      "workerBasePort": 9101,
+      "proxy": { "timeoutMs": 2000, "passRequestId": true },
+      "queue": { "enabled": true, "maxItems": 200, "maxBodyBytes": 2097152, "maxWaitMs": 3000 },
+      "health": { "path": "/_health", "intervalMs": 1000, "timeoutMs": 500 },
+      "web": { "devProxyTarget": "http://localhost:5173", "staticDir": "dist", "staticCacheControl": "public, max-age=31536000, immutable" },
+      "timeouts": { "totalMs": 30000 }
+    }
+  },
+  "security": { "cors": { "allowedOrigins": ["*"] }, "defaultHeaders": { "x-powered-by": "Oxian" } },
+  "logging": { "level": "info", "requestIdHeader": "x-request-id", "deprecations": true },
+  "compatibility": { "handlerMode": "default", "allowShared": true }
+}
+```
+
+Dev & Hot Reload
+----------------
+- Start: `deno -A jsr:@oxian/oxian-js dev` (or `start`)
+- Hypervisor runs by default unless disabled. It supports blue/green restarts on file changes and a short in-memory queue to reduce downtime.
+- Edits to routes, dependencies, middleware, and interceptors are picked up automatically. Transitive imports are reloaded via mtime-based cache busting.
+
+Vite Integration
+----------------
+Dev (two servers):
+- Run Vite on 5173 and Oxian on 8080 with `runtime.hv.web.devProxyTarget` set to the Vite URL.
+- Frontend calls `/api/...`; other paths proxy to Vite.
+
+Prod (single port):
+- Build frontend to `dist/`, configure `runtime.hv.web.staticDir`: Oxian serves static for non-API routes.
+
+Import Maps (deno.json)
+-----------------------
+Provide import aliases and JSR mappings to simplify imports in route code:
+```json
+{
+  "imports": {
+    "@std/path": "jsr:@std/path@^1.0.0"
+  }
+}
+```
+
+Remote Sources (GitHub Loader)
+------------------------------
+Run from GitHub without cloning:
+```bash
+deno -A jsr:@oxian/oxian-js --source=github:owner/repo/path?ref=main
+```
+
+LLM Authoring Checklist
+-----------------------
+- Place new API under the routes directory; use `[param]` and `[...slug]` when needed.
+- Export method functions in UPPERCASE or a default handler.
+- Keep stateful clients in `dependencies.ts` factories; reuse via `context.dependencies`.
+- Use `response.send` for custom status/headers; otherwise return values directly.
+- For SSE, call `response.sse({ keepOpen: true })` and `close()` to finish.
+- Avoid Node-specific APIs; rely on Web APIs and ESM.
+- Update `deno.json` import map if introducing new aliases.
+- Update `oxian.config.json` if changing `basePath`, `routesDir`, or web dev/prod settings.
+
+Health & Observability
+----------------------
+- Hypervisor exposes `HEAD /_health` for readiness.
+- Request IDs can be propagated via `logging.requestIdHeader`.
+
+Production Notes
+----------------
+- Oxian prefers stateless handlers; keep DB connections in dependencies.
+- Hypervisor supports blue/green restarts; avoid long-lived global singletons outside DI.
+- Configure CORS and default headers under `security`.
+
+Where To Look In This Repo
+--------------------------
+When using the published package, import from these exported modules:
+- Main CLI: `jsr:@oxian/oxian-js` or `@oxian/oxian-js`
+- Server API: `@oxian/oxian-js/server` (startServer function)
+- Configuration types: `@oxian/oxian-js/config` (OxianConfig, EffectiveConfig types)
+- Runtime/module loader: `@oxian/oxian-js/runtime` (loadRouteModule, clearModuleCache functions)
+- Core types: `@oxian/oxian-js/types` (Handler, Context, Data, OxianHttpError, etc.)
+
+Internal source reference (for contributors):
+- Server implementation: `src/server/server.ts`
+- Router: `src/router/`
+- Runtime (pipeline/deps/mw/interceptors): `src/runtime/`
+- Hypervisor: `src/hv/main.ts`
+- Config types: `src/config/types.ts`
+- Vite integration doc: `docs/integrations-vite.md`
+
+
