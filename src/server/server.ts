@@ -136,6 +136,17 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
       const match = lazyAsync ? await lazyAsync(path) : resolved.router.match(path);
 
       const { params: queryParams, record: queryRecord } = parseQuery(url);
+      // Preserve an untouched clone of the Request for consumers
+      const rawClone = req.clone();
+      // Capture raw body bytes without consuming the preserved clone
+      let rawBody: Uint8Array | undefined = undefined;
+      try {
+        const bodyClone = req.clone();
+        const ab = await bodyClone.arrayBuffer();
+        rawBody = new Uint8Array(ab);
+      } catch {
+        // Swallow errors reading raw body; continue with parsed body only
+      }
       const body = await parseRequestBody(req);
       const pathParams = (match as any)?.params ?? {};
       let data: Data = mergeData(pathParams, queryRecord, body);
@@ -153,7 +164,8 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
           queryParams,
           query: queryRecord,
           body,
-          raw: req,
+          rawBody,
+          raw: rawClone,
         },
         dependencies: {},
         response: controller,
