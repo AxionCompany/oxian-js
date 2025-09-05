@@ -1,6 +1,6 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.6.19",
+  "version": "0.6.22",
   "exports": {
     ".": "./cli.ts",
     "./server": "./src/server/server.ts",
@@ -14,6 +14,7 @@
       "llm.txt",
       "src/**",
       "deno.json",
+      "docs/**",
       "README.md",
       "LICENSE*"
     ],
@@ -24,7 +25,19 @@
     ]
   },
   "unstable":[
-    "raw-imports"
+    "raw-imports",
+    "bare-node-builtins",
+    "detect-cjs",
+    "node-globals",
+    "sloppy-imports",
+    "unsafe-proto",
+    "webgpu",
+    "broadcast-channel",
+    "worker-options",
+    "cron",
+    "kv",
+    "net",
+    "otel"
   ],
   "imports": {
     "oxian-js/": "./src/",

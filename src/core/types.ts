@@ -96,6 +96,7 @@ export type Context = {
     queryParams: URLSearchParams;
     query: Record<string, string | string[]>;
     body: unknown;
+    rawBody?: Uint8Array;
     raw: Request;
   };
   dependencies: Record<string, unknown>;

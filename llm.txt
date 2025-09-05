@@ -70,7 +70,7 @@ Context shape (subset):
 ```ts
 type Context = {
   requestId: string;
-  request: { method: string; url: string; headers: Headers; pathParams: Record<string,string>; query: Record<string,string|string[]>; body: unknown; raw: Request };
+  request: { method: string; url: string; headers: Headers; pathParams: Record<string,string>; query: Record<string,string|string[]>; body: unknown; rawBody?: Uint8Array; raw: Request };
   dependencies: Record<string, unknown>;
   response: {
     send: (body: unknown, init?: { status?: number; headers?: Record<string,string>; statusText?: string }) => void;
@@ -81,6 +81,28 @@ type Context = {
   oxian: { route: string; startedAt: number };
 };
 ```
+
+Request Body Parsing
+--------------------
+Oxian parses request bodies based on `Content-Type` and merges them into the `data` argument with precedence: body < query < path.
+
+- application/json: Parsed JSON object; empty body → `undefined`.
+- text/plain: Raw string.
+- application/x-www-form-urlencoded: Key/value object; duplicate keys become arrays of strings.
+- multipart/form-data:
+  - Text fields are strings; duplicate keys become arrays of strings.
+  - File fields are transformed to objects with base64 content and metadata:
+    ```ts
+    type UploadedFile = {
+      filename: string;
+      contentType: string;
+      size: number;
+      base64: string; // file bytes, base64 encoded
+    };
+    ```
+  - Multiple files for the same field produce `UploadedFile[]`.
+
+Additionally, the original raw request bytes are available as `context.request.rawBody?: Uint8Array`, and `context.request.raw` provides an untouched cloned `Request` for custom parsing or signature verification.
 
 Sending Responses
 -----------------

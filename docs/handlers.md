@@ -146,6 +146,8 @@ export function POST({ title, file }) {
 }
 ```
 
+You can also access the original raw request body bytes via `context.request.rawBody` (a `Uint8Array`). This is useful for signature verification or custom parsing.
+
 ### Parameter Precedence Example
 
 ```ts

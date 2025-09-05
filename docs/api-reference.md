@@ -47,6 +47,7 @@ type RequestDetails = {
   queryParams: URLSearchParams;
   query: Record<string, string | string[]>;
   body: unknown;
+  rawBody?: Uint8Array;
   raw: Request;
 };
 ```
