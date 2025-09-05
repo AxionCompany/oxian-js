@@ -11,6 +11,7 @@
 
 import { parseArgs } from "@std/cli/parse-args";
 import { loadConfig } from "./src/config/load.ts";
+import { fromFileUrl } from "@std/path";
 import { startServer } from "./src/server/server.ts";
 import { resolveRouter } from "./src/runtime/router_resolver.ts";
 import { printBanner } from "./src/cli/banner.ts";
@@ -18,8 +19,26 @@ import { printBanner } from "./src/cli/banner.ts";
 // Helpers for init command (hoisted to module scope for linting)
 async function readLocalLLM(): Promise<string> {
   const src = new URL("./llm.txt", import.meta.url);
-  const { default: content } = await import(src.toString(), { with: { type: "text" } });
-  return content as unknown as string;
+  // 1) Try reading from filesystem when available
+  if (src.protocol === "file:") {
+    try {
+      return await Deno.readTextFile(fromFileUrl(src));
+    } catch {/* fallthrough */}
+  }
+  // 2) Try HTTP(S) fetch when running from remote URL
+  if (src.protocol === "http:" || src.protocol === "https:") {
+    try {
+      const res = await fetch(src.toString());
+      if (res.ok) return await res.text();
+    } catch {/* fallthrough */}
+  }
+  // 3) Fallback to raw import (requires raw-imports capability)
+  try {
+    const { default: content } = await import(src.toString(), { with: { type: "text" } });
+    return content as unknown as string;
+  } catch (e) {
+    throw new Error(`[cli] failed to load llm.txt: ${(e as Error)?.message}`);
+  }
 }
 
 function deepMergeAppend(existing: unknown, incoming: unknown): unknown {
