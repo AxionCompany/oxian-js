@@ -532,6 +532,24 @@ deno -A jsr:@oxian/oxian-js routes
 deno -A jsr:@oxian/oxian-js --help
 ```
 
+### Init command
+
+Bootstrap a new Oxian project with sensible defaults and interactive prompts.
+
+```bash
+deno -A jsr:@oxian/oxian-js init
+```
+
+This will:
+- Create/update `oxian.config.json` (asks for port, routesDir, logging level)
+- Create/update `deno.json` with useful tasks
+- Create/update `llm.txt` (local copy)
+
+If any target file already exists, you will be prompted per file:
+- [a]ppend: merge for JSON files; append content for text files
+- [o]verwrite: replace the file with the generated content
+- [c]ancel: skip that file
+
 ### Hot Reload
 
 Files are automatically reloaded in development:
