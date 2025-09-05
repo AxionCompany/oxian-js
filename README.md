@@ -66,6 +66,25 @@ curl -X POST -H "Content-Type: application/json" \
 # {"greeting":"Hello, World!"}
 ```
 
+
+## 🔧 Init command
+
+Bootstrap a new Oxian project with sensible defaults and interactive prompts.
+
+```bash
+deno -A jsr:@oxian/oxian-js init
+```
+
+This will:
+- Create/update `oxian.config.json` (asks for port, routesDir, logging level)
+- Create/update `deno.json` with useful tasks
+- Create/update `llm.txt` (local copy)
+
+If any target file already exists, you will be prompted per file:
+- [a]ppend: merge for JSON files; append content for text files
+- [o]verwrite: replace the file with the generated content
+- [c]ancel: skip that file
+
 ## 📁 File-Based Routing
 
 Oxian uses intuitive file-based routing that maps directly to URL paths:
@@ -519,6 +538,9 @@ export function GET({ format }) {
 ### CLI Commands
 
 ```bash
+# Init command (bootstraps a new Oxian project with defaults and interactive prompts)
+deno -A jsr:@oxian/oxian-js init
+
 # Start development server (with hot reload)
 deno -A jsr:@oxian/oxian-js dev
 
@@ -531,24 +553,6 @@ deno -A jsr:@oxian/oxian-js routes
 # Help
 deno -A jsr:@oxian/oxian-js --help
 ```
-
-### Init command
-
-Bootstrap a new Oxian project with sensible defaults and interactive prompts.
-
-```bash
-deno -A jsr:@oxian/oxian-js init
-```
-
-This will:
-- Create/update `oxian.config.json` (asks for port, routesDir, logging level)
-- Create/update `deno.json` with useful tasks
-- Create/update `llm.txt` (local copy)
-
-If any target file already exists, you will be prompted per file:
-- [a]ppend: merge for JSON files; append content for text files
-- [o]verwrite: replace the file with the generated content
-- [c]ancel: skip that file
 
 ### Hot Reload
 
