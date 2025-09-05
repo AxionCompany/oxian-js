@@ -1,6 +1,6 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.6.20",
+  "version": "0.6.21",
   "exports": {
     ".": "./cli.ts",
     "./server": "./src/server/server.ts",
@@ -25,7 +25,19 @@
     ]
   },
   "unstable":[
-    "raw-imports"
+    "raw-imports",
+    "bare-node-builtins",
+    "detect-cjs",
+    "node-globals",
+    "sloppy-imports",
+    "unsafe-proto",
+    "webgpu",
+    "broadcast-channel",
+    "worker-options",
+    "cron",
+    "kv",
+    "net",
+    "otel"
   ],
   "imports": {
     "oxian-js/": "./src/",
