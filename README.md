@@ -20,7 +20,6 @@ deno -A jsr:@oxian/oxian-js
 - 🌊 **Streaming & SSE** support
 - 🔍 **Request IDs** & structured logging
 - 🐙 **GitHub loader** - run APIs from any repo
-- 🧪 **Single provider for hypervisor** - choose project and per-worker overrides in one place
 - 🎯 **Type-safe** with full TypeScript support
 - 🔧 **Middleware/Interceptor** composition system
 - 🔧 **Dependency injection** - file-based dependency injection composition

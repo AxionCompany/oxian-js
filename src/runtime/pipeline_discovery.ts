@@ -6,14 +6,15 @@ export type PipelineFiles = {
     dependencyFiles: URL[];
     middlewareFiles: URL[];
     interceptorFiles: URL[];
+    sharedFiles: URL[];
 };
 
 export async function discoverPipelineFiles(
     chain: Array<string | URL>,
-    opts?: { loaders?: Loader[]; projectRoot?: string },
+    opts?: { loaders?: Loader[]; projectRoot?: string, allowShared?: boolean },
 ): Promise<PipelineFiles> {
     const now = performance.now();
-    const files: PipelineFiles = { dependencyFiles: [], middlewareFiles: [], interceptorFiles: [] };
+    const files: PipelineFiles = { dependencyFiles: [], middlewareFiles: [], interceptorFiles: [], sharedFiles: [] };
     const DEBUG = Deno.env.get("OXIAN_DEBUG") === "1";
     if (DEBUG) {
         try {
@@ -24,10 +25,18 @@ export async function discoverPipelineFiles(
         let deps: string | URL;
         let mw: string | URL;
         let ic: string | URL;
+        
+        let shjs: string | URL = "";
+        let shts: string | URL = "";
+
         if (typeof level === "string") {
             deps = join(level, "dependencies.ts");
             mw = join(level, "middleware.ts");
             ic = join(level, "interceptors.ts");
+            if (opts?.allowShared) {
+                shjs = join(level, "shared.js");
+                shts = join(level, "shared.ts");
+            }
         } else {
             if (level.protocol === "github:") {
                 const basePath = level.pathname.endsWith("/") ? level.pathname : level.pathname + "/";
@@ -36,12 +45,20 @@ export async function discoverPipelineFiles(
                 deps = make("dependencies.ts");
                 mw = make("middleware.ts");
                 ic = make("interceptors.ts");
+                if (opts?.allowShared) {
+                    shjs = make("shared.js");
+                    shts = make("shared.ts");
+                }
             } else {
                 const baseObj = new URL(level.toString());
                 baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
                 deps = new URL("dependencies.ts", baseObj);
                 mw = new URL("middleware.ts", baseObj);
                 ic = new URL("interceptors.ts", baseObj);
+                if (opts?.allowShared) {
+                    shjs = new URL("shared.js", baseObj);
+                    shts = new URL("shared.ts", baseObj);
+                }
             }
         }
 
@@ -66,6 +83,14 @@ export async function discoverPipelineFiles(
         const depsOk = await exists(deps);
         const mwOk = await exists(mw);
         const icOk = await exists(ic);
+        let shjsOk = false;
+        let shtsOk = false;
+
+        if (opts?.allowShared) {
+            shjsOk = await exists(shjs);
+            shtsOk = await exists(shts);
+        }
+        
         if (DEBUG) {
             try {
                 console.log('[pipeline] probe', {
@@ -73,12 +98,16 @@ export async function discoverPipelineFiles(
                     deps: typeof deps === 'string' ? deps : deps.toString(), depsOk,
                     mw: typeof mw === 'string' ? mw : mw.toString(), mwOk,
                     ic: typeof ic === 'string' ? ic : ic.toString(), icOk,
+                    shjs: typeof shjs === 'string' ? shjs : shjs.toString(), shjsOk,
+                    shts: typeof shts === 'string' ? shts : shts.toString(), shtsOk,
                 });
             } catch (_e) { /* ignore log error */ }
         }
         if (depsOk) files.dependencyFiles.push(typeof deps === "string" ? toFileUrl(deps) : deps);
         if (mwOk) files.middlewareFiles.push(typeof mw === "string" ? toFileUrl(mw) : mw);
         if (icOk) files.interceptorFiles.push(typeof ic === "string" ? toFileUrl(ic) : ic);
+        if (shjsOk) files.sharedFiles.push(typeof shjs === "string" ? toFileUrl(shjs) : shjs);
+        if (shtsOk) files.sharedFiles.push(typeof shts === "string" ? toFileUrl(shts) : shts);
     }
     if (DEBUG) {
         console.log('[pipeline] discover end', { time: performance.now() - now });
