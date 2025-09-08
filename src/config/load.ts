@@ -42,14 +42,17 @@ async function findConfigPath(explicit?: string): Promise<string | undefined> {
 
 async function loadFromModule(path: string): Promise<OxianConfig> {
   const rootForLoader = pathIsAbsolute(path) ? dirname(path) : Deno.cwd();
-  const lm = createLoaderManager(rootForLoader);
+  // Use env token for initial config loading (supports private remote imports in config)
+  const lm = createLoaderManager(rootForLoader, "GITHUB_TOKEN");
   // Normalize Windows paths to file URLs before import
   const url = path.startsWith("file:") ? new URL(path) : toFileUrl(pathIsAbsolute(path) ? path : join(Deno.cwd(), path));
   const mod = await importModule(url, lm.getLoaders(), 60_000, Deno.cwd());
-  const exp = (mod.default ?? (mod as any).config ?? mod) as unknown;
+  const resolved = mod as Record<string, unknown>;
+  const exp = (resolved.default ?? (resolved as { config?: unknown }).config ?? resolved) as unknown;
   if (typeof exp === "function") {
     // Pass defaults for easy modification (Next.js-like DX)
-    const result = await (exp as Function)({ ...DEFAULTS });
+    const fn = exp as (defaults: typeof DEFAULTS) => Promise<OxianConfig> | OxianConfig;
+    const result = await fn({ ...DEFAULTS });
     if (typeof result !== "object" || result === null) {
       throw new Error(`Config function in ${path} did not return an object`);
     }
@@ -67,7 +70,8 @@ async function loadFromJson(path: string): Promise<OxianConfig> {
 }
 
 async function loadRemoteConfig(pathOrUrl: string): Promise<OxianConfig> {
-  const lm = createLoaderManager(Deno.cwd());
+  // Use env token for initial remote config loading
+  const lm = createLoaderManager(Deno.cwd(), "GITHUB_TOKEN");
   // Normalize raw filesystem paths to file URLs for importer
   const url = /^[A-Za-z]:[\\\/]/.test(pathOrUrl)
     ? toFileUrl(pathOrUrl)
@@ -80,9 +84,11 @@ async function loadRemoteConfig(pathOrUrl: string): Promise<OxianConfig> {
   }
   // TS/JS modules via bundling importer (supports http/github)
   const mod = await importModule(url, lm.getLoaders(), 60_000, Deno.cwd());
-  const exp = (mod.default ?? (mod as any).config ?? mod) as unknown;
+  const resolved = mod as Record<string, unknown>;
+  const exp = (resolved.default ?? (resolved as { config?: unknown }).config ?? resolved) as unknown;
   if (typeof exp === "function") {
-    const result = await (exp as Function)({ ...DEFAULTS });
+    const fn = exp as (defaults: typeof DEFAULTS) => Promise<OxianConfig> | OxianConfig;
+    const result = await fn({ ...DEFAULTS });
     if (typeof result !== "object" || result === null) throw new Error("Config function did not return an object");
     return result as OxianConfig;
   }

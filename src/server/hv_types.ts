@@ -61,6 +61,10 @@ export type HvProvider = {
 export type ProjectRuntime = {
   name: string;
   source?: string; // future: support per-project source
+  // Optional path or URL to a project-specific config file (e.g., oxian.config.ts|js|json)
+  // When provided, the worker will be spawned with `--config=` pointing to this path/URL.
+  // If not provided and the source is remote, the hypervisor may attempt remote discovery.
+  configPath?: string;
   config?: Record<string, unknown>; // shallow overrides merged with root config
   worker?: {
     kind?: "process" | "thread"; // future: "isolate"

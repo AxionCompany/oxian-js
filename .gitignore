@@ -25,3 +25,7 @@ coverage/
 # Build output
 dist/
 build/
+
+# Project specific
+deno/
+

@@ -20,7 +20,7 @@ import { composeDependencies } from "../runtime/dependencies.ts";
 import { runInterceptorsBefore, runInterceptorsAfter } from "../runtime/interceptors.ts";
 import { runMiddlewares } from "../runtime/middlewares.ts";
 import { resolveRouter } from "../runtime/router_resolver.ts";
-import { buildLocalChain, buildRemoteChain, discoverPipelineFiles} from "../runtime/pipeline_discovery.ts";
+import { buildLocalChain, buildRemoteChain, discoverPipelineFiles } from "../runtime/pipeline_discovery.ts";
 import { createLoaderManager } from "../loader/index.ts";
 import { importModule } from "../runtime/importer.ts";
 import { getLocalRootPath } from "../utils/root.ts";
@@ -49,12 +49,14 @@ async function loadBootstrapDeps(config: EffectiveConfig): Promise<Record<string
   const runtimeDeps = config.runtime?.dependencies;
   let deps: Record<string, unknown> = { ...(runtimeDeps?.initial ?? {}) };
   if (runtimeDeps?.bootstrapModule) {
-    const lm = createLoaderManager(config.root ?? Deno.cwd());
+    // Respect configured GitHub token for bootstrap module imports
+    const lm = createLoaderManager(config.root ?? Deno.cwd(), config.loaders?.github?.tokenEnv, config.loaders?.github?.token);
     const url = lm.resolveUrl(runtimeDeps.bootstrapModule);
     const mod = await importModule(url, lm.getLoaders(), 60_000, getLocalRootPath(config.root));
-    const factory = (mod as any).default ?? (mod as any).createDependencies;
+    const modObj = mod as Record<string, unknown>;
+    const factory = (modObj.default ?? (modObj as { createDependencies?: unknown }).createDependencies) as unknown;
     if (typeof factory === "function") {
-      const produced = await factory(config);
+      const produced = await (factory as (cfg: EffectiveConfig) => Promise<Record<string, unknown>> | Record<string, unknown>)(config);
       if (produced && typeof produced === "object") deps = { ...deps, ...(produced as Record<string, unknown>) };
     } else if (mod && typeof mod === "object") {
       deps = { ...deps, ...(mod as Record<string, unknown>) };
@@ -64,7 +66,7 @@ async function loadBootstrapDeps(config: EffectiveConfig): Promise<Record<string
   if (runtimeDeps?.readonly?.length) {
     for (const key of runtimeDeps.readonly) {
       if (key in deps) {
-        try { Object.freeze((deps as any)[key]); } catch {}
+        try { Object.freeze((deps as Record<string, unknown>)[key]); } catch { /* ignore freeze error */ }
       }
     }
   }
@@ -94,6 +96,7 @@ async function loadBootstrapDeps(config: EffectiveConfig): Promise<Record<string
  */
 export async function startServer(opts: { config: EffectiveConfig; source?: string }) {
   const { config, source } = opts;
+
   const logger = createLogger(config.logging?.level ?? "info");
 
   // make logger globally available for deprecation messages
@@ -101,12 +104,13 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
   // eslint-disable-next-line @typescript-eslint/no-unused-expressions
   (await import("../logging/logger.ts")).setCurrentLogger(logger, { deprecations: config.logging?.deprecations !== false });
   const resolved = await resolveRouter(config, source);
-  console.log('[server] resolved router', { isRemote: resolved.isRemote, routes: resolved.router?.routes?.length });
+  const PERF = config.logging?.performance === true;
+  if (PERF) console.log('[perf][server] resolvedRouter', { isRemote: resolved.isRemote, routes: resolved.router?.routes?.length });
 
   // Preload config-defined dependencies (worker-lifecycle)
   const hvInitialDeps = await loadBootstrapDeps(config);
 
-  console.log('[server] listening', { port: config.server?.port ?? 8080 });
+  if (PERF) console.log('[perf][server] listening', { port: config.server?.port ?? 8080 });
   const server = Deno.serve({ port: config.server?.port ?? 8080 }, async (req) => {
     const startedAt = performance.now();
     const hdrRequestId = config.logging?.requestIdHeader ? req.headers.get(config.logging.requestIdHeader) : undefined;
@@ -132,7 +136,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         return res;
       }
 
-      const lazyAsync = (resolved.router as any).__asyncMatch as undefined | ((p: string) => Promise<any>);
+      const lazyAsync = (resolved.router as unknown as { __asyncMatch?: (p: string) => Promise<unknown> }).__asyncMatch as undefined | ((p: string) => Promise<unknown>);
       const match = lazyAsync ? await lazyAsync(path) : resolved.router.match(path);
 
       const { params: queryParams, record: queryRecord } = parseQuery(url);
@@ -148,7 +152,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         // Swallow errors reading raw body; continue with parsed body only
       }
       const body = await parseRequestBody(req);
-      const pathParams = (match as any)?.params ?? {};
+      const pathParams = (match as unknown as { params?: Record<string, string> })?.params ?? {};
       let data: Data = mergeData(pathParams, queryRecord, body);
 
       const { controller, state } = createResponseController();
@@ -169,14 +173,14 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         },
         dependencies: {},
         response: controller,
-        oxian: { route: (match as any)?.route?.pattern ?? path, startedAt },
+        oxian: { route: (match as unknown as { route?: { pattern?: string } })?.route?.pattern ?? path, startedAt },
         // pass compatibility options for handler modes
-        ...(config.compatibility ? { compat: config.compatibility } as any : {}),
+        ...(config.compatibility ? { compat: config.compatibility } as Record<string, unknown> : {}),
       };
 
       if (!match) {
         if (path === "/") {
-          controller.send({ ok: true, message: "Oxian running", routes: resolved.router.routes.map((r: any) => r.pattern) });
+          controller.send({ ok: true, message: "Oxian running", routes: resolved.router.routes.map((r: { pattern: string }) => r.pattern) });
           const res = finalizeResponse(state);
           logger.info("request", makeRequestLog({ requestId, route: path, method: req.method, status: state.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
           return res;
@@ -186,53 +190,59 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
 
       // Unified pipeline discovery
       let files;
+      const getFilesStart = performance.now();
+      const loaders = resolved.loaderManager.getLoaders();
       if (resolved.isRemote && resolved.routesRootUrl) {
-        const chain = buildRemoteChain(resolved.routesRootUrl, (match as any).route.fileUrl);
-        files = await discoverPipelineFiles(chain, async (urlOrPath) => {
-          if (typeof urlOrPath === "string") return false;
-          const st = await resolved.loaderManager.getActiveLoader(resolved.routesRootUrl!).stat?.(urlOrPath);
-          return !!st?.isFile;
-        });
+        const chain = buildRemoteChain(resolved.routesRootUrl, (match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
+        files = await discoverPipelineFiles(chain, { loaders, projectRoot: getLocalRootPath(config.root) });
       } else {
-        const chain = buildLocalChain(getLocalRootPath(config.root), config.routing?.routesDir ?? "routes", (match as any).route.fileUrl);
-        files = await discoverPipelineFiles(chain, async (urlOrPath) => {
-          if (typeof urlOrPath !== "string") return false;
-          try {
-            const st = await Deno.stat(urlOrPath);
-            return st.isFile;
-          } catch { return false; }
-        });
+        const chain = buildLocalChain(getLocalRootPath(config.root), config.routing?.routesDir ?? "routes", (match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
+        files = await discoverPipelineFiles(chain, { loaders, projectRoot: getLocalRootPath(config.root) });
       }
+      const getFilesEnd = performance.now();
+      if (PERF) console.log('[perf][server] discoverPipelineFiles', { ms: Math.round(getFilesEnd - getFilesStart) });
 
       try {
-        const loaders = resolved.loaderManager.getLoaders();
+       
         // Inject config-defined deps as the base
         const baseDeps = { ...hvInitialDeps };
         context.dependencies = baseDeps;
         // Compose route dependencies on top
+        const composeStart = performance.now();
         const composed = await composeDependencies(files, {}, loaders, { allowShared: config.compatibility?.allowShared });
+        const composeEnd = performance.now();
+        if (PERF) console.log('[perf][server] composeDependencies', { ms: Math.round(composeEnd - composeStart) });
         context.dependencies = { ...baseDeps, ...composed };
         {
+          const runInterceptorsBeforeStart = performance.now();
           const result = await runInterceptorsBefore(files.interceptorFiles, data, context, loaders);
           data = result.data;
           context = result.context as Context;
+          const runInterceptorsBeforeEnd = performance.now();
+          if (PERF) console.log('[perf][server] runInterceptorsBefore', { ms: Math.round(runInterceptorsBeforeEnd - runInterceptorsBeforeStart) });
         }
         {
+          const runMiddlewaresStart = performance.now();
           const result = await runMiddlewares(files.middlewareFiles, data, context, loaders);
           data = result.data;
           context = result.context as Context;
+          const runMiddlewaresEnd = performance.now();
+          if (PERF) console.log('[perf][server] runMiddlewares', { ms: Math.round(runMiddlewaresEnd - runMiddlewaresStart) });
         }
       } catch (err) {
         logger.error("pipeline_error", { requestId, err: (err as Error)?.message, stack: (err as Error)?.stack });
-        const shaped = shapeError(err);
+        const shaped = shapeError(err as unknown);
         state.status = shaped.status;
         state.body = shaped.body;
         const res = finalizeResponse(state);
-        logger.info("request", makeRequestLog({ requestId, route: (match as any).route?.pattern ?? path, method: req.method, status: state.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+        logger.info("request", makeRequestLog({ requestId, route: (match as unknown as { route?: { pattern?: string } }).route?.pattern ?? path, method: req.method, status: state.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
         return res;
       }
 
-      const mod = await loadRouteModule((match as any).route.fileUrl);
+      const loadRouteModuleStart = performance.now();
+      const mod = await loadRouteModule((match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
+      const loadRouteModuleEnd = performance.now();
+      if (PERF) console.log('[perf][server] loadRouteModule', { ms: Math.round(loadRouteModuleEnd - loadRouteModuleStart) });
       const exportVal = getHandlerExport(mod, req.method);
       let resultOrError: unknown = undefined;
       if (typeof exportVal !== "function") {
@@ -240,14 +250,23 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         state.body = { error: { message: "Method Not Allowed" } };
         resultOrError = new Error("Method Not Allowed");
       } else {
+        const runHandlerStart = performance.now();
         const { result, error } = await runHandler(exportVal as Handler, data as Record<string, unknown>, context, state);
         resultOrError = error ?? result;
+        const runHandlerEnd = performance.now();
+        if (PERF) console.log('[perf][server] runHandler', { ms: Math.round(runHandlerEnd - runHandlerStart) });
       }
 
+      const runInterceptorsAfterStart = performance.now();
       await runInterceptorsAfter(files.interceptorFiles, resultOrError, context, resolved.loaderManager.getLoaders());
+      const runInterceptorsAfterEnd = performance.now();
+      if (PERF) console.log('[perf][server] runInterceptorsAfter', { ms: Math.round(runInterceptorsAfterEnd - runInterceptorsAfterStart) });
 
+      const finalizeResponseStart = performance.now();
       const res = finalizeResponse(state);
-      logger.info("request", makeRequestLog({ requestId, route: (match as any).route.pattern, method: req.method, status: state.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+      const finalizeResponseEnd = performance.now();
+      if (PERF) console.log('[perf][server] finalizeResponse', { ms: Math.round(finalizeResponseEnd - finalizeResponseStart) });
+      logger.info("request", makeRequestLog({ requestId, route: (match as unknown as { route: { pattern: string } }).route.pattern, method: req.method, status: state.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
       return res;
     } catch (err) {
       const requestIdForErr = crypto.randomUUID();
