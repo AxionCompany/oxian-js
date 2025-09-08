@@ -194,10 +194,10 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
       const loaders = resolved.loaderManager.getLoaders();
       if (resolved.isRemote && resolved.routesRootUrl) {
         const chain = buildRemoteChain(resolved.routesRootUrl, (match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
-        files = await discoverPipelineFiles(chain, { loaders, projectRoot: getLocalRootPath(config.root) });
+        files = await discoverPipelineFiles(chain, { loaders, projectRoot: getLocalRootPath(config.root) ,  allowShared: config.compatibility?.allowShared});
       } else {
         const chain = buildLocalChain(getLocalRootPath(config.root), config.routing?.routesDir ?? "routes", (match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
-        files = await discoverPipelineFiles(chain, { loaders, projectRoot: getLocalRootPath(config.root) });
+        files = await discoverPipelineFiles(chain, { loaders, projectRoot: getLocalRootPath(config.root) ,  allowShared: config.compatibility?.allowShared});
       }
       const getFilesEnd = performance.now();
       if (PERF) console.log('[perf][server] discoverPipelineFiles', { ms: Math.round(getFilesEnd - getFilesStart) });

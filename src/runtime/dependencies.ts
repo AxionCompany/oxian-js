@@ -9,7 +9,7 @@ const factoryCache = new Map<string, Record<string, unknown>>();
 
 export async function composeDependencies(
   files: PipelineFiles,
-  contextForFactory: { makeDb?: unknown } = {},
+  contextForFactory: Record<string, unknown> = {},
   loaders?: Loader[],
   opts?: { allowShared?: boolean },
 ): Promise<Record<string, unknown>> {
@@ -43,37 +43,8 @@ export async function composeDependencies(
   const resolveMod = async (url: URL): Promise<Record<string, unknown>> => await importModule(url, loaders ?? [], 60_000);
 
   let composed: Record<string, unknown> = {};
-  // Support deprecated shared.(ts|js)
-  if (opts?.allowShared !== false) {
-    const sharedCandidates: URL[] = [];
-    for (const base of [...files.dependencyFiles, ...files.middlewareFiles, ...files.interceptorFiles]) {
-      const uTs = siblingUrl(base, "shared.ts");
-      const uJs = siblingUrl(base, "shared.js");
-      sharedCandidates.push(uTs);
-      sharedCandidates.push(uJs);
-    }
-    for (const u of sharedCandidates) {
-      try {
-        const mod = await resolveMod(u);
-        const { logDeprecation } = await import("../logging/logger.ts");
-        logDeprecation(`shared.* detected at ${u}. Please rename to dependencies.ts`);
-        const candidate = (mod as Record<string, unknown>);
-        const factory = (candidate.default ?? (candidate as { shared?: unknown }).shared) as unknown;
-        if (typeof factory === "function") {
-          const mt = await getMtime(u);
-          const cacheKey = `${u.toString()}?v=${mt ?? 0}`;
-          if (!factoryCache.has(cacheKey)) {
-            const res = await (factory as (ctx: { makeDb?: unknown }) => Promise<Record<string, unknown>> | Record<string, unknown>)(contextForFactory);
-            if (res && typeof res === "object") factoryCache.set(cacheKey, res as Record<string, unknown>);
-          }
-          const saved = factoryCache.get(cacheKey);
-          if (saved) composed = { ...composed, ...saved };
-        }
-      } catch { /* ignore */ }
-    }
-  }
 
-  for (const fileUrl of files.dependencyFiles) {
+  for (const fileUrl of [...files.dependencyFiles, ...(files.sharedFiles.length > 0 ? files.sharedFiles : [])]) {
     const mod = await resolveMod(fileUrl);
     const candidate = (mod as Record<string, unknown>);
     const factory = (candidate.default ?? (candidate as { dependencies?: unknown }).dependencies) as unknown;
@@ -81,7 +52,12 @@ export async function composeDependencies(
       const mt = await getMtime(fileUrl);
       const cacheKey = `${fileUrl.toString()}?v=${mt ?? 0}`;
       if (!factoryCache.has(cacheKey)) {
-        const result = await (factory as (ctx: { makeDb?: unknown }) => Promise<Record<string, unknown>> | Record<string, unknown>)(contextForFactory);
+        const result = await (factory as (ctx: Record<string, unknown>) => Promise<Record<string, unknown>> | Record<string, unknown>)(
+          {
+            ...(contextForFactory ? { ...contextForFactory } : {}),
+            ...(opts?.allowShared !== false ? { env: Deno.env.toObject() } : {})
+          }
+        );
         if (result && typeof result === "object") factoryCache.set(cacheKey, result as Record<string, unknown>);
       }
       const saved = factoryCache.get(cacheKey);
