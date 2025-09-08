@@ -9,6 +9,7 @@ export type PipelineFiles = {
     sharedFiles: URL[];
 };
 
+
 export async function discoverPipelineFiles(
     chain: Array<string | URL>,
     opts?: { loaders?: Loader[]; projectRoot?: string, allowShared?: boolean },

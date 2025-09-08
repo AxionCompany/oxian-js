@@ -8,6 +8,8 @@ import { createImportMapResolver } from "../utils/import_map/index.ts";
 
 const cachedResolverByRoot = new Map<string, ((specifier: string, referrer?: string) => string) | null>();
 
+const inMemoryCache = new Map<string, Record<string, unknown>>();
+
 function sanitizeUrlForLog(input: string): string {
     try {
         const u = new URL(input);
@@ -109,12 +111,14 @@ function normalizeToUrl(input: string | URL, projectRoot?: string): URL {
 }
 
 export async function importModule(url: URL | string, loaders: Loader[], _ttlMs = 60_000, projectRoot?: string): Promise<Record<string, unknown>> {
+
     // debug: importModule call context (guarded by OXIAN_DEBUG)
     if (Deno.env.get("OXIAN_DEBUG") === "1") {
         try { console.log('importModule', sanitizeUrlForLog((url as URL).toString()), { ttl: _ttlMs, root: projectRoot }); } catch { console.log('importModule', sanitizeUrlForLog(String(url)), { ttl: _ttlMs, root: projectRoot }); }
     }
     const asUrl = normalizeToUrl(url as string | URL, projectRoot);
     let rootSpecifier = asUrl.toString();
+
     // Dev-friendly cache busting for local files: append mtime as query param
     if (asUrl.protocol === "file:") {
         const mt = await mtimeForUrl(asUrl, loaders);
@@ -122,25 +126,38 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
         u.searchParams.set("v", String(mt ?? 0));
         rootSpecifier = u.toString();
     }
-    const cache = createCache({ allowRemote: true, cacheSetting: "use" });
-    const resolveFn = await getProjectImportResolver(loaders, projectRoot);
-
-    await createGraph(rootSpecifier, {
-        load: async (specifier: string, isDynamic?: boolean) => {
-            // Resolve custom schemes like github: to a native URL so cache can store it under DENO_DIR
-            const resolvedForCache = mapGithubLikeToRaw(specifier);
-            const res = await cache.load(resolvedForCache, isDynamic, "use");
-            if (res) return res as unknown as { kind: "module" | "external"; specifier: string; content?: string };
-            return undefined as unknown as { kind: "module"; specifier: string; content: string };
-        },
-        cacheInfo: cache.cacheInfo,
-        resolve: resolveFn,
-    } as unknown as Record<string, unknown>);
-
-    if (Deno.env.get("OXIAN_DEBUG") === "1") {
-        console.log('importModule', sanitizeUrlForLog(rootSpecifier));
+    // In-memory cache for faster file loads
+    if (inMemoryCache.has(rootSpecifier)) {
+        return inMemoryCache.get(rootSpecifier) as Record<string, unknown>;
     }
-    // For the final dynamic import, translate non-native schemes (e.g. github:) to a native URL
-    const finalSpecifier = mapGithubLikeToRaw(rootSpecifier);
-    return await import(finalSpecifier);
+
+    try {
+        const cache = createCache({ allowRemote: true, cacheSetting: "use" });
+        const resolveFn = await getProjectImportResolver(loaders, projectRoot);
+
+        await createGraph(rootSpecifier, {
+            load: async (specifier: string, isDynamic?: boolean) => {
+                // Resolve custom schemes like github: to a native URL so cache can store it under DENO_DIR
+                const resolvedForCache = mapGithubLikeToRaw(specifier);
+                const res = await cache.load(resolvedForCache, isDynamic, "use");
+                if (res) return res as unknown as { kind: "module" | "external"; specifier: string; content?: string };
+                return undefined as unknown as { kind: "module"; specifier: string; content: string };
+            },
+            cacheInfo: cache.cacheInfo,
+            resolve: resolveFn,
+        } as unknown as Record<string, unknown>);
+
+        if (Deno.env.get("OXIAN_DEBUG") === "1") {
+            console.log('importModule', sanitizeUrlForLog(rootSpecifier));
+        }
+        // For the final dynamic import, translate non-native schemes (e.g. github:) to a native URL
+        const finalSpecifier = mapGithubLikeToRaw(rootSpecifier);
+        const mod = await import(finalSpecifier);
+        inMemoryCache.set(rootSpecifier, mod as Record<string, unknown>);
+        return mod as Record<string, unknown>;
+    } catch (e) {
+        // module not found, set cache to empty object
+        inMemoryCache.set(rootSpecifier, {});
+        throw e;
+    }
 } 

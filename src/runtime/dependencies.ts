@@ -13,17 +13,7 @@ export async function composeDependencies(
   loaders?: Loader[],
   opts?: { allowShared?: boolean },
 ): Promise<Record<string, unknown>> {
-  function siblingUrl(baseFile: URL, name: string): URL {
-    if (baseFile.protocol === "github:") {
-      const search = baseFile.search || "";
-      const path = baseFile.pathname.replace(/\/[^\/]*$/, "/");
-      const abs = `github:${(path + name).replace(/^\//, "")}${search}`;
-      return new URL(abs);
-    }
-    const baseObj = new URL(baseFile.toString());
-    baseObj.pathname = baseObj.pathname.replace(/\/[^\/]*$/, "/");
-    return new URL(name, baseObj);
-  }
+
   async function getMtime(url: URL): Promise<number | undefined> {
     // Optimization: avoid remote mtime checks which are expensive (GitHub API); rely on in-process cache
     if (url.protocol !== "file:") return undefined;
