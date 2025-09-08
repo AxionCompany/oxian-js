@@ -34,7 +34,7 @@ export type OxianConfig = {
   basePath?: string;
   loaders?: {
     local?: { enabled?: boolean };
-    github?: { enabled?: boolean; tokenEnv?: string; cacheTtlSec?: number };
+    github?: { enabled?: boolean; tokenEnv?: string; token?: string; cacheTtlSec?: number };
   };
   runtime?: {
     hotReload?: boolean;
@@ -86,6 +86,10 @@ export type OxianConfig = {
       // Config-only multi-project support
       projects?: Record<string, {
         source?: string;
+        // Optional path or URL to a project-specific config file (e.g., oxian.config.ts|js|json)
+        config?: string;
+        // Optional GitHub token override for this project (enables per-worker tokens)
+        githubToken?: string;
         routing?: { basePath?: string };
         worker?: { kind?: "process" | "thread"; pool?: { min?: number; max?: number } };
         strategy?: "round_robin" | "least_busy" | "sticky";
@@ -104,6 +108,28 @@ export type OxianConfig = {
         denoConfig?: string; // per-project override
         dependencies?: { initial?: Record<string, unknown> };
       }>;
+      // Single provider function (optional). When provided:
+      // - At request time: called with { req } to choose a project and optional path rewrite.
+      // - At spawn time: called with { project } to supply per-project overrides (source/config/env/token).
+      provider?: (
+        input:
+          | { req: Request; project?: never }
+          | { project: string; req?: never }
+      ) => Promise<{
+        project: string;
+        source?: string;
+        config?: string;
+        env?: Record<string, string>;
+        githubToken?: string;
+        stripPathPrefix?: string;
+      }> | {
+        project: string;
+        source?: string;
+        config?: string;
+        env?: Record<string, string>;
+        githubToken?: string;
+        stripPathPrefix?: string;
+      };
       // Declarative selection rules
       select?: Array<
         | { default: true; project: string }
@@ -148,6 +174,7 @@ export type OxianConfig = {
     level?: "debug" | "info" | "warn" | "error";
     requestIdHeader?: string;
     deprecations?: boolean; // default true
+    performance?: boolean; // enable perf timing logs
   };
   compatibility?: {
     handlerMode?: "default" | "this" | "factory";

@@ -5,5 +5,7 @@ export async function GET(data: Data, context: Context) {
 
     const dir = fs.readdirSync('.')
 
-    return { hello: "world", dir };
+    const env = Deno.env.toObject()
+
+    return { hello: "world", dir, env };
 } 

@@ -38,11 +38,29 @@ function fileToPattern(relPath: string): string | null {
 
 export async function buildRemoteRouter(loader: Loader, routesRootUrl: URL): Promise<RemoteRouter> {
   async function walk(dirUrl: URL, prefix = ""): Promise<string[]> {
+    const DEBUG = Deno.env.get("OXIAN_DEBUG") === "1";
     const names = await (loader.listDir?.(dirUrl) ?? Promise.resolve([]));
+    if (DEBUG) {
+      try { console.log('[remote_router] listDir', { dir: dirUrl.toString(), names }); } catch (_e) { /* ignore log error */ }
+    }
     const files: string[] = [];
     for (const name of names) {
-      const child = new URL(name, dirUrl.toString().endsWith("/") ? dirUrl : new URL(dirUrl.toString() + "/"));
+      let child: URL;
+      if (dirUrl.protocol === "github:") {
+        const basePath = dirUrl.pathname;
+        const joinedPath = `${basePath}${basePath.endsWith("/") ? "" : "/"}${name}`;
+        const abs = `github:${joinedPath.replace(/^\//, "")}${dirUrl.search}`;
+        child = new URL(abs);
+      } else {
+        // Ensure trailing slash on pathname without touching search/hash
+        const baseObj = new URL(dirUrl.toString());
+        baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
+        child = new URL(name, baseObj);
+      }
       const st = await (loader.stat?.(child) ?? Promise.resolve({ isFile: true }));
+      if (DEBUG) {
+        try { console.log('[remote_router] stat', { child: child.toString(), st }); } catch (_e) { /* ignore log error */ }
+      }
       if (st.isFile) files.push(prefix + "/" + name);
       else files.push(...(await walk(child, prefix + "/" + name)));
     }
@@ -57,7 +75,21 @@ export async function buildRemoteRouter(loader: Loader, routesRootUrl: URL): Pro
     if (pipelineNames.has(base)) continue;
     const pattern = fileToPattern(rel);
     if (!pattern) continue;
-    routes.push({ pattern, segments: toSegments(pattern), fileUrl: new URL(rel, routesRootUrl) });
+    let fileUrl: URL;
+    if (routesRootUrl.protocol === "github:") {
+      const rootPath = routesRootUrl.pathname.replace(/\/?$/, "/");
+      const relPath = rel.startsWith("/") ? rel.slice(1) : rel;
+      const abs = `github:${(rootPath + relPath).replace(/^\//, "")}${routesRootUrl.search}`;
+      fileUrl = new URL(abs);
+    } else {
+      const baseObj = new URL(routesRootUrl.toString());
+      baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
+      fileUrl = new URL(rel.startsWith("/") ? rel.slice(1) : rel, baseObj);
+    }
+    if (Deno.env.get("OXIAN_DEBUG") === "1") {
+      try { console.log('[remote_router] route', { rel, pattern, file: fileUrl.toString() }); } catch (_e) { /* ignore log error */ }
+    }
+    routes.push({ pattern, segments: toSegments(pattern), fileUrl });
   }
   routes.sort(compareSpecificity);
 

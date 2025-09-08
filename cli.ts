@@ -23,14 +23,14 @@ async function readLocalLLM(): Promise<string> {
   if (src.protocol === "file:") {
     try {
       return await Deno.readTextFile(fromFileUrl(src));
-    } catch {/* fallthrough */}
+    } catch {/* fallthrough */ }
   }
   // 2) Try HTTP(S) fetch when running from remote URL
   if (src.protocol === "http:" || src.protocol === "https:") {
     try {
       const res = await fetch(src.toString());
       if (res.ok) return await res.text();
-    } catch {/* fallthrough */}
+    } catch {/* fallthrough */ }
   }
   // 3) Fallback to raw import (requires raw-imports capability)
   try {
@@ -151,7 +151,7 @@ if (import.meta.main) {
         routing: { routesDir: routesDirVal, trailingSlash: "preserve" },
         runtime: { hotReload: true },
         security: { cors: { allowedOrigins: ["*"], allowedHeaders: ["authorization", "content-type"], methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] } },
-        logging: { level: loggingLevelVal, requestIdHeader: "x-request-id" }
+        logging: { level: loggingLevelVal, requestIdHeader: "x-request-id", performance: false }
       };
 
       // deno.json template for apps using oxian-js
@@ -189,7 +189,6 @@ if (import.meta.main) {
     try {
       const src = new URL("./llm.txt", import.meta.url);
       const { default: content } = await import(src.toString(), { with: { type: "text" } });
-      console.log(content);
       const shouldWrite = true;
       try {
         await Deno.stat(outPath);
@@ -211,13 +210,76 @@ if (import.meta.main) {
 
   const config = await loadConfig({ configPath: args.config });
 
-
   const port = typeof args.port === "string" ? Number(args.port) : undefined;
   if (port !== undefined && !Number.isNaN(port)) {
     config.server = config.server ?? {};
     config.server.port = port;
   }
   const source = typeof args.source === "string" ? args.source : undefined;
+
+  if (!config.loaders?.github?.tokenEnv && Deno.env.get("GITHUB_TOKEN")) {
+    config.loaders = {
+      ...config.loaders,
+      github: { tokenEnv: "GITHUB_TOKEN", token: Deno.env.get("GITHUB_TOKEN") }
+    };
+  }
+
+
+  // Remote config auto-discovery when source is remote and no explicit --config provided
+  // Attempt to find a remote oxian.config.* adjacent to the source and overlay it
+  if (!args.config && source) {
+    try {
+      const { createLoaderManager } = await import("./src/loader/index.ts");
+      const { importModule } = await import("./src/runtime/importer.ts");
+      const lm = createLoaderManager(config.root ?? Deno.cwd(), config.loaders?.github?.tokenEnv, (config as any)?.loaders?.github?.token);
+      const base = lm.resolveUrl(source);
+      // Resolve repository root-ish for github and http(by path), then try well-known config names
+      const candidates = [
+        "oxian.config.ts",
+        "oxian.config.js",
+        "oxian.config.mjs",
+        "oxian.config.json",
+      ];
+      // Try base itself, then its parent (for github/tree/.../api to check repo root under that subdir)
+      const bases: URL[] = [base];
+      try { bases.push(new URL("../", base)); } catch { /* ignore */ }
+      let discovered: Record<string, unknown> | undefined;
+      for (const b of bases) {
+        for (const name of candidates) {
+          try {
+            const u = new URL(name, b);
+            const loader = lm.getActiveLoader(u);
+            if (u.pathname.endsWith(".json")) {
+              const { content } = await loader.load(u);
+              discovered = JSON.parse(content) as Record<string, unknown>;
+            } else {
+              const mod = await importModule(u, lm.getLoaders(), 60_000, Deno.cwd());
+              const resolved = (mod as Record<string, unknown>);
+              const pick = (resolved.default ?? (resolved as { config?: unknown }).config ?? resolved) as unknown;
+              if (typeof pick === "function") {
+                const fn = pick as (defaults: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>;
+                const res = await fn({ ...(config as unknown as Record<string, unknown>) });
+                discovered = res as Record<string, unknown>;
+              } else {
+                discovered = pick as Record<string, unknown>;
+              }
+            }
+            // Shallow overlay: remote overrides local
+            if (discovered && typeof discovered === "object") {
+              Object.assign(config as Record<string, unknown>, discovered);
+              console.log("[cli] applied remote config override", { url: u.toString() });
+              throw new Error("__done__");
+            }
+          } catch (e) {
+            if ((e as Error)?.message === "__done__") break;
+            // continue to next candidate
+          }
+        }
+      }
+    } catch {
+      // ignore discovery failures
+    }
+  }
 
   if (cmd === "routes") {
     const { router } = await resolveRouter(config, source);
