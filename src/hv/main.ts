@@ -249,7 +249,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     // Propagate per-project env if provided by provider (including github token)
     const spawnEnv: Record<string, string> | undefined = { ...(selected.env || {}), ...(selected.githubToken ? { GITHUB_TOKEN: selected.githubToken } : {}) };
     spawnEnv.DENO_AUTH_TOKENS = `${spawnEnv.DENO_AUTH_TOKENS ? spawnEnv.DENO_AUTH_TOKENS + ";" : ""}${selected.githubToken ? `${selected.githubToken}@raw.githubusercontent.com` : ""}`;
-    
+
     const projectDir = selected.isolated ? `./deno/${project}` : Deno.cwd();
 
     if (selected.isolated) {
@@ -259,9 +259,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       // allow read and write to projectDir/**/*
       finalScriptArgs.push(`--allow-read=${projectDir + "/**/*"}`);
       finalScriptArgs.push(`--allow-write=${projectDir + "/**/*"}`);
-
     }
-    console.log(`[hv] spawnEnv DENO_AUTH_TOKENS`, spawnEnv.DENO_AUTH_TOKENS);
 
     const proc = new Deno.Command(Deno.execPath(), {
       args: [...denoArgs, ...finalScriptArgs],
