@@ -138,7 +138,14 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
         await createGraph(rootSpecifier, {
             load: async (specifier: string, isDynamic?: boolean) => {
                 // Resolve custom schemes like github: to a native URL so cache can store it under DENO_DIR
+                const loaderObj = loaders.find((l) => l.canHandle(new URL(specifier)));
+
                 const resolvedForCache = mapGithubLikeToRaw(specifier);
+                if (loaderObj) {
+                    const { content } = await loaderObj.load(new URL(resolvedForCache));
+                    return { kind: "module", specifier, content };
+                }
+
                 const res = await cache.load(resolvedForCache, isDynamic, "use");
                 if (res) return res as unknown as { kind: "module" | "external"; specifier: string; content?: string };
                 return undefined as unknown as { kind: "module"; specifier: string; content: string };
