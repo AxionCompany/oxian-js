@@ -179,7 +179,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
             const ref = su.searchParams.get("ref") ?? "main";
             const normRest = rest ? (rest.endsWith("/") ? rest : rest + "/") : "";
             const githubBase = `@github/${owner}/${repo}/${normRest}`;
-            const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${normRest}`;
+            const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${ref}/${normRest}`;
             mergedImports[githubBase] = rawBase;
           } else if (su.protocol === "https:" && su.hostname === "github.com") {
             const p = su.pathname.replace(/^\/+/, "").split("/");
@@ -190,7 +190,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
             const rest = p.slice(type ? 4 : 2).join("/");
             const normRest = rest ? (rest.endsWith("/") ? rest : rest + "/") : "";
             const githubBase = `@github/${owner}/${repo}/${normRest}`;
-            const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${normRest}`;
+            const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${ref}/${normRest}`;
             mergedImports[githubBase] = rawBase;
           }
         }
