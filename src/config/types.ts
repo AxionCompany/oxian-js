@@ -179,7 +179,7 @@ export type OxianConfig = {
   compatibility?: {
     handlerMode?: "default" | "this" | "factory";
     allowShared?: boolean; // default true when undefined
-    middlewareMode?: "default" | "this" | "factory"; // default default when undefined
+    middlewareMode?: "default" | "this" | "factory" | "assign"; // defaults to 'default' when undefined
     useMiddlewareRequest?: boolean; // default false when undefined
   };
 };

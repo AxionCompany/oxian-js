@@ -45,7 +45,7 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
         },
     },
     compatibility: {
-        middlewareMode: "this",
+        // middlewareMode: "this",
         useMiddlewareRequest: true,
     },
 });
