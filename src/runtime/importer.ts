@@ -94,7 +94,7 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
 }
 
 const importModuleTemplate = (specifier: string) => `
-const mod = await import("${specifier}");
+import * as mod from "${specifier}";
 export default mod?.default;
-export mod;
+export * from "${specifier}";
 `
