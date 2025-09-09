@@ -1,12 +1,5 @@
 import type { Loader } from "../loader/types.ts";
 import { isAbsolute, toFileUrl, join } from "@std/path";
-import { createCache as createCache } from "@deno/cache-dir";
-import { createGraph as createGraph } from "@deno/graph";
-import { resolveLocalUrl } from "../loader/local.ts";
-import { parse as parseJsonc } from "@std/jsonc/parse";
-import { createImportMapResolver } from "../utils/import_map/index.ts";
-
-const cachedResolverByRoot = new Map<string, ((specifier: string, referrer?: string) => string) | null>();
 
 const inMemoryCache = new Map<string, Record<string, unknown>>();
 
@@ -23,31 +16,6 @@ function sanitizeUrlForLog(input: string): string {
     }
 }
 
-async function getProjectImportResolver(loaders: Loader[], projectRoot?: string): Promise<((specifier: string, referrer?: string) => string) | undefined> {
-    const root = projectRoot ?? Deno.cwd();
-    if (cachedResolverByRoot.has(root)) return cachedResolverByRoot.get(root) ?? undefined;
-
-    const candidates = ["deno.json", "deno.jsonc"];
-    for (const name of candidates) {
-        try {
-            const baseUrl = resolveLocalUrl(root, name);
-            const ldr = loaders.find((l) => l.canHandle(baseUrl));
-            if (!ldr) continue;
-            const { content } = await ldr.load(baseUrl);
-            const isJsonc = name.endsWith(".jsonc");
-            const parsed = isJsonc ? (parseJsonc(content) as Record<string, unknown>) : (JSON.parse(content) as Record<string, unknown>);
-            const imports = (parsed["imports"] ?? undefined) as Record<string, string> | undefined;
-            const scopes = (parsed["scopes"] ?? undefined) as Record<string, Record<string, string>> | undefined;
-            const resolver = createImportMapResolver(baseUrl, imports, scopes);
-            cachedResolverByRoot.set(root, resolver);
-            return resolver;
-        } catch {
-            // try next candidate
-        }
-    }
-    cachedResolverByRoot.set(root, null);
-    return undefined;
-}
 
 async function mtimeForUrl(url: URL, loaders: Loader[]): Promise<number | undefined> {
     try {
@@ -100,26 +68,6 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
     }
 
     try {
-        // const cache = createCache({ allowRemote: true, cacheSetting: "use" });
-        // const resolveFn = await getProjectImportResolver(loaders, projectRoot);
-
-        // await createGraph(rootSpecifier, {
-        //     load: async (specifier: string, isDynamic?: boolean) => {
-        //         // Resolve custom schemes like github: to a native URL so cache can store it under DENO_DIR
-        //         const resolvedForCache = specifier.startsWith("github:")
-        //             ? rootSpecifier.replace(/^github:\/*/, "@github/")
-        //             : rootSpecifier;
-        //         const res = await cache.load(resolvedForCache, isDynamic, "use");
-        //         if (res) return res as unknown as { kind: "module" | "external"; specifier: string; content?: string };
-        //         return undefined as unknown as { kind: "module"; specifier: string; content: string };
-        //     },
-        //     cacheInfo: cache.cacheInfo,
-        //     resolve: resolveFn,
-        // } as unknown as Record<string, unknown>);
-
-        // if (Deno.env.get("OXIAN_DEBUG") === "1") {
-        //     console.log('importModule', sanitizeUrlForLog(rootSpecifier));
-        // }
 
         // For the final dynamic import, map github: scheme to @github/ prefix so import map can resolve
         const finalSpecifier = rootSpecifier.startsWith("github:")

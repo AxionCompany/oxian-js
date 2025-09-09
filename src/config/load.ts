@@ -121,7 +121,7 @@ export async function loadConfig(opts: { configPath?: string } = {}): Promise<Ef
     }
   }
 
-  userConfig = applyEnvOverrides(userConfig);
+  userConfig = applyEnvOverrides(Object.assign({}, userConfig));
 
   // Normalize root to an absolute path and expose as a file URL string for consistency
   const cfgRoot = userConfig.root ?? DEFAULTS.root;
