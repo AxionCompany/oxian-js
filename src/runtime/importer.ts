@@ -1,7 +1,7 @@
 import type { Loader } from "../loader/types.ts";
 import { isAbsolute, toFileUrl, join } from "@std/path";
-import { createCache } from "@deno/cache-dir";
-import { createGraph } from "@deno/graph";
+import type { createCache as _createCache } from "@deno/cache-dir";
+import type { createGraph as _createGraph } from "@deno/graph";
 import { resolveLocalUrl } from "../loader/local.ts";
 import { parse as parseJsonc } from "@std/jsonc/parse";
 import { createImportMapResolver } from "../utils/import_map/index.ts";
@@ -23,7 +23,7 @@ function sanitizeUrlForLog(input: string): string {
     }
 }
 
-async function getProjectImportResolver(loaders: Loader[], projectRoot?: string): Promise<((specifier: string, referrer?: string) => string) | undefined> {
+async function _getProjectImportResolver(loaders: Loader[], projectRoot?: string): Promise<((specifier: string, referrer?: string) => string) | undefined> {
     const root = projectRoot ?? Deno.cwd();
     if (cachedResolverByRoot.has(root)) return cachedResolverByRoot.get(root) ?? undefined;
 
@@ -49,7 +49,7 @@ async function getProjectImportResolver(loaders: Loader[], projectRoot?: string)
     return undefined;
 }
 
-function mapGithubLikeToRaw(input: string): string {
+function _mapGithubLikeToRaw(input: string): string {
     try {
         const u = new URL(input);
         // github:owner/repo/path?ref=main -> raw
@@ -132,33 +132,26 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
     }
 
     try {
-        const cache = createCache({ allowRemote: true, cacheSetting: "use" });
-        const resolveFn = await getProjectImportResolver(loaders, projectRoot);
+        // const cache = createCache({ allowRemote: true, cacheSetting: "use" });
+        // const resolveFn = await getProjectImportResolver(loaders, projectRoot);
 
-        await createGraph(rootSpecifier, {
-            load: async (specifier: string, isDynamic?: boolean) => {
-                // Resolve custom schemes like github: to a native URL so cache can store it under DENO_DIR
-                const loaderObj = loaders.find((l) => l.canHandle(new URL(specifier)));
+        // await createGraph(rootSpecifier, {
+        //     load: async (specifier: string, isDynamic?: boolean) => {
+        //         // Resolve custom schemes like github: to a native URL so cache can store it under DENO_DIR
+        //         const resolvedForCache = mapGithubLikeToRaw(specifier);
+        //         const res = await cache.load(resolvedForCache, isDynamic, "use");
+        //         if (res) return res as unknown as { kind: "module" | "external"; specifier: string; content?: string };
+        //         return undefined as unknown as { kind: "module"; specifier: string; content: string };
+        //     },
+        //     cacheInfo: cache.cacheInfo,
+        //     resolve: resolveFn,
+        // } as unknown as Record<string, unknown>);
 
-                const resolvedForCache = mapGithubLikeToRaw(specifier);
-                if (loaderObj) {
-                    const { content } = await loaderObj.load(new URL(resolvedForCache));
-                    return { kind: "module", specifier, content };
-                }
-
-                const res = await cache.load(resolvedForCache, isDynamic, "use");
-                if (res) return res as unknown as { kind: "module" | "external"; specifier: string; content?: string };
-                return undefined as unknown as { kind: "module"; specifier: string; content: string };
-            },
-            cacheInfo: cache.cacheInfo,
-            resolve: resolveFn,
-        } as unknown as Record<string, unknown>);
-
-        if (Deno.env.get("OXIAN_DEBUG") === "1") {
-            console.log('importModule', sanitizeUrlForLog(rootSpecifier));
-        }
+        // if (Deno.env.get("OXIAN_DEBUG") === "1") {
+        //     console.log('importModule', sanitizeUrlForLog(rootSpecifier));
+        // }
         // For the final dynamic import, translate non-native schemes (e.g. github:) to a native URL
-        const finalSpecifier = mapGithubLikeToRaw(rootSpecifier);
+        const finalSpecifier = _mapGithubLikeToRaw(rootSpecifier);
         const mod = await import(finalSpecifier);
         inMemoryCache.set(rootSpecifier, mod as Record<string, unknown>);
         return mod as Record<string, unknown>;
