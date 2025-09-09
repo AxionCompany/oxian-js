@@ -226,7 +226,6 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
         },
       } as { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> };
       const jsonStr = JSON.stringify(mergedImportMap);
-      console.log('mergedImportMap', mergedImportMap);
       const dataUrl = `data:application/json;base64,${btoa(jsonStr)}`;
       denoArgs.push(`--import-map=${dataUrl}`);
     }
