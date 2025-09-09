@@ -18,8 +18,8 @@ function parseGithubUrl(input: URL): { owner: string; repo: string; ref: string;
   return null;
 }
 
-export function createGithubLoader(tokenEnv?: string): Loader {
-  const token = tokenEnv ? Deno.env.get(tokenEnv) : undefined;
+export function createGithubLoader(tokenEnv?: string, tokenValue?: string): Loader {
+  const token = tokenValue ?? (tokenEnv ? Deno.env.get(tokenEnv) : undefined);
   async function ghFetch(url: URL): Promise<Response> {
     const headers: HeadersInit = {
       Accept: "application/vnd.github+json",

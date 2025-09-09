@@ -10,10 +10,10 @@ export type LoaderManager = {
   getLoaders: () => Loader[];
 };
 
-export function createLoaderManager(root: string | URL, tokenEnv?: string): LoaderManager {
+export function createLoaderManager(root: string | URL, tokenEnv?: string, tokenValue?: string): LoaderManager {
   const rootUrl = typeof root === "string" ? (() => { try { return new URL(root); } catch { return toFileUrl(root); } })() : root;
   const local = createLocalLoader(rootUrl);
-  const github = createGithubLoader(tokenEnv);
+  const github = createGithubLoader(tokenEnv, tokenValue);
   const http = createHttpLoader();
   const loaders = [
     local,

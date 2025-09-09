@@ -1,38 +1,21 @@
 import type { Loader } from "../loader/types.ts";
 import { isAbsolute, toFileUrl, join } from "@std/path";
-import { createCache } from "@deno/cache-dir";
-import { createGraph } from "@deno/graph";
-import { resolveLocalUrl } from "../loader/local.ts";
-import { parse as parseJsonc } from "@std/jsonc/parse";
-import { createImportMapResolver } from "../utils/import_map/index.ts";
 
-const cachedResolverByRoot = new Map<string, ((specifier: string, referrer?: string) => string) | null>();
+const inMemoryCache = new Map<string, Record<string, unknown>>();
 
-async function getProjectImportResolver(loaders: Loader[], projectRoot?: string): Promise<((specifier: string, referrer?: string) => string) | undefined> {
-    const root = projectRoot ?? Deno.cwd();
-    if (cachedResolverByRoot.has(root)) return cachedResolverByRoot.get(root) ?? undefined;
-
-    const candidates = ["deno.json", "deno.jsonc"];
-    for (const name of candidates) {
-        try {
-            const baseUrl = resolveLocalUrl(root, name);
-            const ldr = loaders.find((l) => l.canHandle(baseUrl));
-            if (!ldr) continue;
-            const { content } = await ldr.load(baseUrl);
-            const isJsonc = name.endsWith(".jsonc");
-            const parsed = isJsonc ? (parseJsonc(content) as Record<string, unknown>) : (JSON.parse(content) as Record<string, unknown>);
-            const imports = (parsed["imports"] ?? undefined) as Record<string, string> | undefined;
-            const scopes = (parsed["scopes"] ?? undefined) as Record<string, Record<string, string>> | undefined;
-            const resolver = createImportMapResolver(baseUrl, imports, scopes);
-            cachedResolverByRoot.set(root, resolver);
-            return resolver;
-        } catch {
-            // try next candidate
+function sanitizeUrlForLog(input: string): string {
+    try {
+        const u = new URL(input);
+        if (u.username || u.password) {
+            u.username = "***";
+            u.password = "***";
         }
+        return u.toString();
+    } catch {
+        return input;
     }
-    cachedResolverByRoot.set(root, null);
-    return undefined;
 }
+
 
 async function mtimeForUrl(url: URL, loaders: Loader[]): Promise<number | undefined> {
     try {
@@ -64,12 +47,14 @@ function normalizeToUrl(input: string | URL, projectRoot?: string): URL {
 }
 
 export async function importModule(url: URL | string, loaders: Loader[], _ttlMs = 60_000, projectRoot?: string): Promise<Record<string, unknown>> {
+
     // debug: importModule call context (guarded by OXIAN_DEBUG)
     if (Deno.env.get("OXIAN_DEBUG") === "1") {
-        try { console.log('importModule', (url as URL).toString(), { ttl: _ttlMs, root: projectRoot }); } catch { console.log('importModule', String(url), { ttl: _ttlMs, root: projectRoot }); }
+        try { console.log('importModule', sanitizeUrlForLog((url as URL).toString()), { ttl: _ttlMs, root: projectRoot }); } catch { console.log('importModule', sanitizeUrlForLog(String(url)), { ttl: _ttlMs, root: projectRoot }); }
     }
     const asUrl = normalizeToUrl(url as string | URL, projectRoot);
     let rootSpecifier = asUrl.toString();
+
     // Dev-friendly cache busting for local files: append mtime as query param
     if (asUrl.protocol === "file:") {
         const mt = await mtimeForUrl(asUrl, loaders);
@@ -77,31 +62,37 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
         u.searchParams.set("v", String(mt ?? 0));
         rootSpecifier = u.toString();
     }
-    const cache = createCache({ allowRemote: true, cacheSetting: "reload" });
-    const resolveFn = await getProjectImportResolver(loaders, projectRoot);
-
-    await createGraph(rootSpecifier, {
-        load: async (specifier: string, isDynamic?: boolean) => {
-            try {
-                const parsed = new URL(specifier);
-                const ldr = loaders.find((l) => l.canHandle(parsed));
-                if (ldr) {
-                    const { content } = await ldr.load(parsed);
-                    return { kind: "module", specifier: parsed.toString(), content } as { kind: "module"; specifier: string; content: string };
-                }
-            } catch {
-                // not a URL, let cache try
-            }
-            const res = await cache.load(specifier, isDynamic, "reload");
-            if (res) return res as unknown as { kind: "module" | "external"; specifier: string; content?: string };
-            return undefined as unknown as { kind: "module"; specifier: string; content: string };
-        },
-        cacheInfo: cache.cacheInfo,
-        resolve: resolveFn,
-    } as unknown as Record<string, unknown>);
-
-    if (Deno.env.get("OXIAN_DEBUG") === "1") {
-        console.log('importModule', rootSpecifier);
+    // In-memory cache for faster file loads
+    if (inMemoryCache.has(rootSpecifier)) {
+        return inMemoryCache.get(rootSpecifier) as Record<string, unknown>;
     }
-    return await import(rootSpecifier);
-} 
+
+    try {
+
+        // For the final dynamic import, map github: scheme to @github/ prefix so import map can resolve
+        let mod: Record<string, unknown>;
+
+        if (rootSpecifier.startsWith("github:") || rootSpecifier.startsWith("https")) {
+            const finalSpecifier = rootSpecifier.replace(/^github:\/*/, "@github/")
+            const importDataUrl = `data:text/typescript;base64,${btoa(importModuleTemplate(finalSpecifier))}`;
+            mod = await import(importDataUrl);
+        } else  {
+            const finalSpecifier = rootSpecifier;
+            mod = await import(finalSpecifier);
+        }
+
+        inMemoryCache.set(rootSpecifier, mod as Record<string, unknown>);
+
+        return mod as Record<string, unknown>;
+    } catch (e) {
+        // module not found, set cache to empty object
+        inMemoryCache.set(rootSpecifier, {});
+        throw e;
+    }
+}
+
+const importModuleTemplate = (specifier: string) => `
+import * as mod from "${specifier}";
+export default mod?.default;
+export * from "${specifier}";
+`
