@@ -74,7 +74,7 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
 
         if (rootSpecifier.startsWith("github:")) {
             const finalSpecifier = rootSpecifier.replace(/^github:\/*/, "@github/")
-            const importDataUrl = `data:text/typescript;base64,${btoa(`export * from "${finalSpecifier}";`)}`;
+            const importDataUrl = `data:text/typescript;base64,${btoa(importModuleTemplate(finalSpecifier))}`;
             console.log('Importing from github', finalSpecifier, importDataUrl);
             mod = await import(importDataUrl);
         } else {
@@ -91,4 +91,10 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
         inMemoryCache.set(rootSpecifier, {});
         throw e;
     }
-} 
+}
+
+const importModuleTemplate = (specifier: string) => `
+const mod = await import("${specifier}");
+export default mod?.default;
+export mod;
+`
