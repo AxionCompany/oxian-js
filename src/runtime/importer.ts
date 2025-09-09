@@ -72,12 +72,11 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
         // For the final dynamic import, map github: scheme to @github/ prefix so import map can resolve
         let mod: Record<string, unknown>;
 
-        if (rootSpecifier.startsWith("github:")) {
+        if (rootSpecifier.startsWith("github:") || rootSpecifier.startsWith("https")) {
             const finalSpecifier = rootSpecifier.replace(/^github:\/*/, "@github/")
             const importDataUrl = `data:text/typescript;base64,${btoa(importModuleTemplate(finalSpecifier))}`;
-            console.log('Importing from github', finalSpecifier, importDataUrl);
             mod = await import(importDataUrl);
-        } else {
+        } else  {
             const finalSpecifier = rootSpecifier;
             mod = await import(finalSpecifier);
         }
@@ -87,7 +86,6 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
         return mod as Record<string, unknown>;
     } catch (e) {
         // module not found, set cache to empty object
-        console.log(e);
         inMemoryCache.set(rootSpecifier, {});
         throw e;
     }
