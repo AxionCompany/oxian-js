@@ -41,8 +41,7 @@ export async function discoverPipelineFiles(
         } else {
             if (level.protocol === "github:") {
                 const basePath = level.pathname.endsWith("/") ? level.pathname : level.pathname + "/";
-                const search = level.search || "";
-                const make = (name: string) => new URL(`github:${(basePath + name).replace(/^\/+/, "")}${search}`);
+                const make = (name: string) => new URL(`github:${(basePath + name).replace(/^\/+/, "")}`);
                 deps = make("dependencies.ts");
                 mw = make("middleware.ts");
                 ic = make("interceptors.ts");

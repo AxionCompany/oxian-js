@@ -166,6 +166,36 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
         ...hostImports,
       };
 
+      // Map GitHub "source" (from selection) to raw base for dynamic imports via import map
+      try {
+        const src = selected.source;
+        if (src) {
+          const su = new URL(src);
+          if (su.protocol === "github:") {
+            const parts = su.pathname.replace(/^\/+/, "").split("/");
+            const owner = parts[0] ?? "";
+            const repo = parts[1] ?? "";
+            const rest = parts.slice(2).join("/");
+            const ref = su.searchParams.get("ref") ?? "main";
+            const normRest = rest ? (rest.endsWith("/") ? rest : rest + "/") : "";
+            const githubBase = `github:${owner}/${repo}/${normRest}`;
+            const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${normRest}`;
+            mergedImports[githubBase] = rawBase;
+          } else if (su.protocol === "https:" && su.hostname === "github.com") {
+            const p = su.pathname.replace(/^\/+/, "").split("/");
+            const owner = p[0] ?? "";
+            const repo = p[1] ?? "";
+            const type = p[2];
+            const ref = p[3] ?? "main";
+            const rest = p.slice(type ? 4 : 2).join("/");
+            const normRest = rest ? (rest.endsWith("/") ? rest : rest + "/") : "";
+            const githubBase = `github:${owner}/${repo}/${normRest}`;
+            const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${normRest}`;
+            mergedImports[githubBase] = rawBase;
+          }
+        }
+      } catch { /* ignore malformed source */ }
+
       const libSrcBase = new URL("../", import.meta.url); // file:///.../src/
       const effectiveCfgUrl = effectiveDenoCfg ? new URL(effectiveDenoCfg) : undefined;
       const isUrlLike = (s: string) => {
