@@ -154,6 +154,7 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
         const finalSpecifier = rootSpecifier.startsWith("github:")
           ? rootSpecifier.replace(/^github:\/*/, "@github/")
           : rootSpecifier;
+        console.log('finalSpecifier', finalSpecifier);
         const mod = await import(finalSpecifier);
         inMemoryCache.set(rootSpecifier, mod as Record<string, unknown>);
         return mod as Record<string, unknown>;
