@@ -151,7 +151,7 @@ export type Handler = (data: Data, context: Context) => Promise<unknown | void> 
  * };
  * ```
  */
-export type MiddlewareResult = { data?: Data; context?: Partial<Context> } | void | Promise<{ data?: Data; context?: Partial<Context> } | void>;
+export type MiddlewareResult = { data?: Data; context?: Partial<Context>; params?: unknown } | void | Promise<{ data?: Data; context?: Partial<Context>, params?: unknown } | void>;
 /**
  * Function signature for middleware.
  * 

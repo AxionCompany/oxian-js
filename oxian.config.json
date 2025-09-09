@@ -31,6 +31,7 @@
   },
   "logging": {
     "level": "info",
+    "performance": true,
     "requestIdHeader": "x-request-id"
   }
 } 

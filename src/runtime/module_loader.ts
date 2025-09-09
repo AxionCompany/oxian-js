@@ -84,7 +84,8 @@ async function getMtimeMs(fileUrl: URL): Promise<number | undefined> {
  */
 export async function loadRouteModule(fileUrl: URL, projectRoot: string = Deno.cwd()): Promise<LoadedModule> {
   if (fileUrl.protocol !== "file:") {
-    const lm = createLoaderManager(projectRoot);
+    // Pass configured token via env by default; callers running under server will have loaders already configured
+    const lm = createLoaderManager(projectRoot, "GITHUB_TOKEN");
     const loaders = lm.getLoaders();
     return await importModule(fileUrl, loaders, 60_000, projectRoot);
   }

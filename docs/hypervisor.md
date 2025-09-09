@@ -144,7 +144,7 @@ Configure the hypervisor in `oxian.config.json`:
 
 ## Multi-Project Support
 
-The hypervisor supports hosting multiple projects/applications with intelligent routing:
+The hypervisor supports hosting multiple projects/applications with intelligent routing. You can use either declarative selection rules or a single provider function.
 
 ### Project Configuration
 
@@ -169,33 +169,46 @@ The hypervisor supports hosting multiple projects/applications with intelligent 
           }
         }
       },
-      "select": [
-        {
-          "project": "api",
-          "when": {
-            "pathPrefix": "/api"
-          }
-        },
-        {
-          "project": "admin",
-          "when": {
-            "pathPrefix": "/admin"
-          }
-        },
-        {
-          "project": "docs",
-          "when": {
-            "pathPrefix": "/docs"
-          }
-        },
-        {
-          "project": "api",
-          "default": true
-        }
-      ]
+      // Optional: provider (TypeScript config only)
+      // Called once per request; returns project and per-worker overrides
+      // Type: (input: { req: Request } | { project: string }) => Promise<{
+      //   project: string; source?: string; config?: string; env?: Record<string,string>;
+      //   githubToken?: string; stripPathPrefix?: string; isolated?: boolean
+      // }> | { ... }
+      "provider": "ts-only",
+      // Or use declarative selection rules
+      "select": [ { "project": "api", "when": { "pathPrefix": "/api" } }, { "default": true, "project": "api" } ]
     }
   }
 }
+```
+
+### Provider (Single Function)
+
+Define a single function (only in TS/JS config) to both select the project and provide per-worker overrides.
+
+```ts
+// oxian.config.ts
+export default ({}) => ({
+  runtime: {
+    hv: {
+      projects: { local: {}, github: {} },
+      provider: async ({ req }) => {
+        const host = new URL(req.url).hostname;
+        if (host === "0.0.0.0") {
+          return {
+            project: "github",
+            source: "github:AcmeOrg/api?ref=main",
+            env: { FEATURE_FLAG: "1" },
+            githubToken: Deno.env.get("GITHUB_TOKEN") || undefined,
+            isolated: true // optional per-worker DENO_DIR, with restricted write and read permissions to the project directory
+          };
+        }
+        return { project: "local" };
+      }
+    }
+  }
+});
 ```
 
 ### Selection Rules

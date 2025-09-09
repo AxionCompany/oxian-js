@@ -9,11 +9,14 @@ const factoryCache = new Map<string, Record<string, unknown>>();
 
 export async function composeDependencies(
   files: PipelineFiles,
-  contextForFactory: { makeDb?: unknown } = {},
+  contextForFactory: Record<string, unknown> = {},
   loaders?: Loader[],
   opts?: { allowShared?: boolean },
 ): Promise<Record<string, unknown>> {
+
   async function getMtime(url: URL): Promise<number | undefined> {
+    // Optimization: avoid remote mtime checks which are expensive (GitHub API); rely on in-process cache
+    if (url.protocol !== "file:") return undefined;
     try {
       const active = (loaders ?? []).find((l) => l.canHandle(url));
       const st = await (active?.stat?.(url) ?? Promise.resolve(undefined));
@@ -27,45 +30,24 @@ export async function composeDependencies(
   const key = depKeyParts.join("|") + "|" + files.middlewareFiles.length + "|" + files.interceptorFiles.length + `|shared=${opts?.allowShared !== false}`;
   if (depsCache.has(key)) return depsCache.get(key)!;
 
-  const resolveMod = async (url: URL) => await importModule(url, loaders ?? [], 60_000);
+  const resolveMod = async (url: URL): Promise<Record<string, unknown>> => await importModule(url, loaders ?? [], 60_000);
 
   let composed: Record<string, unknown> = {};
-  // Support deprecated shared.(ts|js)
-  if (opts?.allowShared !== false) {
-    const sharedCandidates: URL[] = [];
-    for (const base of [...files.dependencyFiles, ...files.middlewareFiles, ...files.interceptorFiles]) {
-      const u = new URL("shared.ts", base);
-      sharedCandidates.push(u);
-      sharedCandidates.push(new URL("shared.js", base));
-    }
-    for (const u of sharedCandidates) {
-      try {
-        const mod = await resolveMod(u);
-        const { logDeprecation } = await import("../logging/logger.ts");
-        logDeprecation(`shared.* detected at ${u}. Please rename to dependencies.ts`);
-        const factory = (mod as any).default ?? (mod as any).shared;
-        if (typeof factory === "function") {
-          const mt = await getMtime(u);
-          const cacheKey = `${u.toString()}?v=${mt ?? 0}`;
-          if (!factoryCache.has(cacheKey)) {
-            const res = await factory(contextForFactory);
-            if (res && typeof res === "object") factoryCache.set(cacheKey, res as Record<string, unknown>);
-          }
-          const saved = factoryCache.get(cacheKey);
-          if (saved) composed = { ...composed, ...saved };
-        }
-      } catch { /* ignore */ }
-    }
-  }
 
-  for (const fileUrl of files.dependencyFiles) {
+  for (const fileUrl of [...files.dependencyFiles, ...(files.sharedFiles.length > 0 ? files.sharedFiles : [])]) {
     const mod = await resolveMod(fileUrl);
-    const factory = (mod as any).default ?? (mod as any).dependencies;
+    const candidate = (mod as Record<string, unknown>);
+    const factory = (candidate.default ?? (candidate as { dependencies?: unknown }).dependencies) as unknown;
     if (typeof factory === "function") {
       const mt = await getMtime(fileUrl);
       const cacheKey = `${fileUrl.toString()}?v=${mt ?? 0}`;
       if (!factoryCache.has(cacheKey)) {
-        const result = await factory(contextForFactory);
+        const result = await (factory as (ctx: Record<string, unknown>) => Promise<Record<string, unknown>> | Record<string, unknown>)(
+          {
+            ...(contextForFactory ? { ...contextForFactory } : {}),
+            ...(opts?.allowShared !== false ? { env: Deno.env.toObject() } : {})
+          }
+        );
         if (result && typeof result === "object") factoryCache.set(cacheKey, result as Record<string, unknown>);
       }
       const saved = factoryCache.get(cacheKey);
