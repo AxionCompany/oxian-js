@@ -271,7 +271,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     }).spawn();
 
     {
-      const maxWaitMs = hv.proxy?.timeoutMs ?? 60_000;
+      const maxWaitMs = hv.proxy?.timeoutMs ?? 300_000;
       const start = Date.now();
       let ready = false;
       while (Date.now() - start < maxWaitMs) {
