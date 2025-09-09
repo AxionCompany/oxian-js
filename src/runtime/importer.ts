@@ -150,8 +150,10 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
         // if (Deno.env.get("OXIAN_DEBUG") === "1") {
         //     console.log('importModule', sanitizeUrlForLog(rootSpecifier));
         // }
-        // For the final dynamic import, translate non-native schemes (e.g. github:) to a native URL
-        const finalSpecifier = _mapGithubLikeToRaw(rootSpecifier);
+        // For the final dynamic import, map github: scheme to @github/ prefix so import map can resolve
+        const finalSpecifier = rootSpecifier.startsWith("github:")
+          ? rootSpecifier.replace(/^github:\/*/, "@github/")
+          : rootSpecifier;
         const mod = await import(finalSpecifier);
         inMemoryCache.set(rootSpecifier, mod as Record<string, unknown>);
         return mod as Record<string, unknown>;
