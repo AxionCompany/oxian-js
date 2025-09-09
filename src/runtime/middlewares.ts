@@ -30,6 +30,8 @@ export async function runMiddlewares(files: URL[], data: Data, context: Context,
       let result: unknown = null;
       if (config?.compatibility?.useMiddlewareRequest) {
         const { request } = currentContext;
+        // override Headers with headers object
+        request.headers = Object.fromEntries(request.headers.entries()) as unknown as Headers;
         const res = await (mw as Middleware)(request as unknown as Data, currentContext);
         if (res && typeof res === "object" && "params" in (res as Record<string, unknown>)) {
           const withParams = res as Record<string, unknown>;
