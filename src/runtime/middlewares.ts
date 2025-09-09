@@ -34,7 +34,6 @@ export async function runMiddlewares(files: URL[], data: Data, context: Context,
         if (res && typeof res === "object" && "params" in (res as Record<string, unknown>)) {
           const withParams = res as Record<string, unknown>;
           result = { data: withParams["params"] };
-          console.log('result', result);
         }
       } else {
         result = await (mw as Middleware)(currentData, currentContext);
