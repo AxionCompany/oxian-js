@@ -24,6 +24,8 @@ export async function runMiddlewares(files: URL[], data: Data, context: Context,
           throw new Error("Middleware factory did not return a function");
         }
         mw = produced as (data: Data, context: Context) => unknown;
+      } else if (config?.compatibility?.middlewareMode === "assign") {
+        mw = Object.assign(mw as (data: Data, context: Context) => unknown, { ...context.dependencies });
       }
       let result: unknown = null;
       if (config?.compatibility?.useMiddlewareRequest) {
@@ -31,8 +33,9 @@ export async function runMiddlewares(files: URL[], data: Data, context: Context,
         const res = await (mw as Middleware)(request as unknown as Data, currentContext);
         if (res && typeof res === "object" && "params" in (res as Record<string, unknown>)) {
           const withParams = res as Record<string, unknown>;
-          result = {data: withParams["params"]};
-        } 
+          result = { data: withParams["params"] };
+          console.log('result', result);
+        }
       } else {
         result = await (mw as Middleware)(currentData, currentContext);
       }

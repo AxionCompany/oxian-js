@@ -3,6 +3,8 @@ import fs from "node:fs";
 
 export async function GET(data: Data, context: Context) {
 
+    console.log(data);
+
     const dir = fs.readdirSync('.')
 
     const env = Deno.env.toObject()
