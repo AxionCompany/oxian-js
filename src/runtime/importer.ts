@@ -1,7 +1,7 @@
 import type { Loader } from "../loader/types.ts";
 import { isAbsolute, toFileUrl, join } from "@std/path";
-import type { createCache as _createCache } from "@deno/cache-dir";
-import type { createGraph as _createGraph } from "@deno/graph";
+import { createCache as createCache } from "@deno/cache-dir";
+import { createGraph as createGraph } from "@deno/graph";
 import { resolveLocalUrl } from "../loader/local.ts";
 import { parse as parseJsonc } from "@std/jsonc/parse";
 import { createImportMapResolver } from "../utils/import_map/index.ts";
@@ -23,7 +23,7 @@ function sanitizeUrlForLog(input: string): string {
     }
 }
 
-async function _getProjectImportResolver(loaders: Loader[], projectRoot?: string): Promise<((specifier: string, referrer?: string) => string) | undefined> {
+async function getProjectImportResolver(loaders: Loader[], projectRoot?: string): Promise<((specifier: string, referrer?: string) => string) | undefined> {
     const root = projectRoot ?? Deno.cwd();
     if (cachedResolverByRoot.has(root)) return cachedResolverByRoot.get(root) ?? undefined;
 
@@ -47,38 +47,6 @@ async function _getProjectImportResolver(loaders: Loader[], projectRoot?: string
     }
     cachedResolverByRoot.set(root, null);
     return undefined;
-}
-
-function _mapGithubLikeToRaw(input: string): string {
-    try {
-        const u = new URL(input);
-        // github:owner/repo/path?ref=main -> raw
-        if (u.protocol === "github:") {
-            const parts = u.pathname.replace(/^\//, "").split("/");
-            const owner = parts[0] ?? "";
-            const repo = parts[1] ?? "";
-            const path = parts.slice(2).join("/");
-            const ref = u.searchParams.get("ref") ?? "main";
-            const token = Deno.env.get("GITHUB_TOKEN");
-            const basic = Deno.env.get("OXIAN_GITHUB_BASIC_URL") === "1" && token ? `https://x-access-token:${encodeURIComponent(token)}@raw.githubusercontent.com` : `https://raw.githubusercontent.com`;
-            return `${basic}/${owner}/${repo}/${ref}/${path}`;
-        }
-        // https://github.com/owner/repo/tree/ref/path -> raw
-        if (u.protocol === "https:" && u.hostname === "github.com") {
-            const parts = u.pathname.replace(/^\//, "").split("/");
-            const owner = parts[0] ?? "";
-            const repo = parts[1] ?? "";
-            const type = parts[2];
-            const ref = parts[3] ?? "main";
-            const rest = parts.slice(type ? 4 : 2).join("/");
-            const token = Deno.env.get("GITHUB_TOKEN");
-            const basic = Deno.env.get("OXIAN_GITHUB_BASIC_URL") === "1" && token ? `https://x-access-token:${encodeURIComponent(token)}@raw.githubusercontent.com` : `https://raw.githubusercontent.com`;
-            return `${basic}/${owner}/${repo}/${ref}/${rest}`;
-        }
-        return input;
-    } catch {
-        return input;
-    }
 }
 
 async function mtimeForUrl(url: URL, loaders: Loader[]): Promise<number | undefined> {
@@ -132,29 +100,34 @@ export async function importModule(url: URL | string, loaders: Loader[], _ttlMs 
     }
 
     try {
-        // const cache = createCache({ allowRemote: true, cacheSetting: "use" });
-        // const resolveFn = await getProjectImportResolver(loaders, projectRoot);
+        const cache = createCache({ allowRemote: true, cacheSetting: "use" });
+        const resolveFn = await getProjectImportResolver(loaders, projectRoot);
 
-        // await createGraph(rootSpecifier, {
-        //     load: async (specifier: string, isDynamic?: boolean) => {
-        //         // Resolve custom schemes like github: to a native URL so cache can store it under DENO_DIR
-        //         const resolvedForCache = mapGithubLikeToRaw(specifier);
-        //         const res = await cache.load(resolvedForCache, isDynamic, "use");
-        //         if (res) return res as unknown as { kind: "module" | "external"; specifier: string; content?: string };
-        //         return undefined as unknown as { kind: "module"; specifier: string; content: string };
-        //     },
-        //     cacheInfo: cache.cacheInfo,
-        //     resolve: resolveFn,
-        // } as unknown as Record<string, unknown>);
+        await createGraph(rootSpecifier, {
+            load: async (specifier: string, isDynamic?: boolean) => {
+                // Resolve custom schemes like github: to a native URL so cache can store it under DENO_DIR
+                const resolvedForCache = specifier.startsWith("github:")
+                    ? rootSpecifier.replace(/^github:\/*/, "@github/")
+                    : rootSpecifier;
+                const res = await cache.load(resolvedForCache, isDynamic, "use");
+                if (res) return res as unknown as { kind: "module" | "external"; specifier: string; content?: string };
+                return undefined as unknown as { kind: "module"; specifier: string; content: string };
+            },
+            cacheInfo: cache.cacheInfo,
+            resolve: resolveFn,
+        } as unknown as Record<string, unknown>);
 
-        // if (Deno.env.get("OXIAN_DEBUG") === "1") {
-        //     console.log('importModule', sanitizeUrlForLog(rootSpecifier));
-        // }
+        if (Deno.env.get("OXIAN_DEBUG") === "1") {
+            console.log('importModule', sanitizeUrlForLog(rootSpecifier));
+        }
+
         // For the final dynamic import, map github: scheme to @github/ prefix so import map can resolve
         const finalSpecifier = rootSpecifier.startsWith("github:")
-          ? rootSpecifier.replace(/^github:\/*/, "@github/")
-          : rootSpecifier;
+            ? rootSpecifier.replace(/^github:\/*/, "@github/")
+            : rootSpecifier;
+
         console.log('finalSpecifier', finalSpecifier);
+
         const mod = await import(finalSpecifier);
         inMemoryCache.set(rootSpecifier, mod as Record<string, unknown>);
         return mod as Record<string, unknown>;
