@@ -223,7 +223,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         }
         {
           const runMiddlewaresStart = performance.now();
-          const result = await runMiddlewares(files.middlewareFiles, data, context, loaders);
+          const result = await runMiddlewares(files.middlewareFiles, data, context, loaders, config);
           data = result.data;
           context = result.context as Context;
           const runMiddlewaresEnd = performance.now();

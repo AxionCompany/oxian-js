@@ -7,5 +7,5 @@ export async function GET(data: Data, context: Context) {
 
     const env = Deno.env.toObject()
 
-    return { hello: "world", dir, env };
+    return { hello: "world", dir, env, data };
 } 
