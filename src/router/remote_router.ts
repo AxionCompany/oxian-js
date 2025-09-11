@@ -49,7 +49,7 @@ export async function buildRemoteRouter(loader: Loader, routesRootUrl: URL): Pro
       if (dirUrl.protocol === "github:") {
         const basePath = dirUrl.pathname;
         const joinedPath = `${basePath}${basePath.endsWith("/") ? "" : "/"}${name}`;
-        const abs = `github:${joinedPath.replace(/^\//, "")}${dirUrl.search}`;
+        const abs = `${dirUrl.protocol}${joinedPath.replace(/^\//, "")}${dirUrl.search}`;
         child = new URL(abs);
       } else {
         // Ensure trailing slash on pathname without touching search/hash

@@ -32,32 +32,19 @@ export async function resolveRouter(config: EffectiveConfig, source?: string): P
   const suffix = routesDir.endsWith("/") ? routesDir : routesDir + "/";
   // Handle GitHub sources robustly by translating to github: scheme
   let routesRoot: URL;
-  if (base.protocol === "github:" || (base.protocol === "https:" && base.hostname === "github.com")) {
-    // Parse GitHub pieces
-    let owner = ""; let repo = ""; let ref = "main"; let path = "";
-    if (base.protocol === "github:") {
-      const parts = base.pathname.replace(/^\//, "").split("/");
-      owner = parts[0] ?? "";
-      repo = parts[1] ?? "";
-      path = parts.slice(2).join("/");
-      ref = base.searchParams.get("ref") ?? "main";
-    } else {
-      const parts = base.pathname.replace(/^\//, "").split("/");
-      owner = parts[0] ?? "";
-      repo = parts[1] ?? "";
-      const _type = parts[2];
-      const maybeRef = parts[3];
-      ref = maybeRef ?? "main";
-      path = parts.slice(_type ? 4 : 2).join("/");
-    }
-    const pathWithRoutes = (path ? `${path.replace(/\/?$/, "")}/` : "") + suffix;
-    routesRoot = new URL(`github:${owner}/${repo}/${pathWithRoutes}?ref=${encodeURIComponent(ref)}`);
+  
+  // Generic URL resolution
+  // Ensure we don't reset to host root for http(s)
+  if (base.protocol === "github:") {
+    const basePath = base.pathname;
+    const finalPath = `${basePath}${basePath.endsWith("/") ? "" : "/"}${suffix}`;
+    const abs = `github:${finalPath.replace(/^\//, "")}${base.search}`;
+    routesRoot = new URL(abs);
   } else {
-    // Generic URL resolution
-    const rel = base.toString().endsWith("/") ? suffix : `/${suffix}`;
-    // Ensure we don't reset to host root for http(s)
-    routesRoot = new URL(rel.startsWith("/") && (base.protocol === "http:" || base.protocol === "https:") ? `.${rel}` : rel, base);
-  }
+      const rel = base.toString().endsWith("/") ? suffix : `/${suffix}`;
+      routesRoot = new URL(rel.startsWith("/") && (base.protocol === "http:" || base.protocol === "https:") ? `.${rel}` : rel, base);
+    }
+  // }
   const loader = lm.getActiveLoader(routesRoot);
 
   if (discovery === "lazy") {

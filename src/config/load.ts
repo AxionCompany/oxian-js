@@ -109,6 +109,7 @@ function applyEnvOverrides(config: OxianConfig): OxianConfig {
 }
 
 export async function loadConfig(opts: { configPath?: string } = {}): Promise<EffectiveConfig> {
+
   const configPath = await findConfigPath(opts.configPath);
   let userConfig: OxianConfig = {};
   if (configPath) {

@@ -1,6 +1,6 @@
 import type { Loader } from "./types.ts";
 
-function parseGithubUrl(input: URL): { owner: string; repo: string; ref: string; path: string } | null {
+export function parseGithubUrl(input: URL): { owner: string; repo: string; ref: string; path: string } | null {
   if (input.protocol === "github:") {
     const [owner, repo, ...rest] = input.pathname.replace(/^\//, "").split("/");
     const path = rest.join("/");
