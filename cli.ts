@@ -210,6 +210,8 @@ if (import.meta.main) {
 
   const config = await loadConfig({ configPath: args.config });
 
+
+
   const port = typeof args.port === "string" ? Number(args.port) : undefined;
   if (port !== undefined && !Number.isNaN(port)) {
     config.server = config.server ?? {};
@@ -247,7 +249,12 @@ if (import.meta.main) {
       for (const b of bases) {
         for (const name of candidates) {
           try {
-            const u = new URL(name, b);
+            let u;
+            if (b.protocol === "github:") {
+              u = new URL(`${b.protocol}${b.hostname ? b.hostname + '/' : ''}${b.pathname}/${name}`)
+            } else {
+              u = new URL(name, b)
+            }
             const loader = lm.getActiveLoader(u);
             if (u.pathname.endsWith(".json")) {
               const { content } = await loader.load(u);
@@ -280,6 +287,7 @@ if (import.meta.main) {
       // ignore discovery failures
     }
   }
+
 
   if (cmd === "routes") {
     const { router } = await resolveRouter(config, source);

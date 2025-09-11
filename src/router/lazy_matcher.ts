@@ -21,7 +21,17 @@ async function listRemote(dir: URL, loader: Loader): Promise<DirEntries> {
   const files = new Set<string>();
   const dirs = new Set<string>();
   for (const name of names) {
-    const child = new URL(name, dir.toString().endsWith("/") ? dir : new URL(dir.toString() + "/"));
+    let child: URL;
+    if (dir.protocol === "github:") {
+      const basePath = dir.pathname;
+      const joinedPath = `${basePath}${basePath.endsWith("/") ? "" : "/"}${name}`;
+      const abs = `${dir.protocol}${joinedPath.replace(/^\//, "")}${dir.search}`;
+      child = new URL(abs);
+    } else {
+      const baseObj = new URL(dir.toString());
+      baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
+      child = new URL(name, baseObj);
+    }
     const st = await (loader.stat?.(child) ?? Promise.resolve({ isFile: true }));
     if (st.isFile) files.add(name);
     else dirs.add(name);
@@ -170,7 +180,18 @@ export function createLazyRouterRemote(loader: Loader, routesRootUrl: URL): Rout
 
     const rootEntries = await getDir(curDir);
     let catchAllUrl: URL | null = null;
-    if (findFileBaseMatch(rootEntries.files, "[...slug]")) catchAllUrl = new URL("[...slug].ts", curDir);
+    if (findFileBaseMatch(rootEntries.files, "[...slug]")) {
+      if (curDir.protocol === "github:") {
+        const basePath = curDir.pathname;
+        const joinedPath = `${basePath}${basePath.endsWith("/") ? "" : "/"}[...slug].ts`;
+        const abs = `github:${joinedPath.replace(/^\//, "")}${curDir.search}`;
+        catchAllUrl = new URL(abs);
+      } else {
+        const baseObj = new URL(curDir.toString());
+        baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
+        catchAllUrl = new URL("[...slug].ts", baseObj);
+      }
+    }
 
     for (let i = 0; i < parts.length; i++) {
       const seg = parts[i];
@@ -179,30 +200,92 @@ export function createLazyRouterRemote(loader: Loader, routesRootUrl: URL): Rout
       if (i === parts.length - 1) {
         const directName = findFileBaseMatch(entries.files, seg);
         if (directName) {
-          return { route: { pattern: "/" + parts.join("/"), segments: toSegments("/" + parts.join("/")), fileUrl: new URL(directName, curDir) }, params };
+          let fileUrl: URL;
+          if (curDir.protocol === "github:") {
+            const basePath = curDir.pathname;
+            const joinedPath = `${basePath}${basePath.endsWith("/") ? "" : "/"}${directName}`;
+            const abs = `github:${joinedPath.replace(/^\//, "")}${curDir.search}`;
+            fileUrl = new URL(abs);
+          } else {
+            const baseObj = new URL(curDir.toString());
+            baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
+            fileUrl = new URL(directName, baseObj);
+          }
+          return { route: { pattern: "/" + parts.join("/"), segments: toSegments("/" + parts.join("/")), fileUrl }, params };
         }
         const paramName = [...entries.files].find((f) => /^\[[^\.]+\]\.(tsx?|jsx?)$/.test(f));
         if (paramName) {
           const name = paramName.match(/^\[(.+)\]\./)?.[1] ?? "param";
           params[name] = decodeURIComponent(seg);
           const pattern = "/" + [...parts.slice(0, -1), ":" + name].join("/");
-          return { route: { pattern, segments: toSegments(pattern), fileUrl: new URL(paramName, curDir) }, params };
+          let fileUrl: URL;
+          if (curDir.protocol === "github:") {
+            const basePath = curDir.pathname;
+            const joinedPath = `${basePath}${basePath.endsWith("/") ? "" : "/"}${paramName}`;
+            const abs = `github:${joinedPath.replace(/^\//, "")}${curDir.search}`;
+            fileUrl = new URL(abs);
+          } else {
+            const baseObj = new URL(curDir.toString());
+            baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
+            fileUrl = new URL(paramName, baseObj);
+          }
+          return { route: { pattern, segments: toSegments(pattern), fileUrl }, params };
         }
       }
 
       if (entries.dirs.has(seg)) {
-        curDir = new URL(seg + "/", curDir);
+        if (curDir.protocol === "github:") {
+          const basePath = curDir.pathname;
+          const joinedPath = `${basePath}${basePath.endsWith("/") ? "" : "/"}${seg}/`;
+          const abs = `github:${joinedPath.replace(/^\//, "")}${curDir.search}`;
+          curDir = new URL(abs);
+        } else {
+          const baseObj = new URL(curDir.toString());
+          baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
+          curDir = new URL(seg + "/", baseObj);
+        }
         const dirEntries = await getDir(curDir);
-        if (findFileBaseMatch(dirEntries.files, "[...slug]")) catchAllUrl = new URL("[...slug].ts", curDir);
+        if (findFileBaseMatch(dirEntries.files, "[...slug]")) {
+          if (curDir.protocol === "github:") {
+            const basePath = curDir.pathname;
+            const joinedPath = `${basePath}${basePath.endsWith("/") ? "" : "/"}[...slug].ts`;
+            const abs = `github:${joinedPath.replace(/^\//, "")}${curDir.search}`;
+            catchAllUrl = new URL(abs);
+          } else {
+            const baseObj = new URL(curDir.toString());
+            baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
+            catchAllUrl = new URL("[...slug].ts", baseObj);
+          }
+        }
         continue;
       }
       const pdir = [...entries.dirs].find((d) => /^\[[^\.]+\]$/.test(d));
       if (pdir) {
         const name = pdir.slice(1, -1);
         params[name] = decodeURIComponent(seg);
-        curDir = new URL(pdir + "/", curDir);
+        if (curDir.protocol === "github:") {
+          const basePath = curDir.pathname;
+          const joinedPath = `${basePath}${basePath.endsWith("/") ? "" : "/"}${pdir}/`;
+          const abs = `github:${joinedPath.replace(/^\//, "")}${curDir.search}`;
+          curDir = new URL(abs);
+        } else {
+          const baseObj = new URL(curDir.toString());
+          baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
+          curDir = new URL(pdir + "/", baseObj);
+        }
         const dirEntries = await getDir(curDir);
-        if (findFileBaseMatch(dirEntries.files, "[...slug]")) catchAllUrl = new URL("[...slug].ts", curDir);
+        if (findFileBaseMatch(dirEntries.files, "[...slug]")) {
+          if (curDir.protocol === "github:") {
+            const basePath = curDir.pathname;
+            const joinedPath = `${basePath}${basePath.endsWith("/") ? "" : "/"}[...slug].ts`;
+            const abs = `github:${joinedPath.replace(/^\//, "")}${curDir.search}`;
+            catchAllUrl = new URL(abs);
+          } else {
+            const baseObj = new URL(curDir.toString());
+            baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
+            catchAllUrl = new URL("[...slug].ts", baseObj);
+          }
+        }
         continue;
       }
       break;
@@ -211,7 +294,18 @@ export function createLazyRouterRemote(loader: Loader, routesRootUrl: URL): Rout
     const finalEntries = await getDir(curDir);
     const indexName = findFileBaseMatch(finalEntries.files, "index");
     if (indexName) {
-      return { route: { pattern: "/" + parts.join("/"), segments: toSegments("/" + parts.join("/")), fileUrl: new URL(indexName, curDir) }, params };
+      let fileUrl: URL;
+      if (curDir.protocol === "github:") {
+        const basePath = curDir.pathname;
+        const joinedPath = `${basePath}${basePath.endsWith("/") ? "" : "/"}${indexName}`;
+        const abs = `github:${joinedPath.replace(/^\//, "")}${curDir.search}`;
+        fileUrl = new URL(abs);
+      } else {
+        const baseObj = new URL(curDir.toString());
+        baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
+        fileUrl = new URL(indexName, baseObj);
+      }
+      return { route: { pattern: "/" + parts.join("/"), segments: toSegments("/" + parts.join("/")), fileUrl }, params };
     }
 
     if (catchAllUrl) {

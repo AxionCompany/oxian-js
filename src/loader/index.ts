@@ -26,6 +26,7 @@ export function createLoaderManager(root: string | URL, tokenEnv?: string, token
         return new URL(pathOrUrl);
       } catch {
         if (isAbsolute(pathOrUrl)) return toFileUrl(pathOrUrl);
+        if (pathOrUrl.startsWith("github:")) return new URL(`https://github.com/${pathOrUrl.slice(7)}`);
         return resolveLocalUrl(rootUrl, pathOrUrl);
       }
     },
