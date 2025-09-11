@@ -228,6 +228,8 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       const jsonStr = JSON.stringify(mergedImportMap);
       const dataUrl = `data:application/json;base64,${btoa(jsonStr)}`;
       denoArgs.push(`--import-map=${dataUrl}`);
+      denoArgs.push('--reload')
+      denoArgs.push('--no-prompt')
     }
 
     denoArgs.push(`${import.meta.resolve('../../cli.ts')}`);

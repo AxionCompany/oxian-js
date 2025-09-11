@@ -1,6 +1,6 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.7.20",
+  "version": "0.7.21",
   "exports": {
     ".": "./cli.ts",
     "./server": "./src/server/server.ts",
@@ -44,9 +44,7 @@
     "@std/path": "jsr:@std/path@1.1.1",
     "@std/cli/parse-args": "jsr:@std/cli@1.0.21/parse-args",
     "@std/jsonc/parse": "jsr:@std/jsonc@1.0.2/parse",
-    "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64",
-    "@deno/cache-dir": "jsr:@deno/cache-dir@0.24.0",
-    "@deno/graph": "jsr:@deno/graph@0.98.1"
+    "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64"
   },
   "lock": false
 }
