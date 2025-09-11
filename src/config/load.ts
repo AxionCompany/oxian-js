@@ -82,7 +82,7 @@ async function loadRemoteConfig(pathOrUrl: string): Promise<OxianConfig> {
     const { content } = await loader.load(url);
     return JSON.parse(content) as OxianConfig;
   }
-  // TS/JS modules via bundling importer (supports http/github)
+  // TS/JS modules via importer (supports http/github)
   const mod = await importModule(url, lm.getLoaders(), 60_000, Deno.cwd());
   const resolved = mod as Record<string, unknown>;
   const exp = (resolved.default ?? (resolved as { config?: unknown }).config ?? resolved) as unknown;

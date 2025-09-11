@@ -7,7 +7,7 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
     },
     server,
     logging: { ...logging, requestIdHeader: "x-request-id" },
-    routing: { routesDir: "routes", trailingSlash: "preserve", discovery: "eager" },
+    routing: { routesDir: "routes", trailingSlash: "preserve", discovery: "lazy" },
     security: {
         cors: {
             allowedOrigins: ["*"],

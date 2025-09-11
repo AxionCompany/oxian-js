@@ -32,7 +32,7 @@ export async function resolveRouter(config: EffectiveConfig, source?: string): P
   const suffix = routesDir.endsWith("/") ? routesDir : routesDir + "/";
   // Handle GitHub sources robustly by translating to github: scheme
   let routesRoot: URL;
-  
+
   // Generic URL resolution
   // Ensure we don't reset to host root for http(s)
   if (base.protocol === "github:") {
@@ -41,13 +41,14 @@ export async function resolveRouter(config: EffectiveConfig, source?: string): P
     const abs = `github:${finalPath.replace(/^\//, "")}${base.search}`;
     routesRoot = new URL(abs);
   } else {
-      const rel = base.toString().endsWith("/") ? suffix : `/${suffix}`;
-      routesRoot = new URL(rel.startsWith("/") && (base.protocol === "http:" || base.protocol === "https:") ? `.${rel}` : rel, base);
-    }
-  // }
+    const rel = base.toString().endsWith("/") ? suffix : `/${suffix}`;
+    routesRoot = new URL(rel.startsWith("/") && (base.protocol === "http:" || base.protocol === "https:") ? `.${rel}` : rel, base);
+  }
   const loader = lm.getActiveLoader(routesRoot);
 
+  console.log('ROUTES ROOT', routesRoot);
   if (discovery === "lazy") {
+    console.log('CREATING LAZY ROUTER REMOTE');
     const lazy = createLazyRouterRemote(loader, routesRoot) as unknown as Router & { __asyncMatch?: (path: string) => Promise<ReturnType<Router["match"]>> };
     return { router: lazy, loaderManager: lm, isRemote: true, routesRootUrl: routesRoot };
   }

@@ -273,7 +273,8 @@ if (import.meta.main) {
             }
             // Shallow overlay: remote overrides local
             if (discovered && typeof discovered === "object") {
-              Object.assign(config as Record<string, unknown>, discovered);
+              delete discovered.hypervisor;
+              Object.assign(config as Record<string, unknown>, { ...discovered, server: { ...(discovered as any)?.server, port } });
               console.log("[cli] applied remote config override", { url: u.toString() });
               throw new Error("__done__");
             }
