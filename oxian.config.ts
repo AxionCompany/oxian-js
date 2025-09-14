@@ -7,7 +7,7 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
     },
     server,
     logging: { ...logging, requestIdHeader: "x-request-id" },
-    routing: { routesDir: "routes", trailingSlash: "preserve", discovery: "lazy" },
+    routing: { routesDir: "routes", trailingSlash: "preserve", discovery: "eager" },
     security: {
         cors: {
             allowedOrigins: ["*"],
@@ -18,7 +18,7 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
         scrubHeaders: ["authorization", "cookie", "set-cookie"],
     },
     runtime: {
-        hotReload: true,
+        // hotReload: true,
         dependencies: {
             initial: { feature: "on" },
             merge: "shallow",
@@ -36,7 +36,7 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
                         source: "github:AxionCompany/oxian-js?ref=main",
                         env: { CUSTOM: "1" },
                         githubToken: Deno.env.get("GITHUB_TOKEN") || undefined,
-                        isolated: true,
+                        // isolated: true,
                     };
                     return { project: "local" };
                 }

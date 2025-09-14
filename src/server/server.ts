@@ -19,11 +19,10 @@ import { runHandler, shapeError } from "../runtime/pipeline.ts";
 import { composeDependencies } from "../runtime/dependencies.ts";
 import { runInterceptorsBefore, runInterceptorsAfter } from "../runtime/interceptors.ts";
 import { runMiddlewares } from "../runtime/middlewares.ts";
-import { resolveRouter } from "../runtime/router_resolver.ts";
+import { resolveRouter } from "../router/index.ts";
 import { buildLocalChain, buildRemoteChain, discoverPipelineFiles } from "../runtime/pipeline_discovery.ts";
-import { createLoaderManager } from "../loader/index.ts";
-import { importModule } from "../runtime/importer.ts";
 import { getLocalRootPath } from "../utils/root.ts";
+import type { Resolver } from "../resolvers/types.ts";
 
 function applyTrailingSlash(path: string, mode: "always" | "never" | "preserve" | undefined): string {
   if (mode === "preserve" || !mode) return path;
@@ -45,33 +44,6 @@ function applyCorsAndDefaults(headers: Headers, config: EffectiveConfig) {
   }
 }
 
-async function loadBootstrapDeps(config: EffectiveConfig): Promise<Record<string, unknown>> {
-  const runtimeDeps = config.runtime?.dependencies;
-  let deps: Record<string, unknown> = { ...(runtimeDeps?.initial ?? {}) };
-  if (runtimeDeps?.bootstrapModule) {
-    // Respect configured GitHub token for bootstrap module imports
-    const lm = createLoaderManager(config.root ?? Deno.cwd(), config.loaders?.github?.tokenEnv, config.loaders?.github?.token);
-    const url = lm.resolveUrl(runtimeDeps.bootstrapModule);
-    const mod = await importModule(url, lm.getLoaders(), 60_000, getLocalRootPath(config.root));
-    const modObj = mod as Record<string, unknown>;
-    const factory = (modObj.default ?? (modObj as { createDependencies?: unknown }).createDependencies) as unknown;
-    if (typeof factory === "function") {
-      const produced = await (factory as (cfg: EffectiveConfig) => Promise<Record<string, unknown>> | Record<string, unknown>)(config);
-      if (produced && typeof produced === "object") deps = { ...deps, ...(produced as Record<string, unknown>) };
-    } else if (mod && typeof mod === "object") {
-      deps = { ...deps, ...(mod as Record<string, unknown>) };
-    }
-  }
-  // Freeze readonly keys
-  if (runtimeDeps?.readonly?.length) {
-    for (const key of runtimeDeps.readonly) {
-      if (key in deps) {
-        try { Object.freeze((deps as Record<string, unknown>)[key]); } catch { /* ignore freeze error */ }
-      }
-    }
-  }
-  return deps;
-}
 
 /**
  * Starts the Oxian HTTP server with the provided configuration.
@@ -94,21 +66,24 @@ async function loadBootstrapDeps(config: EffectiveConfig): Promise<Record<string
  * await startServer({ config });
  * ```
  */
-export async function startServer(opts: { config: EffectiveConfig; source?: string }) {
+export async function startServer(opts: { config: EffectiveConfig; source?: string }, resolver: Resolver) {
+
   const { config, source } = opts;
 
+  const PERF = config.logging?.performance === true;
+  const base = source ?? config.root;
   const logger = createLogger(config.logging?.level ?? "info");
 
   // make logger globally available for deprecation messages
   // and obey deprecations flag
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
   (await import("../logging/logger.ts")).setCurrentLogger(logger, { deprecations: config.logging?.deprecations !== false });
-  const resolved = await resolveRouter(config, source);
-  const PERF = config.logging?.performance === true;
-  if (PERF) console.log('[perf][server] resolvedRouter', { isRemote: resolved.isRemote, routes: resolved.router?.routes?.length });
 
-  // Preload config-defined dependencies (worker-lifecycle)
-  const hvInitialDeps = await loadBootstrapDeps(config);
+  const perfStart = performance.now();
+  const resolved = await resolveRouter({ config, base }, resolver);
+  const perfEnd = performance.now();
+  if (PERF) console.log('[perf][server] resolvedRouter', { ms: Math.round(perfEnd - perfStart) });
+  const resolvedEnd = performance.now();
+  if (PERF) console.log('[perf][server] resolvedRouter', { ms: Math.round(resolvedEnd - perfStart), isRemote: resolved.isRemote, routes: resolved.router?.routes?.length });
 
   if (PERF) console.log('[perf][server] listening', { port: config.server?.port ?? 8080 });
   const server = Deno.serve({ port: config.server?.port ?? 8080 }, async (req) => {
@@ -137,8 +112,10 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
       }
 
       const lazyAsync = (resolved.router as unknown as { __asyncMatch?: (p: string) => Promise<unknown> }).__asyncMatch as undefined | ((p: string) => Promise<unknown>);
+      const lazyPerfStart = performance.now();
       const match = lazyAsync ? await lazyAsync(path) : resolved.router.match(path);
-
+      const lazyPerfEnd = performance.now();
+      if (PERF) console.log('[perf][server] lazyMatch', { ms: Math.round(lazyPerfEnd - lazyPerfStart) });
       const { params: queryParams, record: queryRecord } = parseQuery(url);
       // Preserve an untouched clone of the Request for consumers
       const rawClone = req.clone();
@@ -148,9 +125,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         const bodyClone = req.clone();
         const ab = await bodyClone.arrayBuffer();
         rawBody = new Uint8Array(ab);
-      } catch {
-        // Swallow errors reading raw body; continue with parsed body only
-      }
+      } catch { /* Swallow errors reading raw body; continue with parsed body only */ }
       const body = await parseRequestBody(req);
       const pathParams = (match as unknown as { params?: Record<string, string> })?.params ?? {};
       let data: Data = mergeData(pathParams, queryRecord, body);
@@ -180,50 +155,53 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
 
       if (!match) {
         if (path === "/") {
+          // If no match found at "/", send a basic health check response
           controller.send({ ok: true, message: "Oxian running", routes: resolved.router.routes.map((r: { pattern: string }) => r.pattern) });
           const res = finalizeResponse(state);
           logger.info("request", makeRequestLog({ requestId, route: path, method: req.method, status: state.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
           return res;
         }
+        // If no match found at any path, send a 404 response
         return new Response(JSON.stringify({ error: { message: "Not found" } }), { status: 404, headers: { "content-type": "application/json; charset=utf-8" } });
       }
 
       // Unified pipeline discovery
       let files;
       const getFilesStart = performance.now();
-      const loaders = resolved.loaderManager.getLoaders();
       if (resolved.isRemote && resolved.routesRootUrl) {
         const chain = buildRemoteChain(resolved.routesRootUrl, (match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
-        files = await discoverPipelineFiles(chain, { loaders, projectRoot: getLocalRootPath(config.root) ,  allowShared: config.compatibility?.allowShared});
+        files = await discoverPipelineFiles(chain, { allowShared: config.compatibility?.allowShared }, resolver);
       } else {
         const chain = buildLocalChain(getLocalRootPath(config.root), config.routing?.routesDir ?? "routes", (match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
-        files = await discoverPipelineFiles(chain, { loaders, projectRoot: getLocalRootPath(config.root) ,  allowShared: config.compatibility?.allowShared});
+        files = await discoverPipelineFiles(chain, { allowShared: config.compatibility?.allowShared }, resolver);
       }
       const getFilesEnd = performance.now();
       if (PERF) console.log('[perf][server] discoverPipelineFiles', { ms: Math.round(getFilesEnd - getFilesStart) });
 
       try {
-       
+
         // Inject config-defined deps as the base
-        const baseDeps = { ...hvInitialDeps };
+        const baseDeps = {};
         context.dependencies = baseDeps;
         // Compose route dependencies on top
         const composeStart = performance.now();
-        const composed = await composeDependencies(files, {}, loaders, { allowShared: config.compatibility?.allowShared });
+        const composed = await composeDependencies(files, {}, { allowShared: config.compatibility?.allowShared }, resolver);
         const composeEnd = performance.now();
         if (PERF) console.log('[perf][server] composeDependencies', { ms: Math.round(composeEnd - composeStart) });
         context.dependencies = { ...baseDeps, ...composed };
         {
+          // Run interceptors before the route handler
           const runInterceptorsBeforeStart = performance.now();
-          const result = await runInterceptorsBefore(files.interceptorFiles, data, context, loaders);
+          const result = await runInterceptorsBefore(files.interceptorFiles, data, context, resolver);
           data = result.data;
           context = result.context as Context;
           const runInterceptorsBeforeEnd = performance.now();
           if (PERF) console.log('[perf][server] runInterceptorsBefore', { ms: Math.round(runInterceptorsBeforeEnd - runInterceptorsBeforeStart) });
         }
         {
+          // Run middlewares before the route handler
           const runMiddlewaresStart = performance.now();
-          const result = await runMiddlewares(files.middlewareFiles, data, context, loaders, config);
+          const result = await runMiddlewares(files.middlewareFiles, data, context, resolver, config);
           data = result.data;
           context = result.context as Context;
           const runMiddlewaresEnd = performance.now();
@@ -239,8 +217,9 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         return res;
       }
 
+      // Load the route module
       const loadRouteModuleStart = performance.now();
-      const mod = await loadRouteModule((match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
+      const mod = await loadRouteModule((match as unknown as { route: { fileUrl: URL } }).route.fileUrl, resolver);
       const loadRouteModuleEnd = performance.now();
       if (PERF) console.log('[perf][server] loadRouteModule', { ms: Math.round(loadRouteModuleEnd - loadRouteModuleStart) });
       const exportVal = getHandlerExport(mod, req.method);
@@ -257,11 +236,13 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         if (PERF) console.log('[perf][server] runHandler', { ms: Math.round(runHandlerEnd - runHandlerStart) });
       }
 
+      // Run after interceptors
       const runInterceptorsAfterStart = performance.now();
       await runInterceptorsAfter(files.interceptorFiles, resultOrError, context, resolved.loaderManager.getLoaders());
       const runInterceptorsAfterEnd = performance.now();
       if (PERF) console.log('[perf][server] runInterceptorsAfter', { ms: Math.round(runInterceptorsAfterEnd - runInterceptorsAfterStart) });
 
+      // Finalize the response
       const finalizeResponseStart = performance.now();
       const res = finalizeResponse(state);
       const finalizeResponseEnd = performance.now();

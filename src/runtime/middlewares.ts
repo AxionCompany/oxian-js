@@ -1,18 +1,17 @@
 import type { Context, Data, Middleware } from "../core/types.ts";
-import type { Loader } from "../loader/types.ts";
 import type { OxianConfig } from "../config/types.ts";
-import { importModule } from "./importer.ts";
+import type { Resolver } from "../resolvers/index.ts";
 
 function isMiddlewareObjectResult(input: unknown): input is { data?: Data; context?: Partial<Context> } {
   return typeof input === "object" && input !== null;
 }
 
-export async function runMiddlewares(files: URL[], data: Data, context: Context, loaders?: Loader[], config?: OxianConfig): Promise<{ data: Data; context: Context }> {
+export async function runMiddlewares(files: URL[], data: Data, context: Context, resolver: Resolver, config?: OxianConfig): Promise<{ data: Data; context: Context }> {
   let currentData = { ...data };
   let currentContext = { ...context } as Context;
 
   for (const fileUrl of files) {
-    const mod = await importModule(fileUrl, loaders ?? [], 60_000);
+    const mod = await resolver.import(fileUrl);
     const modObj = mod as Record<string, unknown>;
     let mw: unknown = (modObj["default"] ?? modObj["middleware"]);
     if (typeof mw === "function") {
