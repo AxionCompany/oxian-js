@@ -195,6 +195,7 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
         },
       } as { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> };
       const jsonStr = JSON.stringify(mergedImportMap);
+      console.log('using merged import map for', selected.project, jsonStr,);
       const dataUrl = `data:application/json;base64,${btoa(jsonStr)}`;
       denoArgs.push(`--import-map=${dataUrl}`);
       denoArgs.push('--reload')
@@ -479,7 +480,7 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
           timer = setTimeout(async () => {
             console.log(`[hv] change detected, restarting workers`);
             const projectsToRestart = Array.from(pools.keys());
-            for (const project of projectsToRestart){
+            for (const project of projectsToRestart) {
               await restartProject(project, denoOptions, scriptArgs);
             }
           }, 120) as unknown as number;
