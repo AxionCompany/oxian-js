@@ -205,43 +205,6 @@ export type Interceptors = {
 };
 
 /**
- * Supported media types for module loading.
- * 
- * This type defines the file types that can be loaded and processed by
- * Oxian's module loader system. Each type corresponds to a specific
- * JavaScript/TypeScript file format.
- */
-export type LoaderMediaType = "ts" | "js" | "tsx" | "jsx" | "json";
-
-/**
- * Interface for module loaders that can fetch code from different sources.
- * 
- * Loaders enable Oxian to load modules from various sources like local files,
- * GitHub repositories, HTTP endpoints, etc. Each loader implements this
- * interface to provide a consistent API for module loading.
- * 
- * @example
- * ```typescript
- * const githubLoader: Loader = {
- *   scheme: "github",
- *   canHandle: (url) => url.hostname === "github.com",
- *   load: async (url) => {
- *     const content = await fetchFromGitHub(url);
- *     return { content, mediaType: "ts" };
- *   }
- * };
- * ```
- */
-export type Loader = {
-  scheme: "local" | "github" | "http" | "https" | "file";
-  canHandle: (url: URL) => boolean;
-  load: (url: URL) => Promise<{ content: string; mediaType: LoaderMediaType }>;
-  listDir?: (url: URL) => Promise<string[]>;
-  stat?: (url: URL) => Promise<{ isFile: boolean; mtime?: number }>;
-  cacheKey?: (url: URL) => string;
-};
-
-/**
  * HTTP error class for Oxian applications.
  * 
  * This error class provides structured HTTP error handling with status codes,

@@ -1,6 +1,5 @@
-import type { Loader } from "../loader/types.ts";
-import { importModule } from "./importer.ts";
 import type { PipelineFiles } from "./pipeline_discovery.ts";
+import type { Resolver } from "../resolvers/index.ts";
 
 // Memoize composed deps per chain key (existing)
 const depsCache = new Map<string, Record<string, unknown>>();
@@ -10,16 +9,16 @@ const factoryCache = new Map<string, Record<string, unknown>>();
 export async function composeDependencies(
   files: PipelineFiles,
   contextForFactory: Record<string, unknown> = {},
-  loaders?: Loader[],
   opts?: { allowShared?: boolean },
+  resolver: Resolver,
 ): Promise<Record<string, unknown>> {
 
   async function getMtime(url: URL): Promise<number | undefined> {
     // Optimization: avoid remote mtime checks which are expensive (GitHub API); rely on in-process cache
     if (url.protocol !== "file:") return undefined;
     try {
-      const active = (loaders ?? []).find((l) => l.canHandle(url));
-      const st = await (active?.stat?.(url) ?? Promise.resolve(undefined));
+      const active = (resolver.canHandle(url));
+      const st = await (resolver.stat(url) ?? Promise.resolve(undefined));
       return (st as { mtime?: number } | undefined)?.mtime;
     } catch {
       return undefined;
@@ -30,7 +29,7 @@ export async function composeDependencies(
   const key = depKeyParts.join("|") + "|" + files.middlewareFiles.length + "|" + files.interceptorFiles.length + `|shared=${opts?.allowShared !== false}`;
   if (depsCache.has(key)) return depsCache.get(key)!;
 
-  const resolveMod = async (url: URL): Promise<Record<string, unknown>> => await importModule(url, loaders ?? [], 60_000);
+  const resolveMod = async (url: URL): Promise<Record<string, unknown>> => await resolver.import(url);
 
   let composed: Record<string, unknown> = {};
 
