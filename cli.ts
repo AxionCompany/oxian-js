@@ -192,7 +192,7 @@ if (import.meta.main) {
   let config: EffectiveConfig = {
     root: Deno.cwd(),
     basePath: "/",
-    server: { port: 8080 },
+    server: { port: Number(Deno.env.get("PORT")) ?? 8080 },
     logging: { level: "info" }
   };
   const bases = [configStr]
