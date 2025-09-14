@@ -40,8 +40,12 @@ async function detectHostDenoConfig(resolver: Resolver): Promise<string | undefi
   const candidates = ["deno.json", "deno.jsonc"];
   for (const name of candidates) {
     try {
-      await resolver.import(name);
-      return (await resolver.resolve(name)).toString();
+      console.log('detecting host deno config', name);
+      const resolved = await resolver.resolve(name);
+      console.log('resolved host deno config', resolved);
+      const loaded = await resolver.stat(resolved);
+      console.log('loaded host deno config', loaded);
+      return resolved.toString();
     } catch (_err) { /* no local deno config at this candidate */ }
   }
   return undefined;
@@ -164,8 +168,9 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
     if (!denoOptions.includes("--config") && effectiveDenoCfg) {
       let maybeHostDenoConfig: { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> } = { imports: {}, scopes: {} };
       try {
-        const loaded = await resolver.import(effectiveDenoCfg);
-        const picked = (loaded?.default ?? loaded) as unknown;
+        const resolved = await resolver.resolve(effectiveDenoCfg);
+        const loaded = await resolver.load(resolved);
+        const picked = JSON.parse(loaded);
         if (picked && typeof picked === "object") {
           maybeHostDenoConfig = picked as { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> };
         }
@@ -197,7 +202,6 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
         },
       } as { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> };
       const jsonStr = JSON.stringify(mergedImportMap);
-      console.log('using merged import map for', selected.project, jsonStr,);
       const dataUrl = `data:application/json;base64,${btoa(jsonStr)}`;
       denoArgs.push(`--import-map=${dataUrl}`);
       denoArgs.push('--reload')

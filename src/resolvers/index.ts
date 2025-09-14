@@ -59,6 +59,7 @@ export interface Resolver {
     stat: (url: URL) => Promise<{ isFile: boolean }>;
     resolve: (specifier: string | URL) => Promise<URL>;
     import: (specifier: string | URL) => Promise<Record<string, unknown>>;
+    load: (url: URL) => Promise<string>;
 }
 
 // Main entry point for creating a resolver
@@ -137,6 +138,13 @@ export function createResolver(baseUrl: URL | string | undefined, opts: { tokenE
             const mod = await importModule(await resolver.resolve(specifier), opts.ttlMs);
             inMemoryCache.set(key, mod);
             return mod;
+        },
+        load: async (specifier: URL) => {
+            const key = cacheKey("load", specifier);
+            if (inMemoryCache.has(key)) return inMemoryCache.get(key) as string;
+            const content = await resolverMap[type].load(specifier);
+            inMemoryCache.set(key, content);
+            return content;
         }
     };
     return resolver;
@@ -168,6 +176,9 @@ export function createLocalResolver(baseUrl?: URL): Resolver {
         stat(URLspecifier: URL) {
             const info = Deno.statSync(URLspecifier.toString().replace("file://", ""));
             return Promise.resolve({ isFile: info.isFile });
+        },
+        load(URLspecifier: URL) {
+            return Promise.resolve(Deno.readTextFile(URLspecifier.toString().replace("file://", "")));
         }
     } as Resolver;
 }
@@ -194,6 +205,9 @@ export function createHttpResolver(baseUrl: URL): Resolver {
         // Not implemented -> Cannot stat HTTP(s)
         stat(_specifier: URL) {
             return Promise.reject(new Error("http stat not implemented"));
+        },
+        load: async (specifier: URL) => {
+            return fetch(specifier).then(res => res.text());
         }
     } as Resolver;
 }
@@ -255,5 +269,19 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
             }
             return { isFile: false };
         },
+        load: async (URLspecifier: URL) => {
+            let apiUrl = URLspecifier;
+            if (URLspecifier.protocol === 'https:' && URLspecifier.hostname === 'raw.githubusercontent.com') {
+                const [owner, repo, _1, _2, ref, ...path] = URLspecifier.pathname.split('/').filter(Boolean);
+                apiUrl = new URL(`https://api.github.com/repos/${owner}/${repo}/contents/${path.join('/')}`);
+                apiUrl.searchParams.set("ref", ref);
+            }
+            const res = await ghFetch(apiUrl);
+            if (!res.ok) throw new Error(`GitHub load failed ${res.status} for ${apiUrl}`);
+            const resJson = await res.json();
+            const content = resJson.content;
+            const decoded = atob(content);
+            return decoded;
+        }
     } as Resolver;
 } 
