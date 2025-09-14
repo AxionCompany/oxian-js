@@ -71,7 +71,6 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
   const { config, source: _source } = opts;
 
   const PERF = config.logging?.performance === true;
-  const _base = _source ?? config.root;
   const logger = createLogger(config.logging?.level ?? "info");
 
   // make logger globally available for deprecation messages
@@ -146,7 +145,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
           rawBody,
           raw: rawClone,
         },
-        dependencies: {},
+        dependencies: { ...config?.runtime?.dependencies?.initial },
         response: controller,
         oxian: { route: (match as unknown as { route?: { pattern?: string } })?.route?.pattern ?? path, startedAt },
         // pass compatibility options for handler modes
@@ -185,7 +184,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         context.dependencies = baseDeps;
         // Compose route dependencies on top
         const composeStart = performance.now();
-        const composed = await composeDependencies(files, {}, resolver, { allowShared: config.compatibility?.allowShared },);
+        const composed = await composeDependencies(files, {}, resolver, { allowShared: config.compatibility?.allowShared });
         const composeEnd = performance.now();
         if (PERF) console.log('[perf][server] composeDependencies', { ms: Math.round(composeEnd - composeStart) });
         context.dependencies = { ...baseDeps, ...composed };

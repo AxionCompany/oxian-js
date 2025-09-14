@@ -1,4 +1,3 @@
-const inMemoryCache = new Map<string, Record<string, unknown>>();
 
 function sanitizeUrlForLog(input: string): string {
     try {
@@ -40,11 +39,7 @@ export async function importModule(url: URL | string, _ttlMs = 60_000): Promise<
         try { console.log('importModule', sanitizeUrlForLog((url as URL).toString()), { ttl: _ttlMs, }); } catch { console.log('importModule', sanitizeUrlForLog(String(url)), { ttl: _ttlMs, }); }
     }
 
-    // In-memory cache for faster file loads
     const urlStr = (url instanceof URL) ? url.toString() : String(url);
-    if (inMemoryCache.has(urlStr)) {
-        return inMemoryCache.get(urlStr) as Record<string, unknown>;
-    }
 
     try {
         // Resolve specifier to a fetchable URL (file: or https:)
@@ -55,16 +50,11 @@ export async function importModule(url: URL | string, _ttlMs = 60_000): Promise<
 
         if ((!urlStr.startsWith("file:"))) {
             const importDataUrl = `data:text/typescript;base64,${btoa(importModuleTemplate(urlStr, importType))}`;
-            try {
+            if (importType) {
+                mod = await import(importDataUrl, { with: { type: importType } });
+            } else {
                 mod = await import(importDataUrl);
-            } catch { /* ignore */ }
-            // As a fallback, attempt direct import with type hint if provided
-            if (!mod) {
-                try {
-                    mod = importType ? await import(urlStr, { with: { type: importType } }) : await import(urlStr);
-                } catch { /* ignore */ }
             }
-            if (!mod) throw new Error(`Module not found: ${urlStr}`);
         } else {
             const finalSpecifier = urlStr;
             if (importType) {
@@ -74,16 +64,9 @@ export async function importModule(url: URL | string, _ttlMs = 60_000): Promise<
             }
         }
 
-        inMemoryCache.set(urlStr, mod as Record<string, unknown>);
 
         return mod as Record<string, unknown>;
     } catch (e) {
-        // module not found, set cache to empty object
-        try {
-            inMemoryCache.set(urlStr, {});
-        } catch {
-            // ignore cache set failure
-        }
         throw e;
     }
 }

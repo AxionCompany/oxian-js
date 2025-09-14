@@ -252,6 +252,7 @@ if (import.meta.main) {
           ...(d.runtime ? { runtime: { ...config.runtime, ...d.runtime } } : {}),
           ...(d.security ? { security: { ...config.security, ...d.security } } : {}),
           ...(d.loaders ? { loaders: { ...config.loaders, ...d.loaders } } : {}),
+          ...(d.compatibility ? { compatibility: { ...config.compatibility, ...d.compatibility } } : {}),
           server: { port: port ?? d.server?.port ?? config.server.port },
         } as EffectiveConfig;
         if (prevDiscovered) {
