@@ -66,7 +66,7 @@ function findAvailablePort(startPort: number, maxTries = 50): number {
   return startPort;
 }
 
-export async function startHypervisor({ config, baseArgs }: { config: EffectiveConfig, args: string[] }, resolver: Resolver) {
+export async function startHypervisor({ config, baseArgs }: { config: EffectiveConfig; baseArgs: string[] }, resolver: Resolver) {
   const hv = config.runtime?.hv ?? {};
   const publicPort = config.server?.port ?? 8080;
   const basePort = hv.workerBasePort ?? 9101;
@@ -160,14 +160,18 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
     const projectCfg = (hv.projects && (hv.projects as Record<string, { denoConfig?: string }>)[project]) || {} as { denoConfig?: string };
     const effectiveDenoCfg = projectCfg.denoConfig ?? hostDenoCfg;
     if (!denoOptions.includes("--config") && effectiveDenoCfg) {
-      let maybeHostDenoConfig = { imports: {}, scopes: {} } as Record<string, unknown>;
+      let maybeHostDenoConfig: { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> } = { imports: {}, scopes: {} };
       try {
-        maybeHostDenoConfig = (await resolver.import(effectiveDenoCfg))?.default;
+        const loaded = await resolver.import(effectiveDenoCfg);
+        const picked = (loaded?.default ?? loaded) as unknown;
+        if (picked && typeof picked === "object") {
+          maybeHostDenoConfig = picked as { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> };
+        }
       } catch (e: unknown) {
         console.error(`[hv] error loading host deno config`, { error: (e as Error)?.message });
       }
-      const hostImports = ((maybeHostDenoConfig as { imports?: Record<string, string> })?.imports) ?? {};
-      const hostScopes = ((maybeHostDenoConfig as { scopes?: Record<string, Record<string, string>> })?.scopes) ?? {};
+      const hostImports = (maybeHostDenoConfig?.imports) ?? {};
+      const hostScopes = (maybeHostDenoConfig?.scopes) ?? {};
       // Merge imports and rewrite relative addresses to absolute URLs so they are valid under data: import-map
       const mergedImports: Record<string, string> = {
         ...(denoJson.imports || {}),

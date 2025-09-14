@@ -9,8 +9,8 @@ const factoryCache = new Map<string, Record<string, unknown>>();
 export async function composeDependencies(
   files: PipelineFiles,
   contextForFactory: Record<string, unknown> = {},
-  opts?: { allowShared?: boolean },
   resolver: Resolver,
+  opts?: { allowShared?: boolean },
 ): Promise<Record<string, unknown>> {
 
   async function getMtime(url: URL): Promise<number | undefined> {

@@ -11,8 +11,8 @@ export type PipelineFiles = {
 
 export async function discoverPipelineFiles(
     chain: Array<string | URL>,
+    resolver: Resolver,
     opts?: { allowShared?: boolean },
-    resolver: Resolver
 ): Promise<PipelineFiles> {
     const now = performance.now();
     const files: PipelineFiles = { dependencyFiles: [], middlewareFiles: [], interceptorFiles: [], sharedFiles: [] };

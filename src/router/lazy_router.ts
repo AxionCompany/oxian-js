@@ -69,6 +69,7 @@ export function createLazyRouter(opts: { routesRootUrl: URL; listDir: ListDirFn;
     const parts = path.split("/").filter(Boolean);
     let curDir = routesRootUrl;
     const params: Record<string, string> = {};
+    let consumed = 0;
 
     const rootEntries = await listEntries(curDir, listDir, stat);
 
@@ -103,6 +104,7 @@ export function createLazyRouter(opts: { routesRootUrl: URL; listDir: ListDirFn;
         const dirEntries = await listEntries(curDir, listDir, stat);
         const ca = findFileBaseMatch(dirEntries.files, "[...slug]");
         if (ca) catchAllUrl = makeChildUrl(curDir, ca);
+        consumed++;
         continue;
       }
       
@@ -114,6 +116,7 @@ export function createLazyRouter(opts: { routesRootUrl: URL; listDir: ListDirFn;
         const dirEntries = await listEntries(curDir, listDir, stat);
         const ca = findFileBaseMatch(dirEntries.files, "[...slug]");
         if (ca) catchAllUrl = makeChildUrl(curDir, ca);
+        consumed++;
         continue;
       }
       break;
@@ -121,7 +124,8 @@ export function createLazyRouter(opts: { routesRootUrl: URL; listDir: ListDirFn;
 
     const finalEntries = await listEntries(curDir, listDir, stat);
     const indexName = findFileBaseMatch(finalEntries.files, "index");
-    if (indexName) {
+    // Only return directory index if we fully consumed the path
+    if (indexName && consumed === parts.length) {
       const fileUrl = makeChildUrl(curDir, indexName);
       const basePath = ensureTrailingSlash(routesRootUrl).pathname;
       const curPath = ensureTrailingSlash(curDir).pathname;
