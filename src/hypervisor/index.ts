@@ -154,6 +154,8 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
       || hv.denoConfig
       || await detectHostDenoConfig(resolver);
 
+    console.log('host deno config', hostDenoCfg, selected.source , config.root, selected.source || config.root);
+
     const project = selected.project;
     const denoArgs: string[] = ["run", "-A", ...denoOptions];
     // Prefer per-project Deno config if specified
