@@ -68,10 +68,10 @@ function applyCorsAndDefaults(headers: Headers, config: EffectiveConfig) {
  */
 export async function startServer(opts: { config: EffectiveConfig; source?: string }, resolver: Resolver) {
 
-  const { config, source } = opts;
+  const { config, source: _source } = opts;
 
   const PERF = config.logging?.performance === true;
-  const base = source ?? config.root;
+  const _base = _source ?? config.root;
   const logger = createLogger(config.logging?.level ?? "info");
 
   // make logger globally available for deprecation messages
@@ -79,7 +79,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
   (await import("../logging/logger.ts")).setCurrentLogger(logger, { deprecations: config.logging?.deprecations !== false });
 
   const perfStart = performance.now();
-  const resolved = await resolveRouter({ config, base }, resolver);
+  const resolved = await resolveRouter({ config }, resolver);
   const perfEnd = performance.now();
   if (PERF) console.log('[perf][server] resolvedRouter', { ms: Math.round(perfEnd - perfStart) });
   const resolvedEnd = performance.now();
@@ -170,10 +170,10 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
       const getFilesStart = performance.now();
       if (resolved.isRemote && resolved.routesRootUrl) {
         const chain = buildRemoteChain(resolved.routesRootUrl, (match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
-        files = await discoverPipelineFiles(chain, { allowShared: config.compatibility?.allowShared }, resolver);
+        files = await discoverPipelineFiles(chain, resolver, { allowShared: config.compatibility?.allowShared });
       } else {
         const chain = buildLocalChain(getLocalRootPath(config.root), config.routing?.routesDir ?? "routes", (match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
-        files = await discoverPipelineFiles(chain, { allowShared: config.compatibility?.allowShared }, resolver);
+        files = await discoverPipelineFiles(chain, resolver, { allowShared: config.compatibility?.allowShared });
       }
       const getFilesEnd = performance.now();
       if (PERF) console.log('[perf][server] discoverPipelineFiles', { ms: Math.round(getFilesEnd - getFilesStart) });
@@ -185,7 +185,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         context.dependencies = baseDeps;
         // Compose route dependencies on top
         const composeStart = performance.now();
-        const composed = await composeDependencies(files, {}, { allowShared: config.compatibility?.allowShared }, resolver);
+        const composed = await composeDependencies(files, {}, resolver, { allowShared: config.compatibility?.allowShared },);
         const composeEnd = performance.now();
         if (PERF) console.log('[perf][server] composeDependencies', { ms: Math.round(composeEnd - composeStart) });
         context.dependencies = { ...baseDeps, ...composed };
@@ -238,7 +238,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
 
       // Run after interceptors
       const runInterceptorsAfterStart = performance.now();
-      await runInterceptorsAfter(files.interceptorFiles, resultOrError, context, resolved.loaderManager.getLoaders());
+      await runInterceptorsAfter(files.interceptorFiles, resultOrError, context, resolver);
       const runInterceptorsAfterEnd = performance.now();
       if (PERF) console.log('[perf][server] runInterceptorsAfter', { ms: Math.round(runInterceptorsAfterEnd - runInterceptorsAfterStart) });
 

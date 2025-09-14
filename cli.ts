@@ -14,6 +14,9 @@ import { fromFileUrl } from "@std/path";
 import { startServer } from "./src/server/server.ts";
 import { resolveRouter } from "./src/router/index.ts";
 import { printBanner } from "./src/cli/banner.ts";
+import type { EffectiveConfig, OxianConfig } from "./src/config/types.ts";
+import type { Resolver } from "./src/resolvers/types.ts";
+import { createResolver } from "./src/resolvers/index.ts";
 
 // Helpers for init command (hoisted to module scope for linting)
 async function readLocalLLM(): Promise<string> {
@@ -186,7 +189,12 @@ if (import.meta.main) {
   const configStr = typeof args.config === "string" ? args.config : undefined;
 
 
-  const config = {};
+  let config: EffectiveConfig = {
+    root: Deno.cwd(),
+    basePath: "/",
+    server: { port: 8080 },
+    logging: { level: "info" }
+  };
   const bases = [configStr]
   if (sourceStr) {
     bases.push(sourceStr);
@@ -195,12 +203,10 @@ if (import.meta.main) {
   let resolver: Resolver | undefined;
 
   try {
-    const { createResolver } = await import("./src/resolvers/index.ts");
+    const envDefaults: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+    envDefaults.tokenValue = envDefaults.tokenEnv ? Deno.env.get(envDefaults.tokenEnv) : undefined;
 
-    const envDefaults = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
-    envDefaults.tokenValue = Deno.env.get(envDefaults.tokenEnv);
-
-    let discovered: Record<string, unknown> | undefined;
+    let discovered: Partial<OxianConfig> | undefined;
 
     for (const base of bases) {
       resolver = createResolver(base ? new URL(base) : undefined, envDefaults);
@@ -219,11 +225,13 @@ if (import.meta.main) {
           const mod = await resolver.import(name);
           const pick = (mod.default ?? (mod as { config?: unknown }).config ?? mod) as unknown;
           if (typeof pick === "function") {
-            const fn = pick as (defaults: Record<string, unknown>) => Record<string, unknown> | Promise<Record<string, unknown>>;
-            const res = await fn({ ...(config as unknown as Record<string, unknown>) });
-            discovered = res as Record<string, unknown>;
+            const fn = pick as (defaults: Partial<OxianConfig>) => Partial<OxianConfig> | Promise<Partial<OxianConfig>>;
+            const res = await fn({ ...config });
+            discovered = res as Partial<OxianConfig>;
+          } else if (pick && typeof pick === "object") {
+            discovered = pick as Partial<OxianConfig>;
           } else {
-            discovered = pick as Record<string, unknown>;
+            discovered = undefined;
           }
           throw new Error("__done__");
         } catch (e) {
@@ -234,7 +242,18 @@ if (import.meta.main) {
       }
       // Shallow overlay: remote overrides local
       if (discovered && typeof discovered === "object") {
-        Object.assign(config as Record<string, unknown>, { ...discovered, server: { ...(discovered as any)?.server, port: port ?? (discovered as any)?.server?.port } });
+        const d = discovered as Partial<OxianConfig>;
+        config = {
+          ...config,
+          ...(d.root ? { root: d.root } : {}),
+          ...(d.basePath ? { basePath: d.basePath } : {}),
+          ...(d.logging ? { logging: { ...config.logging, ...d.logging } } : {}),
+          ...(d.routing ? { routing: { ...config.routing, ...d.routing } } : {}),
+          ...(d.runtime ? { runtime: { ...config.runtime, ...d.runtime } } : {}),
+          ...(d.security ? { security: { ...config.security, ...d.security } } : {}),
+          ...(d.loaders ? { loaders: { ...config.loaders, ...d.loaders } } : {}),
+          server: { port: port ?? d.server?.port ?? config.server.port },
+        } as EffectiveConfig;
         if (prevDiscovered) {
           console.log("[cli] applied remote config override", base ?? "local");
         }
@@ -244,20 +263,27 @@ if (import.meta.main) {
   } catch (_) { /* ignore discovery failures */ }
 
   if (port !== undefined && !Number.isNaN(port)) {
-    config.server = config.server ?? {};
-    config.server.port = port;
+    config = { ...config, server: { ...config.server, port } } as EffectiveConfig;
   }
 
   if (!config.loaders?.github?.tokenEnv && Deno.env.get("GITHUB_TOKEN")) {
-    config.loaders = {
-      ...config.loaders,
-      github: { tokenEnv: "GITHUB_TOKEN", token: Deno.env.get("GITHUB_TOKEN") }
-    };
+    config = {
+      ...config,
+      loaders: {
+        ...config.loaders,
+        github: { tokenEnv: "GITHUB_TOKEN", token: Deno.env.get("GITHUB_TOKEN") }
+      }
+    } as EffectiveConfig;
   }
 
 
   if (cmd === "routes") {
-    const { router } = await resolveRouter(config, sourceStr);
+    if (!resolver) {
+      const envDefaults: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+      envDefaults.tokenValue = envDefaults.tokenEnv ? Deno.env.get(envDefaults.tokenEnv) : undefined;
+      resolver = createResolver(sourceStr ? new URL(sourceStr) : undefined, envDefaults);
+    }
+    const { router } = await resolveRouter({ config }, resolver);
     console.log("Routes:\n" + router.routes.map((r) => `  ${r.pattern}`).join("\n"));
     Deno.exit(0);
   }
@@ -276,7 +302,12 @@ if (import.meta.main) {
     // ensure child processes do NOT start the hypervisor again
     console.log('[cli] starting hypervisor', { port: config.server?.port, source: sourceStr, bypassHv });
     if (cmd === "dev") {
-      config.runtime.hotReload = true;
+      config = { ...config, runtime: { ...config.runtime, hotReload: true } } as EffectiveConfig;
+    }
+    if (!resolver) {
+      const envDefaults2: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+      envDefaults2.tokenValue = envDefaults2.tokenEnv ? Deno.env.get(envDefaults2.tokenEnv) : undefined;
+      resolver = createResolver(sourceStr ? new URL(sourceStr) : undefined, envDefaults2);
     }
     await startHypervisor({
       config, baseArgs: [
@@ -294,5 +325,10 @@ if (import.meta.main) {
   console.log('[cli] starting server', { port: config.server?.port, source: sourceStr })
 
   // start/dev default to starting the server
+  if (!resolver) {
+    const envDefaults3: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+    envDefaults3.tokenValue = envDefaults3.tokenEnv ? Deno.env.get(envDefaults3.tokenEnv) : undefined;
+    resolver = createResolver(sourceStr ? new URL(sourceStr) : undefined, envDefaults3);
+  }
   await startServer({ config, source: sourceStr }, resolver);
 } 

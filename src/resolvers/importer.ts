@@ -19,7 +19,7 @@ const getExtension = (str: string) => {
     return extension;
 }
 
-const mapExtensionToWith = (extension: string) => {
+const mapExtensionToWith = (extension?: string): "json" | "text" | "bytes" | undefined => {
     switch (extension) {
         case "json": return "json"
         case "ts": return;
@@ -41,24 +41,32 @@ export async function importModule(url: URL | string, _ttlMs = 60_000): Promise<
     }
 
     // In-memory cache for faster file loads
-    if (inMemoryCache.has(url?.toString())) {
-        return inMemoryCache.get(url?.toString()) as Record<string, unknown>;
+    const urlStr = (url instanceof URL) ? url.toString() : String(url);
+    if (inMemoryCache.has(urlStr)) {
+        return inMemoryCache.get(urlStr) as Record<string, unknown>;
     }
 
     try {
         // Resolve specifier to a fetchable URL (file: or https:)
-        let mod: Record<string, unknown>;
+        let mod: Record<string, unknown> | undefined;
 
-        const extension = getExtension(url?.toString());
-        const importType = mapExtensionToWith(extension?.toString());
+        const extension = getExtension(urlStr);
+        const importType = mapExtensionToWith(extension);
 
-        if ((!url?.toString().startsWith("file:"))) {
-            const importDataUrl = `data:text/typescript;base64,${btoa(importModuleTemplate(url.toString(), importType))}`;
+        if ((!urlStr.startsWith("file:"))) {
+            const importDataUrl = `data:text/typescript;base64,${btoa(importModuleTemplate(urlStr, importType))}`;
             try {
                 mod = await import(importDataUrl);
             } catch { /* ignore */ }
+            // As a fallback, attempt direct import with type hint if provided
+            if (!mod) {
+                try {
+                    mod = importType ? await import(urlStr, { with: { type: importType } }) : await import(urlStr);
+                } catch { /* ignore */ }
+            }
+            if (!mod) throw new Error(`Module not found: ${urlStr}`);
         } else {
-            const finalSpecifier = url?.toString();
+            const finalSpecifier = urlStr;
             if (importType) {
                 mod = await import(finalSpecifier, { with: { type: importType } });
             } else {
@@ -66,13 +74,13 @@ export async function importModule(url: URL | string, _ttlMs = 60_000): Promise<
             }
         }
 
-        inMemoryCache.set(url?.toString(), mod as Record<string, unknown>);
+        inMemoryCache.set(urlStr, mod as Record<string, unknown>);
 
         return mod as Record<string, unknown>;
     } catch (e) {
         // module not found, set cache to empty object
         try {
-            inMemoryCache.set(url?.toString(), {});
+            inMemoryCache.set(urlStr, {});
         } catch {
             // ignore cache set failure
         }
