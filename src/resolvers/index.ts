@@ -14,7 +14,7 @@ export function parseGithubUrl(specifier: string | URL, baseUrl: URL): { owner: 
         if (specUrl?.protocol === "https:" && specUrl.hostname === "raw.githubusercontent.com") {
             const input = specUrl;
             const parts = input.pathname.split("/").filter(Boolean);
-            const [owner, repo, ref, ...path] = parts;
+            const [owner, repo, _1, _2, ref, ...path] = parts;
             if (!owner || !repo || !ref || !path.length) return null;
             return { owner, repo, ref, path: path.join("/") };
         }
@@ -43,7 +43,7 @@ export function parseGithubUrl(specifier: string | URL, baseUrl: URL): { owner: 
     if (baseUrl.protocol === "https:" && baseUrl.hostname === "raw.githubusercontent.com") {
         const input = new URL(specifier instanceof URL ? specifier.toString() : String(specifier ?? ""), baseUrl);
         const parts = input.pathname.split("/").filter(Boolean);
-        const [owner, repo, ref, ...pathParts] = parts;
+        const [owner, repo, _1, _2, ref, ...pathParts] = parts;
         const path = pathParts.join("/");
         if (!owner || !repo || !ref || !path) return null;
         return { owner, repo, ref, path };
@@ -225,7 +225,7 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
             const parsed = parseGithubUrl(specifier ?? "", baseUrl);
             if (!parsed) throw new Error(`Unsupported GitHub URL: ${String(specifier)}`);
             const { owner, repo, ref, path } = parsed;
-            const rawUrl = new URL(`https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`);
+            const rawUrl = new URL(`https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${ref}/${path}`);
             return Promise.resolve(rawUrl);
         },
         async listDir(URLspecifier: URL) {
