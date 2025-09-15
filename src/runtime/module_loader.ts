@@ -10,8 +10,7 @@
  */
 
 import { fromFileUrl } from "@std/path";
-import { importModule } from "./importer.ts";
-import { createLoaderManager } from "../loader/index.ts";
+import type { Resolver } from "../resolvers/types.ts";
 
 /**
  * Represents a loaded JavaScript/TypeScript module.
@@ -82,22 +81,8 @@ async function getMtimeMs(fileUrl: URL): Promise<number | undefined> {
  * const postHandler = routeModule.POST;
  * ```
  */
-export async function loadRouteModule(fileUrl: URL, projectRoot: string = Deno.cwd()): Promise<LoadedModule> {
-  if (fileUrl.protocol !== "file:") {
-    // Pass configured token via env by default; callers running under server will have loaders already configured
-    const lm = createLoaderManager(projectRoot, "GITHUB_TOKEN");
-    const loaders = lm.getLoaders();
-    return await importModule(fileUrl, loaders, 60_000, projectRoot);
-  }
-  const mtime = await getMtimeMs(fileUrl);
-  const cacheKey = `${fileUrl.toString()}?v=${mtime ?? "0"}`;
-  if (moduleCache.has(cacheKey)) {
-    return moduleCache.get(cacheKey)!;
-  }
-  const href = `${fileUrl.toString()}?v=${mtime ?? "0"}`;
-  const mod = await import(href);
-  moduleCache.set(cacheKey, mod as LoadedModule);
-  return mod as LoadedModule;
+export async function loadRouteModule(fileUrl: URL, resolver: Resolver): Promise<LoadedModule> {
+  return await resolver.import(fileUrl);
 }
 
 /**
