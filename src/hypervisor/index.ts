@@ -1,8 +1,10 @@
 import type { EffectiveConfig } from "../config/types.ts";
 import denoJson from "../../deno.json" with { type: "json" };
 import { getLocalRootPath } from "../utils/root.ts";
-import { isAbsolute, toFileUrl, join, fromFileUrl } from "@std/path";
-import { parse as parseJsonc } from "@std/jsonc/parse";
+import { join } from "@std/path";
+import type { parse as _parseJsonc } from "@std/jsonc/parse";
+import type { Resolver } from "../resolvers/types.ts";
+import { createResolver } from "../resolvers/index.ts";
 
 const ensureDir = (path: string) => {
   try {
@@ -11,6 +13,7 @@ const ensureDir = (path: string) => {
     // ignore
   }
 };
+
 
 function splitBaseArgs(baseArgs: string[]): { denoOptions: string[]; scriptArgs: string[] } {
   const denoOptions: string[] = [];
@@ -33,13 +36,16 @@ function splitBaseArgs(baseArgs: string[]): { denoOptions: string[]; scriptArgs:
   return { denoOptions, scriptArgs };
 }
 
-async function detectHostDenoConfig(root: string): Promise<string | undefined> {
+async function detectHostDenoConfig(resolver: Resolver): Promise<string | undefined> {
   const candidates = ["deno.json", "deno.jsonc"];
   for (const name of candidates) {
     try {
-      const p = `${root.endsWith("/") ? root.slice(0, -1) : root}/${name}`;
-      await Deno.stat(p);
-      return p;
+      console.log('detecting host deno config', name);
+      const resolved = await resolver.resolve(name);
+      console.log('resolved host deno config', resolved);
+      const loaded = await resolver.stat(resolved);
+      console.log('loaded host deno config', loaded);
+      return resolved.toString();
     } catch (_err) { /* no local deno config at this candidate */ }
   }
   return undefined;
@@ -64,7 +70,7 @@ function findAvailablePort(startPort: number, maxTries = 50): number {
   return startPort;
 }
 
-export async function startHypervisor(config: EffectiveConfig, baseArgs: string[] = []) {
+export async function startHypervisor({ config, baseArgs }: { config: EffectiveConfig; baseArgs: string[] }, resolver: Resolver) {
   const hv = config.runtime?.hv ?? {};
   const publicPort = config.server?.port ?? 8080;
   const basePort = hv.workerBasePort ?? 9101;
@@ -120,102 +126,72 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     });
   }
 
-  async function spawnWorker(selected: SelectedProject, idx: number, denoOptions: string[], scriptArgs: string[], hostDenoCfg?: string) {
+  async function spawnWorker(selected: SelectedProject, idx: number, denoOptions: string[], scriptArgs: string[]) {
+
     const t0 = performance.now();
     const port = await findAvailablePort(basePort + idx);
+
+    resolver = createResolver(selected.source || config.root, { tokenEnv: "GITHUB_TOKEN", tokenValue: selected.githubToken });
+
+    // try {
+    //   // Map GitHub "source" (from selection) to raw base for dynamic imports via import map
+    //   const sourceSpecifier = parseRepoSpecifier(base);
+    //   if (sourceSpecifier.from === 'github') {
+    //     const { from, owner, repo, path, ref } = sourceSpecifier;
+    //     if (owner && repo) {
+    //       const rest = path.split("/").filter(Boolean).join("/");
+    //       const normRest = rest.split("/").filter(Boolean).join("/");
+    //       const key = `@${from}/${owner}/${repo}/${normRest}`;
+    //       const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${ref}/${normRest}`;
+    //       base = rawBase;
+    //       // mergedImports will be defined when building import map below; capture desired mapping here
+    //       (globalThis as unknown as { __HV_IMPORT_OVERRIDES?: Record<string, string> }).__HV_IMPORT_OVERRIDES = {
+    //         ...((globalThis as unknown as { __HV_IMPORT_OVERRIDES?: Record<string, string> }).__HV_IMPORT_OVERRIDES || {}),
+    //         [key]: rawBase,
+    //       };
+    //     }
+    //   }
+    // } catch { /* ignore malformed source */ }
+
+    // Determine deno config to forward
+    const hostDenoCfg = (denoOptions.find((a) => a.startsWith("--deno-config="))?.split("=")[1])
+      || hv.denoConfig
+      || await detectHostDenoConfig(resolver);
+
+    console.log('host deno config', hostDenoCfg, selected.source , config.root, selected.source || config.root);
+
     const project = selected.project;
     const denoArgs: string[] = ["run", "-A", ...denoOptions];
     // Prefer per-project Deno config if specified
     const projectCfg = (hv.projects && (hv.projects as Record<string, { denoConfig?: string }>)[project]) || {} as { denoConfig?: string };
     const effectiveDenoCfg = projectCfg.denoConfig ?? hostDenoCfg;
     if (!denoOptions.includes("--config") && effectiveDenoCfg) {
-      let maybeHostDenoConfig = { imports: {}, scopes: {} } as Record<string, unknown>;
+      let maybeHostDenoConfig: { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> } = { imports: {}, scopes: {} };
       try {
-        // Robust read: files (including Windows paths), file URLs, or http(s)
-        const readJson = async (input: string): Promise<Record<string, unknown>> => {
-          try {
-            const u = new URL(input);
-            if (u.protocol === "file:") {
-              const text = await Deno.readTextFile(fromFileUrl(u));
-              const isJsonc = u.pathname.endsWith(".jsonc");
-              return isJsonc ? (parseJsonc(text) as Record<string, unknown>) : (JSON.parse(text) as Record<string, unknown>);
-            }
-            if (u.protocol === "http:" || u.protocol === "https:") {
-              const res = await fetch(u);
-              const text = await res.text();
-              return JSON.parse(text) as Record<string, unknown>;
-            }
-            // Fallback to dynamic import for other schemes
-            return (await import(u.toString(), { with: { type: "json" } })).default as Record<string, unknown>;
-          } catch {
-            const abs = isAbsolute(input) ? input : join(Deno.cwd(), input);
-            const text = await Deno.readTextFile(abs);
-            const isJsonc = abs.endsWith(".jsonc");
-            return isJsonc ? (parseJsonc(text) as Record<string, unknown>) : (JSON.parse(text) as Record<string, unknown>);
-          }
-        };
-        maybeHostDenoConfig = await readJson(effectiveDenoCfg);
+        const resolved = await resolver.resolve(effectiveDenoCfg);
+        const loaded = await resolver.load(resolved);
+        const picked = JSON.parse(loaded);
+        if (picked && typeof picked === "object") {
+          maybeHostDenoConfig = picked as { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> };
+        }
       } catch (e: unknown) {
         console.error(`[hv] error loading host deno config`, { error: (e as Error)?.message });
       }
-      const hostImports = ((maybeHostDenoConfig as { imports?: Record<string, string> })?.imports) ?? {};
-      const hostScopes = ((maybeHostDenoConfig as { scopes?: Record<string, Record<string, string>> })?.scopes) ?? {};
+      const hostImports = (maybeHostDenoConfig?.imports) ?? {};
+      const hostScopes = (maybeHostDenoConfig?.scopes) ?? {};
       // Merge imports and rewrite relative addresses to absolute URLs so they are valid under data: import-map
       const mergedImports: Record<string, string> = {
         ...(denoJson.imports || {}),
         ...hostImports,
+        // apply overrides computed from project selection (e.g., @github/*)
+        ...(((globalThis as unknown as { __HV_IMPORT_OVERRIDES?: Record<string, string> }).__HV_IMPORT_OVERRIDES) || {}),
       };
-
-      // Map GitHub "source" (from selection) to raw base for dynamic imports via import map
-      try {
-        const src = selected.source;
-        if (src) {
-          const su = new URL(src);
-          if (su.protocol === "github:") {
-            const parts = su.pathname.replace(/^\/+/, "").split("/");
-            const owner = parts[0] ?? "";
-            const repo = parts[1] ?? "";
-            const rest = parts.slice(2).join("/");
-            const ref = su.searchParams.get("ref") ?? "main";
-            const normRest = rest ? (rest.endsWith("/") ? rest : rest + "/") : "";
-            const githubBase = `@github/${owner}/${repo}/${normRest}`;
-            const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${ref}/${normRest}`;
-            mergedImports[githubBase] = rawBase;
-          } else if (su.protocol === "https:" && su.hostname === "github.com") {
-            const p = su.pathname.replace(/^\/+/, "").split("/");
-            const owner = p[0] ?? "";
-            const repo = p[1] ?? "";
-            const type = p[2];
-            const ref = p[3] ?? "main";
-            const rest = p.slice(type ? 4 : 2).join("/");
-            const normRest = rest ? (rest.endsWith("/") ? rest : rest + "/") : "";
-            const githubBase = `@github/${owner}/${repo}/${normRest}`;
-            const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${ref}/${normRest}`;
-            mergedImports[githubBase] = rawBase;
-          }
-        }
-      } catch { /* ignore malformed source */ }
 
       const libSrcBase = new URL("../", import.meta.url); // file:///.../src/
-      const effectiveCfgUrl = effectiveDenoCfg ? new URL(effectiveDenoCfg) : undefined;
-      const isUrlLike = (s: string) => {
-        if (s.startsWith("jsr:") || s.startsWith("npm:") || s.startsWith("node:") || s.startsWith("deno:") || s.startsWith("data:")) return true;
-        try { new URL(s); return true; } catch { return false; }
-      };
-      const absolutize = (val: string, base?: URL): string => {
-        if (isUrlLike(val)) return val;
-        try { return new URL(val, base ?? libSrcBase).href; } catch { return val; }
-      };
 
       // Rewrite known library mapping and host-relative mappings
       if (mergedImports["oxian-js/"]) {
         mergedImports["oxian-js/"] = libSrcBase.href;
-      }
-      for (const [k, v] of Object.entries(mergedImports)) {
-        // Skip if already URL-like
-        if (isUrlLike(v)) continue;
-        // Prefer resolving host entries relative to host deno config; fallback to lib base
-        mergedImports[k] = absolutize(v, effectiveCfgUrl ?? libSrcBase);
       }
 
       const mergedImportMap = {
@@ -228,6 +204,8 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       const jsonStr = JSON.stringify(mergedImportMap);
       const dataUrl = `data:application/json;base64,${btoa(jsonStr)}`;
       denoArgs.push(`--import-map=${dataUrl}`);
+      denoArgs.push('--reload')
+      denoArgs.push('--no-prompt')
     }
 
     denoArgs.push(`${import.meta.resolve('../../cli.ts')}`);
@@ -291,10 +269,10 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     return { port, proc } as { port: number; proc: Deno.ChildProcess };
   }
 
-  async function restartProject(project: string, denoOptions: string[], scriptArgs: string[], hostDenoCfg?: string) {
+  async function restartProject(project: string, denoOptions: string[], scriptArgs: string[]) {
     const idx = projectIndices.get(project) ?? 0;
     console.log(`[hv] restart requested`, { project });
-    const next = await spawnWorker({ project }, idx, denoOptions, scriptArgs, hostDenoCfg);
+    const next = await spawnWorker({ project }, idx, denoOptions, scriptArgs);
     const existing = pools.get(project);
     if (!existing) {
       pools.set(project, { port: next.port, proc: next.proc, rr: rrPicker([{ port: next.port, proc: next.proc }]) });
@@ -315,34 +293,13 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
     console.log(`[hv] old worker terminated`, { project, oldPort });
   }
 
-  // Determine deno config to forward
-  let hostDenoCfg = (Deno.args.find((a) => a.startsWith("--deno-config="))?.split("=")[1])
-    || hv.denoConfig
-    || await detectHostDenoConfig(getLocalRootPath(config.root));
-
-  if (hostDenoCfg) {
-    // Normalize to URL string; support Windows drive-letter paths
-    try {
-      const u = new URL(hostDenoCfg);
-      hostDenoCfg = u.toString();
-    } catch {
-      const path = isAbsolute(hostDenoCfg) ? hostDenoCfg : join(Deno.cwd(), hostDenoCfg);
-      try {
-        hostDenoCfg = toFileUrl(path).toString();
-      } catch {
-        // Fallback: manually construct file URL for Windows-like paths
-        const normalized = path.replace(/\\/g, "/");
-        hostDenoCfg = normalized.startsWith("/") ? `file://${normalized}` : `file:///${normalized}`;
-      }
-    }
-  }
 
   const { denoOptions, scriptArgs } = splitBaseArgs(baseArgs);
 
   for (let idx = 0; idx < projects.length; idx++) {
     const project = projects[idx];
     projectIndices.set(project, idx);
-    const worker = await spawnWorker({ project }, idx, denoOptions, scriptArgs, hostDenoCfg);
+    const worker = await spawnWorker({ project }, idx, denoOptions, scriptArgs);
     pools.set(project, { port: worker.port, proc: worker.proc, rr: rrPicker([{ port: worker.port, proc: worker.proc }]) });
   }
 
@@ -393,7 +350,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
       // On-demand spawn with captured overrides from provider (single call)
       try {
         const idx = projectIndices.get(selected.project) ?? projects.length;
-        const worker = await spawnWorker(selected, idx, denoOptions, scriptArgs, hostDenoCfg);
+        const worker = await spawnWorker(selected, idx, denoOptions, scriptArgs);
         pools.set(selected.project, { port: worker.port, proc: worker.proc, rr: rrPicker([{ port: worker.port, proc: worker.proc }]) });
         pool = pools.get(selected.project)!;
       } catch (_e) {
@@ -514,7 +471,7 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
   }
 
   // Dev autoreload: watch for file changes and trigger blue/green restarts
-  const enableHotReload = config.runtime?.hotReload !== false;
+  const enableHotReload = config.runtime?.hotReload === true;
   if (enableHotReload) {
     try {
       const root = getLocalRootPath(config.root);
@@ -528,8 +485,9 @@ export async function startHypervisor(config: EffectiveConfig, baseArgs: string[
           if (timer) clearTimeout(timer);
           timer = setTimeout(async () => {
             console.log(`[hv] change detected, restarting workers`);
-            for (const p of projects) {
-              await restartProject(p, denoOptions, scriptArgs, hostDenoCfg);
+            const projectsToRestart = Array.from(pools.keys());
+            for (const project of projectsToRestart) {
+              await restartProject(project, denoOptions, scriptArgs);
             }
           }, 120) as unknown as number;
         }

@@ -1,6 +1,5 @@
 import { dirname, join, fromFileUrl, toFileUrl } from "@std/path";
-import type { Loader } from "../loader/types.ts";
-import { importModule } from "./importer.ts";
+import type { Resolver } from "../resolvers/index.ts";
 
 export type PipelineFiles = {
     dependencyFiles: URL[];
@@ -12,7 +11,8 @@ export type PipelineFiles = {
 
 export async function discoverPipelineFiles(
     chain: Array<string | URL>,
-    opts?: { loaders?: Loader[]; projectRoot?: string, allowShared?: boolean },
+    resolver: Resolver,
+    opts?: { allowShared?: boolean },
 ): Promise<PipelineFiles> {
     const now = performance.now();
     const files: PipelineFiles = { dependencyFiles: [], middlewareFiles: [], interceptorFiles: [], sharedFiles: [] };
@@ -29,7 +29,7 @@ export async function discoverPipelineFiles(
         let mwjs: string | URL;
         let icts: string | URL;
         let icjs: string | URL;
-        
+
         let shjs: string | URL = "";
         let shts: string | URL = "";
 
@@ -40,7 +40,7 @@ export async function discoverPipelineFiles(
             mwts = join(level, "middleware.ts");
             mwjs = join(level, "middleware.js");
 
-            icts = join(level, "interceptors.ts"); 
+            icts = join(level, "interceptors.ts");
             icjs = join(level, "interceptors.js");
             if (opts?.allowShared) {
                 shjs = join(level, "shared.js");
@@ -84,18 +84,7 @@ export async function discoverPipelineFiles(
 
         const exists = async (input: string | URL): Promise<boolean> => {
             // Prefer import-based existence check to leverage Deno cache; fallback to stat
-            if (opts?.loaders) {
-                try {
-                    const u = typeof input === 'string' ? toFileUrl(input) : input;
-                    // Only attempt import for URL-like inputs
-                    if (typeof input !== 'string') {
-                        return await importModule(u, opts.loaders, 60_000, opts.projectRoot).then(m => m.default ? true : false)
-                    }
-                } catch {
-                    // fall through to stat
-                }
-            }
-            return await importModule(input.toString(), opts?.loaders ?? [], 60_000, opts?.projectRoot)
+            return await resolver.import(input.toString())
                 .then(m => m.default ? true : false)
                 .catch(() => false);
         };
@@ -113,7 +102,7 @@ export async function discoverPipelineFiles(
             shjsOk = await exists(shjs);
             shtsOk = await exists(shts);
         }
-        
+
         if (DEBUG) {
             try {
                 console.log('[pipeline] probe', {
