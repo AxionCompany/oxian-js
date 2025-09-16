@@ -31,12 +31,51 @@ function applyTrailingSlash(path: string, mode: "always" | "never" | "preserve" 
   return path;
 }
 
-function applyCorsAndDefaults(headers: Headers, config: EffectiveConfig) {
+function applyCorsAndDefaults(headers: Headers, config: EffectiveConfig, req?: Request) {
   const cors = config.security?.cors;
   if (cors) {
-    if (cors.allowedOrigins?.length) headers.set("access-control-allow-origin", cors.allowedOrigins.join(","));
-    if (cors.allowedHeaders?.length) headers.set("access-control-allow-headers", cors.allowedHeaders.join(","));
-    if (cors.methods?.length) headers.set("access-control-allow-methods", cors.methods.join(","));
+    const requestOrigin = req?.headers.get("origin") ?? "";
+    const allowedOrigins = cors.allowedOrigins ?? [];
+
+    // Determine Access-Control-Allow-Origin
+    let originToSet: string | undefined;
+    if (allowedOrigins.includes("*")) {
+      if (cors.allowCredentials && requestOrigin) {
+        originToSet = requestOrigin;
+        headers.append("vary", "Origin");
+      } else {
+        originToSet = "*";
+      }
+    } else if (requestOrigin && allowedOrigins.includes(requestOrigin)) {
+      originToSet = requestOrigin;
+      headers.append("vary", "Origin");
+    }
+    if (originToSet) headers.set("access-control-allow-origin", originToSet);
+
+    // Methods
+    const methods = cors.methods?.length ? cors.methods : ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"];
+    headers.set("access-control-allow-methods", methods.join(","));
+
+    // Allowed headers (echo request if not configured)
+    if (cors.allowedHeaders?.length) {
+      headers.set("access-control-allow-headers", cors.allowedHeaders.join(","));
+    } else if (req) {
+      const acrh = req.headers.get("access-control-request-headers");
+      if (acrh) headers.set("access-control-allow-headers", acrh);
+    }
+
+    // Credentials
+    if (cors.allowCredentials) headers.set("access-control-allow-credentials", "true");
+
+    // Expose headers
+    if ((cors as { exposeHeaders?: string[] }).exposeHeaders?.length) {
+      headers.set("access-control-expose-headers", (cors as { exposeHeaders?: string[] }).exposeHeaders!.join(","));
+    }
+
+    // Max-Age for preflight caching
+    if ((cors as { maxAge?: number }).maxAge !== undefined) {
+      headers.set("access-control-max-age", String((cors as { maxAge?: number }).maxAge));
+    }
   }
   const defaults = config.security?.defaultHeaders;
   if (defaults) {
@@ -96,7 +135,9 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
       let path = url.pathname;
       if (basePath && basePath !== "/") {
         if (!path.startsWith(basePath)) {
-          return new Response(JSON.stringify({ error: { message: "Not found" } }), { status: 404, headers: { "content-type": "application/json; charset=utf-8" } });
+          const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
+          applyCorsAndDefaults(headers, config, req);
+          return new Response(JSON.stringify({ error: { message: "Not found" } }), { status: 404, headers });
         }
         path = path.slice(basePath.length) || "/";
       }
@@ -105,9 +146,19 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
 
       // Lightweight health endpoint to avoid triggering route pipeline during readiness probes
       if (req.method === "HEAD" && path === "/_health") {
-        const res = new Response(null, { status: 200 });
+        const headers = new Headers();
+        applyCorsAndDefaults(headers, config, req);
+        const res = new Response(null, { status: 200, headers });
         logger.info("request", makeRequestLog({ requestId, route: path, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
         return res;
+      }
+
+      // CORS preflight handling
+      if (req.method === "OPTIONS") {
+        const headers = new Headers();
+        applyCorsAndDefaults(headers, config, req);
+        logger.info("request", makeRequestLog({ requestId, route: path, method: req.method, status: 204, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+        return new Response(null, { status: 204, headers });
       }
 
       const lazyAsync = (resolved.router as unknown as { __asyncMatch?: (p: string) => Promise<unknown> }).__asyncMatch as undefined | ((p: string) => Promise<unknown>);
@@ -130,7 +181,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
       let data: Data = mergeData(pathParams, queryRecord, body);
 
       const { controller, state } = createResponseController();
-      applyCorsAndDefaults(state.headers, config);
+      applyCorsAndDefaults(state.headers, config, req);
 
       let context: Context = {
         requestId,
@@ -161,7 +212,11 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
           return res;
         }
         // If no match found at any path, send a 404 response
-        return new Response(JSON.stringify({ error: { message: "Not found" } }), { status: 404, headers: { "content-type": "application/json; charset=utf-8" } });
+        {
+          const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
+          applyCorsAndDefaults(headers, config, req);
+          return new Response(JSON.stringify({ error: { message: "Not found" } }), { status: 404, headers });
+        }
       }
 
       // Unified pipeline discovery
@@ -251,7 +306,9 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
     } catch (err) {
       const requestIdForErr = crypto.randomUUID();
       logger.error("unhandled", { requestId: requestIdForErr, err: (err as Error).message });
-      return new Response(JSON.stringify({ error: { message: "Internal Server Error" } }), { status: 500, headers: { "content-type": "application/json; charset=utf-8" } });
+      const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
+      applyCorsAndDefaults(headers, config, req);
+      return new Response(JSON.stringify({ error: { message: "Internal Server Error" } }), { status: 500, headers });
     }
   });
 
