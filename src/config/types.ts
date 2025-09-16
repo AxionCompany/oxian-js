@@ -166,7 +166,14 @@ export type OxianConfig = {
     discovery?: "eager" | "lazy"; // default: eager
   };
   security?: {
-    cors?: { allowedOrigins: string[]; allowedHeaders?: string[]; methods?: string[] };
+    cors?: {
+      allowedOrigins: string[];
+      allowedHeaders?: string[];
+      methods?: string[];
+      allowCredentials?: boolean;
+      exposeHeaders?: string[];
+      maxAge?: number;
+    };
     defaultHeaders?: Record<string, string>;
     scrubHeaders?: string[];
   };

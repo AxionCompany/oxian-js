@@ -14,7 +14,6 @@ const ensureDir = (path: string) => {
   }
 };
 
-
 function splitBaseArgs(baseArgs: string[]): { denoOptions: string[]; scriptArgs: string[] } {
   const denoOptions: string[] = [];
   const scriptArgs: string[] = [];
@@ -40,12 +39,9 @@ async function detectHostDenoConfig(resolver: Resolver): Promise<string | undefi
   const candidates = ["deno.json", "deno.jsonc"];
   for (const name of candidates) {
     try {
-      console.log('detecting host deno config', name);
       const resolved = await resolver.resolve(name);
-      console.log('resolved host deno config', resolved);
-      const loaded = await resolver.stat(resolved);
-      console.log('loaded host deno config', loaded);
-      return resolved.toString();
+      const { isFile } = await resolver.stat(resolved);
+      if (isFile) return resolved.toString();
     } catch (_err) { /* no local deno config at this candidate */ }
   }
   return undefined;
@@ -133,32 +129,10 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
 
     resolver = createResolver(selected.source || config.root, { tokenEnv: "GITHUB_TOKEN", tokenValue: selected.githubToken });
 
-    // try {
-    //   // Map GitHub "source" (from selection) to raw base for dynamic imports via import map
-    //   const sourceSpecifier = parseRepoSpecifier(base);
-    //   if (sourceSpecifier.from === 'github') {
-    //     const { from, owner, repo, path, ref } = sourceSpecifier;
-    //     if (owner && repo) {
-    //       const rest = path.split("/").filter(Boolean).join("/");
-    //       const normRest = rest.split("/").filter(Boolean).join("/");
-    //       const key = `@${from}/${owner}/${repo}/${normRest}`;
-    //       const rawBase = `https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${ref}/${normRest}`;
-    //       base = rawBase;
-    //       // mergedImports will be defined when building import map below; capture desired mapping here
-    //       (globalThis as unknown as { __HV_IMPORT_OVERRIDES?: Record<string, string> }).__HV_IMPORT_OVERRIDES = {
-    //         ...((globalThis as unknown as { __HV_IMPORT_OVERRIDES?: Record<string, string> }).__HV_IMPORT_OVERRIDES || {}),
-    //         [key]: rawBase,
-    //       };
-    //     }
-    //   }
-    // } catch { /* ignore malformed source */ }
-
     // Determine deno config to forward
     const hostDenoCfg = (denoOptions.find((a) => a.startsWith("--deno-config="))?.split("=")[1])
       || hv.denoConfig
       || await detectHostDenoConfig(resolver);
-
-    console.log('host deno config', hostDenoCfg, selected.source , config.root, selected.source || config.root);
 
     const project = selected.project;
     const denoArgs: string[] = ["run", "-A", ...denoOptions];
@@ -184,7 +158,6 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
         ...(denoJson.imports || {}),
         ...hostImports,
         // apply overrides computed from project selection (e.g., @github/*)
-        ...(((globalThis as unknown as { __HV_IMPORT_OVERRIDES?: Record<string, string> }).__HV_IMPORT_OVERRIDES) || {}),
       };
 
       const libSrcBase = new URL("../", import.meta.url); // file:///.../src/
