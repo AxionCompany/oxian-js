@@ -23,8 +23,9 @@ export type SelectedProject = {
   githubToken?: string;
   stripPathPrefix?: string;
   isolated?: boolean;
-  // Optional list of paths/URLs whose cache should be invalidated on spawn
-  invalidateCacheAt?: string | string[];
+  // When provided, compares against last worker load time to decide if --reload should be used
+  // Accepts ISO date string, epoch milliseconds, or Date
+  invalidateCacheAt?: string | number | Date;
 };
 
 export type WorkerHandle = { port: number; proc: Deno.ChildProcess };
@@ -80,6 +81,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
   const projectIndices = new Map<string, number>();
   const readyWaiters = new Map<string, Array<() => void>>();
   const restarting = new Set<string>();
+  const projectLastLoad = new Map<string, number>();
   let cachedDenoOptions: string[] = [];
   let cachedScriptArgs: string[] = [];
 
@@ -192,28 +194,37 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
       denoArgs.push(`--no-prompt`);
     }
 
-    // Build reload patterns from selection
-    const reloadTargets: string[] = [];
-    try {
-      const rootResolved = await resolver.resolve("");
-      if (rootResolved) reloadTargets.push(rootResolved.toString());
-    } catch { /* ignore */ }
-    if (selected.config) reloadTargets.push(selected.config);
-    if (selected.invalidateCacheAt) {
-      const list = Array.isArray(selected.invalidateCacheAt) ? selected.invalidateCacheAt : [selected.invalidateCacheAt];
-      for (const item of list) reloadTargets.push(item);
-    }
-    if (reloadTargets.length > 0) {
-      // Normalize to absolute URLs where needed
-      const normalized: string[] = [];
-      for (const t of reloadTargets) {
-        const isUrl = t.split(":").length > 1;
-        if (!isUrl) {
-          try { normalized.push((await resolver.resolve(t)).toString()); } catch { normalized.push(t); }
-        } else normalized.push(t);
+    // Decide whether to use --reload based on invalidateCacheAt vs last load
+    let shouldReload = false;
+    if (selected.invalidateCacheAt !== undefined) {
+      const last = projectLastLoad.get(project) ?? 0;
+      let invalidateAt = 0;
+      if (selected.invalidateCacheAt instanceof Date) invalidateAt = selected.invalidateCacheAt.getTime();
+      else if (typeof selected.invalidateCacheAt === "number") invalidateAt = selected.invalidateCacheAt;
+      else if (typeof selected.invalidateCacheAt === "string") {
+        const t = Date.parse(selected.invalidateCacheAt);
+        if (!Number.isNaN(t)) invalidateAt = t;
       }
-      const value = normalized.join(",");
-      denoArgs.push(`--reload=${value}`);
+      if (invalidateAt > last) shouldReload = true;
+    }
+    if (shouldReload) {
+      const reloadTargets: string[] = [];
+      try {
+        const rootResolved = await resolver.resolve("");
+        if (rootResolved) reloadTargets.push(rootResolved.toString());
+      } catch { /* ignore */ }
+      if (selected.config) reloadTargets.push(selected.config);
+      if (reloadTargets.length > 0) {
+        const normalized: string[] = [];
+        for (const t of reloadTargets) {
+          const isUrl = t.split(":").length > 1;
+          if (!isUrl) {
+            try { normalized.push((await resolver.resolve(t)).toString()); } catch { normalized.push(t); }
+          } else normalized.push(t);
+        }
+        const value = normalized.join(",");
+        denoArgs.push(`--reload=${value}`);
+      }
     }
 
     denoArgs.push(`${import.meta.resolve('../../cli.ts')}`);
@@ -270,6 +281,8 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         else console.log(`[hv] worker ready`, { project, port });
       }
     }
+    // mark last load time for reload decisions
+    projectLastLoad.set(project, Date.now());
 
     attachExitObserver(project, proc);
     return { port, proc };
