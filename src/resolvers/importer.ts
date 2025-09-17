@@ -64,9 +64,9 @@ export async function importModule(url: URL | string, _ttlMs = 60_000): Promise<
             }
         }
 
-
         return mod as Record<string, unknown>;
     } catch (e) {
+        console.error("error importing module", e);
         throw e;
     }
 }

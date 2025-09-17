@@ -167,6 +167,13 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
         mergedImports["oxian-js/"] = libSrcBase.href;
       }
 
+      for (const [specifier, url] of Object.entries(mergedImports)) {
+        const isUrl = url.split(":").length > 1;
+        if (!isUrl) {
+          mergedImports[specifier] = (await resolver.resolve(url)).toString();
+        }
+      }
+
       const mergedImportMap = {
         imports: mergedImports,
         scopes: {
@@ -177,7 +184,7 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
       const jsonStr = JSON.stringify(mergedImportMap);
       const dataUrl = `data:application/json;base64,${btoa(jsonStr)}`;
       denoArgs.push(`--import-map=${dataUrl}`);
-      denoArgs.push('--reload')
+      denoArgs.push(`--reload=${[selected.source, selected.config].filter(Boolean).join(",") || `file://${Deno.cwd()}`}`);
       denoArgs.push('--no-prompt')
     }
 

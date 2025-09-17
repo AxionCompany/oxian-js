@@ -1,4 +1,4 @@
-import { fromFileUrl, toFileUrl } from "@std/path";
+import { fromFileUrl, toFileUrl, isAbsolute, join } from "@std/path";
 
 export function getRootUrl(root: string | URL | undefined): URL {
   if (!root) return toFileUrl(Deno.cwd());
@@ -21,6 +21,11 @@ export function getLocalRootPath(root: string | URL | undefined): string {
     // Not a URL, assume filesystem path
     return String(root);
   }
+}
+
+export function absolutize(path: string): string {
+  if (isAbsolute(path)) return path;
+  return join(Deno.cwd(), path);
 }
 
 

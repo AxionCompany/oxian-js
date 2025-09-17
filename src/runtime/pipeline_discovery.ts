@@ -133,9 +133,9 @@ export async function discoverPipelineFiles(
     return files;
 }
 
-export function buildLocalChain(root: string, routesDir: string, routeFileUrl: URL): string[] {
-    const routesRoot = join(root, routesDir);
-    const routeFilePath = fromFileUrl(routeFileUrl);
+export async function buildLocalChain(resolver: Resolver, routesDir: string, routeFileUrl: URL): string[] {
+    const routesRoot = fromFileUrl((await resolver.resolve(routesDir)).toString());
+    const routeFilePath = fromFileUrl(routeFileUrl)
     let curDir = dirname(routeFilePath);
     const chain: string[] = [];
     while (curDir.startsWith(routesRoot)) {
@@ -148,8 +148,9 @@ export function buildLocalChain(root: string, routesDir: string, routeFileUrl: U
     return chain;
 }
 
-export function buildRemoteChain(routesRootUrl: URL, routeFileUrl: URL): URL[] {
-    const basePath = routesRootUrl.pathname.endsWith("/") ? routesRootUrl.pathname : routesRootUrl.pathname + "/";
+export async function buildRemoteChain(resolver: Resolver, routeFileUrl: URL): Promise<URL[]> {
+    const routesRootUrl = await resolver.resolve(routeFileUrl);
+    const basePath = routesRootUrl.pathname.split("/").filter(Boolean).join("/");
     if (!routeFileUrl.pathname.startsWith(basePath)) return [];
     const rel = routeFileUrl.pathname.slice(basePath.length);
     const parts = rel.split("/").filter(Boolean);
@@ -162,7 +163,7 @@ export function buildRemoteChain(routesRootUrl: URL, routeFileUrl: URL): URL[] {
         chain.push(new URL(rootAbs));
         // then each subdirectory up to the route's parent
         for (let i = 0; i < parts.length - 1; i++) {
-            const dirPath = (rootPath + parts.slice(0, i + 1).join("/") + "/").replace(/^\//, "");
+            const dirPath = `${rootPath}/${parts.slice(0, i + 1).join("/")}`;
             const abs = `github:${dirPath}${search}`;
             chain.push(new URL(abs));
         }

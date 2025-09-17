@@ -223,10 +223,10 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
       let files;
       const getFilesStart = performance.now();
       if (resolved.isRemote && resolved.routesRootUrl) {
-        const chain = buildRemoteChain(resolved.routesRootUrl, (match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
+        const chain = await buildRemoteChain(resolver, (match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
         files = await discoverPipelineFiles(chain, resolver, { allowShared: config.compatibility?.allowShared });
       } else {
-        const chain = buildLocalChain(getLocalRootPath(config.root), config.routing?.routesDir ?? "routes", (match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
+        const chain = await buildLocalChain(resolver, config.routing?.routesDir ?? "routes", (match as unknown as { route: { fileUrl: URL } }).route.fileUrl);
         files = await discoverPipelineFiles(chain, resolver, { allowShared: config.compatibility?.allowShared });
       }
       const getFilesEnd = performance.now();
