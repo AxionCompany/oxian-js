@@ -133,7 +133,7 @@ export async function discoverPipelineFiles(
     return files;
 }
 
-export async function buildLocalChain(resolver: Resolver, routesDir: string, routeFileUrl: URL): string[] {
+export async function buildLocalChain(resolver: Resolver, routesDir: string, routeFileUrl: URL): Promise<string[]> {
     const routesRoot = fromFileUrl((await resolver.resolve(routesDir)).toString());
     const routeFilePath = fromFileUrl(routeFileUrl)
     let curDir = dirname(routeFilePath);
