@@ -206,6 +206,11 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             denoArgs.push(`--import-map=${dataUrl}`);
             denoArgs.push(`--no-prompt`);
 
+
+            if (Deno.env.get("OXIAN_DEBUG")) {
+                console.log('[hv] import meta', import.meta.url);
+            }
+
             // add deno.config if import.meta is from jsr:
             if (import.meta.url.startsWith("jsr:")) {
                 denoArgs.push(`--deno-config=${effectiveDenoCfg}`);
