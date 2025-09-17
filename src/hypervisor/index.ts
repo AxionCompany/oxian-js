@@ -184,7 +184,7 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
       const jsonStr = JSON.stringify(mergedImportMap);
       const dataUrl = `data:application/json;base64,${btoa(jsonStr)}`;
       denoArgs.push(`--import-map=${dataUrl}`);
-      denoArgs.push(`--reload=${[selected.source, selected.config].filter(Boolean).join(",") || `file://${Deno.cwd()}`}`);
+      denoArgs.push(`--reload=${[await resolver.resolve(""), selected.config].filter(Boolean)}`);
       denoArgs.push('--no-prompt')
     }
 

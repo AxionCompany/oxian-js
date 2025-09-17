@@ -149,17 +149,17 @@ export async function buildLocalChain(resolver: Resolver, routesDir: string, rou
 }
 
 export async function buildRemoteChain(resolver: Resolver, routeFileUrl: URL): Promise<URL[]> {
-    const routesRootUrl = await resolver.resolve(routeFileUrl);
+    const routesRootUrl = await resolver.resolve("");
     const basePath = routesRootUrl.pathname.split("/").filter(Boolean).join("/");
-    if (!routeFileUrl.pathname.startsWith(basePath)) return [];
-    const rel = routeFileUrl.pathname.slice(basePath.length);
+    if (!routeFileUrl?.pathname?.split("/")?.filter(Boolean)?.join("/")?.startsWith(basePath)) return [];
+    const rel = routeFileUrl.pathname?.split("/")?.filter(Boolean)?.join("/")?.slice(basePath.length);
     const parts = rel.split("/").filter(Boolean);
     const chain: URL[] = [];
     if (routesRootUrl.protocol === "github:") {
         const search = routesRootUrl.search || "";
         const rootPath = basePath;
         // include routes root first
-        const rootAbs = `github:${rootPath.replace(/^\//, "")}${search}`;
+        const rootAbs = `github:${rootPath}${search}`;
         chain.push(new URL(rootAbs));
         // then each subdirectory up to the route's parent
         for (let i = 0; i < parts.length - 1; i++) {
