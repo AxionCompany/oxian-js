@@ -212,7 +212,8 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             }
 
             // add deno.config if import.meta is from jsr:
-            if (import.meta.url.startsWith("jsr:")) {
+            const importMetaUrl = new URL(import.meta.url);
+            if (importMetaUrl.protocol === "jsr:" || (importMetaUrl.protocol === "https:" && importMetaUrl.hostname === "jsr.io")) {
                 denoArgs.push(`--deno-config=${effectiveDenoCfg}`);
             }
         }
