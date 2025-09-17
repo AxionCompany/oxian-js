@@ -157,6 +157,9 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
 
         const projectCfg = (hv.projects && (hv.projects as Record<string, { denoConfig?: string }>)[project]) || {} as { denoConfig?: string };
         const effectiveDenoCfg = projectCfg.denoConfig ?? hostDenoCfg;
+        if (Deno.env.get("OXIAN_DEBUG")) {
+            console.log('[hv] effectiveDenoCfg', effectiveDenoCfg);
+        }
         if (!denoOptions.includes("--config") && effectiveDenoCfg) {
             let maybeHostDenoConfig: { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> } = { imports: {}, scopes: {} };
             try {
@@ -202,6 +205,11 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             const dataUrl = `data:application/json;base64,${btoa(jsonStr)}`;
             denoArgs.push(`--import-map=${dataUrl}`);
             denoArgs.push(`--no-prompt`);
+
+            // add deno.config if import.meta is from jsr:
+            if (import.meta.url.startsWith("jsr:")) {
+                denoArgs.push(`--deno-config=${effectiveDenoCfg}`);
+            }
         }
 
         // Decide whether to use --reload based on invalidateCacheAt vs last load
