@@ -115,6 +115,7 @@ async function writeTextWithPrompt(path: string, content: string) {
 
 
 if (import.meta.main) {
+
   const args = parseArgs(Deno.args, {
     string: ["config", "source", "port", "deno-config", "out"],
     boolean: ["help", "hypervisor", "test", "force"],

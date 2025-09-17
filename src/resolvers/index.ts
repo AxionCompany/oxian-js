@@ -164,6 +164,7 @@ export function createLocalResolver(baseUrl?: URL): Resolver {
         resolve(specifier?: string | URL) {
             if (typeof specifier === "string" && specifier.startsWith("file:")) return Promise.resolve(new URL(specifier));
             if (specifier instanceof URL && specifier.protocol === "file:") return Promise.resolve(specifier);
+            if (specifier === "") return Promise.resolve(new URL(`file://${Deno.cwd()}`));
             const url = isAbsolute(String(specifier))
                 ? toFileUrl(String(specifier))
                 : toFileUrl(absolutize(join(baseUrl?.toString() ?? Deno.cwd(), String(specifier))));
@@ -238,6 +239,7 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
             if (specifier instanceof URL && (specifier.protocol === "http:" || specifier.protocol === "https:")) return Promise.resolve(specifier);
             if (typeof specifier === "string" && (specifier.startsWith("http:") || specifier.startsWith("https:"))) return Promise.resolve(new URL(specifier));
             const parsed = parseGithubUrl(specifier ?? "", baseUrl);
+            console.log('parsed', parsed);
             if (!parsed) throw new Error(`Unsupported GitHub URL: ${String(specifier)}`);
             const { owner, repo, ref, path } = parsed;
             const rawUrl = new URL(`https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${ref}/${path}`);
