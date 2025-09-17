@@ -239,7 +239,6 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
             if (specifier instanceof URL && (specifier.protocol === "http:" || specifier.protocol === "https:")) return Promise.resolve(specifier);
             if (typeof specifier === "string" && (specifier.startsWith("http:") || specifier.startsWith("https:"))) return Promise.resolve(new URL(specifier));
             const parsed = parseGithubUrl(specifier ?? "", baseUrl);
-            console.log('parsed', parsed);
             if (!parsed) throw new Error(`Unsupported GitHub URL: ${String(specifier)}`);
             const { owner, repo, ref, path } = parsed;
             const rawUrl = new URL(`https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${ref}/${path}`);
