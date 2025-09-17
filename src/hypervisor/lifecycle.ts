@@ -148,6 +148,10 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
       || hv.denoConfig
       || await detectHostDenoConfig(resolver);
 
+    if (Deno.env.get("OXIAN_DEBUG")) {
+      console.log('[hv] hostDenoCfg', hostDenoCfg);
+    }
+
     const project = selected.project;
     const denoArgs: string[] = ["run", "-A", ...denoOptions];
 
@@ -161,6 +165,9 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         const picked = JSON.parse(loaded);
         if (picked && typeof picked === "object") {
           maybeHostDenoConfig = picked as { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> };
+          if (Deno.env.get("OXIAN_DEBUG")) {
+            console.log('[hv] maybeHostDenoConfig', maybeHostDenoConfig);
+          }
         }
       } catch (e: unknown) {
         console.error(`[hv] error loading host deno config`, { error: (e as Error)?.message });
@@ -180,6 +187,9 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         if (!isUrl) {
           mergedImports[specifier] = (await resolver.resolve(url)).toString();
         }
+      }
+      if (Deno.env.get("OXIAN_DEBUG")) {
+        console.log('[hv] mergedImports', mergedImports);
       }
       const mergedImportMap = {
         imports: mergedImports,
@@ -227,6 +237,10 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
       }
     }
 
+    if (Deno.env.get("OXIAN_DEBUG")) {
+      console.log('[hv] denoArgs', denoArgs);
+    }
+
     denoArgs.push(`${import.meta.resolve('../../cli.ts')}`);
 
     const globalSource = Deno.args.find((a) => a.startsWith("--source="))?.split("=")[1];
@@ -243,8 +257,17 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
       ...(effectiveConfig ? [`--config=${effectiveConfig}`] : []),
     ];
 
+    if (Deno.env.get("OXIAN_DEBUG")) {
+      console.log('[hv] finalScriptArgs', finalScriptArgs);
+    }
+
     const spawnEnv: Record<string, string> | undefined = { ...(selected.env || {}), ...(selected.githubToken ? { GITHUB_TOKEN: selected.githubToken } : {}) };
     spawnEnv.DENO_AUTH_TOKENS = `${spawnEnv.DENO_AUTH_TOKENS ? spawnEnv.DENO_AUTH_TOKENS + ";" : ""}${selected.githubToken ? `${selected.githubToken}@raw.githubusercontent.com` : ""}`;
+
+    if (Deno.env.get("OXIAN_DEBUG")) {
+      console.log('[hv] globalSource', globalSource);
+      console.log('[hv] globalConfig', globalConfig);
+    }
 
     const projectDir = selected.isolated ? `./deno/${project}` : Deno.cwd();
     if (selected.isolated) {
@@ -252,6 +275,10 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
       spawnEnv.DENO_DIR = `./DENO_DIR`;
       finalScriptArgs.push(`--allow-read=${projectDir + "/**/*"}`);
       finalScriptArgs.push(`--allow-write=${projectDir + "/**/*"}`);
+    }
+
+    if (Deno.env.get("OXIAN_DEBUG")) {
+      console.log('[hv] projectDir', projectDir);
     }
 
     const proc = new Deno.Command(Deno.execPath(), {
