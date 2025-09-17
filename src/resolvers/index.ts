@@ -1,5 +1,6 @@
 import { isAbsolute, toFileUrl, join } from "@std/path";
 import { importModule } from "./importer.ts";
+import { absolutize } from "../utils/root.ts";
 
 const inMemoryCache = new Map<string, unknown>();
 
@@ -165,7 +166,7 @@ export function createLocalResolver(baseUrl?: URL): Resolver {
             if (specifier instanceof URL && specifier.protocol === "file:") return Promise.resolve(specifier);
             const url = isAbsolute(String(specifier))
                 ? toFileUrl(String(specifier))
-                : toFileUrl(join(baseUrl?.toString() ?? Deno.cwd(), String(specifier)));
+                : toFileUrl(absolutize(join(baseUrl?.toString() ?? Deno.cwd(), String(specifier))));
             return Promise.resolve(url);
         },
         listDir(URLspecifier: URL) {
