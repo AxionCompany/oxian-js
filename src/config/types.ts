@@ -97,12 +97,13 @@ export type OxianConfig = {
         timeouts?: { connectMs?: number; headersMs?: number; idleMs?: number; totalMs?: number };
         health?: { path?: string; intervalMs?: number; timeoutMs?: number };
         permissions?: {
-          net?: boolean | string[];
           read?: boolean | string[];
           write?: boolean | string[];
+          import?: boolean | string[];
           env?: boolean | string[];
-          ffi?: boolean;
-          hrtime?: boolean;
+          net?: boolean | string[];
+          ffi?: boolean | string[];
+          run?: boolean | string[];
           sys?: boolean | string[];
         };
         denoConfig?: string; // per-project override
@@ -129,6 +130,16 @@ export type OxianConfig = {
         env?: Record<string, string>;
         githubToken?: string;
         stripPathPrefix?: string;
+        permissions?: {
+          net?: boolean | string[];
+          read?: boolean | string[];
+          write?: boolean | string[];
+          env?: boolean | string[];
+          import?: boolean | string[];
+          ffi?: boolean | string[];
+          run?: boolean | string[];
+          sys?: boolean | string[];
+        };
       };
       // Declarative selection rules
       select?: Array<
@@ -153,7 +164,9 @@ export type OxianConfig = {
     read?: boolean | string[];
     write?: boolean | string[];
     env?: boolean | string[];
-    ffi?: boolean;
+    ffi?: boolean | string[];
+    import?: boolean | string[];
+    run?: boolean | string[];
     hrtime?: boolean;
     sys?: boolean | string[];
   };

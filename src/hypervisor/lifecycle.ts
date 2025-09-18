@@ -26,6 +26,17 @@ export type SelectedProject = {
     // When provided, compares against last worker load time to decide if --reload should be used
     // Accepts ISO date string, epoch milliseconds, or Date
     invalidateCacheAt?: string | number | Date;
+    permissions?: {
+        read?: boolean | string[];
+        write?: boolean | string[];
+        import?: boolean | string[];
+        env?: boolean | string[];
+        net?: boolean | string[];
+        run?: boolean | string[];
+        ffi?: boolean | string[];
+        sys?: boolean | string[];
+        all?: boolean;
+    }
 };
 
 export type WorkerHandle = { port: number; proc: Deno.ChildProcess };
@@ -153,7 +164,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         }
 
         const project = selected.project;
-        const denoArgs: string[] = ["run", "-A", ...denoOptions];
+        const denoArgs: string[] = ["run", ...denoOptions];
 
         const projectCfg = (hv.projects && (hv.projects as Record<string, { denoConfig?: string }>)[project]) || {} as { denoConfig?: string };
         const effectiveDenoCfg = projectCfg.denoConfig ?? hostDenoCfg;
@@ -211,12 +222,38 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                 console.log('[hv] import meta', import.meta.url);
             }
 
-            // add deno.config if import.meta is from jsr:
-            const importMetaUrl = new URL(import.meta.url);
-            if (importMetaUrl.protocol === "jsr:" || (importMetaUrl.protocol === "https:" && importMetaUrl.hostname === "jsr.io")) {
-                denoArgs.push(`--config=${effectiveDenoCfg.replace('file://', '')}`);
+            // add deno unstable flags based on local deno.json
+            denoJson.unstable?.forEach((flag) => {
+                denoArgs.push(`--unstable-${flag}`);
+            });
+
+            // add deno permissions based on host deno.json, overridable with selected.permissions
+            if (config.permissions || selected.permissions) {
+                // add config.permissions - global permissions from global config
+                config.permissions && Object.entries(config.permissions).forEach(([key, value]) => {
+                    if (value !== false) {
+                        if (typeof value === "boolean" && value) denoArgs.push(`--allow-${key}`);
+                        if (typeof value === "string") denoArgs.push(`--allow-${key}=${value}`);
+                        if (typeof value === "object" && Array.isArray(value)) denoArgs.push(`--allow-${key}=${value.join(",")}`);
+                    } else {
+                        denoArgs.push(`--deny-${key}`);
+                    }
+                });
+                // override with selected.permissions - project-specific permissions
+                selected.permissions && Object.entries(selected.permissions).forEach(([key, value]) => {
+                    if (value !== false) {
+                        if (typeof value === "boolean" && value) denoArgs.push(`--allow-${key}`);
+                        if (typeof value === "string") denoArgs.push(`--allow-${key}=${value}`);
+                        if (typeof value === "object" && Array.isArray(value)) denoArgs.push(`--allow-${key}=${value.join(",")}`);
+                    } else {
+                        denoArgs.push(`--deny-${key}`);
+                    }
+                });
+            } else {
+                denoArgs.push(`-A`);
             }
         }
+
 
         // Decide whether to use --reload based on invalidateCacheAt vs last load
         let shouldReload = false;
