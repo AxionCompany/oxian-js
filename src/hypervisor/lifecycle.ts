@@ -93,6 +93,8 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
     const readyWaiters = new Map<string, Array<() => void>>();
     const restarting = new Set<string>();
     const projectLastLoad = new Map<string, number>();
+    const projectReady = new Map<string, boolean>();
+    const lastSpawnOptions = new Map<string, SelectedProject>();
     let cachedDenoOptions: string[] = [];
     let cachedScriptArgs: string[] = [];
 
@@ -110,7 +112,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
     }
 
     async function waitForProjectReady(project: string, timeoutMs: number): Promise<boolean> {
-        if (pools.get(project)) return true;
+        if (projectReady.get(project) === true) return true;
         return await new Promise<boolean>((resolve) => {
             const arr = readyWaiters.get(project) ?? [];
             let done = false;
@@ -131,13 +133,16 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
     function listProjects(): string[] { return Array.from(pools.keys()); }
 
     function setProjectIndex(project: string, idx: number) { projectIndices.set(project, idx); }
-    function getProjectIndex(project: string): number { return projectIndices.get(project) ?? 0; }
+    function getProjectIndex(project: string): number | undefined { return projectIndices.get(project); }
 
     function attachExitObserver(project: string, proc: Deno.ChildProcess) {
         proc.status.then(async (_s) => {
             const current = pools.get(project);
             if (!current || current.proc !== proc) return; // already swapped
             console.error(`[hv] worker exited`, { project, port: current.port });
+            // Mark project down and clear stale pool to avoid misrouting to reused ports
+            try { pools.delete(project); } catch { /* ignore */ }
+            projectReady.set(project, false);
             try {
                 await restartProject(project);
             } catch (e) {
@@ -153,7 +158,20 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         const t0 = performance.now();
         const port = await findAvailablePort(basePort + (idx ?? 0));
 
-        const resolver = createResolver(selected.source || config.root, { tokenEnv: "GITHUB_TOKEN", tokenValue: selected.githubToken });
+        // Merge provider-based spawn overrides if not already provided
+        let selectedMerged: SelectedProject = { ...selected };
+        try {
+            if (typeof (config.runtime?.hv as { provider?: unknown })?.provider === "function") {
+                const provider = (config.runtime?.hv as { provider?: (input: { project: string }) => Promise<SelectedProject> | SelectedProject }).provider as (input: { project: string }) => Promise<SelectedProject> | SelectedProject;
+                const out = await provider({ project: selected.project });
+                if (out && typeof out.project === 'string') {
+                    // only fill missing fields to respect explicit overrides
+                    selectedMerged = { ...out, ...selectedMerged };
+                }
+            }
+        } catch { /* ignore provider errors */ }
+
+        const resolver = createResolver(selectedMerged.source || config.root, { tokenEnv: "GITHUB_TOKEN", tokenValue: selectedMerged.githubToken });
 
         const hostDenoCfg = (denoOptions.find((a) => a.startsWith("--deno-config="))?.split("=")[1])
             || hv.denoConfig
@@ -163,7 +181,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             console.log('[hv] hostDenoCfg', hostDenoCfg);
         }
 
-        const project = selected.project;
+        const project = selectedMerged.project;
         const denoArgs: string[] = ["run", ...denoOptions];
 
         const projectCfg = (hv.projects && (hv.projects as Record<string, { denoConfig?: string }>)[project]) || {} as { denoConfig?: string };
@@ -257,13 +275,13 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
 
         // Decide whether to use --reload based on invalidateCacheAt vs last load
         let shouldReload = false;
-        if (selected.invalidateCacheAt !== undefined) {
+        if (selectedMerged.invalidateCacheAt !== undefined) {
             const last = projectLastLoad.get(project) ?? 0;
             let invalidateAt = 0;
-            if (selected.invalidateCacheAt instanceof Date) invalidateAt = selected.invalidateCacheAt.getTime();
-            else if (typeof selected.invalidateCacheAt === "number") invalidateAt = selected.invalidateCacheAt;
-            else if (typeof selected.invalidateCacheAt === "string") {
-                const t = Date.parse(selected.invalidateCacheAt);
+            if (selectedMerged.invalidateCacheAt instanceof Date) invalidateAt = selectedMerged.invalidateCacheAt.getTime();
+            else if (typeof selectedMerged.invalidateCacheAt === "number") invalidateAt = selectedMerged.invalidateCacheAt;
+            else if (typeof selectedMerged.invalidateCacheAt === "string") {
+                const t = Date.parse(selectedMerged.invalidateCacheAt);
                 if (!Number.isNaN(t)) invalidateAt = t;
             }
             if (Deno.env.get("OXIAN_DEBUG")) {
@@ -277,7 +295,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                 const rootResolved = await resolver.resolve("");
                 if (rootResolved) reloadTargets.push(rootResolved.toString());
             } catch { /* ignore */ }
-            if (selected.config) reloadTargets.push(selected.config);
+            if (selectedMerged.config) reloadTargets.push(selectedMerged.config);
             if (reloadTargets.length > 0) {
                 const normalized: string[] = [];
                 for (const t of reloadTargets) {
@@ -300,8 +318,8 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         const globalSource = Deno.args.find((a) => a.startsWith("--source="))?.split("=")[1];
         const globalConfig = Deno.args.find((a) => a.startsWith("--config="))?.split("=")[1];
         const projCfg = (hv.projects && (hv.projects as Record<string, { source?: string; config?: string }>)[project]) || {} as { source?: string; config?: string };
-        const effectiveSource = selected.source ?? projCfg.source ?? globalSource;
-        const effectiveConfig = selected.config ?? projCfg.config ?? globalConfig;
+        const effectiveSource = selectedMerged.source ?? projCfg.source ?? globalSource;
+        const effectiveConfig = selectedMerged.config ?? projCfg.config ?? globalConfig;
 
         const finalScriptArgs = [
             `--port=${port}`,
@@ -315,16 +333,16 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             console.log('[hv] finalScriptArgs', finalScriptArgs);
         }
 
-        const spawnEnv: Record<string, string> | undefined = { ...(selected.env || {}), ...(selected.githubToken ? { GITHUB_TOKEN: selected.githubToken } : {}) };
-        spawnEnv.DENO_AUTH_TOKENS = `${spawnEnv.DENO_AUTH_TOKENS ? spawnEnv.DENO_AUTH_TOKENS + ";" : ""}${selected.githubToken ? `${selected.githubToken}@raw.githubusercontent.com` : ""}`;
+        const spawnEnv: Record<string, string> | undefined = { ...(selectedMerged.env || {}), ...(selectedMerged.githubToken ? { GITHUB_TOKEN: selectedMerged.githubToken } : {}) };
+        spawnEnv.DENO_AUTH_TOKENS = `${spawnEnv.DENO_AUTH_TOKENS ? spawnEnv.DENO_AUTH_TOKENS + ";" : ""}${selectedMerged.githubToken ? `${selectedMerged.githubToken}@raw.githubusercontent.com` : ""}`;
 
         if (Deno.env.get("OXIAN_DEBUG")) {
             console.log('[hv] globalSource', globalSource);
             console.log('[hv] globalConfig', globalConfig);
         }
 
-        const projectDir = selected.isolated ? `./deno/${project}` : Deno.cwd();
-        if (selected.isolated) {
+        const projectDir = selectedMerged.isolated ? `./deno/${project}` : Deno.cwd();
+        if (selectedMerged.isolated) {
             ensureDir(`${projectDir}`);
             spawnEnv.DENO_DIR = `./DENO_DIR`;
             finalScriptArgs.push(`--allow-read=${projectDir + "/**/*"}`);
@@ -362,14 +380,23 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                 } catch { /* ignore until ready */ }
                 await new Promise((r) => setTimeout(r, 100));
             }
-            if (!ready) console.error(`[hv] worker not ready`, { project, port, waitedMs: Date.now() - start });
-            else {
+            if (!ready) {
+                console.error(`[hv] worker not ready`, { project, port, waitedMs: Date.now() - start });
+                projectReady.set(project, false);
+            } else {
                 if (PERF) console.log('[perf][hv] worker ready', { project, port, ms: Math.round(performance.now() - t0) });
                 else console.log(`[hv] worker ready`, { project, port });
+                projectReady.set(project, true);
+                // mark last load time for reload decisions
+                projectLastLoad.set(project, Date.now());
+                // signal readiness to any waiters
+                notifyProjectReady(project);
+                if (onProjectReady) await onProjectReady(project);
             }
         }
-        // mark last load time for reload decisions
-        projectLastLoad.set(project, Date.now());
+
+        // Persist last spawn options for consistent restarts
+        lastSpawnOptions.set(project, selectedMerged);
 
         attachExitObserver(project, proc);
         return { port, proc };
@@ -381,12 +408,12 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         try {
             const idx = getProjectIndex(project) ?? 0;
             console.log(`[hv] restart requested`, { project });
-            const next = await spawnWorker({ project }, idx, denoOptionsIn ?? cachedDenoOptions, scriptArgsIn ?? cachedScriptArgs);
+            const basis = lastSpawnOptions.get(project) ?? { project } as SelectedProject;
+            const next = await spawnWorker(basis, idx, denoOptionsIn ?? cachedDenoOptions, scriptArgsIn ?? cachedScriptArgs);
             const existing = pools.get(project);
             if (!existing) {
                 pools.set(project, { port: next.port, proc: next.proc, rr: rrPicker([{ port: next.port, proc: next.proc }]) });
-                notifyProjectReady(project);
-                if (onProjectReady) await onProjectReady(project);
+                // Readiness will be notified by spawnWorker when health passes
                 return;
             }
             const oldProc = existing.proc;
@@ -395,8 +422,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             existing.proc = next.proc;
             existing.rr = rrPicker([{ port: next.port, proc: next.proc }]);
             pools.set(project, existing);
-            notifyProjectReady(project);
-            if (onProjectReady) await onProjectReady(project);
+            // Readiness will be notified by spawnWorker when health passes
             try { oldProc.kill(); } catch (_e) { /* ignore kill */ }
             console.log(`[hv] old worker terminated`, { project, oldPort });
         } finally {
@@ -421,6 +447,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         restartProject,
         registerWorker,
         getPool,
+        isProjectReady: (project: string) => projectReady.get(project) === true,
         listProjects,
         setProjectIndex,
         getProjectIndex,
