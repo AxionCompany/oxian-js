@@ -6,12 +6,22 @@ function isMiddlewareObjectResult(input: unknown): input is { data?: Data; conte
   return typeof input === "object" && input !== null;
 }
 
+const middlewaresCache = new Map<string, Record<string, unknown>>();
+
+const resolveMod = async (url: URL, resolver: Resolver): Promise<Record<string, unknown>> => {
+  const key = url.toString();
+  if (middlewaresCache.has(key)) return middlewaresCache.get(key) as Record<string, unknown>;
+  const mod = await resolver.import(url);
+  middlewaresCache.set(key, mod);
+  return mod;
+};
+
 export async function runMiddlewares(files: URL[], data: Data, context: Context, resolver: Resolver, config?: OxianConfig): Promise<{ data: Data; context: Context }> {
   let currentData = { ...data };
   let currentContext = { ...context } as Context;
 
   for (const fileUrl of files) {
-    const mod = await resolver.import(fileUrl);
+    const mod = await resolveMod(fileUrl, resolver);
     const modObj = mod as Record<string, unknown>;
     let mw: unknown = (modObj["default"] ?? modObj["middleware"]);
     if (typeof mw === "function") {

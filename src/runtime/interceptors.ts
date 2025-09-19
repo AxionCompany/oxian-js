@@ -1,12 +1,22 @@
 import type { Context, Data, Interceptors } from "../core/types.ts";
 import type { Resolver } from "../resolvers/index.ts";
 
+const interceptorsCache = new Map<string, Record<string, unknown>>();
+
+const resolveMod = async (url: URL, resolver: Resolver): Promise<Record<string, unknown>> => {
+  const key = url.toString();
+  if (interceptorsCache.has(key)) return interceptorsCache.get(key) as Record<string, unknown>;
+  const mod = await resolver.import(url);
+  interceptorsCache.set(key, mod);
+  return mod;
+};
+
 export async function runInterceptorsBefore(files: URL[], data: Data, context: Context, resolver: Resolver): Promise<{ data: Data; context: Context }> {
   let currentData = { ...data };
   let currentContext = { ...context } as Context;
 
   for (const fileUrl of files) {
-    const mod = await resolver.import(fileUrl);
+    const mod = await resolveMod(fileUrl, resolver);
     const before = (mod as Interceptors).beforeRun as Interceptors["beforeRun"];
     if (typeof before === "function") {
       const result = await before(currentData, currentContext);
