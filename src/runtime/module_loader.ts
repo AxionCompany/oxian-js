@@ -9,7 +9,6 @@
  * @module runtime/module_loader
  */
 
-import { fromFileUrl } from "@std/path";
 import type { Resolver } from "../resolvers/types.ts";
 
 /**
@@ -48,15 +47,6 @@ export function clearModuleCache() {
   moduleCache.clear();
 }
 
-async function getMtimeMs(fileUrl: URL): Promise<number | undefined> {
-  try {
-    const path = fromFileUrl(fileUrl);
-    const s = await Deno.stat(path);
-    return s.mtime?.getTime();
-  } catch {
-    return undefined;
-  }
-}
 
 /**
  * Loads a route module from a file URL with caching support.
@@ -82,7 +72,11 @@ async function getMtimeMs(fileUrl: URL): Promise<number | undefined> {
  * ```
  */
 export async function loadRouteModule(fileUrl: URL, resolver: Resolver): Promise<LoadedModule> {
-  return await resolver.import(fileUrl);
+  const key = fileUrl.toString();
+  if (moduleCache.has(key)) return moduleCache.get(key) as LoadedModule;
+  const mod = await resolver.import(fileUrl);
+  moduleCache.set(key, mod);
+  return mod;
 }
 
 /**
