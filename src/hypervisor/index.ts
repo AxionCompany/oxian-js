@@ -44,7 +44,7 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
 
   // Determine projects from config (simplest: single default)
   const projects = hv.projects && Object.keys(hv.projects).length > 0 ? Object.keys(hv.projects) : [];
-  const requestQueues = new Map<string, Array<{ req: Request; resolve: (res: Response) => void; reject: (err: unknown) => void; enqueuedAt: number }>>();
+  const requestQueues = new Map<string, Array<{ req: Request; resolve: (res: Response) => void; reject: (err: unknown) => void; enqueuedAt: number; maxWaitMs: number; done?: boolean; timeoutId?: number }>>();
   const { denoOptions, scriptArgs } = splitBaseArgs(baseArgs);
 
   // Lifecycle manager centralizes worker pools and restarts
@@ -103,9 +103,8 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
       return new Response(JSON.stringify({ error: { message: (e as Error)?.message || "Admission rejected" } }), { status: 403, headers: { "content-type": "application/json; charset=utf-8" } });
     }
 
-    let pool = manager.getPool(selected.project) ?? manager.getPool("default")!;
+    let pool = manager.getPool(selected.project);
     const queueCfg = hv.queue ?? {};
-    const queueEnabled = queueCfg.enabled !== false;
     if (!pool) {
       // On-demand spawn with captured overrides from provider (single call)
       try {
@@ -116,17 +115,13 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
       } catch (_e) {
         // fallback to queue/wait logic
       }
-      // Enqueue request optionally while waiting for worker readiness
-      if (queueEnabled) {
-        return await enqueueAndWait(selected.project, req, queueCfg.maxItems ?? 100, queueCfg.maxBodyBytes ?? 1_048_576, queueCfg.maxWaitMs ?? (hv.proxy?.timeoutMs ?? 2_000));
-      } else {
-        const waited = await manager.waitForProjectReady(selected.project, hv.proxy?.timeoutMs ?? 2_000);
-        if (!waited) {
-          const body = JSON.stringify({ error: { message: "No worker available" } });
-          return new Response(body, { status: 503, headers: { "content-type": "application/json; charset=utf-8" } });
-        }
-        pool = manager.getPool(selected.project) ?? manager.getPool("default")!;
-      }
+      // Always enqueue request while waiting for worker readiness
+      return await enqueueAndWait(selected.project, req, queueCfg.maxItems ?? 100, queueCfg.maxBodyBytes ?? 1_048_576, queueCfg.maxWaitMs ?? (hv.proxy?.timeoutMs ?? 300_000));
+    }
+
+    if (!pool) {
+      const body = JSON.stringify({ error: { message: "No worker available" } });
+      return new Response(body, { status: 503, headers: { "content-type": "application/json; charset=utf-8" } });
     }
 
     const pathname = url.pathname;
@@ -155,28 +150,7 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
       try {
         await manager.restartProject(selected.project);
       } catch { /* ignore */ }
-      if (queueEnabled) {
-        return await enqueueAndWait(selected.project, req, queueCfg.maxItems ?? 100, queueCfg.maxBodyBytes ?? 1_048_576, queueCfg.maxWaitMs ?? (hv.proxy?.timeoutMs ?? 2_000));
-      }
-      const waited = await manager.waitForProjectReady(selected.project, hv.proxy?.timeoutMs ?? 2_000);
-      if (waited) {
-        const newPool = manager.getPool(selected.project) ?? manager.getPool("default");
-        if (newPool) {
-          const retryTarget = `http://127.0.0.1:${newPool.port}${pathname}${url.search}`;
-          try {
-            const abortTimeoutMs = hv.proxy?.timeoutMs ?? 30000;
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), abortTimeoutMs);
-            const res2 = await fetch(retryTarget, { method: req.method, headers, body: req.body, signal: controller.signal });
-            clearTimeout(timer);
-            return new Response(res2.body, { status: res2.status, statusText: res2.statusText, headers: res2.headers });
-          } catch (e2) {
-            console.error(`[hv] retry_err`, { retryTarget, err: (e2 as Error)?.message });
-          }
-        }
-      }
-      const body = JSON.stringify({ error: { message: (e as Error).message || "Upstream error" } });
-      return new Response(body, { status: 502, headers: { "content-type": "application/json; charset=utf-8" } });
+      return await enqueueAndWait(selected.project, req, queueCfg.maxItems ?? 100, queueCfg.maxBodyBytes ?? 1_048_576, queueCfg.maxWaitMs ?? (hv.proxy?.timeoutMs ?? 300_000));
     }
   });
 
@@ -187,10 +161,13 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
     if (!pool) return; // still not ready
     const items = q.splice(0, q.length);
     for (const item of items) {
-      const { req, resolve, reject, enqueuedAt } = item;
+      const { req, resolve, reject, enqueuedAt, maxWaitMs } = item;
+      if (item.done) continue;
       const now = Date.now();
-      const maxWait = (hv.queue?.maxWaitMs ?? 2_000);
+      const maxWait = (maxWaitMs ?? (hv.queue?.maxWaitMs ?? 2_000));
       if (now - enqueuedAt > maxWait) {
+        item.done = true;
+        if (item.timeoutId) clearTimeout(item.timeoutId as unknown as number);
         resolve(new Response(JSON.stringify({ error: { message: "Queue wait timeout" } }), { status: 503, headers: { "content-type": "application/json; charset=utf-8" } }));
         continue;
       }
@@ -199,8 +176,12 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
         const pathname = url.pathname;
         const target = `http://localhost:${pool.port}${pathname}${url.search}`;
         const res = await fetch(target, { method: req.method, headers: req.headers, body: req.body });
+        item.done = true;
+        if (item.timeoutId) clearTimeout(item.timeoutId as unknown as number);
         resolve(new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers }));
       } catch (e) {
+        item.done = true;
+        if (item.timeoutId) clearTimeout(item.timeoutId as unknown as number);
         reject(e);
       }
     }
@@ -244,7 +225,14 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
     }
 
     const resP = new Promise<Response>((resolve, reject) => {
-      q.push({ req: cloned, resolve, reject, enqueuedAt: Date.now() });
+      const item = { req: cloned, resolve, reject, enqueuedAt: Date.now(), maxWaitMs } as { req: Request; resolve: (res: Response) => void; reject: (err: unknown) => void; enqueuedAt: number; maxWaitMs: number; done?: boolean; timeoutId?: number };
+      const to = setTimeout(() => {
+        if (item.done) return;
+        item.done = true;
+        resolve(new Response(JSON.stringify({ error: { message: "Queue wait timeout" } }), { status: 503, headers: { "content-type": "application/json; charset=utf-8" } }));
+      }, Math.max(0, maxWaitMs));
+      item.timeoutId = to as unknown as number;
+      q.push(item);
       requestQueues.set(project, q);
     });
 
