@@ -8,7 +8,6 @@ export type PipelineFiles = {
     sharedFiles: URL[];
 };
 
-
 export async function discoverPipelineFiles(
     chain: Array<string | URL>,
     resolver: Resolver,
@@ -83,7 +82,7 @@ export async function discoverPipelineFiles(
         }
 
         const exists = async (input: string | URL): Promise<boolean> => {
-            // Prefer import-based existence check to leverage Deno cache; fallback to stat
+            // Prefer import-based existence check to leverage Deno cache;
             return await resolver.import(input.toString())
                 .then(m => m.default ? true : false)
                 .catch(() => false);

@@ -1,6 +1,8 @@
 import type { PipelineFiles } from "./pipeline_discovery.ts";
 import type { Resolver } from "../resolvers/index.ts";
 
+const dependenciesFactoryCache = new Map<string, Record<string, unknown>>();
+
 export async function composeDependencies(
   files: PipelineFiles,
   contextForFactory: Record<string, unknown> = {},
@@ -8,7 +10,13 @@ export async function composeDependencies(
   opts?: { allowShared?: boolean },
 ): Promise<Record<string, unknown>> {
 
-  const resolveMod = async (url: URL): Promise<Record<string, unknown>> => await resolver.import(url);
+  const resolveMod = async (url: URL): Promise<Record<string, unknown>> => {
+    const key = url.toString();
+    if (dependenciesFactoryCache.has(key)) return dependenciesFactoryCache.get(key) as Record<string, unknown>;
+    const mod = await resolver.import(url);
+    dependenciesFactoryCache.set(key, mod);
+    return mod;
+  };
 
   let composed: Record<string, unknown> = {};
 
