@@ -266,6 +266,9 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                 const t = Date.parse(selected.invalidateCacheAt);
                 if (!Number.isNaN(t)) invalidateAt = t;
             }
+            if (Deno.env.get("OXIAN_DEBUG")) {
+                console.log('[hv] invalidateAt', invalidateAt, 'last', last, 'shouldReload', invalidateAt > last);
+            }
             if (invalidateAt > last) shouldReload = true;
         }
         if (shouldReload) {

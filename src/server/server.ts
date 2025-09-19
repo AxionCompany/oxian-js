@@ -9,6 +9,8 @@
  * @module server
  */
 
+
+
 import type { EffectiveConfig } from "../config/types.ts";
 import { createLogger, makeRequestLog } from "../logging/logger.ts";
 import { createResponseController, finalizeResponse } from "../utils/response.ts";
@@ -21,7 +23,6 @@ import { runInterceptorsBefore, runInterceptorsAfter } from "../runtime/intercep
 import { runMiddlewares } from "../runtime/middlewares.ts";
 import { resolveRouter } from "../router/index.ts";
 import { buildLocalChain, buildRemoteChain, discoverPipelineFiles } from "../runtime/pipeline_discovery.ts";
-import { getLocalRootPath } from "../utils/root.ts";
 import type { Resolver } from "../resolvers/types.ts";
 
 function applyTrailingSlash(path: string, mode: "always" | "never" | "preserve" | undefined): string {
@@ -30,6 +31,8 @@ function applyTrailingSlash(path: string, mode: "always" | "never" | "preserve" 
   if (mode === "never") return path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
   return path;
 }
+
+const dependenciesMap = new Map<string, Record<string, unknown>>();
 
 function applyCorsAndDefaults(headers: Headers, config: EffectiveConfig, req?: Request) {
   const cors = config.security?.cors;
@@ -107,6 +110,8 @@ function applyCorsAndDefaults(headers: Headers, config: EffectiveConfig, req?: R
  */
 export async function startServer(opts: { config: EffectiveConfig; source?: string }, resolver: Resolver) {
 
+
+  const root = resolver.resolve("");
   const { config, source: _source } = opts;
 
   const PERF = config.logging?.performance === true;
