@@ -288,6 +288,9 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                 console.log('[hv] invalidateAt', invalidateAt, 'last', last, 'shouldReload', invalidateAt > last);
             }
             if (invalidateAt > last) shouldReload = true;
+        } else{
+            // use hotReload from config
+            shouldReload = config.runtime?.hotReload === true;
         }
         if (shouldReload) {
             const reloadTargets: string[] = [];

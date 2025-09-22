@@ -14,13 +14,17 @@ function sanitizeUrlForLog(input: string): string {
 
 const getExtension = (str: string) => {
     const stripSearch = str.split('?')[0];
-    const extension = stripSearch.split('.').pop();
+    const extensionArray = stripSearch.split('.')
+    if(extensionArray.length === 1) return;
+    const extension = extensionArray.pop();
     return extension;
 }
 
 const mapExtensionToWith = (extension?: string): "json" | "text" | "bytes" | undefined => {
     switch (extension) {
         case "json": return "json"
+        case undefined: return;
+        case "": return;
         case "ts": return;
         case "tsx": return;
         case "jsx": return;
