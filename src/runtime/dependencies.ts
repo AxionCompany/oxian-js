@@ -25,8 +25,14 @@ export async function composeDependencies(
 
   let composed: Record<string, unknown> = {};
 
-  for (const fileUrl of [...files.dependencyFiles, ...(files.sharedFiles.length > 0 ? files.sharedFiles : [])]) {
-    const mod = await resolveMod(fileUrl);
+  const modulesPromises = [];
+  const fileUrls = [...files.dependencyFiles, ...(files.sharedFiles.length > 0 ? files.sharedFiles : [])];
+  for (const fileUrl of fileUrls) {
+    modulesPromises.push(resolveMod(fileUrl));
+  }
+  const [...modules] = await Promise.all(modulesPromises);
+  let c = 0;
+  for (const mod of modules) {
     const candidate = (mod as Record<string, unknown>);
     const factory = (candidate.default ?? (candidate as { dependencies?: unknown }).dependencies) as unknown;
     if (typeof factory === "function") {
@@ -37,11 +43,11 @@ export async function composeDependencies(
         }
       );
       composed = { ...composed, ...result };
-    }
-    else {
-      console.error('[dependencies] error', { fileUrl, factory });
+    } else {
+      console.error('[dependencies] error', { fileUrl: fileUrls[c], factory });
       throw new Error('Dependencies file did not export a function');
     }
+    c++;
   }
 
   return composed;
