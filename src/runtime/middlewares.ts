@@ -20,8 +20,12 @@ export async function runMiddlewares(files: URL[], data: Data, context: Context,
   let currentData = { ...data };
   let currentContext = { ...context } as Context;
 
+  const modulesPromises = [];
   for (const fileUrl of files) {
-    const mod = await resolveMod(fileUrl, resolver);
+    modulesPromises.push(resolveMod(fileUrl, resolver));
+  }
+  const [...modules] = await Promise.all(modulesPromises);
+  for (const mod of modules) {
     const modObj = mod as Record<string, unknown>;
     let mw: unknown = (modObj["default"] ?? modObj["middleware"]);
     if (typeof mw === "function") {

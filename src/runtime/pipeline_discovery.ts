@@ -22,45 +22,59 @@ export async function discoverPipelineFiles(
         } catch (_e) { /* ignore log error */ }
     }
     for (const level of chain) {
-        let depsjs: string | URL;   
+        let depsjs: string | URL;
+        let depsts: string | URL;
         let mwjs: string | URL;
-        let icjs: string | URL;
-
+        let mwts: string | URL;
+        let icjs: string | URL = "";
+        let icts: string | URL = "";
         let shjs: string | URL = "";
+        let shts: string | URL = "";
 
         if (typeof level === "string") {
-            depsjs = join(level, "dependencies");
-            mwjs = join(level, "middleware");
+            depsjs = join(level, "dependencie.js");
+            depsts = join(level, "dependencies.ts");
+            mwjs = join(level, "middleware.js");
+            mwts = join(level, "middleware.ts");
 
-            icjs = join(level, "interceptors");
+            icjs = join(level, "interceptors.js");
+            icts = join(level, "interceptors.ts");
             if (opts?.allowShared) {
-                shjs = join(level, "shared");
+                shjs = join(level, "shared.js");
+                shts = join(level, "shared.ts");
             }
         } else {
             if (level.protocol === "github:") {
                 const basePath = level.pathname.endsWith("/") ? level.pathname : level.pathname + "/";
                 const make = (name: string) => new URL(`github:${(basePath + name).replace(/^\/+/, "")}`);
-                depsjs = make("dependencies");
+                depsjs = make("dependencies.js");
+                depsts = make("dependencies.ts");
 
-                mwjs = make("middleware");
+                mwjs = make("middleware.js");
+                mwts = make("middleware.ts");
 
-                icjs = make("interceptors");
-                icjs = make("interceptors");
+                icjs = make("interceptors.js");
+                icjs = make("interceptors.ts");
 
                 if (opts?.allowShared) {
-                    shjs = make("shared");
+                    shjs = make("shared.js");
+                    shts = make("shared.ts");
                 }
             } else {
                 const baseObj = new URL(level.toString());
                 baseObj.pathname = baseObj.pathname.endsWith("/") ? baseObj.pathname : baseObj.pathname + "/";
-                depsjs = new URL("dependencies", baseObj);
+                depsjs = new URL("dependencies.js", baseObj);
+                depsts = new URL("dependencies.ts", baseObj);
 
-                mwjs = new URL("middleware", baseObj);
+                mwjs = new URL("middleware.js", baseObj);
+                mwts = new URL("middleware.ts", baseObj);
 
-                icjs = new URL("interceptors", baseObj);
+                icjs = new URL("interceptors.js", baseObj);
+                icts = new URL("interceptors.ts", baseObj);
 
                 if (opts?.allowShared) {
-                    shjs = new URL("shared", baseObj);
+                    shjs = new URL("shared.js", baseObj);
+                    shts = new URL("shared.ts", baseObj);
                 }
             }
         }
@@ -73,14 +87,22 @@ export async function discoverPipelineFiles(
             return exists;
         };
 
-        const depsjsOk = await exists(depsjs);
-        const mwjsOk = await exists(mwjs);
-        const icjsOk = await exists(icjs);
-        let shjsOk = false;
+
+        const promises = [];
+
+        promises.push(exists(depsjs));
+        promises.push(exists(depsts));
+        promises.push(exists(mwjs));
+        promises.push(exists(mwts));
+        promises.push(exists(icjs));
+        promises.push(exists(icts));
 
         if (opts?.allowShared) {
-            shjsOk = await exists(shjs);
+            promises.push(exists(shjs));
+            promises.push(exists(shts));
         }
+
+        const [depsjsOk, depstsOk, mwjsOk, mwtsOk, icjsOk, ictsOk, shjsOk, shtsOk] = await Promise.all(promises);
 
         if (DEBUG) {
             try {
@@ -94,10 +116,15 @@ export async function discoverPipelineFiles(
             } catch (_e) { /* ignore log error */ }
         }
         if (depsjsOk) files.dependencyFiles.push(typeof depsjs === "string" ? toFileUrl(depsjs) : depsjs);
+        if (depstsOk) files.dependencyFiles.push(typeof depsts === "string" ? toFileUrl(depsts) : depsts);
         if (mwjsOk) files.middlewareFiles.push(typeof mwjs === "string" ? toFileUrl(mwjs) : mwjs);
+        if (mwtsOk) files.middlewareFiles.push(typeof mwts === "string" ? toFileUrl(mwts) : mwts);
         if (icjsOk) files.interceptorFiles.push(typeof icjs === "string" ? toFileUrl(icjs) : icjs);
+        if (ictsOk) files.interceptorFiles.push(typeof icts === "string" ? toFileUrl(icts) : icts);
         if (shjsOk) files.sharedFiles.push(typeof shjs === "string" ? toFileUrl(shjs) : shjs);
+        if (shtsOk) files.sharedFiles.push(typeof shts === "string" ? toFileUrl(shts) : shts);
     }
+    
     if (DEBUG) {
         console.log('[pipeline] discover end', { time: performance.now() - now });
     }

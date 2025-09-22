@@ -15,8 +15,12 @@ export async function runInterceptorsBefore(files: URL[], data: Data, context: C
   let currentData = { ...data };
   let currentContext = { ...context } as Context;
 
+  const modulesPromises = [];
   for (const fileUrl of files) {
-    const mod = await resolveMod(fileUrl, resolver);
+    modulesPromises.push(resolveMod(fileUrl, resolver));
+  }
+  const [...modules] = await Promise.all(modulesPromises);
+  for (const mod of modules) {
     const before = (mod as Interceptors).beforeRun as Interceptors["beforeRun"];
     if (typeof before === "function") {
       const result = await before(currentData, currentContext);
@@ -32,7 +36,7 @@ export async function runInterceptorsBefore(files: URL[], data: Data, context: C
 
 export async function runInterceptorsAfter(files: URL[], resultOrError: unknown, context: Context, resolver: Resolver): Promise<void> {
   for (const fileUrl of [...files].reverse()) {
-    const mod = await resolver.import(fileUrl);
+    const mod = await resolveMod(fileUrl, resolver);
     const after = (mod as Interceptors).afterRun as Interceptors["afterRun"];
     if (typeof after === "function") {
       await after(resultOrError, context);
