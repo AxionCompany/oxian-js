@@ -13,9 +13,14 @@ export async function composeDependencies(
   const resolveMod = async (url: URL): Promise<Record<string, unknown>> => {
     const key = url.toString();
     if (dependenciesFactoryCache.has(key)) return dependenciesFactoryCache.get(key) as Record<string, unknown>;
-    const mod = await resolver.import(url);
-    dependenciesFactoryCache.set(key, mod);
-    return mod;
+    try {
+      const mod = await resolver.import(url);
+      dependenciesFactoryCache.set(key, mod);
+      return mod;
+    } catch (e) {
+      console.error('[dependencies] error', e);
+      throw e;
+    }
   };
 
   let composed: Record<string, unknown> = {};
@@ -32,6 +37,9 @@ export async function composeDependencies(
         }
       );
       composed = { ...composed, ...result };
+    }
+    else {
+      throw new Error('Dependencies file did not export a function');
     }
   }
 
