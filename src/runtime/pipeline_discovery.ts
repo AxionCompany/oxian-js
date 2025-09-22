@@ -109,22 +109,25 @@ export async function discoverPipelineFiles(
                 console.log('[pipeline] probe', {
                     level: typeof level === 'string' ? level : level.toString(),
                     depsjs: typeof depsjs === 'string' ? depsjs : depsjs.toString(), depsjsOk,
+                    depsts: typeof depsts === 'string' ? depsts : depsts.toString(), depstsOk,
                     mwjs: typeof mwjs === 'string' ? mwjs : mwjs.toString(), mwjsOk,
+                    mwts: typeof mwts === 'string' ? mwts : mwts.toString(), mwtsOk,
                     icjs: typeof icjs === 'string' ? icjs : icjs.toString(), icjsOk,
                     shjs: typeof shjs === 'string' ? shjs : shjs.toString(), shjsOk,
+                    shts: typeof shts === 'string' ? shts : shts.toString(), shtsOk,
                 });
             } catch (_e) { /* ignore log error */ }
         }
         if (depsjsOk) files.dependencyFiles.push(typeof depsjs === "string" ? toFileUrl(depsjs) : depsjs);
-        if (depstsOk) files.dependencyFiles.push(typeof depsts === "string" ? toFileUrl(depsts) : depsts);
+        if (depstsOk && !depsjsOk) files.dependencyFiles.push(typeof depsts === "string" ? toFileUrl(depsts) : depsts);
         if (mwjsOk) files.middlewareFiles.push(typeof mwjs === "string" ? toFileUrl(mwjs) : mwjs);
-        if (mwtsOk) files.middlewareFiles.push(typeof mwts === "string" ? toFileUrl(mwts) : mwts);
+        if (mwtsOk && !mwjsOk) files.middlewareFiles.push(typeof mwts === "string" ? toFileUrl(mwts) : mwts);
         if (icjsOk) files.interceptorFiles.push(typeof icjs === "string" ? toFileUrl(icjs) : icjs);
-        if (ictsOk) files.interceptorFiles.push(typeof icts === "string" ? toFileUrl(icts) : icts);
+        if (ictsOk && !icjsOk) files.interceptorFiles.push(typeof icts === "string" ? toFileUrl(icts) : icts);
         if (shjsOk) files.sharedFiles.push(typeof shjs === "string" ? toFileUrl(shjs) : shjs);
-        if (shtsOk) files.sharedFiles.push(typeof shts === "string" ? toFileUrl(shts) : shts);
+        if (shtsOk && !shjsOk) files.sharedFiles.push(typeof shts === "string" ? toFileUrl(shts) : shts);
     }
-    
+
     if (DEBUG) {
         console.log('[pipeline] discover end', { time: performance.now() - now });
     }
