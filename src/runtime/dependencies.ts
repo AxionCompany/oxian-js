@@ -39,6 +39,7 @@ export async function composeDependencies(
       composed = { ...composed, ...result };
     }
     else {
+      console.error('[dependencies] error', { fileUrl, factory });
       throw new Error('Dependencies file did not export a function');
     }
   }

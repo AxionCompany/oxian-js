@@ -193,9 +193,10 @@ if (import.meta.main) {
   let config: EffectiveConfig = {
     root: Deno.cwd(),
     basePath: "/",
-    server: { port: Number(Deno.env.get("PORT")) ?? 8080 },
+    server: { port: (Deno.env.get("PORT") ? Number(Deno.env.get("PORT")) : 8080) },
     logging: { level: "info" }
   };
+
   const bases = [configStr]
   if (sourceStr) {
     bases.push(sourceStr);
@@ -259,7 +260,6 @@ if (import.meta.main) {
         if (prevDiscovered) {
           console.log("[cli] applied remote config override", base ?? "local");
         }
-
       }
     }
   } catch (_) { /* ignore discovery failures */ }

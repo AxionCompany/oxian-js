@@ -13,7 +13,13 @@ function sanitizeUrlForLog(input: string): string {
 }
 
 const getExtension = (str: string) => {
-    const stripSearch = str.split('?')[0];
+    let url : URL;
+    try{
+        url = new URL(str);
+    } catch {
+        url = new URL(`file://${str}`);
+    }
+    const stripSearch = url.pathname.split('?')[0];
     const extensionArray = stripSearch.split('.')
     if(extensionArray.length === 1) return;
     const extension = extensionArray.pop();
