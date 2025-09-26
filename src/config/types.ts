@@ -91,6 +91,12 @@ export type OxianConfig = {
         // Optional GitHub token override for this project (enables per-worker tokens)
         githubToken?: string;
         routing?: { basePath?: string };
+        // Per-project web settings overlaying global hv.web
+        web?: {
+          devProxyTarget?: string;
+          staticDir?: string;
+          staticCacheControl?: string;
+        };
         worker?: { kind?: "process" | "thread"; pool?: { min?: number; max?: number } };
         strategy?: "round_robin" | "least_busy" | "sticky";
         stickyHeader?: string;

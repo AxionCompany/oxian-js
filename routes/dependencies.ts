@@ -5,5 +5,5 @@ export default async function () {
   ]);
   const db = { users };
   
-  return { db } as const;
+  return { db, feature:'test' } as const;
 } 

@@ -32,8 +32,6 @@ function applyTrailingSlash(path: string, mode: "always" | "never" | "preserve" 
   return path;
 }
 
-const dependenciesMap = new Map<string, Record<string, unknown>>();
-
 function applyCorsAndDefaults(headers: Headers, config: EffectiveConfig, req?: Request) {
   const cors = config.security?.cors;
   if (cors) {

@@ -183,6 +183,49 @@ The hypervisor supports hosting multiple projects/applications with intelligent 
 }
 ```
 
+### Per-project Web Configuration
+
+You can configure per-project web behavior that overlays the global `hv.web`. The hypervisor first selects the project based on provider/rules, then:
+
+1. Determines the effective API base path: `hv.projects[project].routing.basePath` → global `basePath` → `/`.
+2. If the request path does not start with that base path, it applies the selected project’s `web` config (merged with global `hv.web`).
+
+Available per-project `web` options:
+- `devProxyTarget`: Proxy non-API paths to a dev server (e.g., `http://localhost:5173`).
+- `staticDir`: Serve static files for non-API paths in production; falls back to `index.html` for SPA routes.
+- `staticCacheControl`: Optional cache-control header for static asset responses.
+
+Example:
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "web": { "staticDir": "dist" },
+      "projects": {
+        "appA": {
+          "routing": { "basePath": "/api" },
+          "web": { "devProxyTarget": "http://localhost:5173" }
+        },
+        "appB": {
+          "routing": { "basePath": "/b-api" },
+          "web": { "staticDir": "apps/b/dist", "staticCacheControl": "public, max-age=3600" }
+        }
+      },
+      "select": [
+        { "project": "appA", "when": { "hostPrefix": "a." } },
+        { "project": "appB", "when": { "hostPrefix": "b." } },
+        { "default": true, "project": "appA" }
+      ]
+    }
+  }
+}
+```
+
+Behavior:
+- Requests matching a project’s API base path are proxied to that project’s worker.
+- Other paths are handled by that project’s `web` config (dev proxy if set; otherwise static serving if `staticDir` is set; otherwise 404).
+
 ### Provider (Single Function)
 
 Define a single function (only in TS/JS config) to both select the project and provide per-worker overrides.

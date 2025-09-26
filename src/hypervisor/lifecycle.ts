@@ -19,10 +19,10 @@ export type SelectedProject = {
     project: string;
     source?: string;
     config?: string;
-    env?: Record<string, string>;
     githubToken?: string;
     stripPathPrefix?: string;
     isolated?: boolean;
+    env?: Record<string, string>;
     // When provided, compares against last worker load time to decide if --reload should be used
     // Accepts ISO date string, epoch milliseconds, or Date
     invalidateCacheAt?: string | number | Date;
