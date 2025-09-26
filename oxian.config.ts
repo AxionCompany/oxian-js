@@ -36,7 +36,7 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
                         source: "github:AxionCompany/oxian-js?ref=main",
                         env: { CUSTOM: "1" },
                         githubToken: Deno.env.get("GITHUB_TOKEN") || undefined,
-                        // isolated: true,
+                        isolated: true,
                     };
                     return { project: "local" };
                 }

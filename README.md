@@ -623,6 +623,47 @@ Oxian will try API routes under `/api`; if no match, it serves files from `dist/
 
 For more details and advanced options, see [Using Oxian with Vite](./docs/integrations-vite.md).
 
+### Per-project web configuration (multi-project)
+
+In multi-project setups, you can overlay per-project web behavior over the global `runtime.hv.web` settings. The hypervisor selects the project first (via `hv.provider` or `hv.select`), determines the effective API base path (project `routing.basePath` falling back to global), and for non-API requests applies the per-project web config:
+
+- `devProxyTarget`: Proxy non-API paths to a dev server (e.g., Vite)
+- `staticDir`: Serve static files for non-API paths in production, with SPA `index.html` fallback
+- `staticCacheControl`: Optional cache-control header for static assets
+
+Example:
+
+```json
+{
+  "server": { "port": 8080 },
+  "basePath": "/api", // global default, can be overridden per project
+  "runtime": {
+    "hv": {
+      "web": { "staticDir": "dist" },
+      "projects": {
+        "appA": {
+          "routing": { "basePath": "/api" },
+          "web": { "devProxyTarget": "http://localhost:5173" }
+        },
+        "appB": {
+          "routing": { "basePath": "/b-api" },
+          "web": { "staticDir": "apps/b/dist", "staticCacheControl": "public, max-age=3600" }
+        }
+      },
+      "select": [
+        { "project": "appA", "when": { "hostPrefix": "a." } },
+        { "project": "appB", "when": { "hostPrefix": "b." } },
+        { "default": true, "project": "appA" }
+      ]
+    }
+  }
+}
+```
+
+Behavior:
+- Requests matching a project’s API base path are proxied to that project’s worker.
+- Other paths are handled by that project’s `web` config (dev proxy if set; otherwise static serving if `staticDir` is set; otherwise 404).
+
 ## 📝 TypeScript Support
 
 Oxian is built with TypeScript-first design:

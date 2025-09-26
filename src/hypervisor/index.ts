@@ -4,6 +4,37 @@ import { join } from "@std/path";
 import type { Resolver } from "../resolvers/types.ts";
 import { createLifecycleManager, type SelectedProject } from "./lifecycle.ts";
 
+// Minimal MIME type mapping to avoid external deps here
+const mimeByExt: Record<string, string> = {
+  html: "text/html; charset=utf-8",
+  htm: "text/html; charset=utf-8",
+  js: "application/javascript; charset=utf-8",
+  mjs: "application/javascript; charset=utf-8",
+  cjs: "application/javascript; charset=utf-8",
+  css: "text/css; charset=utf-8",
+  json: "application/json; charset=utf-8",
+  map: "application/json; charset=utf-8",
+  svg: "image/svg+xml",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  ico: "image/x-icon",
+  webp: "image/webp",
+  wasm: "application/wasm",
+  txt: "text/plain; charset=utf-8",
+  woff: "font/woff",
+  woff2: "font/woff2",
+  ttf: "font/ttf",
+  otf: "font/otf",
+};
+function guessContentType(filePath: string): string | undefined {
+  const idx = filePath.lastIndexOf(".");
+  if (idx < 0) return undefined;
+  const ext = filePath.slice(idx + 1).toLowerCase();
+  return mimeByExt[ext];
+}
+
 function splitBaseArgs(baseArgs: string[]): { denoOptions: string[]; scriptArgs: string[] } {
   const denoOptions: string[] = [];
   const scriptArgs: string[] = [];
@@ -67,6 +98,7 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
   const server = Deno.serve({ port: publicPort }, async (req) => {
     const url = new URL(req.url);
 
+    // Provider-based selection first (used for per-project web config as well)
     // Provider-based selection first
     let selected: SelectedProject = { project: "default" };
     try {
@@ -101,6 +133,58 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
       }
     } catch (e) {
       return new Response(JSON.stringify({ error: { message: (e as Error)?.message || "Admission rejected" } }), { status: 403, headers: { "content-type": "application/json; charset=utf-8" } });
+    }
+
+    // Per-project web handling (dev proxy / static) for non-API paths
+    try {
+      const pathname = url.pathname;
+      const projCfg = (hv.projects && (hv.projects as Record<string, { routing?: { basePath?: string }; web?: { devProxyTarget?: string; staticDir?: string; staticCacheControl?: string } }>)[selected.project]) || {} as { routing?: { basePath?: string }; web?: { devProxyTarget?: string; staticDir?: string; staticCacheControl?: string } };
+      const apiBasePath = (projCfg.routing?.basePath ?? (config.basePath ?? "/"));
+      const isApi = apiBasePath === "/" ? true : pathname.startsWith(apiBasePath);
+      if (!isApi) {
+        const webCfg = { ...(hv.web ?? {}), ...(projCfg.web ?? {}) } as { devProxyTarget?: string; staticDir?: string; staticCacheControl?: string };
+        // Dev proxy to Vite (or other dev server)
+        if (webCfg.devProxyTarget) {
+          try {
+            const targetUrl = new URL(pathname + url.search, webCfg.devProxyTarget);
+            const headers = new Headers(req.headers);
+            try { headers.set("host", targetUrl.host); } catch { /* ignore */ }
+            const res = await fetch(targetUrl.toString(), { method: req.method, headers, body: req.body });
+            return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
+          } catch (err) {
+            console.error(`[hv:web] dev proxy error`, { error: (err as Error)?.message });
+            return new Response("Dev proxy error", { status: 502 });
+          }
+        }
+        // Static serving in production (with SPA index.html fallback)
+        if (webCfg.staticDir) {
+          try {
+            const root = getLocalRootPath(config.root);
+            const filePath = join(root, webCfg.staticDir, pathname.replace(/^\/+/, ""));
+            const file = await Deno.open(filePath, { read: true });
+            const stat = await file.stat();
+            if (!stat.isFile) { try { file.close(); } catch { /* ignore */ } throw new Error("not a file"); }
+            const headers = new Headers();
+            const ct = guessContentType(filePath);
+            if (ct) headers.set("content-type", ct);
+            if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
+            return new Response(file.readable, { status: 200, headers });
+          } catch {
+            try {
+              const root = getLocalRootPath(config.root);
+              const indexPath = join(root, webCfg.staticDir, "index.html");
+              const file = await Deno.open(indexPath, { read: true });
+              const headers = new Headers({ "content-type": "text/html; charset=utf-8" });
+              if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
+              return new Response(file.readable, { status: 200, headers });
+            } catch { /* ignore */ }
+          }
+        }
+        // If neither dev proxy nor staticDir handled the request, fall through to worker
+      }
+    } catch (e) {
+      console.error(`[hv:web] handler error`, { err: (e as Error)?.message });
+      // fall through to worker
     }
 
     let pool = manager.getPool(selected.project);
