@@ -198,22 +198,22 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
             // Try static file
             try {
               const fileUrl = await resolver.resolve(`${webCfg.staticDir}/${cleaned}`);
-                const file = await resolver.import(fileUrl);
-                const headers = new Headers();
-                const ct = guessContentType(fileUrl.pathname);
-                if (ct) headers.set("content-type", ct);
-                if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
-                logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
-                return new Response(file.default as string, { status: 200, headers });
-            } catch { /* ignore and fallback to index */ }
+              const file = await resolver.load(fileUrl);
+              const headers = new Headers();
+              const ct = guessContentType(fileUrl.pathname);
+              if (ct) headers.set("content-type", ct);
+              if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
+              logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+              return new Response(file as string, { status: 200, headers });
+            } catch {/* ignore and fallback to index */ }
             // SPA fallback
             try {
               const indexUrl = await resolver.resolve(`${webCfg.staticDir}/index.html`);
-                const file = await resolver.import(indexUrl);
-                const headers = new Headers({ "content-type": "text/html; charset=utf-8" });
-                if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
-                logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
-                return new Response(file.default as string, { status: 200, headers });
+              const file = await resolver.load(indexUrl);
+              const headers = new Headers({ "content-type": "text/html; charset=utf-8" });
+              if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
+              logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+              return new Response(file as string, { status: 200, headers });
             } catch { /* ignore */ }
           }
 
