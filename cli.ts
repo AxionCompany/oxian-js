@@ -278,8 +278,6 @@ if (import.meta.main) {
     } as EffectiveConfig;
   }
 
-  console.log('config for server', bases, config);
-
   if (cmd === "routes") {
     if (!resolver) {
       const envDefaults: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
