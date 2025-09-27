@@ -198,49 +198,22 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
             // Try static file
             try {
               const fileUrl = await resolver.resolve(`${webCfg.staticDir}/${cleaned}`);
-              if (fileUrl.protocol === "file:") {
-                const file = await Deno.open(fileUrl, { read: true } as unknown as Deno.OpenOptions);
-                try {
-                  const stat = await file.stat();
-                  if (!stat.isFile) { try { file.close(); } catch { /* ignore */ } throw new Error("not a file"); }
-                } catch { /* ignore */ }
+                const file = await resolver.import(fileUrl);
                 const headers = new Headers();
                 const ct = guessContentType(fileUrl.pathname);
                 if (ct) headers.set("content-type", ct);
                 if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
                 logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
-                return new Response(file.readable, { status: 200, headers });
-              } else {
-                const res = await fetch(fileUrl);
-                if (res.ok) {
-                  const headers = new Headers(res.headers);
-                  if (!headers.has("content-type")) {
-                    const ct = guessContentType(fileUrl.pathname);
-                    if (ct) headers.set("content-type", ct);
-                  }
-                  if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
-                  logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: res.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
-                  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
-                }
-              }
+                return new Response(file.default as string, { status: 200, headers });
             } catch { /* ignore and fallback to index */ }
             // SPA fallback
             try {
               const indexUrl = await resolver.resolve(`${webCfg.staticDir}/index.html`);
-              if (indexUrl.protocol === "file:") {
-                const file = await Deno.open(indexUrl, { read: true } as unknown as Deno.OpenOptions);
+                const file = await resolver.import(indexUrl);
                 const headers = new Headers({ "content-type": "text/html; charset=utf-8" });
                 if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
                 logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
-                return new Response(file.readable, { status: 200, headers });
-              } else {
-                const res = await fetch(indexUrl);
-                const headers = new Headers(res.headers);
-                headers.set("content-type", "text/html; charset=utf-8");
-                if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
-                logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: res.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
-                return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
-              }
+                return new Response(file.default as string, { status: 200, headers });
             } catch { /* ignore */ }
           }
 

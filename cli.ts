@@ -247,8 +247,8 @@ if (import.meta.main) {
         const d = discovered as Partial<OxianConfig>;
         config = {
           ...config,
-          ...(d.root ? { root: d.root } : {}),
-          ...(d.basePath ? { basePath: d.basePath } : {}),
+          ...(d.root ? { root: d.root } : { root: undefined }),
+          ...(d.basePath ? { basePath: d.basePath } : { basePath: undefined }),
           ...(d.logging ? { logging: { ...config.logging, ...d.logging } } : {}),
           ...(d.routing ? { routing: { ...config.routing, ...d.routing } } : {}),
           ...(d.runtime ? { runtime: { ...config.runtime, ...d.runtime } } : {}),
@@ -278,6 +278,7 @@ if (import.meta.main) {
     } as EffectiveConfig;
   }
 
+  console.log('config for server', bases, config);
 
   if (cmd === "routes") {
     if (!resolver) {
