@@ -25,6 +25,36 @@ import { resolveRouter } from "../router/index.ts";
 import { buildLocalChain, buildRemoteChain, discoverPipelineFiles } from "../runtime/pipeline_discovery.ts";
 import type { Resolver } from "../resolvers/types.ts";
 
+// Minimal MIME type mapping for static serving
+const mimeByExt: Record<string, string> = {
+  html: "text/html; charset=utf-8",
+  htm: "text/html; charset=utf-8",
+  js: "application/javascript; charset=utf-8",
+  mjs: "application/javascript; charset=utf-8",
+  cjs: "application/javascript; charset=utf-8",
+  css: "text/css; charset=utf-8",
+  json: "application/json; charset=utf-8",
+  map: "application/json; charset=utf-8",
+  svg: "image/svg+xml",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  ico: "image/x-icon",
+  webp: "image/webp",
+  wasm: "application/wasm",
+  txt: "text/plain; charset=utf-8",
+  woff: "font/woff",
+  woff2: "font/woff2",
+  ttf: "font/ttf",
+  otf: "font/otf",
+};
+function guessContentType(filePath: string): string | undefined {
+  const idx = filePath.lastIndexOf(".");
+  if (idx < 0) return undefined;
+  const ext = filePath.slice(idx + 1).toLowerCase();
+  return mimeByExt[ext];
+}
 function applyTrailingSlash(path: string, mode: "always" | "never" | "preserve" | undefined): string {
   if (mode === "preserve" || !mode) return path;
   if (mode === "always") return path.endsWith("/") ? path : path + "/";
@@ -109,7 +139,7 @@ function applyCorsAndDefaults(headers: Headers, config: EffectiveConfig, req?: R
 export async function startServer(opts: { config: EffectiveConfig; source?: string }, resolver: Resolver) {
 
 
-  const root = resolver.resolve("");
+  const _root = resolver.resolve("");
   const { config, source: _source } = opts;
 
   const PERF = config.logging?.performance === true;
@@ -136,10 +166,87 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
       const url = new URL(req.url);
       const basePath = config.basePath ?? "/";
       let path = url.pathname;
+
+      // Root health endpoint independent of basePath for readiness probes
+      if (req.method === "HEAD" && url.pathname === "/_health") {
+        const headers = new Headers();
+        applyCorsAndDefaults(headers, config, req);
+        const res = new Response(null, { status: 200, headers });
+        logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+        return res;
+      }
+
       if (basePath && basePath !== "/") {
         if (!path.startsWith(basePath)) {
+          // Non-API path: handle via hv.web (dev proxy or static)
+          const webCfg = (config.runtime?.hv?.web ?? {}) as { devProxyTarget?: string; staticDir?: string; staticCacheControl?: string };
+          if (webCfg.devProxyTarget) {
+            try {
+              const targetUrl = new URL(url.pathname + url.search, webCfg.devProxyTarget);
+              const headers = new Headers(req.headers);
+              try { headers.set("host", targetUrl.host); } catch { /* ignore */ }
+              const res = await fetch(targetUrl.toString(), { method: req.method, headers, body: req.body });
+              logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: res.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+              return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
+            } catch (e) {
+              logger.error("web_dev_proxy_error", { requestId, err: (e as Error)?.message });
+              return new Response("Dev proxy error", { status: 502 });
+            }
+          }
+          if (webCfg.staticDir) {
+            const cleaned = url.pathname.replace(/^\/+/, "");
+            // Try static file
+            try {
+              const fileUrl = await resolver.resolve(`${webCfg.staticDir}/${cleaned}`);
+              if (fileUrl.protocol === "file:") {
+                const file = await Deno.open(fileUrl, { read: true } as unknown as Deno.OpenOptions);
+                try {
+                  const stat = await file.stat();
+                  if (!stat.isFile) { try { file.close(); } catch { /* ignore */ } throw new Error("not a file"); }
+                } catch { /* ignore */ }
+                const headers = new Headers();
+                const ct = guessContentType(fileUrl.pathname);
+                if (ct) headers.set("content-type", ct);
+                if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
+                logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+                return new Response(file.readable, { status: 200, headers });
+              } else {
+                const res = await fetch(fileUrl);
+                if (res.ok) {
+                  const headers = new Headers(res.headers);
+                  if (!headers.has("content-type")) {
+                    const ct = guessContentType(fileUrl.pathname);
+                    if (ct) headers.set("content-type", ct);
+                  }
+                  if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
+                  logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: res.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+                  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+                }
+              }
+            } catch { /* ignore and fallback to index */ }
+            // SPA fallback
+            try {
+              const indexUrl = await resolver.resolve(`${webCfg.staticDir}/index.html`);
+              if (indexUrl.protocol === "file:") {
+                const file = await Deno.open(indexUrl, { read: true } as unknown as Deno.OpenOptions);
+                const headers = new Headers({ "content-type": "text/html; charset=utf-8" });
+                if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
+                logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+                return new Response(file.readable, { status: 200, headers });
+              } else {
+                const res = await fetch(indexUrl);
+                const headers = new Headers(res.headers);
+                headers.set("content-type", "text/html; charset=utf-8");
+                if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
+                logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: res.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+                return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+              }
+            } catch { /* ignore */ }
+          }
+
           const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
           applyCorsAndDefaults(headers, config, req);
+          logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 404, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
           return new Response(JSON.stringify({ error: { message: "Not found" } }), { status: 404, headers });
         }
         path = path.slice(basePath.length) || "/";
