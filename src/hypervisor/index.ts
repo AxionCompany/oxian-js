@@ -64,6 +64,8 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
   }
 
   if (PERF) console.log('[perf][hv] public listening', { port: publicPort });
+  // Start idle checker to reap idle workers
+  manager.startIdleChecker();
   const server = Deno.serve({ port: publicPort }, async (req) => {
     const url = new URL(req.url);
 
@@ -142,11 +144,36 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
       const abortTimeoutMs = hv.proxy?.timeoutMs ?? 30000;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), abortTimeoutMs);
+      // Track inflight and activity for idle decisions. We consider request active until response body completes.
+      manager.incrementInflight(selected.project);
+      manager.markProjectActivity(selected.project);
       const res = await fetch(target, { method: req.method, headers, body: req.body, signal: controller.signal });
       clearTimeout(timer);
       if (PERF) console.log('[perf][hv] proxy_res', { status: res.status, target, ms: Math.round(performance.now() - p0) });
       else console.log(`[hv] proxy_res`, { status: res.status, statusText: res.statusText, target });
-      return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
+      const body = res.body;
+      if (!body) {
+        manager.decrementInflight(selected.project);
+        manager.markProjectActivity(selected.project);
+        return new Response(null, { status: res.status, statusText: res.statusText, headers: res.headers });
+      }
+      const tee = body.tee();
+      const proxied = tee[0];
+      const watcher = tee[1];
+      (async () => {
+        try {
+          const reader = watcher.getReader();
+          while (true) {
+            const { done } = await reader.read();
+            if (done) break;
+          }
+        } catch { /* ignore */ }
+        finally {
+          manager.decrementInflight(selected.project);
+          manager.markProjectActivity(selected.project);
+        }
+      })();
+      return new Response(proxied, { status: res.status, statusText: res.statusText, headers: res.headers });
     } catch (e) {
       console.error(`[hv] proxy_err`, { target, err: (e as Error)?.message });
       // Auto-heal: restart target project and retry once or queue
@@ -273,6 +300,7 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
   }
 
   await server.finished;
+  try { manager.shutdown(); } catch { /* ignore */ }
   for (const { entry: p } of manager.getPoolsArray()) {
     try { p.proc.kill(); } catch (_e) { /* ignore kill error */ }
     try { await p.proc.status; } catch (_e) { /* ignore status error */ }

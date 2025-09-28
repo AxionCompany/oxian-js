@@ -26,6 +26,8 @@ export type SelectedProject = {
     // When provided, compares against last worker load time to decide if --reload should be used
     // Accepts ISO date string, epoch milliseconds, or Date
     invalidateCacheAt?: string | number | Date;
+    // When set, worker will be stopped if idle (no inflight or activity) for this duration in ms
+    idleTtlMs?: number;
     permissions?: {
         read?: boolean | string[];
         write?: boolean | string[];
@@ -93,10 +95,14 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
     const readyWaiters = new Map<string, Array<() => void>>();
     const restarting = new Set<string>();
     const projectLastLoad = new Map<string, number>();
+    const projectLastActive = new Map<string, number>();
     const projectReady = new Map<string, boolean>();
     const lastSpawnOptions = new Map<string, SelectedProject>();
+    const projectInflight = new Map<string, number>();
+    const intentionalStop = new Set<string>();
     let cachedDenoOptions: string[] = [];
     let cachedScriptArgs: string[] = [];
+    let idleCheckTimer: number | undefined;
 
     function setBaseArgs(denoOptions: string[], scriptArgs: string[]) {
         cachedDenoOptions = [...denoOptions];
@@ -143,6 +149,11 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             // Mark project down and clear stale pool to avoid misrouting to reused ports
             try { pools.delete(project); } catch { /* ignore */ }
             projectReady.set(project, false);
+            if (intentionalStop.has(project)) {
+                // skip auto-restart when we intentionally stopped due to idle
+                try { intentionalStop.delete(project); } catch { /* ignore */ }
+                return;
+            }
             try {
                 await restartProject(project);
             } catch (e) {
@@ -392,6 +403,8 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                 projectReady.set(project, true);
                 // mark last load time for reload decisions
                 projectLastLoad.set(project, Date.now());
+                // mark activity baseline
+                projectLastActive.set(project, Date.now());
                 // signal readiness to any waiters
                 notifyProjectReady(project);
                 if (onProjectReady) await onProjectReady(project);
@@ -442,6 +455,65 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         return Array.from(pools.entries()).map(([project, entry]) => ({ project, entry }));
     }
 
+    function markProjectActivity(project: string) {
+        projectLastActive.set(project, Date.now());
+    }
+
+    function incrementInflight(project: string) {
+        const current = projectInflight.get(project) ?? 0;
+        projectInflight.set(project, current + 1);
+    }
+
+    function decrementInflight(project: string) {
+        const current = projectInflight.get(project) ?? 0;
+        const next = current - 1;
+        projectInflight.set(project, next > 0 ? next : 0);
+    }
+
+    function getIdleTtlForProject(project: string): number | undefined {
+        const fromSpawn = lastSpawnOptions.get(project)?.idleTtlMs;
+        if (typeof fromSpawn === "number") return fromSpawn;
+        const hvProjects = (config.runtime?.hv?.projects ?? {}) as Record<string, { idleTtlMs?: number }>;
+        const fromProj = hvProjects?.[project]?.idleTtlMs;
+        if (typeof fromProj === "number") return fromProj;
+        const fromGlobal = config.runtime?.hv?.autoscale?.idleTtlMs;
+        return typeof fromGlobal === "number" ? fromGlobal : undefined;
+    }
+
+    function startIdleChecker() {
+        if (idleCheckTimer) return;
+        idleCheckTimer = setInterval(() => {
+            const now = Date.now();
+            for (const { project, entry } of getPoolsArray()) {
+                const inflight = projectInflight.get(project) ?? 0;
+                if (inflight > 0) continue;
+                const ttl = getIdleTtlForProject(project);
+                if (ttl === undefined) continue;
+                const lastActive = projectLastActive.get(project) ?? projectLastLoad.get(project) ?? 0;
+                if (lastActive === 0) continue;
+                if (now - lastActive > ttl) {
+                    try {
+                        console.log(`[hv] idle timeout, stopping worker`, { project, port: entry.port, idleMs: now - lastActive, ttlMs: ttl });
+                        intentionalStop.add(project);
+                        pools.delete(project);
+                        projectReady.set(project, false);
+                        const p = entry.proc;
+                        try { p.kill(); } catch { /* ignore */ }
+                    } catch (e) {
+                        console.error(`[hv] idle stop error`, { project, err: (e as Error)?.message });
+                    }
+                }
+            }
+        }, 1000) as unknown as number;
+    }
+
+    function shutdown() {
+        if (idleCheckTimer) {
+            clearInterval(idleCheckTimer);
+            idleCheckTimer = undefined;
+        }
+    }
+
     return {
         setBaseArgs,
         notifyProjectReady,
@@ -456,6 +528,11 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         getProjectIndex,
         ensureWorker,
         getPoolsArray,
+        markProjectActivity,
+        incrementInflight,
+        decrementInflight,
+        startIdleChecker,
+        shutdown,
     } as const;
 }
 

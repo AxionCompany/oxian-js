@@ -664,6 +664,33 @@ Behavior:
 - Requests matching a project’s API base path are proxied to that project’s worker.
 - Other paths are handled by that project’s `web` config (dev proxy if set; otherwise static serving if `staticDir` is set; otherwise 404).
 
+### Worker idle shutdown
+
+You can automatically stop idle workers to save resources. An idle worker is one with no active requests/streams and no activity for a configured TTL. Long‑lived streams and SSE are respected: the worker remains active until the client closes the response body.
+
+- Configure per project via `runtime.hv.projects[<name>].idleTtlMs` or at spawn time via provider/`SelectedProject.idleTtlMs`.
+- Default is no TTL (workers do not auto‑stop unless configured).
+- Precedence: provider → per‑project config → `runtime.hv.autoscale.idleTtlMs` → disabled when none provided.
+
+Example:
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "autoscale": { "idleTtlMs": 300000 },
+      "projects": {
+        "api": { "idleTtlMs": 120000 }
+      }
+    }
+  }
+}
+```
+
+Behavior:
+- Every proxied request marks activity; inflight count decrements only after the response body completes. Idle countdown starts after that.
+- When `idleTtlMs` elapses with inflight=0, the worker is stopped. Next request spawns it on demand.
+
 ## 📝 TypeScript Support
 
 Oxian is built with TypeScript-first design:

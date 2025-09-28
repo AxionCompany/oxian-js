@@ -220,6 +220,7 @@ This section describes the most relevant configuration keys. The full, authorita
       - staticDir: In prod, serve non-API requests from a static directory (e.g., `dist`).
       - staticCacheControl: Cache-control header for static assets.
     - projects: Multi-project configuration with per-project routing basePath and overrides.
+      - Each project may set `idleTtlMs` (ms). When set, workers stop after being idle (no active requests/streams) for this duration. Default is disabled unless specified (provider → project → autoscale fallback).
 
 - permissions
   - net | read | write | env | ffi | hrtime | sys: Boolean | string[]. Future enforcement via hypervisor.

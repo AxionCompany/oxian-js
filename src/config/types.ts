@@ -97,6 +97,8 @@ export type OxianConfig = {
           staticDir?: string;
           staticCacheControl?: string;
         };
+        // Idle timeout: stop worker if no activity for this duration (ms)
+        idleTtlMs?: number;
         worker?: { kind?: "process" | "thread"; pool?: { min?: number; max?: number } };
         strategy?: "round_robin" | "least_busy" | "sticky";
         stickyHeader?: string;

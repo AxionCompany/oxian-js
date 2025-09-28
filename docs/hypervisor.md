@@ -389,6 +389,35 @@ Configure automatic scaling based on load:
 }
 ```
 
+### Idle Shutdown
+
+Workers can be stopped automatically when idle (no active requests/streams) for a configured duration. This saves resources during quiet periods.
+
+- Configure per project: `runtime.hv.projects[project].idleTtlMs` (ms)
+- Provider override at spawn: `SelectedProject.idleTtlMs`
+- Global fallback: `runtime.hv.autoscale.idleTtlMs`
+- Default: disabled (no idle stop unless configured)
+
+Semantics:
+- Inflight increments when the hypervisor starts proxying a request and decrements only after the response body finishes streaming to the client. This ensures long‑lived Streaming/SSE requests keep the worker alive until the client closes.
+- Last activity is updated on request start and completion; the idle timer compares current time to the last activity.
+- When `idleTtlMs` elapses with inflight=0, the worker is stopped intentionally; it will not auto‑heal until a new request arrives (on‑demand spawn).
+
+Example:
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "autoscale": { "idleTtlMs": 300000 },
+      "projects": {
+        "api": { "idleTtlMs": 120000 }
+      }
+    }
+  }
+}
+```
+
 **Auto-scaling Triggers:**
 - **Load-based** - Scale up when `targetInflightPerWorker` exceeded
 - **Latency-based** - Scale up when `maxAvgLatencyMs` exceeded
