@@ -305,12 +305,24 @@ Provide import aliases and JSR mappings to simplify imports in route code:
 }
 ```
 
-Remote Sources (GitHub Loader)
-------------------------------
-Run from GitHub without cloning:
+Remote Sources (Materialize & Prepare)
+--------------------------------------
+Two-step flow for production builds without giving workers run permission:
+
+1) Materialize remote source locally:
 ```bash
-deno -A jsr:@oxian/oxian-js --source=github:owner/repo/path?ref=main
+deno run -A jsr:@oxian/oxian-js materialize --source=github:owner/repo/path?ref=main --materialize-dir=.
 ```
+2) Run pre-run hooks (from materialized oxian.config.*):
+```bash
+deno run -A jsr:@oxian/oxian-js prepare --source=file:///abs/path/.oxian/materialized/github/owner/repo/<sha>/
+```
+3) Start server using the file:// root as --source (workers need no --allow-run):
+```bash
+deno run -A jsr:@oxian/oxian-js start --source=file:///abs/path/.oxian/materialized/github/owner/repo/<sha>/
+```
+
+Hypervisor automates this flow when `materialize` is enabled in config/provider: it runs `materialize`, then `prepare`, then spawns the worker with the materialized `file://` root.
 
 LLM Authoring Checklist
 -----------------------

@@ -143,8 +143,6 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
   const { config, source: _source } = opts;
 
   const PERF = config.logging?.performance === true;
-  const _OTEL_ENABLED = config.logging?.otel?.enabled === true || Deno.env.get("OTEL_DENO") === "true";
-  // Custom logger removed; rely on OTEL auto-instrumentation and console for perf-only logs
 
   const perfStart = performance.now();
   const resolved = await resolveRouter({ config }, resolver);
@@ -180,11 +178,11 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         // minimal health response
         return res;
       }
-
+      
       if (basePath && basePath !== "/") {
         if (!path.startsWith(basePath)) {
-          // Non-API path: handle via hv.web (dev proxy or static)
-          const webCfg = (config.runtime?.hv?.web ?? {}) as { devProxyTarget?: string; staticDir?: string; staticCacheControl?: string };
+          // Non-API path: handle via web config (prefer top-level config.web; fallback to runtime.hv.web)
+          const webCfg = (config.web ?? (config.runtime?.hv?.web ?? {})) as { devProxyTarget?: string; staticDir?: string; staticCacheControl?: string };
           if (webCfg.devProxyTarget) {
             try {
               const targetUrl = new URL(url.pathname + url.search, webCfg.devProxyTarget);

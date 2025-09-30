@@ -23,6 +23,8 @@ export type SelectedProject = {
     stripPathPrefix?: string;
     isolated?: boolean;
     env?: Record<string, string>;
+    // Materialize controls forwarded from provider/config
+    materialize?: boolean | { mode?: "auto" | "always" | "never"; dir?: string; refresh?: boolean };
     // When provided, compares against last worker load time to decide if --reload should be used
     // Accepts ISO date string, epoch milliseconds, or Date
     invalidateCacheAt?: string | number | Date;
@@ -171,17 +173,10 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         const port = await findAvailablePort(basePort + (idx ?? 0));
 
         // Merge provider-based spawn overrides if not already provided
-        let selectedMerged: SelectedProject = { ...selected };
-        try {
-            if (typeof (config.runtime?.hv as { provider?: unknown })?.provider === "function") {
-                const provider = (config.runtime?.hv as { provider?: (input: { project: string }) => Promise<SelectedProject> | SelectedProject }).provider as (input: { project: string }) => Promise<SelectedProject> | SelectedProject;
-                const out = await provider({ project: selected.project });
-                if (out && typeof out.project === 'string') {
-                    // only fill missing fields to respect explicit overrides
-                    selectedMerged = { ...out, ...selectedMerged };
-                }
-            }
-        } catch { /* ignore provider errors */ }
+        const selectedMerged: SelectedProject = { ...selected };
+        // The provider is only invoked at request-routing time with { req } and its output
+        // is passed down to spawnWorker via 'selected'. Avoid calling provider here with { project }
+        // to keep the request as the single source of truth.
 
         const resolver = createResolver(selectedMerged.source || config.root, { tokenEnv: "GITHUB_TOKEN", tokenValue: selectedMerged.githubToken });
 
@@ -300,7 +295,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                 console.log('[hv] invalidateAt', invalidateAt, 'last', last, 'shouldReload', invalidateAt > last);
             }
             if (invalidateAt > last) shouldReload = true;
-        } else{
+        } else {
             // use hotReload from config
             shouldReload = config.runtime?.hotReload === true;
         }
@@ -333,8 +328,82 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         const globalSource = Deno.args.find((a) => a.startsWith("--source="))?.split("=")[1];
         const globalConfig = Deno.args.find((a) => a.startsWith("--config="))?.split("=")[1];
         const projCfg = (hv.projects && (hv.projects as Record<string, { source?: string; config?: string }>)[project]) || {} as { source?: string; config?: string };
-        const effectiveSource = selectedMerged.source ?? projCfg.source ?? globalSource;
+        let effectiveSource = selectedMerged.source ?? projCfg.source ?? globalSource;
         const effectiveConfig = selectedMerged.config ?? projCfg.config ?? globalConfig;
+
+        // Determine project working directory early (needed for materialize step)
+        const projectDir = selectedMerged.isolated ? `./.projects/${project}` : Deno.cwd();
+        if (selectedMerged.isolated) {
+            ensureDir(`${projectDir}`);
+        }
+
+        // Two-step flow: perform materialize (and preRun) in a separate CLI invocation, then spawn worker without allow-run
+        {
+            const hvMat = (config.runtime?.hv as { materialize?: unknown })?.materialize as boolean | { mode?: string; dir?: string; refresh?: boolean } | undefined;
+            const projMat = ((config.runtime?.hv?.projects as Record<string, { materialize?: boolean | { mode?: string; dir?: string; refresh?: boolean } }> | undefined)?.[project]?.materialize);
+            const selMat = selectedMerged.materialize;
+            const mat = selMat ?? projMat ?? hvMat;
+            const shouldMaterialize = !!(mat && (typeof mat === 'boolean' ? mat : (mat.mode === 'always' || mat.mode === 'auto')) && effectiveSource);
+            if (shouldMaterialize && effectiveSource) {
+                const m = typeof mat === 'boolean' ? { mode: 'always' as const } : (mat as { mode?: string; dir?: string; refresh?: boolean });
+                // const matDir = m.dir ? m.dir : (selectedMerged.isolated ? projectDir : projectDir);
+                const matArgs: string[] = [
+                    "run",
+                    "-A",
+                    `${import.meta.resolve('../../cli.ts')}`,
+                    "materialize",
+                    `--source=${effectiveSource}`,
+                    `--materialize-dir=.`,
+                    ...(m.refresh ? ["--materialize-refresh"] : []),
+                ];
+                console.log('[hv] matArgs', matArgs);
+                const matCmd = new Deno.Command(Deno.execPath(), {
+                    args: matArgs,
+                    stdin: "null",
+                    stdout: "piped",
+                    stderr: "inherit",
+                    cwd: projectDir,
+                    env: { ...(selectedMerged.env || {}), ...(selectedMerged.githubToken ? { GITHUB_TOKEN: selectedMerged.githubToken } : {}) },
+                });
+                const out = await matCmd.output();
+                if (!out.success) {
+                    throw new Error(`[hv] materialize step failed for project ${project}`);
+                }
+                try {
+                    const text = new TextDecoder().decode(out.stdout);
+                    const parsed = JSON.parse(text) as { ok?: boolean; rootDir?: string };
+                    console.log('[hv] parsed', parsed);
+                    if (parsed?.rootDir) {
+                        // Ensure we pass a clean file:// URL as source
+                        effectiveSource = parsed.rootDir;
+                    }
+                    console.log('[hv] effectiveSource', effectiveSource);
+                } catch { /* ignore parse errors */ }
+
+                console.log('[hv] effectiveSource', effectiveSource);
+            }
+
+            // Second step: run prepare (preRun hooks) in the materialized root
+                const prepArgs: string[] = [
+                    "run",
+                    "-A",
+                    `${import.meta.resolve('../../cli.ts')}`,
+                    "prepare",
+                   ...(effectiveSource ? [`--source=${effectiveSource}`] : []),
+                ];
+                const prepCmd = new Deno.Command(Deno.execPath(), {
+                    args: prepArgs,
+                    stdin: "null",
+                    stdout: "inherit",
+                    stderr: "inherit",
+                    cwd: projectDir,
+                    env: { ...(selectedMerged.env || {}), ...(selectedMerged.githubToken ? { GITHUB_TOKEN: selectedMerged.githubToken } : {}) },
+                });
+                const prepOut = await prepCmd.output();
+                if (!prepOut.success) {
+                    throw new Error(`[hv] prepare step failed for project ${project}`);
+                }
+        }
 
         const finalScriptArgs = [
             `--port=${port}`,
@@ -388,10 +457,8 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             console.log('[hv] globalConfig', globalConfig);
         }
 
-        const projectDir = selectedMerged.isolated ? `./deno/${project}` : Deno.cwd();
         if (selectedMerged.isolated) {
-            ensureDir(`${projectDir}`);
-            spawnEnv.DENO_DIR = `./DENO_DIR`;
+            spawnEnv.DENO_DIR = `./.deno/DENO_DIR`;
             finalScriptArgs.push(`--allow-read=${projectDir + "/**/*"}`);
             finalScriptArgs.push(`--allow-write=${projectDir + "/**/*"}`);
         }

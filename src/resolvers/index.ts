@@ -1,4 +1,4 @@
-import { isAbsolute, toFileUrl, join } from "@std/path";
+import { isAbsolute, toFileUrl, join, fromFileUrl } from "@std/path";
 import { importModule } from "./importer.ts";
 import { absolutize } from "../utils/root.ts";
 
@@ -61,6 +61,8 @@ export interface Resolver {
     resolve: (specifier: string | URL) => Promise<URL>;
     import: (specifier: string | URL) => Promise<Record<string, unknown>>;
     load: (url: URL) => Promise<string>;
+    // Optional materialize method: downloads remote sources to a local directory and returns the rootDir
+    materialize?: (opts?: { dir?: string; refresh?: boolean }) => Promise<{ rootDir: URL; ref?: string; sha?: string; subdir?: string }>;
 }
 
 // Main entry point for creating a resolver
@@ -146,7 +148,8 @@ export function createResolver(baseUrl: URL | string | undefined, opts: { tokenE
             const content = await resolverMap[type].load(specifier);
             inMemoryCache.set(key, content);
             return content;
-        }
+        },
+        materialize: resolverMap[type] && (resolverMap[type] as unknown as { materialize?: Resolver["materialize"] }).materialize
     };
     return resolver;
 }
@@ -164,11 +167,14 @@ export function createLocalResolver(baseUrl?: URL): Resolver {
         resolve(specifier?: string | URL) {
             if (typeof specifier === "string" && specifier.startsWith("file:")) return Promise.resolve(new URL(specifier));
             if (specifier instanceof URL && specifier.protocol === "file:") return Promise.resolve(specifier);
-            if (specifier === "") return Promise.resolve(new URL(`file://${Deno.cwd()}`));
-            const url = isAbsolute(String(specifier))
-                ? toFileUrl(String(specifier))
-                : toFileUrl(absolutize(join(baseUrl?.toString() ?? Deno.cwd(), String(specifier))));
-            return Promise.resolve(url);
+            if (specifier === "") return Promise.resolve(toFileUrl(Deno.cwd()));
+            const specStr = String(specifier);
+            if (isAbsolute(specStr)) {
+                return Promise.resolve(toFileUrl(specStr));
+            }
+            const basePath = (baseUrl && baseUrl.protocol === "file:") ? fromFileUrl(baseUrl) : Deno.cwd();
+            const joined = join(basePath, specStr);
+            return Promise.resolve(toFileUrl(absolutize(joined)));
         },
         listDir(URLspecifier: URL) {
             const path = URLspecifier.toString().replace("file://", "");
@@ -181,8 +187,12 @@ export function createLocalResolver(baseUrl?: URL): Resolver {
         },
         load(URLspecifier: URL) {
             return Promise.resolve(Deno.readTextFile(URLspecifier.toString().replace("file://", "")));
+        },
+        materialize: (_opts?: { dir?: string; refresh?: boolean }) => {
+            const root = baseUrl && baseUrl.protocol === "file:" ? baseUrl : new URL(`file://${Deno.cwd()}`);
+            return Promise.resolve({ rootDir: root });
         }
-    } as Resolver;
+    } as unknown as Resolver;
 }
 
 // Resolver for HTTP(s)
@@ -208,10 +218,11 @@ export function createHttpResolver(baseUrl: URL): Resolver {
         stat(_specifier: URL) {
             return Promise.reject(new Error("http stat not implemented"));
         },
-        load: async (specifier: URL) => {
+        load: (specifier: URL) => {
             return fetch(specifier).then(res => res.text());
-        }
-    } as Resolver;
+        },
+        materialize: () => Promise.reject(new Error("http materialize not implemented"))
+    } as unknown as Resolver;
 }
 
 // Resolver for GitHub
@@ -284,6 +295,115 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
             const content = resJson.content;
             const decoded = atob(content);
             return decoded;
+        },
+        materialize: async (optsIn?: { dir?: string; refresh?: boolean }) => {
+            const opts = optsIn ?? {};
+            const parsed = parseGithubUrl("", baseUrl);
+            if (!parsed) throw new Error(`Unsupported GitHub base URL for materialize: ${baseUrl.toString()}`);
+            const { owner, repo, ref, path } = parsed;
+            // Resolve ref -> SHA
+            const commitApi = new URL(`https://api.github.com/repos/${owner}/${repo}/commits/${ref}`);
+            const commitRes = await ghFetch(commitApi);
+            if (!commitRes.ok) throw new Error(`GitHub resolve ref failed ${commitRes.status} for ${commitApi}`);
+            const commitJson = await commitRes.json() as { sha?: string };
+            const sha = commitJson.sha || ref;
+            const dirInput = opts.dir ? String(opts.dir) : '.'
+            const dirAbs = isAbsolute(dirInput) ? dirInput : join(Deno.cwd(), dirInput);
+            const rootPath = `${dirAbs.replace(/\/$/, '')}`
+            try { Deno.mkdirSync(rootPath, { recursive: true }); } catch { /* ignore */ }
+            const marker = `${rootPath}/.ok`;
+            const exists = (() => { try { return Deno.statSync(marker).isFile; } catch { return false; } })();
+            if (exists && !opts.refresh) {
+                const base = toFileUrl(rootPath + "/");
+                const subdir = path ? path : undefined;
+                return { rootDir: subdir ? new URL(subdir.replace(/^\/?/, '' ) + '/', base) : base, ref, sha, subdir };
+            }
+            // Download tarball
+            const tarUrl = new URL(`https://api.github.com/repos/${owner}/${repo}/tarball/${sha}`);
+            const tarRes = await ghFetch(tarUrl);
+            if (!tarRes.ok) throw new Error(`GitHub tarball failed ${tarRes.status} for ${tarUrl}`);
+            const reader = tarRes.body?.getReader();
+            if (!reader) throw new Error("No response body from GitHub tarball");
+            // Stream to temp file to simplify extraction
+            const tmpTar = `${rootPath}.tar.gz.tmp`;
+            const file = await Deno.open(tmpTar, { create: true, write: true, truncate: true });
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    if (value) await file.write(value);
+                }
+            } finally {
+                try { file.close(); } catch { /* ignore */ }
+            }
+            // Decompress and extract using built-ins
+            const gz = await Deno.readFile(tmpTar);
+            // Use Web Streams DecompressionStream where available
+            const ds = new DecompressionStream('gzip');
+            const decompressed = await new Response(new Blob([gz]).stream().pipeThrough(ds)).arrayBuffer();
+            // Minimal tar extractor: skip leading folder, safe paths only
+            await extractMinimalTar(new Uint8Array(decompressed), rootPath);
+            try { await Deno.writeTextFile(marker, JSON.stringify({ owner, repo, ref, sha, at: new Date().toISOString() })); } catch { /* ignore */ }
+            try { await Deno.remove(tmpTar); } catch { /* ignore */ }
+            const base = toFileUrl(rootPath + "/");
+            const subdir = path ? path : undefined;
+            return { rootDir: subdir ? new URL(subdir.replace(/^\/?/, '' ) + '/', base) : base, ref, sha, subdir };
         }
-    } as Resolver;
+    } as unknown as Resolver;
 } 
+
+// Minimal tar extractor sufficient for GitHub tarballs
+async function extractMinimalTar(bytes: Uint8Array, destDir: string): Promise<void> {
+    // Very small tar reader: 512-byte headers, ustar format. Extract regular files only.
+    const blockSize = 512;
+    let offset = 0;
+    const decoder = new TextDecoder();
+    function nulTerminated(s: string): string {
+        const idx = s.indexOf('\0');
+        return idx >= 0 ? s.slice(0, idx) : s;
+    }
+    function parseOctal(str: string): number {
+        const s = nulTerminated(str).trim();
+        return s ? parseInt(s, 8) : 0;
+    }
+    while (offset + blockSize <= bytes.length) {
+        const block = bytes.subarray(offset, offset + blockSize);
+        offset += blockSize;
+        const name = nulTerminated(decoder.decode(block.subarray(0, 100)));
+        if (!name) {
+            // two consecutive zero blocks marks the end, but we just continue
+            continue;
+        }
+        const size = parseOctal(decoder.decode(block.subarray(124, 136)));
+        const type = decoder.decode(block.subarray(156, 157));
+        const linkname = nulTerminated(decoder.decode(block.subarray(157, 257)));
+        const isFile = type === '0' || type === '';
+        // Compute path without the top-level folder
+        const safe = name.split('/')
+            .slice(1) // drop leading repo folder
+            .filter((p) => !!p && p !== '.' && p !== '..')
+            .join('/');
+        const fullPath = `${destDir}/${safe}`;
+        if (isFile) {
+            const content = bytes.subarray(offset, offset + size);
+            // ensure dir
+            const dir = fullPath.replace(/\/[^/]*$/, '');
+            try { Deno.mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
+            await Deno.writeFile(fullPath, content);
+            // advance to next 512 boundary
+            const pad = (blockSize - (size % blockSize)) % blockSize;
+            offset += size + pad;
+        } else {
+            // directory or other
+            if (safe) {
+                try { Deno.mkdirSync(fullPath, { recursive: true }); } catch { /* ignore */ }
+            }
+            // skip payload if any
+            const pad = (blockSize - (size % blockSize)) % blockSize;
+            offset += size + pad;
+        }
+        if (linkname) {
+            // ignore links for safety
+        }
+    }
+}

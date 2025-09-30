@@ -77,6 +77,8 @@ export type OxianConfig = {
       denoConfig?: string;
       // Request lifecycle timeouts (proxy-level)
       timeouts?: { connectMs?: number; headersMs?: number; idleMs?: number; totalMs?: number };
+      // Materialize settings for remote sources (global default)
+      materialize?: boolean | { mode?: "auto" | "always" | "never"; dir?: string; refresh?: boolean };
       // Web dev/prod integration
       web?: {
         devProxyTarget?: string; // e.g., http://localhost:5173
@@ -97,7 +99,9 @@ export type OxianConfig = {
           staticDir?: string;
           staticCacheControl?: string;
         };
-        // Idle timeout: stop worker if no activity for this duration (ms)
+        // Per-project materialization settings
+        materialize?: boolean | { mode?: "auto" | "always" | "never"; dir?: string; refresh?: boolean };
+        // Idle timeout: stop worker if no activity for this duration in ms
         idleTtlMs?: number;
         worker?: { kind?: "process" | "thread"; pool?: { min?: number; max?: number } };
         strategy?: "round_robin" | "least_busy" | "sticky";
@@ -132,12 +136,9 @@ export type OxianConfig = {
         }) => void | Promise<void>;
       };
       // Single provider function (optional). When provided:
-      // - At request time: called with { req } to choose a project and optional path rewrite.
-      // - At spawn time: called with { project } to supply per-project overrides (source/config/env/token).
+      // - Called with { req } to choose a project and per-request/project overrides.
       provider?: (
-        input:
-          | { req: Request; project?: never }
-          | { project: string; req?: never }
+        input: { req: Request }
       ) => Promise<{
         project: string;
         source?: string;
@@ -145,6 +146,17 @@ export type OxianConfig = {
         env?: Record<string, string>;
         githubToken?: string;
         stripPathPrefix?: string;
+        permissions?: {
+          net?: boolean | string[];
+          read?: boolean | string[];
+          write?: boolean | string[];
+          env?: boolean | string[];
+          import?: boolean | string[];
+          ffi?: boolean | string[];
+          run?: boolean | string[];
+          sys?: boolean | string[];
+        };
+        materialize?: boolean | { mode?: "auto" | "always" | "never"; dir?: string; refresh?: boolean };
       }> | {
         project: string;
         source?: string;
@@ -162,6 +174,7 @@ export type OxianConfig = {
           run?: boolean | string[];
           sys?: boolean | string[];
         };
+        materialize?: boolean | { mode?: "auto" | "always" | "never"; dir?: string; refresh?: boolean };
       };
       // Declarative selection rules
       select?: Array<
@@ -253,6 +266,14 @@ export type OxianConfig = {
     middlewareMode?: "default" | "this" | "factory" | "assign"; // defaults to 'default' when undefined
     useMiddlewareRequest?: boolean; // default false when undefined
   };
+  // Top-level Web dev/prod integration for worker context (preferred over runtime.hv.web)
+  web?: {
+    devProxyTarget?: string; // e.g., http://localhost:5173
+    staticDir?: string;      // e.g., "dist"
+    staticCacheControl?: string; // e.g., "public, max-age=31536000, immutable"
+  };
+  // Optional pre-run commands executed after materialization (in materialized root)
+  preRun?: Array<string | { cmd: string; cwd?: string; env?: Record<string, string> }>;
 };
 
 /**
