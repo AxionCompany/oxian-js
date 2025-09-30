@@ -18,7 +18,7 @@ deno -A jsr:@oxian/oxian-js
 - 🔥 **Zero build step** - run TypeScript directly
 - ⚡ **Hot reload** in development
 - 🌊 **Streaming & SSE** support
-- 🔍 **Request IDs** & structured logging
+- 🔍 **Request IDs** & OpenTelemetry (logs, metrics, traces)
 - 🐙 **GitHub loader** - run APIs from any repo
 - 🎯 **Type-safe** with full TypeScript support
 - 🔧 **Middleware/Interceptor** composition system
@@ -755,9 +755,7 @@ export default async function() {
 
   const db = await createDatabase(config.database);
   const cache = await createRedisClient(config.redis);
-  const logger = createLogger();
-
-  return { db, cache, logger, config };
+  return { db, cache, config };
 }
 ```
 
@@ -939,6 +937,18 @@ export GITHUB_TOKEN=your_token
 ```bash
 # Enable debug logging
 OXIAN_LOG_LEVEL=debug deno -A jsr:@oxian/oxian-js
+
+# Enable Deno OpenTelemetry auto-instrumentation (local dev)
+OTEL_DENO=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 deno -A jsr:@oxian/oxian-js
+
+## 📈 Instrumentation & Observability
+
+Oxian uses Deno’s OpenTelemetry integration for traces, metrics, and logs. You can:
+- Enable auto-instrumentation via config (`logging.otel.enabled`).
+- Run a built-in OTLP HTTP collector in the hypervisor (`runtime.hv.otelCollector`).
+- Add custom spans/metrics via `logging.otel.hooks` (onInit/onRequestStart/onRequestEnd).
+
+See the full guide: [docs/instrumentation.md](./docs/instrumentation.md)
 ```
 
 ### Health Checks

@@ -141,11 +141,12 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
     function setProjectIndex(project: string, idx: number) { projectIndices.set(project, idx); }
     function getProjectIndex(project: string): number | undefined { return projectIndices.get(project); }
 
+    const hvLogger = { info: console.log, error: console.error } as const;
     function attachExitObserver(project: string, proc: Deno.ChildProcess) {
         proc.status.then(async (_s) => {
             const current = pools.get(project);
             if (!current || current.proc !== proc) return; // already swapped
-            console.error(`[hv] worker exited`, { project, port: current.port });
+            hvLogger.error(`[hv] worker exited`, { project, port: current.port });
             // Mark project down and clear stale pool to avoid misrouting to reused ports
             try { pools.delete(project); } catch { /* ignore */ }
             projectReady.set(project, false);
@@ -157,7 +158,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             try {
                 await restartProject(project);
             } catch (e) {
-                console.error(`[hv] auto-heal restart failed`, { project, err: (e as Error)?.message });
+                hvLogger.error(`[hv] auto-heal restart failed`, { project, err: (e as Error)?.message });
             }
         }).catch(() => { /* ignore */ });
     }
@@ -213,7 +214,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                     }
                 }
             } catch (e: unknown) {
-                console.error(`[hv] error loading host deno config`, { error: (e as Error)?.message });
+                hvLogger.error(`[hv] error loading host deno config`, { error: (e as Error)?.message });
             }
             const hostImports = (maybeHostDenoConfig?.imports) ?? {};
             const hostScopes = (maybeHostDenoConfig?.scopes) ?? {};
@@ -348,6 +349,38 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         }
 
         const spawnEnv: Record<string, string> | undefined = { ...(selectedMerged.env || {}), ...(selectedMerged.githubToken ? { GITHUB_TOKEN: selectedMerged.githubToken } : {}) };
+        // Propagate OpenTelemetry env for auto-instrumentation when configured
+        try {
+            const otelCfg = config.logging?.otel ?? {} as { enabled?: boolean; serviceName?: string; endpoint?: string; protocol?: string; headers?: Record<string, string>; resourceAttributes?: Record<string, string>; propagators?: string; metricExportIntervalMs?: number };
+            if (otelCfg?.enabled) {
+                spawnEnv.OTEL_DENO = "true";
+                if (otelCfg.serviceName) spawnEnv.OTEL_SERVICE_NAME = otelCfg.serviceName;
+                // Default to built-in collector if no endpoint is provided
+                const builtInCollectorPort = (config.runtime?.hv?.otelCollector?.enabled ? (config.runtime?.hv?.otelCollector?.port ?? 4318) : undefined);
+                if (otelCfg.endpoint) {
+                    spawnEnv.OTEL_EXPORTER_OTLP_ENDPOINT = otelCfg.endpoint;
+                } else if (builtInCollectorPort) {
+                    spawnEnv.OTEL_EXPORTER_OTLP_ENDPOINT = `http://127.0.0.1:${builtInCollectorPort}`;
+                }
+                if (otelCfg.protocol) spawnEnv.OTEL_EXPORTER_OTLP_PROTOCOL = otelCfg.protocol as string;
+                {
+                    const headerPairs: string[] = [];
+                    if (otelCfg.headers && Object.keys(otelCfg.headers).length) {
+                        for (const [k, v] of Object.entries(otelCfg.headers)) headerPairs.push(`${k}=${v}`);
+                    }
+                    // Always attach project so the built-in collector can tag payloads
+                    headerPairs.push(`x-oxian-project=${project}`);
+                    spawnEnv.OTEL_EXPORTER_OTLP_HEADERS = headerPairs.join(",");
+                }
+                // Merge resource attributes with project
+                const baseAttrs: Record<string, string> = { ...(otelCfg.resourceAttributes || {}) };
+                baseAttrs["oxian.project"] = project;
+                const attrs = Object.entries(baseAttrs).map(([k, v]) => `${k}=${v}`).join(",");
+                if (attrs) spawnEnv.OTEL_RESOURCE_ATTRIBUTES = attrs;
+                if (otelCfg.propagators) spawnEnv.OTEL_PROPAGATORS = otelCfg.propagators;
+                if (typeof otelCfg.metricExportIntervalMs === "number") spawnEnv.OTEL_METRIC_EXPORT_INTERVAL = String(otelCfg.metricExportIntervalMs);
+            }
+        } catch { /* ignore otel env config errors */ }
         spawnEnv.DENO_AUTH_TOKENS = `${spawnEnv.DENO_AUTH_TOKENS ? spawnEnv.DENO_AUTH_TOKENS + ";" : ""}${selectedMerged.githubToken ? `${selectedMerged.githubToken}@raw.githubusercontent.com` : ""}`;
 
         if (Deno.env.get("OXIAN_DEBUG")) {
@@ -395,11 +428,11 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                 await new Promise((r) => setTimeout(r, 100));
             }
             if (!ready) {
-                console.error(`[hv] worker not ready`, { project, port, waitedMs: Date.now() - start });
+                hvLogger.error(`[hv] worker not ready`, { project, port, waitedMs: Date.now() - start });
                 projectReady.set(project, false);
             } else {
-                if (PERF) console.log('[perf][hv] worker ready', { project, port, ms: Math.round(performance.now() - t0) });
-                else console.log(`[hv] worker ready`, { project, port });
+                if (PERF) hvLogger.info('[perf][hv] worker ready', { project, port, ms: Math.round(performance.now() - t0) });
+                else hvLogger.info(`[hv] worker ready`, { project, port });
                 projectReady.set(project, true);
                 // mark last load time for reload decisions
                 projectLastLoad.set(project, Date.now());

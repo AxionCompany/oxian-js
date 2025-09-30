@@ -12,7 +12,9 @@
 
 
 import type { EffectiveConfig } from "../config/types.ts";
-import { createLogger, makeRequestLog } from "../logging/logger.ts";
+// previous custom logger removed; use OTEL and minimal console
+import { trace, metrics } from "npm:@opentelemetry/api@1";
+ 
 import { createResponseController, finalizeResponse } from "../utils/response.ts";
 import { parseQuery, parseRequestBody, mergeData } from "../utils/request.ts";
 import type { Context, Data, Handler } from "../core/types.ts";
@@ -138,19 +140,20 @@ function applyCorsAndDefaults(headers: Headers, config: EffectiveConfig, req?: R
  */
 export async function startServer(opts: { config: EffectiveConfig; source?: string }, resolver: Resolver) {
 
-
-  const _root = resolver.resolve("");
   const { config, source: _source } = opts;
 
   const PERF = config.logging?.performance === true;
-  const logger = createLogger(config.logging?.level ?? "info");
-
-  // make logger globally available for deprecation messages
-  // and obey deprecations flag
-  (await import("../logging/logger.ts")).setCurrentLogger(logger, { deprecations: config.logging?.deprecations !== false });
+  const _OTEL_ENABLED = config.logging?.otel?.enabled === true || Deno.env.get("OTEL_DENO") === "true";
+  // Custom logger removed; rely on OTEL auto-instrumentation and console for perf-only logs
 
   const perfStart = performance.now();
   const resolved = await resolveRouter({ config }, resolver);
+  // Optional user OTEL hooks
+  try {
+    const tracer = trace.getTracer("oxian", "1");
+    const meter = metrics.getMeter("oxian", "1");
+    await config.logging?.otel?.hooks?.onInit?.({ tracer, meter });
+  } catch { /* ignore user hook errors */ }
   const perfEnd = performance.now();
   if (PERF) console.log('[perf][server] resolvedRouter', { ms: Math.round(perfEnd - perfStart) });
   const resolvedEnd = performance.now();
@@ -164,6 +167,8 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
 
     try {
       const url = new URL(req.url);
+      // Prefer hypervisor-provided project header; fallback to config/runtime default
+      const projectFromHv = req.headers.get("x-oxian-project") || "default";
       const basePath = config.basePath ?? "/";
       let path = url.pathname;
 
@@ -172,7 +177,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         const headers = new Headers();
         applyCorsAndDefaults(headers, config, req);
         const res = new Response(null, { status: 200, headers });
-        logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+        // minimal health response
         return res;
       }
 
@@ -186,10 +191,9 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
               const headers = new Headers(req.headers);
               try { headers.set("host", targetUrl.host); } catch { /* ignore */ }
               const res = await fetch(targetUrl.toString(), { method: req.method, headers, body: req.body });
-              logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: res.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
               return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
             } catch (e) {
-              logger.error("web_dev_proxy_error", { requestId, err: (e as Error)?.message });
+              console.error("web_dev_proxy_error", { requestId, err: (e as Error)?.message });
               return new Response("Dev proxy error", { status: 502 });
             }
           }
@@ -203,7 +207,6 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
               const ct = guessContentType(fileUrl.pathname);
               if (ct) headers.set("content-type", ct);
               if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
-              logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
               return new Response(file as string, { status: 200, headers });
             } catch {/* ignore and fallback to index */ }
             // SPA fallback
@@ -212,14 +215,12 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
               const file = await resolver.load(indexUrl);
               const headers = new Headers({ "content-type": "text/html; charset=utf-8" });
               if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
-              logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
               return new Response(file as string, { status: 200, headers });
             } catch { /* ignore */ }
           }
 
           const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
           applyCorsAndDefaults(headers, config, req);
-          logger.info("request", makeRequestLog({ requestId, route: url.pathname, method: req.method, status: 404, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
           return new Response(JSON.stringify({ error: { message: "Not found" } }), { status: 404, headers });
         }
         path = path.slice(basePath.length) || "/";
@@ -232,7 +233,6 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         const headers = new Headers();
         applyCorsAndDefaults(headers, config, req);
         const res = new Response(null, { status: 200, headers });
-        logger.info("request", makeRequestLog({ requestId, route: path, method: req.method, status: 200, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
         return res;
       }
 
@@ -240,7 +240,6 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
       if (req.method === "OPTIONS") {
         const headers = new Headers();
         applyCorsAndDefaults(headers, config, req);
-        logger.info("request", makeRequestLog({ requestId, route: path, method: req.method, status: 204, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
         return new Response(null, { status: 204, headers });
       }
 
@@ -291,7 +290,6 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
           // If no match found at "/", send a basic health check response
           controller.send({ ok: true, message: "Oxian running", routes: resolved.router.routes.map((r: { pattern: string }) => r.pattern) });
           const res = finalizeResponse(state);
-          logger.info("request", makeRequestLog({ requestId, route: path, method: req.method, status: state.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
           return res;
         }
         // If no match found at any path, send a 404 response
@@ -301,6 +299,24 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
           return new Response(JSON.stringify({ error: { message: "Not found" } }), { status: 404, headers });
         }
       }
+
+      // Enrich active span with route, project, and request id (OTEL) and call user start hook
+      try {
+        const activeSpan = trace.getActiveSpan();
+        if (activeSpan) {
+          const routePattern = (match as unknown as { route?: { pattern?: string } })?.route?.pattern ?? path;
+          activeSpan.setAttribute("http.route", routePattern);
+          activeSpan.setAttribute("oxian.project", projectFromHv);
+          activeSpan.setAttribute("http.request_id", requestId);
+          activeSpan.setAttribute("oxian.request_id", requestId);
+          try { activeSpan.updateName(`${req.method} ${routePattern}`); } catch { /* ignore */ }
+          try {
+            const tracer = trace.getTracer("oxian", "1");
+            const meter = metrics.getMeter("oxian", "1");
+            await config.logging?.otel?.hooks?.onRequestStart?.({ tracer, meter, span: activeSpan, requestId, method: req.method, url: req.url, project: projectFromHv });
+          } catch { /* ignore user hook errors */ }
+        }
+      } catch { /* ignore otel span errors */ }
 
       // Unified pipeline discovery
       let files;
@@ -345,12 +361,11 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
           if (PERF) console.log('[perf][server] runMiddlewares', { ms: Math.round(runMiddlewaresEnd - runMiddlewaresStart) });
         }
       } catch (err) {
-        logger.error("pipeline_error", { requestId, err: (err as Error)?.message, stack: (err as Error)?.stack });
+        console.error("pipeline_error", { requestId, err: (err as Error)?.message, stack: (err as Error)?.stack });
         const shaped = shapeError(err as unknown);
         state.status = shaped.status;
         state.body = shaped.body;
         const res = finalizeResponse(state);
-        logger.info("request", makeRequestLog({ requestId, route: (match as unknown as { route?: { pattern?: string } }).route?.pattern ?? path, method: req.method, status: state.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
         return res;
       }
 
@@ -384,17 +399,23 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
       const res = finalizeResponse(state);
       const finalizeResponseEnd = performance.now();
       if (PERF) console.log('[perf][server] finalizeResponse', { ms: Math.round(finalizeResponseEnd - finalizeResponseStart) });
-      logger.info("request", makeRequestLog({ requestId, route: (match as unknown as { route: { pattern: string } }).route.pattern, method: req.method, status: state.status, durationMs: Math.round(performance.now() - startedAt), headers: req.headers, scrubHeaders: config.security?.scrubHeaders }));
+      try {
+        const activeSpan = trace.getActiveSpan();
+        const tracer = trace.getTracer("oxian", "1");
+        const meter = metrics.getMeter("oxian", "1");
+        await config.logging?.otel?.hooks?.onRequestEnd?.({ tracer, meter, span: activeSpan ?? undefined, requestId, method: req.method, url: req.url, project: projectFromHv, status: res.status, durationMs: Math.round(performance.now() - startedAt) });
+      } catch { /* ignore user hook errors */ }
       return res;
+      
     } catch (err) {
-      const requestIdForErr = crypto.randomUUID();
-      logger.error("unhandled", { requestId: requestIdForErr, err: (err as Error).message });
+      const requestIdForErr = requestId;
+      console.error("unhandled", { requestId: requestIdForErr, err: (err as Error).message });
       const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
       applyCorsAndDefaults(headers, config, req);
       return new Response(JSON.stringify({ error: { message: "Internal Server Error" } }), { status: 500, headers });
     }
   });
 
-  logger.info("listening", { port: config.server?.port ?? 8080 });
+  if (PERF) console.log('[perf][server] listening', { port: config.server?.port ?? 8080 });
   await server.finished;
 } 
