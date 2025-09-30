@@ -12,6 +12,7 @@ Golden Rules
 3) Prefer placing long-lived resources (DB/clients) in dependencies.ts factories, not inside handlers.
 4) Use standard Web APIs (fetch, etc) and ESM. Avoid Node-only APIs.
 5) Keep files idempotent; hot reload swaps workers and re-imports modules.
+6) Observability: rely on Deno OpenTelemetry auto-instrumentation; emit logs via console.*; configure via `logging.otel` and optional `runtime.hv.otelCollector`.
 
 Quick Start
 -----------
@@ -221,6 +222,10 @@ This section describes the most relevant configuration keys. The full, authorita
       - staticCacheControl: Cache-control header for static assets.
     - projects: Multi-project configuration with per-project routing basePath and overrides.
       - Each project may set `idleTtlMs` (ms). When set, workers stop after being idle (no active requests/streams) for this duration. Default is disabled unless specified (provider → project → autoscale fallback).
+    - otelCollector (TS config only): Minimal built-in OTLP HTTP collector.
+      - enabled?: boolean; port?: number; pathPrefix?: string; onExport?: (input: { kind: "traces"|"metrics"|"logs"; headers: Record<string,string>; body: Uint8Array; contentType: string; project?: string }) => void | Promise<void>
+      - Workers default OTLP endpoint to this collector when `logging.otel.enabled=true` and no endpoint provided.
+      - Hypervisor injects `x-oxian-project` in OTLP headers so the collector can tag payloads by project.
 
 - permissions
   - net | read | write | env | ffi | hrtime | sys: Boolean | string[]. Future enforcement via hypervisor.
@@ -233,7 +238,7 @@ This section describes the most relevant configuration keys. The full, authorita
 - logging
   - level: `"debug" | "info" | "warn" | "error"`.
   - requestIdHeader: String. Header used to propagate request id.
-  - deprecations: Boolean. Show/hide deprecation warnings.
+  - otel: { enabled?: boolean; serviceName?: string; endpoint?: string; protocol?: "http/protobuf" | "http/json"; headers?: Record<string,string>; resourceAttributes?: Record<string,string>; propagators?: string; metricExportIntervalMs?: number; hooks?: { onInit?: Function; onRequestStart?: Function; onRequestEnd?: Function } }
 
 - compatibility
   - handlerMode: `"default" | "this" | "factory"` (legacy compatibility helpers).
@@ -322,6 +327,60 @@ Health & Observability
 ----------------------
 - Hypervisor exposes `HEAD /_health` for readiness.
 - Request IDs can be propagated via `logging.requestIdHeader`.
+ - OpenTelemetry (Deno): enable via `logging.otel.enabled=true`. To debug payloads, set `logging.otel.protocol = "http/json"` and decode body bytes with `new TextDecoder().decode(body)` in `hv.otelCollector.onExport`.
+
+Custom OTEL Hooks (recommended for advanced metrics/spans):
+```ts
+export default {
+  logging: {
+    otel: {
+      enabled: true,
+      hooks: {
+        onInit: ({ tracer, meter }) => {
+          const initCounter = meter.createCounter("app.init.count", { unit: "1" });
+          initCounter.add(1);
+        },
+        onRequestStart: ({ tracer, meter, span, requestId, method, url, project }) => {
+          span?.setAttribute("app.req.meta", `${project}:${method}`);
+          const active = meter.createUpDownCounter("http.server.active_requests", { unit: "1" });
+          active.add(1);
+        },
+        onRequestEnd: ({ span, meter, status, durationMs }) => {
+          span?.setAttribute("app.req.duration_ms", durationMs);
+          const active = meter.createUpDownCounter("http.server.active_requests", { unit: "1" });
+          active.add(-1);
+          const hist = meter.createHistogram("app.req.duration", { unit: "s" });
+          hist.record(durationMs / 1000);
+        }
+      }
+    }
+  }
+};
+```
+
+Built-in OTLP Collector (dev/local):
+```ts
+export default {
+  logging: { otel: { enabled: true, serviceName: "oxian-server" } },
+  runtime: {
+    hv: {
+      otelCollector: {
+        enabled: true,
+        port: 4318,
+        pathPrefix: "/v1",
+        onExport: async ({ kind, headers, body, contentType, project }) => {
+          console.log("[otel-collector] export", { kind, project, contentType, bytes: body.byteLength });
+        }
+      }
+    }
+  }
+};
+```
+
+Notes:
+- Prefer setting instrument units (e.g., "s", "ms", "By", "1") instead of encoding units in metric names.
+- Workers default to the built-in collector endpoint if `logging.otel.enabled=true` and no `endpoint` is set.
+- Hypervisor injects `x-oxian-project` into OTLP headers so the collector can tag payloads per project.
 
 Production Notes
 ----------------

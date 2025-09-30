@@ -28,6 +28,26 @@ The simplest way to configure Oxian is with `oxian.config.json`:
 }
 ```
 
+### Hypervisor OTLP Collector (TypeScript config)
+
+Enable a minimal built-in OTLP HTTP collector inside the hypervisor. Workers default their OTLP endpoint to this collector when `logging.otel.enabled=true` and no explicit `endpoint` is set.
+
+```typescript
+{
+  "runtime": {
+    "hv": {
+      "otelCollector": {
+        "enabled": boolean,
+        "port": number,        // default 4318
+        "pathPrefix": string,  // default "/v1"
+        // Called per export: { kind: "traces"|"metrics"|"logs", headers, body, contentType, project }
+        "onExport": Function
+      }
+    }
+  }
+}
+```
+
 ### TypeScript Configuration
 
 For dynamic configuration, use `oxian.config.ts`:
@@ -206,19 +226,28 @@ export default {
 {
   "logging": {
     // Log level
-    "level": "debug" | "info" | "warn" | "error", // default: "info"
-    
+    "level": "debug" | "info" | "warn" | "error",
+
     // Request ID header name
-    "requestIdHeader": string,       // default: "x-request-id"
-    
-    // Enable structured logging
-    "structured": boolean,           // default: true
-    
-    // Log format
-    "format": "json" | "pretty",     // default: "json"
-    
-    // Enable request logging
-    "requests": boolean              // default: true
+    "requestIdHeader": string,
+
+    // Deno OpenTelemetry auto-instrumentation
+    "otel": {
+      "enabled": boolean,
+      "serviceName": string,
+      "endpoint": string, // e.g., http://localhost:4318
+      "protocol": "http/protobuf" | "http/json",
+      "headers": Record<string, string>,
+      "resourceAttributes": Record<string, string>,
+      "propagators": string, // e.g., "tracecontext,baggage"
+      "metricExportIntervalMs": number,
+      // Optional hooks for custom spans/metrics
+      "hooks": {
+        "onInit"?: (input: { tracer?: unknown; meter?: unknown }) => unknown | Promise<unknown>,
+        "onRequestStart"?: (input: { tracer?: unknown; meter?: unknown; span?: unknown; requestId: string; method: string; url: string; project: string; state?: unknown }) => void | Promise<void>,
+        "onRequestEnd"?: (input: { tracer?: unknown; meter?: unknown; span?: unknown; requestId: string; method: string; url: string; project: string; status: number; durationMs: number; state?: unknown }) => void | Promise<void>
+      }
+    }
   }
 }
 ```

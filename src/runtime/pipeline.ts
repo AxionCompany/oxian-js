@@ -34,16 +34,14 @@ export function shapeError(err: unknown): { status: number; body: unknown } {
 
 async function callHandlerWithCompatibility(modExport: unknown, data: Record<string, unknown>, context: Context, _state: ResponseState, handlerMode: string | undefined): Promise<unknown> {
   if (handlerMode === "this") {
-    const { logDeprecation } = await import("../logging/logger.ts");
-    logDeprecation("handlerMode 'this' is deprecated. Please migrate to (data, context)");
+    console.warn("[oxian] DEPRECATED: handlerMode 'this' is deprecated. Please migrate to (data, context)");
     if (typeof modExport !== "function") throw new Error("Invalid handler export");
     const bound = (modExport as (this: unknown, ...args: unknown[]) => unknown).bind(context.dependencies);
     // provide (data, { response })
     return await bound(data, { response: context.response });
   }
   if (handlerMode === "factory") {
-    const { logDeprecation } = await import("../logging/logger.ts");
-    logDeprecation("handlerMode 'factory' is deprecated. Please migrate to (data, context)");
+    console.warn("[oxian] DEPRECATED: handlerMode 'factory' is deprecated. Please migrate to (data, context)");
     if (typeof modExport !== "function") throw new Error("Invalid factory export");
     const fn = (modExport as (deps: unknown) => unknown)(context.dependencies);
     if (typeof fn !== "function") throw new Error("Factory did not return a function");

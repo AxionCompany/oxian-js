@@ -488,30 +488,35 @@ curl http://localhost:8080/_health
 curl http://localhost:9101/_health
 ```
 
-### Logging
+### OpenTelemetry
 
-The hypervisor provides structured logging:
+Oxian leverages Deno’s OpenTelemetry integration. Each incoming request creates a span; standard attributes are set automatically, and Oxian adds `http.route` and `oxian.project` when the route is known. Metrics are exported for request duration, active requests, and body sizes. `console.*` output is exported as OTLP logs.
 
-```json
-{
-  "timestamp": "2024-01-20T10:30:00.000Z",
-  "level": "info",
-  "message": "[hv] proxy",
-  "data": {
-    "method": "GET",
-    "url": "http://localhost:8080/api/users",
-    "selected": "api",
-    "target": "http://localhost:9101/users",
-    "requestId": "req_abc123"
+For local development you can run a minimal built-in OTLP HTTP collector inside the hypervisor and receive export callbacks:
+
+```ts
+export default {
+  logging: { otel: { enabled: true, serviceName: "oxian-server" } },
+  runtime: {
+    hv: {
+      otelCollector: {
+        enabled: true,
+        port: 4318,
+        pathPrefix: "/v1",
+        onExport: async ({ kind, headers, body, contentType, project }) => {
+          console.log("[otel-collector] export", { kind, project, contentType, bytes: body.byteLength });
+        }
+      }
+    }
   }
-}
+};
 ```
 
-Enable debug logging:
-
-```bash
-OXIAN_LOG_LEVEL=debug deno run -A jsr:@oxian/oxian-js
-```
+Notes:
+- When `logging.otel.enabled` is true and no `endpoint` is provided, workers default to the built-in collector (`http://127.0.0.1:<port>`).
+- The hypervisor injects `x-oxian-project: <project>` into OTLP headers so the collector can tag payloads.
+- To inspect payloads, set `logging.otel.protocol = "http/json"` and decode `body` as text/JSON.
+ - For custom spans/metrics per request, define `logging.otel.hooks` (see instrumentation.md). Hooks receive the active span and a meter instance.
 
 ### Metrics
 

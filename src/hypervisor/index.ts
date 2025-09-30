@@ -63,9 +63,35 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
     manager.registerWorker(project, worker);
   }
 
-  if (PERF) console.log('[perf][hv] public listening', { port: publicPort });
+  const OTEL_OR_COLLECTOR = (config.logging?.otel?.enabled === true) || (hv.otelCollector?.enabled === true);
+  if (PERF) console.log('[perf][hv] public listening', { project: 'default', port: publicPort });
   // Start idle checker to reap idle workers
   manager.startIdleChecker();
+  // Optional built-in OTLP HTTP collector
+  let collectorServer: Deno.HttpServer | undefined;
+  if (hv.otelCollector?.enabled) {
+    const collectorPort = hv.otelCollector.port ?? 4318;
+    const prefix = (hv.otelCollector.pathPrefix ?? "/v1").replace(/\/$/, "");
+    const onExport = hv.otelCollector.onExport;
+    const routes = new Map<string, "traces" | "metrics" | "logs">([
+      ["/traces", "traces"],
+      ["/metrics", "metrics"],
+      ["/logs", "logs"],
+    ]);
+    collectorServer = Deno.serve({ port: collectorPort }, async (req) => {
+      const url = new URL(req.url);
+      const trimmed = url.pathname.startsWith(prefix) ? url.pathname.slice(prefix.length) : url.pathname;
+      const kind = routes.get(trimmed);
+      if (!kind) return new Response("Not found", { status: 404 });
+      const ct = req.headers.get("content-type") || "";
+      const hdrs: Record<string, string> = {};
+      req.headers.forEach((v, k) => { hdrs[k] = v; });
+      const ab = await req.arrayBuffer().catch(() => new ArrayBuffer(0));
+      const projectFromHeader = req.headers.get("x-oxian-project") || undefined;
+      try { await onExport?.({ kind, headers: hdrs, body: new Uint8Array(ab), contentType: ct, project: projectFromHeader }); } catch { /* ignore user callback errors */ }
+      return new Response(null, { status: 202 });
+    });
+  }
   const server = Deno.serve({ port: publicPort }, async (req) => {
     const url = new URL(req.url);
 
@@ -137,10 +163,12 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
       const hdr = config.logging?.requestIdHeader ?? "x-request-id";
       if (!headers.has(hdr)) headers.set(hdr, crypto.randomUUID());
     }
+    // Always forward selected project to worker for logging/metrics
+    try { headers.set("x-oxian-project", selected.project); } catch { /* ignore */ }
 
     try {
       const p0 = performance.now();
-      if (!PERF) console.log(`[hv] proxy`, { method: req.method, url: url.toString(), selected: selected.project, target });
+      if (!PERF && !OTEL_OR_COLLECTOR) console.log(`[hv] proxy`, { project: selected.project, method: req.method, url: url.toString(), selected: selected.project, target });
       const abortTimeoutMs = hv.proxy?.timeoutMs ?? 30000;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), abortTimeoutMs);
@@ -149,8 +177,8 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
       manager.markProjectActivity(selected.project);
       const res = await fetch(target, { method: req.method, headers, body: req.body, signal: controller.signal });
       clearTimeout(timer);
-      if (PERF) console.log('[perf][hv] proxy_res', { status: res.status, target, ms: Math.round(performance.now() - p0) });
-      else console.log(`[hv] proxy_res`, { status: res.status, statusText: res.statusText, target });
+      if (PERF) console.log('[perf][hv] proxy_res', { project: selected.project, status: res.status, target, ms: Math.round(performance.now() - p0) });
+      else if (!OTEL_OR_COLLECTOR) console.log(`[hv] proxy_res`, { project: selected.project, status: res.status, statusText: res.statusText, target });
       const body = res.body;
       if (!body) {
         manager.decrementInflight(selected.project);
@@ -175,7 +203,7 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
       })();
       return new Response(proxied, { status: res.status, statusText: res.statusText, headers: res.headers });
     } catch (e) {
-      console.error(`[hv] proxy_err`, { target, err: (e as Error)?.message });
+      if (!OTEL_OR_COLLECTOR) console.error(`[hv] proxy_err`, { project: selected.project, target, err: (e as Error)?.message });
       // Auto-heal: restart target project and retry once or queue
       try {
         await manager.restartProject(selected.project);
@@ -228,9 +256,14 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
     try {
       const [b1, b2] = req.body ? req.body.tee() : [null, null] as unknown as [ReadableStream<Uint8Array> | null, ReadableStream<Uint8Array> | null];
       body = b1;
-      cloned = new Request(req, { body: b2 ?? undefined });
+      // ensure project header is present on queued request
+      const h = new Headers(req.headers);
+      try { h.set("x-oxian-project", project); } catch { /* ignore */ }
+      cloned = new Request(req, { body: b2 ?? undefined, headers: h });
     } catch {
-      cloned = new Request(req);
+      const h = new Headers(req.headers);
+      try { h.set("x-oxian-project", project); } catch { /* ignore */ }
+      cloned = new Request(req, { headers: h });
     }
     // For safety, consume up to maxBodyBytes if present
     if (body) {
@@ -251,7 +284,9 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
       const merged = new Uint8Array(received);
       let offset = 0;
       for (const c of chunks) { merged.set(c, offset); offset += c.byteLength; }
-      cloned = new Request(req, { body: merged });
+      const h2 = new Headers(req.headers);
+      try { h2.set("x-oxian-project", project); } catch { /* ignore */ }
+      cloned = new Request(req, { body: merged, headers: h2 });
     }
 
     const resP = new Promise<Response>((resolve, reject) => {
@@ -300,6 +335,7 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
   }
 
   await server.finished;
+  try { await collectorServer?.finished; } catch { /* ignore */ }
   try { manager.shutdown(); } catch { /* ignore */ }
   for (const { entry: p } of manager.getPoolsArray()) {
     try { p.proc.kill(); } catch (_e) { /* ignore kill error */ }

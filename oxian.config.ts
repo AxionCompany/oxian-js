@@ -6,7 +6,21 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
         github: { enabled: true, tokenEnv: "GITHUB_TOKEN", cacheTtlSec: 60 },
     },
     server,
-    logging: { ...logging, requestIdHeader: "x-request-id" },
+    logging: {
+        ...logging,
+        requestIdHeader: "x-request-id",
+        // Enable Deno OTEL auto-instrumentation and configure exporter/resource
+        otel: {
+            enabled: true,
+            serviceName: "oxian-server",
+            // When omitted, workers will default to the built-in collector below
+            // endpoint: "http://localhost:4318",
+            protocol: "http/json",
+            propagators: "tracecontext,baggage",
+            resourceAttributes: { env: "local" },
+            metricExportIntervalMs: 60000,
+        },
+    },
     routing: { routesDir: "routes", trailingSlash: "preserve", discovery: "eager" },
     security: {
         cors: {
@@ -24,6 +38,21 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
             merge: "shallow",
         },
         hv: {
+            // Minimal built-in OTLP HTTP collector; workers default to this when no endpoint provided above
+            otelCollector: {
+                enabled: true,
+                port: 4318,
+                pathPrefix: "/v1",
+                onExport: async ({ kind, headers, body, contentType, project }) => {
+                    if ((contentType || "").includes("json")) {
+                        const text = new TextDecoder().decode(body);
+                        const json = JSON.stringify(JSON.parse(text));
+                        console.log("[otel-collector] export json", json );
+                    } else {
+                        console.log("[otel-collector] export binary", { kind, project, contentType, bytes: body.byteLength });
+                    }
+                },
+            },
             provider: async ({ req }: { req: Request; project: string }) => {
                 if (req) {
                     const host = new URL(req.url).hostname;

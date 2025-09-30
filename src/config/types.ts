@@ -117,6 +117,20 @@ export type OxianConfig = {
         denoConfig?: string; // per-project override
         dependencies?: { initial?: Record<string, unknown> };
       }>;
+      // Built-in minimal OTLP HTTP collector (http/protobuf or http/json)
+      otelCollector?: {
+        enabled?: boolean;
+        port?: number; // default 4318
+        pathPrefix?: string; // default "/v1"
+        // Called for each export request; body is raw bytes (opaque to oxian)
+        onExport?: (input: {
+          kind: "traces" | "metrics" | "logs";
+          headers: Record<string, string>;
+          body: Uint8Array;
+          contentType: string;
+          project?: string;
+        }) => void | Promise<void>;
+      };
       // Single provider function (optional). When provided:
       // - At request time: called with { req } to choose a project and optional path rewrite.
       // - At spawn time: called with { project } to supply per-project overrides (source/config/env/token).
@@ -203,6 +217,35 @@ export type OxianConfig = {
     requestIdHeader?: string;
     deprecations?: boolean; // default true
     performance?: boolean; // enable perf timing logs
+    // Optional structured log event callback; invoked for server and hypervisor events
+    onEvent?: (event: { level: "debug" | "info" | "warn" | "error"; time: string; source: string; project: string; payload: Record<string, unknown> }) => void;
+    // Control console output; true by default
+    console?: boolean;
+    // Sampling for callbacks (0..1). Default 1 (no sampling)
+    sampleRate?: number;
+    // Additional headers to redact in request logs
+    redactHeaders?: string[];
+    // When true, server consolidates a single end-of-request log with req/res and stdout
+    consolidateServerRequestLog?: boolean;
+    // When true, server attempts to capture console.* during request and include in stdout (best-effort)
+    captureConsole?: boolean;
+    // OpenTelemetry integration for workers and server
+    otel?: {
+      enabled?: boolean;
+      serviceName?: string;
+      endpoint?: string; // e.g., http://localhost:4318
+      protocol?: "http/protobuf" | "http/json";
+      headers?: Record<string, string>; // exporter headers
+      resourceAttributes?: Record<string, string>; // additional OTEL_RESOURCE_ATTRIBUTES
+      propagators?: string; // e.g., "tracecontext,baggage"
+      metricExportIntervalMs?: number; // OTEL_METRIC_EXPORT_INTERVAL
+      // Optional user hooks for custom spans/metrics
+      hooks?: {
+        onInit?: (input: { tracer?: unknown; meter?: unknown }) => unknown | Promise<unknown>;
+        onRequestStart?: (input: { tracer?: unknown; meter?: unknown; span?: unknown; requestId: string; method: string; url: string; project: string; state?: unknown }) => void | Promise<void>;
+        onRequestEnd?: (input: { tracer?: unknown; meter?: unknown; span?: unknown; requestId: string; method: string; url: string; project: string; status: number; durationMs: number; state?: unknown }) => void | Promise<void>;
+      };
+    };
   };
   compatibility?: {
     handlerMode?: "default" | "this" | "factory";
