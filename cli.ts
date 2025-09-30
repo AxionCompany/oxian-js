@@ -320,7 +320,6 @@ if (import.meta.main) {
           // continue to next candidate
         }
       }
-      console.log('[cli] discovered', bases, discovered);
       // Shallow overlay: remote overrides local
       if (discovered && typeof discovered === "object") {
         const d = discovered as Partial<OxianConfig>;
