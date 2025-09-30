@@ -28,4 +28,5 @@ build/
 
 # Project specific
 deno/
+.projects/
 

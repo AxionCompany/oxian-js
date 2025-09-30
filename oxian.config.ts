@@ -11,7 +11,7 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
         requestIdHeader: "x-request-id",
         // Enable Deno OTEL auto-instrumentation and configure exporter/resource
         otel: {
-            enabled: true,
+            enabled: false,
             serviceName: "oxian-server",
             // When omitted, workers will default to the built-in collector below
             // endpoint: "http://localhost:4318",
@@ -43,17 +43,17 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
                 enabled: true,
                 port: 4318,
                 pathPrefix: "/v1",
-                onExport: async ({ kind, headers, body, contentType, project }) => {
+                onExport: async ({ kind, headers: _headers, body, contentType, project }: { kind: string; headers: Record<string, string>; body: Uint8Array; contentType: string; project?: string }) => {
                     if ((contentType || "").includes("json")) {
                         const text = new TextDecoder().decode(body);
                         const json = JSON.stringify(JSON.parse(text));
-                        console.log("[otel-collector] export json", json );
+                        console.log("[otel-collector] export json", json);
                     } else {
                         console.log("[otel-collector] export binary", { kind, project, contentType, bytes: body.byteLength });
                     }
                 },
             },
-            provider: async ({ req }: { req: Request; project: string }) => {
+            provider: async ({ req }: { req: Request }) => {
                 if (req) {
                     const host = new URL(req.url).hostname;
                     if (host === "localhost") return {
@@ -65,7 +65,8 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
                         source: "github:AxionCompany/oxian-js?ref=main",
                         env: { CUSTOM: "1" },
                         githubToken: Deno.env.get("GITHUB_TOKEN") || undefined,
-                        isolated: true,
+                        isolated: true,          // materialize into ./deno/github
+                        // materialize: true
                     };
                     return { project: "local" };
                 }
@@ -77,4 +78,5 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
         middlewareMode: "this",
         useMiddlewareRequest: true,
     },
+    // preRun: ['touch test.txt'],
 });

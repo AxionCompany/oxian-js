@@ -117,8 +117,8 @@ async function writeTextWithPrompt(path: string, content: string) {
 if (import.meta.main) {
 
   const args = parseArgs(Deno.args, {
-    string: ["config", "source", "port", "deno-config", "out"],
-    boolean: ["help", "hypervisor", "test", "force"],
+    string: ["config", "source", "port", "deno-config", "out", "materialize-dir"],
+    boolean: ["help", "hypervisor", "test", "force", "materialize", "materialize-refresh"],
     alias: { h: "help", hv: "hypervisor", f: "force" },
     default: {
       hypervisor: true,
@@ -129,8 +129,86 @@ if (import.meta.main) {
 
 
   if (args.help) {
-    console.log(`Oxian CLI\n\nUsage:\n  deno run -A cli.ts [--config=oxian.config.ts] [--port=8080] [--source=...] [--hypervisor] [--deno-config=path/to/deno.json]\n\nCommands:\n  routes           Print resolved routes\n  start            Start server (same as default)\n  dev              Start server with dev options (watch, hot-reload)\n  init             Initialize project files (oxian.config.json, deno.json, llm.txt)\n  init-llm         Copy llm.txt to your repo (use --out=FILE and --force to overwrite)\n`);
+    console.log(`Oxian CLI\n\nUsage:\n  deno run -A cli.ts [command] [options]\n\nCommands:\n  routes                   Print resolved routes\n  start|dev                Start server (default)\n  init                     Initialize project files (oxian.config.json, deno.json, llm.txt)\n  init-llm                 Copy llm.txt to your repo (use --out=FILE and --force to overwrite)\n  materialize              Download and extract remote source locally\n\nOptions:\n  --config=PATH            Config file path or URL\n  --source=SPEC            Source path or URL (file:, github:, https:)\n  --port=N                 Port\n  --deno-config=PATH       Forwarded Deno config for workers\n  --materialize            Enable materialize (boolean)\n  --materialize-dir=DIR    Target directory for materialization (default: current dir/.oxian/materialized)\n  --materialize-refresh    Force re-download/extract\n`);
     Deno.exit(0);
+  }
+  // Standalone materialize subcommand (no server/hypervisor); avoids allow-run usage
+  if (cmd === "materialize") {
+    try {
+      const source = typeof args.source === "string" ? args.source : undefined;
+      if (!source) throw new Error("--source is required for materialize");
+      const envDefaults: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+      envDefaults.tokenValue = envDefaults.tokenEnv ? Deno.env.get(envDefaults.tokenEnv) : undefined;
+      const resolverForMat = createResolver(new URL(source), envDefaults);
+      if (!resolverForMat.materialize) throw new Error("materialize not supported for this source");
+      const dir = typeof args["materialize-dir"] === "string" ? args["materialize-dir"] : `${Deno.cwd()}`;
+      const refresh = args["materialize-refresh"] === true;
+      const { rootDir, ref, sha, subdir } = await resolverForMat.materialize({ dir, refresh });
+      console.log(JSON.stringify({ ok: true, rootDir: rootDir.toString(), ref, sha, subdir }));
+      Deno.exit(0);
+    } catch (e) {
+      console.error("[cli] materialize error", (e as Error)?.message);
+      Deno.exit(1);
+    }
+  }
+  let source = typeof args.source === "string" ? args.source : undefined;
+
+  if (cmd === "prepare") {
+
+    if ((source?.startsWith("https:") || source?.startsWith("http:") || source?.startsWith("github:"))){
+      Deno.exit(0);
+    }
+
+    try {
+      if (!source) {
+        source = Deno.cwd();
+      }
+      const envDefaults: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+      envDefaults.tokenValue = envDefaults.tokenEnv ? Deno.env.get(envDefaults.tokenEnv) : undefined;
+      const rootUrl = source.startsWith("file:") ? new URL(source) : new URL(`file://${source}`);
+      const matResolver = createResolver(rootUrl, envDefaults);
+      const candidates = [
+        "oxian.config.ts",
+        "oxian.config.js",
+        "oxian.config.mjs",
+        "oxian.config.json",
+      ];
+      let matConfig: unknown = undefined;
+      for (const name of candidates) {
+        try {
+          const mod = await matResolver.import(name);
+          const pick = (mod?.default ?? (mod as { config?: unknown })?.config ?? mod) as unknown;
+          matConfig = pick;
+          break;
+        } catch { /* try next */ }
+      }
+      const cfgObj = (typeof matConfig === "function") ? await (matConfig as (defaults: Partial<OxianConfig>) => Partial<OxianConfig>)({}) : (matConfig as Partial<OxianConfig> | undefined);
+      const hooks = (cfgObj as { preRun?: Array<string | { cmd: string; cwd?: string; env?: Record<string, string> }> })?.preRun;
+      if (hooks && Array.isArray(hooks) && hooks.length) {
+        for (const h of hooks) {
+          const c = typeof h === "string" ? h : h.cmd;
+          if (!c || !c.trim()) continue;
+          const cwd = typeof h === "string" ? undefined : h.cwd;
+          const env = typeof h === "string" ? undefined : h.env;
+          const shell = Deno.build.os === "windows" ? ["cmd", "/c", c] : ["/bin/sh", "-lc", c];
+          const proc = new Deno.Command(shell[0], {
+            args: shell.slice(1),
+            stdin: "null",
+            stdout: "inherit",
+            stderr: "inherit",
+            cwd: cwd ?? fromFileUrl(rootUrl),
+            env: env ? { ...env } : undefined,
+          });
+          const out = await proc.output();
+          if (!out.success) throw new Error(`[cli] prepare failed: ${c}`);
+        }
+      }
+      console.log(JSON.stringify({ ok: true }));
+      Deno.exit(0);
+    } catch (e) {
+      console.error("[cli] prepare error", (e as Error)?.message);
+      Deno.exit(1);
+    }
   }
 
   // Handle init before loading config
@@ -242,6 +320,7 @@ if (import.meta.main) {
           // continue to next candidate
         }
       }
+      console.log('[cli] discovered', bases, discovered);
       // Shallow overlay: remote overrides local
       if (discovered && typeof discovered === "object") {
         const d = discovered as Partial<OxianConfig>;
@@ -254,6 +333,8 @@ if (import.meta.main) {
           ...(d.runtime ? { runtime: { ...config.runtime, ...d.runtime } } : {}),
           ...(d.security ? { security: { ...config.security, ...d.security } } : {}),
           ...(d.loaders ? { loaders: { ...config.loaders, ...d.loaders } } : {}),
+          ...(d.web ? { web: { ...config.web, ...d.web } } : {}),
+          ...(d.preRun ? { preRun: { ...config.preRun, ...d.preRun } } : {}),
           ...(d.compatibility ? { compatibility: { ...config.compatibility, ...d.compatibility } } : {}),
           server: { port: port ?? d.server?.port ?? config.server.port },
         } as EffectiveConfig;
@@ -278,7 +359,6 @@ if (import.meta.main) {
     } as EffectiveConfig;
   }
 
-  console.log('config for server', bases, config);
 
   if (cmd === "routes") {
     if (!resolver) {
@@ -332,6 +412,20 @@ if (import.meta.main) {
     const envDefaults3: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
     envDefaults3.tokenValue = envDefaults3.tokenEnv ? Deno.env.get(envDefaults3.tokenEnv) : undefined;
     resolver = createResolver(sourceStr ? new URL(sourceStr) : undefined, envDefaults3);
+  }
+  // Optional inline materialize for worker/server process when --materialize flag is provided
+  try {
+    const doMaterialize = args.materialize === true;
+    if (doMaterialize && typeof args.source === "string" && typeof resolver.materialize === "function") {
+      const envDefaults3: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+      envDefaults3.tokenValue = envDefaults3.tokenEnv ? Deno.env.get(envDefaults3.tokenEnv) : undefined;
+      const matDir = typeof args["materialize-dir"] === "string" ? args["materialize-dir"] : ".";
+      const refresh = args["materialize-refresh"] === true;
+      const { rootDir } = await resolver.materialize({ dir: matDir, refresh });
+      resolver = createResolver(rootDir, envDefaults3);
+    }
+  } catch (e) {
+    console.error("[cli] inline materialize failed", (e as Error)?.message);
   }
   await startServer({ config, source: sourceStr }, resolver);
 } 

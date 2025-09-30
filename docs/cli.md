@@ -114,6 +114,36 @@ Routes:
   GET    /docs/*               routes/docs/[...slug].ts
 ```
 
+### `materialize` - Download/Extract Remote Source
+
+Download and extract a remote source (e.g., GitHub) to a local directory. Outputs a JSON with the local `file://` root.
+
+```bash
+deno run -A jsr:@oxian/oxian-js materialize \
+  --source=github:owner/repo?ref=main \
+  --materialize-dir=.
+
+# Example output
+{"ok":true,"rootDir":"file:///abs/path/.oxian/materialized/github/owner/repo/<sha>/","ref":"main","sha":"<sha>","subdir":null}
+```
+
+Flags:
+- `--source`: remote specifier (github:, https:) or file://
+- `--materialize-dir`: destination directory (default: current directory)
+- `--materialize-refresh`: force re-download and re-extract
+
+### `prepare` - Run preRun Hooks in a Materialized Root
+
+Execute `preRun` commands declared in the materialized project’s `oxian.config.*` (e.g., install deps, build assets).
+
+```bash
+deno run -A jsr:@oxian/oxian-js prepare --source=file:///abs/path/.oxian/materialized/github/owner/repo/<sha>/
+```
+
+Notes:
+- `prepare` expects `--source` to point at a local `file://` root previously produced by `materialize`.
+- Commands run using `/bin/sh -lc` (POSIX) or `cmd /c` (Windows).
+
 ## Configuration Options
 
 ### Global Flags

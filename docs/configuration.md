@@ -125,7 +125,17 @@ export default {
   "logging": LoggingConfig,
   
   // Loader configuration
-  "loaders": LoadersConfig
+  "loaders": LoadersConfig,
+  
+  // Preferred top-level web config used by workers (fallback: runtime.hv.web)
+  "web": {
+    "devProxyTarget": string,
+    "staticDir": string,
+    "staticCacheControl": string
+  },
+  
+  // Optional pre-run commands executed after materialization (in materialized root)
+  "preRun": Array<string | { cmd: string; cwd?: string; env?: Record<string,string> }>
 }
 ```
 

@@ -170,10 +170,16 @@ The hypervisor supports hosting multiple projects/applications with intelligent 
         }
       },
       // Optional: provider (TypeScript config only)
-      // Called once per request; returns project and per-worker overrides
-      // Type: (input: { req: Request } | { project: string }) => Promise<{
-      //   project: string; source?: string; config?: string; env?: Record<string,string>;
-      //   githubToken?: string; stripPathPrefix?: string; isolated?: boolean
+      // Called once per request with { req }; returns project and overrides
+      // Type: (input: { req: Request }) => Promise<{
+      //   project: string;
+      //   source?: string;            // file:// or github:...
+      //   config?: string;            // per-project config path/URL
+      //   env?: Record<string,string>;
+      //   githubToken?: string;
+      //   stripPathPrefix?: string;
+      //   isolated?: boolean;         // run worker in ./.projects/<project>
+      //   materialize?: boolean | { mode?: "auto"|"always"|"never"; dir?: string; refresh?: boolean };
       // }> | { ... }
       "provider": "ts-only",
       // Or use declarative selection rules
@@ -183,14 +189,16 @@ The hypervisor supports hosting multiple projects/applications with intelligent 
 }
 ```
 
-### Per-project Web Configuration
+### Web Configuration (preferred top-level)
 
-You can configure per-project web behavior that overlays the global `hv.web`. The hypervisor first selects the project based on provider/rules, then:
+Preferred: set `web` at the configuration top level (`config.web`) so workers (which actually serve static/dev proxy) read it directly. For backward compatibility, `runtime.hv.web` is still supported and used as a fallback.
+
+You can still configure per-project web behavior that overlays the global `web`. The hypervisor first selects the project based on provider/rules, then:
 
 1. Determines the effective API base path: `hv.projects[project].routing.basePath` → global `basePath` → `/`.
 2. If the request path does not start with that base path, it applies the selected project’s `web` config (merged with global `hv.web`).
 
-Available per-project `web` options:
+Available `web` options:
 - `devProxyTarget`: Proxy non-API paths to a dev server (e.g., `http://localhost:5173`).
 - `staticDir`: Serve static files for non-API paths in production; falls back to `index.html` for SPA routes.
 - `staticCacheControl`: Optional cache-control header for static asset responses.
@@ -199,9 +207,9 @@ Example:
 
 ```json
 {
+  "web": { "staticDir": "dist" },
   "runtime": {
     "hv": {
-      "web": { "staticDir": "dist" },
       "projects": {
         "appA": {
           "routing": { "basePath": "/api" },
@@ -533,7 +541,10 @@ Monitor key metrics:
 ### Startup Process
 
 1. **Hypervisor starts** on main port (8080)
-2. **Workers spawn** on sequential ports (9101, 9102, ...)
+2. If project requires materialization:
+   - Run `materialize` once to download/extract remote source to the worker cwd (isolated → `./.projects/<project>`)
+   - Run `prepare` to execute `preRun` hooks defined in the materialized `oxian.config.*`
+3. **Workers spawn** on sequential ports (9101, 9102, ...) with `--source` pointing to the materialized `file://` root (workers do not need `--allow-run`)
 3. **Health checks** verify worker readiness
 4. **Load balancer** starts routing requests
 
