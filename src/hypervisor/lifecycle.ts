@@ -356,7 +356,6 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                     `--materialize-dir=.`,
                     ...(m.refresh ? ["--materialize-refresh"] : []),
                 ];
-                console.log('[hv] matArgs', matArgs);
                 const matCmd = new Deno.Command(Deno.execPath(), {
                     args: matArgs,
                     stdin: "null",
@@ -372,15 +371,12 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                 try {
                     const text = new TextDecoder().decode(out.stdout);
                     const parsed = JSON.parse(text) as { ok?: boolean; rootDir?: string };
-                    console.log('[hv] parsed', parsed);
                     if (parsed?.rootDir) {
                         // Ensure we pass a clean file:// URL as source
                         effectiveSource = parsed.rootDir;
                     }
-                    console.log('[hv] effectiveSource', effectiveSource);
                 } catch { /* ignore parse errors */ }
 
-                console.log('[hv] effectiveSource', effectiveSource);
             }
 
             // Second step: run prepare (preRun hooks) in the materialized root
