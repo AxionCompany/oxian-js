@@ -81,8 +81,8 @@ export async function discoverPipelineFiles(
 
         const exists = async (input: string | URL): Promise<boolean> => {
             // Prefer import-based existence check to leverage Deno cache;
-            const exists = await resolver.import(input.toString())
-                .then(m => m.default ? true : false)
+            const exists = await resolver.stat(await resolver.resolve(input))
+                .then(m => m.isFile ? true : false)
                 .catch(() => false);
             return exists;
         };

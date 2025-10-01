@@ -1,6 +1,6 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "exports": {
     ".": "./cli.ts",
     "./server": "./src/server/server.ts",
@@ -44,7 +44,8 @@
     "@std/path": "jsr:@std/path@1.1.1",
     "@std/cli/parse-args": "jsr:@std/cli@1.0.21/parse-args",
     "@std/jsonc/parse": "jsr:@std/jsonc@1.0.2/parse",
-    "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64"
+    "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64",
+    "@kitsonk/kv-toolbox": "jsr:@kitsonk/kv-toolbox@0.0.11"
   },
   "lock": false
 }

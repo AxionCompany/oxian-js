@@ -178,7 +178,12 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         // is passed down to spawnWorker via 'selected'. Avoid calling provider here with { project }
         // to keep the request as the single source of truth.
 
-        const resolver = createResolver(selectedMerged.source || config.root, { tokenEnv: "GITHUB_TOKEN", tokenValue: selectedMerged.githubToken });
+        const forceReload = denoOptions.some((arg) => arg === "--reload" || arg === "-r" || arg.startsWith("--reload="));
+        const resolver = createResolver(selectedMerged.source || config.root, { 
+            tokenEnv: "GITHUB_TOKEN", 
+            tokenValue: selectedMerged.githubToken,
+            forceReload
+        });
 
         const hostDenoCfg = (denoOptions.find((a) => a.startsWith("--deno-config="))?.split("=")[1])
             || hv.denoConfig

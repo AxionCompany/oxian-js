@@ -1,6 +1,7 @@
 # Deno
 deno.lock
 deno_dir/
+.deno/
 .DS_Store
 
 # Logs
