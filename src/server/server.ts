@@ -28,81 +28,42 @@ import { buildLocalChain, buildRemoteChain, discoverPipelineFiles } from "../run
 import type { Resolver } from "../resolvers/types.ts";
 
 /**
- * Patches console methods to automatically inject request_id into log attributes.
- * This allows using regular console.log() while ensuring OTEL collectors can read request_id.
- * Returns a cleanup function to restore original console methods.
+ * Structured logger that ensures request_id is always attached to OTEL log records.
+ * When using Deno's auto-instrumentation, console.log/error are captured as log records,
+ * but we must include the request_id as a log attribute for the collector to read.
  */
-function patchConsoleForRequest(requestId: string): () => void {
-  const originalLog = console.log;
-  const originalError = console.error;
-  const originalWarn = console.warn;
-  const originalDebug = console.debug;
-
-  // Patch console methods to inject request_id attributes
-  console.log = (message?: unknown, ...optionalParams: unknown[]) => {
-    const firstParam = optionalParams[0];
-    if (firstParam && typeof firstParam === 'object' && !Array.isArray(firstParam)) {
-      // If first param is an object, merge request_id into it
-      originalLog(message, {
+function createRequestLogger(requestId: string) {
+  return {
+    info: (message: string, attributes?: Record<string, unknown>) => {
+      console.log(message, {
         "oxian.request_id": requestId,
-        ...firstParam as Record<string, unknown>,
-      }, ...optionalParams.slice(1));
-    } else {
-      // Otherwise, add request_id as second parameter
-      originalLog(message, {
+        "request.id": requestId,
+        ...attributes,
+      });
+    },
+    error: (message: string, attributes?: Record<string, unknown>) => {
+      console.error(message, {
         "oxian.request_id": requestId,
-      }, ...optionalParams);
-    }
-  };
-
-  console.error = (message?: unknown, ...optionalParams: unknown[]) => {
-    const firstParam = optionalParams[0];
-    if (firstParam && typeof firstParam === 'object' && !Array.isArray(firstParam)) {
-      originalError(message, {
+        "request.id": requestId,
+        ...attributes,
+      });
+    },
+    warn: (message: string, attributes?: Record<string, unknown>) => {
+      console.warn(message, {
         "oxian.request_id": requestId,
-        ...firstParam as Record<string, unknown>,
-      }, ...optionalParams.slice(1));
-    } else {
-      originalError(message, {
-        "oxian.request_id": requestId,
-      }, ...optionalParams);
-    }
-  };
-
-  console.warn = (message?: unknown, ...optionalParams: unknown[]) => {
-    const firstParam = optionalParams[0];
-    if (firstParam && typeof firstParam === 'object' && !Array.isArray(firstParam)) {
-      originalWarn(message, {
-        "oxian.request_id": requestId,
-        ...firstParam as Record<string, unknown>,
-      }, ...optionalParams.slice(1));
-    } else {
-      originalWarn(message, {
-        "oxian.request_id": requestId,
-      }, ...optionalParams);
-    }
-  };
-
-  console.debug = (message?: unknown, ...optionalParams: unknown[]) => {
-    const firstParam = optionalParams[0];
-    if (firstParam && typeof firstParam === 'object' && !Array.isArray(firstParam)) {
-      originalDebug(message, {
-        "oxian.request_id": requestId,
-        ...firstParam as Record<string, unknown>,
-      }, ...optionalParams.slice(1));
-    } else {
-      originalDebug(message, {
-        "oxian.request_id": requestId,
-      }, ...optionalParams);
-    }
-  };
-
-  // Return cleanup function to restore original console
-  return () => {
-    console.log = originalLog;
-    console.error = originalError;
-    console.warn = originalWarn;
-    console.debug = originalDebug;
+        "request.id": requestId,
+        ...attributes,
+      });
+    },
+    debug: (message: string, attributes?: Record<string, unknown>) => {
+      if (Deno.env.get("OXIAN_DEBUG")) {
+        console.log(message, {
+          "oxian.request_id": requestId,
+          "request.id": requestId,
+          ...attributes,
+        });
+      }
+    },
   };
 }
 
@@ -242,13 +203,12 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
     const hdrRequestId = config.logging?.requestIdHeader ? req.headers.get(config.logging.requestIdHeader) : undefined;
     const requestId = hdrRequestId || crypto.randomUUID();
 
-    // Patch console to automatically inject request_id into all logs
-    const restoreConsole = patchConsoleForRequest(requestId);
+    // Create request-scoped logger that ensures request_id is in all log records
+    const logger = createRequestLogger(requestId);
 
-    try {
-      // Run request handling within OTEL context for proper propagation
-      return await context.with(context.active(), async () => {
-        try {
+    // Run request handling within OTEL context for proper propagation
+    return await context.with(context.active(), async () => {
+      try {
         const url = new URL(req.url);
         // Prefer hypervisor-provided project header; fallback to config/runtime default
         const projectFromHv = req.headers.get("x-oxian-project") || "default";
@@ -275,10 +235,10 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
                 try { headers.set("host", targetUrl.host); } catch { /* ignore */ }
                 const res = await fetch(targetUrl.toString(), { method: req.method, headers, body: req.body });
                 return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
-             } catch (e) {
-              console.error("web_dev_proxy_error", { err: (e as Error)?.message });
-              return new Response("Dev proxy error", { status: 502 });
-            }
+              } catch (e) {
+                logger.error("web_dev_proxy_error", { err: (e as Error)?.message });
+                return new Response("Dev proxy error", { status: 502 });
+              }
             }
             if (webCfg.staticDir) {
               const cleaned = url.pathname.replace(/^\/+/, "");
@@ -400,28 +360,22 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
             });
             activeSpan.updateName(`${req.method} ${routePattern}`);
 
-           // Call user start hook
-             try {
-               const tracer = trace.getTracer("oxian", "1");
-               const meter = metrics.getMeter("oxian", "1");
-               await config.logging?.otel?.hooks?.onRequestStart?.({ tracer, meter, span: activeSpan, requestId, method: req.method, url: req.url, project: projectFromHv });
-             } catch (hookErr) {
-               if (Deno.env.get("OXIAN_DEBUG")) {
-                 console.error("[server] OTEL user hook error", { error: hookErr });
-               }
-             }
-           } else {
-             // Log when span is not available for debugging
-             if (Deno.env.get("OXIAN_DEBUG")) {
-               console.warn("[server] No active OTEL span found for request", { path });
-             }
-           }
-         } catch (spanErr) {
-           // Log span errors in debug mode instead of silently ignoring
-           if (Deno.env.get("OXIAN_DEBUG")) {
-             console.error("[server] OTEL span error", { error: spanErr });
-           }
-         }
+            // Call user start hook
+            try {
+              const tracer = trace.getTracer("oxian", "1");
+              const meter = metrics.getMeter("oxian", "1");
+              await config.logging?.otel?.hooks?.onRequestStart?.({ tracer, meter, span: activeSpan, requestId, method: req.method, url: req.url, project: projectFromHv });
+            } catch (hookErr) {
+              logger.debug("[server] OTEL user hook error", { error: hookErr });
+            }
+          } else {
+            // Log when span is not available for debugging
+            logger.debug("[server] No active OTEL span found for request", { path });
+          }
+        } catch (spanErr) {
+          // Log span errors in debug mode instead of silently ignoring
+          logger.debug("[server] OTEL span error", { error: spanErr });
+        }
 
         // Unified pipeline discovery
         let files;
@@ -439,7 +393,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         try {
 
           // Inject config-defined deps as the base
-          const baseDeps = { };
+          const baseDeps = { logger };
           context.dependencies = baseDeps;
           // Compose route dependencies on top
           const composeStart = performance.now();
@@ -465,17 +419,17 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
             const runMiddlewaresEnd = performance.now();
             if (PERF) console.log('[perf][server] runMiddlewares', { ms: Math.round(runMiddlewaresEnd - runMiddlewaresStart) });
           }
-         } catch (err) {
-           console.error("pipeline_error", {
-             err: (err as Error)?.message,
-             stack: (err as Error)?.stack
-           });
-           const shaped = shapeError(err as unknown);
-           state.status = shaped.status;
-           state.body = shaped.body;
-           const res = finalizeResponse(state);
-           return res;
-         }
+        } catch (err) {
+          logger.error("pipeline_error", {
+            err: (err as Error)?.message,
+            stack: (err as Error)?.stack
+          });
+          const shaped = shapeError(err as unknown);
+          state.status = shaped.status;
+          state.body = shaped.body;
+          const res = finalizeResponse(state);
+          return res;
+        }
 
         // Load the route module
         const loadRouteModuleStart = performance.now();
@@ -534,15 +488,13 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
             status: res.status,
             durationMs: Math.round(performance.now() - startedAt)
           });
-         } catch (hookErr) {
-           if (Deno.env.get("OXIAN_DEBUG")) {
-             console.error("[server] OTEL end hook error", { error: hookErr });
-           }
-         }
-         return res;
+        } catch (hookErr) {
+          logger.debug("[server] OTEL end hook error", { error: hookErr });
+        }
+        return res;
 
-       } catch (err) {
-         console.error("unhandled", { err: (err as Error).message });
+      } catch (err) {
+        logger.error("unhandled", { err: (err as Error).message });
 
         // Mark span as error in OTEL
         try {
@@ -557,21 +509,15 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
               "error.type": (err as Error).constructor.name,
             });
           }
-         } catch (spanErr) {
-           if (Deno.env.get("OXIAN_DEBUG")) {
-             console.error("[server] OTEL error span update failed", { error: spanErr });
-           }
-         }
+        } catch (spanErr) {
+          logger.debug("[server] OTEL error span update failed", { error: spanErr });
+        }
 
-         const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
-         applyCorsAndDefaults(headers, config, req);
-         return new Response(JSON.stringify({ error: { message: "Internal Server Error" } }), { status: 500, headers });
-       }
-      }); // Close context.with()
-    } finally {
-      // Always restore original console methods
-      restoreConsole();
-    }
+        const headers = new Headers({ "content-type": "application/json; charset=utf-8" });
+        applyCorsAndDefaults(headers, config, req);
+        return new Response(JSON.stringify({ error: { message: "Internal Server Error" } }), { status: 500, headers });
+      }
+    }); // Close context.with()
   });
 
   if (PERF) console.log('[perf][server] listening', { port: config.server?.port ?? 8080 });
