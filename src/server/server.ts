@@ -45,14 +45,12 @@ function patchConsoleForRequest(requestId: string): () => void {
       // If first param is an object, merge request_id into it
       originalLog(message, {
         "oxian.request_id": requestId,
-        "request.id": requestId,
         ...firstParam as Record<string, unknown>,
       }, ...optionalParams.slice(1));
     } else {
       // Otherwise, add request_id as second parameter
       originalLog(message, {
         "oxian.request_id": requestId,
-        "request.id": requestId,
       }, ...optionalParams);
     }
   };
@@ -62,13 +60,11 @@ function patchConsoleForRequest(requestId: string): () => void {
     if (firstParam && typeof firstParam === 'object' && !Array.isArray(firstParam)) {
       originalError(message, {
         "oxian.request_id": requestId,
-        "request.id": requestId,
         ...firstParam as Record<string, unknown>,
       }, ...optionalParams.slice(1));
     } else {
       originalError(message, {
         "oxian.request_id": requestId,
-        "request.id": requestId,
       }, ...optionalParams);
     }
   };
@@ -78,13 +74,11 @@ function patchConsoleForRequest(requestId: string): () => void {
     if (firstParam && typeof firstParam === 'object' && !Array.isArray(firstParam)) {
       originalWarn(message, {
         "oxian.request_id": requestId,
-        "request.id": requestId,
         ...firstParam as Record<string, unknown>,
       }, ...optionalParams.slice(1));
     } else {
       originalWarn(message, {
         "oxian.request_id": requestId,
-        "request.id": requestId,
       }, ...optionalParams);
     }
   };
@@ -94,13 +88,11 @@ function patchConsoleForRequest(requestId: string): () => void {
     if (firstParam && typeof firstParam === 'object' && !Array.isArray(firstParam)) {
       originalDebug(message, {
         "oxian.request_id": requestId,
-        "request.id": requestId,
         ...firstParam as Record<string, unknown>,
       }, ...optionalParams.slice(1));
     } else {
       originalDebug(message, {
         "oxian.request_id": requestId,
-        "request.id": requestId,
       }, ...optionalParams);
     }
   };
