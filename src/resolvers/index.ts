@@ -2,7 +2,38 @@ import { isAbsolute, toFileUrl, join, fromFileUrl } from "@std/path";
 import { importModule } from "./importer.ts";
 import { absolutize } from "../utils/root.ts";
 
-const inMemoryCache = new Map<string, unknown>();
+// Initialize Deno KV for caching
+let kvCache: Deno.Kv | null = null;
+async function getKvCache(): Promise<Deno.Kv> {
+    if (!kvCache) {
+        try {
+            const kvDir = join(Deno.cwd(), ".deno");
+            await Deno.mkdir(kvDir, { recursive: true });
+            const kvPath = join(kvDir, "resolver_cache.db");
+            kvCache = await Deno.openKv(kvPath);
+        } catch (err) {
+            console.error("[resolver] Failed to open KV cache, using in-memory fallback:", err);
+            kvCache = await Deno.openKv(); // fallback to in-memory
+        }
+    }
+    return kvCache;
+}
+
+// Helper to serialize/deserialize complex values for KV storage
+function serializeForKv(value: unknown): string {
+    if (value instanceof URL) {
+        return JSON.stringify({ __type: 'URL', href: value.href });
+    }
+    return JSON.stringify(value);
+}
+
+function deserializeFromKv(serialized: string, type: 'url' | 'array' | 'object'): unknown {
+    const parsed = JSON.parse(serialized);
+    if (type === 'url' && parsed.__type === 'URL') {
+        return new URL(parsed.href);
+    }
+    return parsed;
+}
 
 export function parseGithubUrl(specifier: string | URL, baseUrl: URL): { owner: string; repo: string; ref: string; path: string } | null {
     // Prioritize specifier full URL if it's raw.githubusercontent.com over github.com
@@ -66,8 +97,12 @@ export interface Resolver {
 }
 
 // Main entry point for creating a resolver
-export function createResolver(baseUrl: URL | string | undefined, opts: { tokenEnv?: string, tokenValue?: string, ttlMs?: number }): Resolver {
+export function createResolver(
+    baseUrl: URL | string | undefined, 
+    opts: { tokenEnv?: string, tokenValue?: string, ttlMs?: number, forceReload?: boolean }
+): Resolver {
     let type: "local" | "http" | "github" = "local";
+    const forceReload = opts.forceReload ?? false;
 
     try {
         if (baseUrl && !(baseUrl instanceof URL)) {
@@ -97,7 +132,23 @@ export function createResolver(baseUrl: URL | string | undefined, opts: { tokenE
     };
 
     const baseKey = baseUrl instanceof URL ? baseUrl.toString() : String(baseUrl ?? Deno.cwd());
-    const cacheKey = (op: string, spec: string | URL) => `${op}::${baseKey}::${spec?.toString()}`;
+    const cacheKey = (op: string, spec: string | URL) => ["resolver_cache", op, baseKey, spec?.toString()];
+
+    // Helper to get cached value from KV
+    async function getCached<T>(key: Deno.KvKey, type: 'url' | 'array' | 'object'): Promise<T | null> {
+        if (forceReload) return null;
+        const kv = await getKvCache();
+        const entry = await kv.get<string>(key);
+        if (!entry.value) return null;
+        return deserializeFromKv(entry.value, type) as T;
+    }
+
+    // Helper to set cached value in KV
+    async function setCached(key: Deno.KvKey, value: unknown): Promise<void> {
+        const kv = await getKvCache();
+        const serialized = serializeForKv(value);
+        await kv.set(key, serialized);
+    }
 
     const resolver: Resolver = {
         scheme: type,
@@ -112,44 +163,63 @@ export function createResolver(baseUrl: URL | string | undefined, opts: { tokenE
         },
         resolve: async (specifier: string | URL) => {
             const key = cacheKey("resolve", specifier);
-            if (inMemoryCache.has(key)) return inMemoryCache.get(key) as URL;
+            const cached = await getCached<URL>(key, 'url');
+            if (cached) return cached;
             if (!resolverMap[type]) throw new Error(`Resolver not found for type: ${type}, ${specifier?.toString()}, ${baseUrl instanceof URL ? baseUrl.toString() : String(baseUrl)}`);
             const url = await resolverMap[type].resolve(specifier as string | URL);
-            inMemoryCache.set(key, url);
+            await setCached(key, url);
             return url;
         },
         listDir: async (specifier: URL) => {
             const key = cacheKey("listDir", specifier);
-            if (inMemoryCache.has(key)) return inMemoryCache.get(key) as string[];
+            const cached = await getCached<string[]>(key, 'array');
+            if (cached) return cached;
             if (!resolverMap[type]) throw new Error(`Resolver not found for type: ${type}, ${specifier?.toString()}, ${baseUrl instanceof URL ? baseUrl.toString() : String(baseUrl)}`);
             const listDir = await resolverMap[type].listDir(await resolver.resolve(specifier));
             const array = Array.isArray(listDir) ? listDir : Array.from(listDir as unknown as Iterable<string>);
-            inMemoryCache.set(key, array);
+            await setCached(key, array);
             return array;
         },
         stat: async (specifier: URL) => {
             const key = cacheKey("stat", specifier);
-            if (inMemoryCache.has(key)) return inMemoryCache.get(key) as { isFile: boolean };
+            const cached = await getCached<{ isFile: boolean }>(key, 'object');
+            if (cached) return cached;
             if (!resolverMap[type]) throw new Error(`Resolver not found for type: ${type}`);
             const stat = await resolverMap[type].stat(await resolver.resolve(specifier));
-            inMemoryCache.set(key, stat);
+            await setCached(key, stat);
             return stat;
         },
         import: async (specifier: string | URL) => {
-            const key = cacheKey("import", specifier);
-            if (inMemoryCache.has(key)) return inMemoryCache.get(key) as Record<string, unknown>;
+            // import is NOT cached as per requirements
             const mod = await importModule(await resolver.resolve(specifier), opts.ttlMs);
-            inMemoryCache.set(key, mod);
             return mod;
         },
         load: async (specifier: URL) => {
             const key = cacheKey("load", specifier);
-            if (inMemoryCache.has(key)) return inMemoryCache.get(key) as string;
+            const cached = await getCached<string>(key, 'object');
+            if (cached) return cached;
             const content = await resolverMap[type].load(specifier);
-            inMemoryCache.set(key, content);
+            await setCached(key, content);
             return content;
         },
         materialize: resolverMap[type] && (resolverMap[type] as unknown as { materialize?: Resolver["materialize"] }).materialize
+            ? async (opts?: { dir?: string; refresh?: boolean }) => {
+                const matKey = cacheKey("materialize", baseUrl?.toString() ?? "");
+                const cached = await getCached<{ rootDir: URL; ref?: string; sha?: string; subdir?: string }>(matKey, 'object');
+                if (cached && !opts?.refresh && !forceReload) {
+                    // Reconstruct URL from cached data
+                    return { 
+                        ...cached, 
+                        rootDir: new URL(typeof cached.rootDir === 'string' ? cached.rootDir : (cached.rootDir as URL).href)
+                    };
+                }
+                const matFn = (resolverMap[type] as unknown as { materialize?: Resolver["materialize"] }).materialize;
+                if (!matFn) throw new Error("materialize not available");
+                const result = await matFn(opts);
+                await setCached(matKey, result);
+                return result;
+            }
+            : undefined
     };
     return resolver;
 }

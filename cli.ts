@@ -118,8 +118,8 @@ if (import.meta.main) {
 
   const args = parseArgs(Deno.args, {
     string: ["config", "source", "port", "deno-config", "out", "materialize-dir"],
-    boolean: ["help", "hypervisor", "test", "force", "materialize", "materialize-refresh"],
-    alias: { h: "help", hv: "hypervisor", f: "force" },
+    boolean: ["help", "hypervisor", "test", "force", "materialize", "materialize-refresh", "reload"],
+    alias: { h: "help", hv: "hypervisor", f: "force", r: "reload" },
     default: {
       hypervisor: true,
     },
@@ -129,7 +129,7 @@ if (import.meta.main) {
 
 
   if (args.help) {
-    console.log(`Oxian CLI\n\nUsage:\n  deno run -A cli.ts [command] [options]\n\nCommands:\n  routes                   Print resolved routes\n  start|dev                Start server (default)\n  init                     Initialize project files (oxian.config.json, deno.json, llm.txt)\n  init-llm                 Copy llm.txt to your repo (use --out=FILE and --force to overwrite)\n  materialize              Download and extract remote source locally\n\nOptions:\n  --config=PATH            Config file path or URL\n  --source=SPEC            Source path or URL (file:, github:, https:)\n  --port=N                 Port\n  --deno-config=PATH       Forwarded Deno config for workers\n  --materialize            Enable materialize (boolean)\n  --materialize-dir=DIR    Target directory for materialization (default: current dir/.oxian/materialized)\n  --materialize-refresh    Force re-download/extract\n`);
+    console.log(`Oxian CLI\n\nUsage:\n  deno run -A cli.ts [command] [options]\n\nCommands:\n  routes                   Print resolved routes\n  start|dev                Start server (default)\n  init                     Initialize project files (oxian.config.json, deno.json, llm.txt)\n  init-llm                 Copy llm.txt to your repo (use --out=FILE and --force to overwrite)\n  materialize              Download and extract remote source locally\n\nOptions:\n  --config=PATH            Config file path or URL\n  --source=SPEC            Source path or URL (file:, github:, https:)\n  --port=N                 Port\n  --deno-config=PATH       Forwarded Deno config for workers\n  --materialize            Enable materialize (boolean)\n  --materialize-dir=DIR    Target directory for materialization (default: current dir/.oxian/materialized)\n  --materialize-refresh    Force re-download/extract\n  --reload, -r             Bypass resolver cache and force fresh resolution\n`);
     Deno.exit(0);
   }
   // Standalone materialize subcommand (no server/hypervisor); avoids allow-run usage
@@ -137,7 +137,10 @@ if (import.meta.main) {
     try {
       const source = typeof args.source === "string" ? args.source : undefined;
       if (!source) throw new Error("--source is required for materialize");
-      const envDefaults: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+      const envDefaults: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+        tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
+        forceReload: args.reload === true
+      };
       envDefaults.tokenValue = envDefaults.tokenEnv ? Deno.env.get(envDefaults.tokenEnv) : undefined;
       const resolverForMat = createResolver(new URL(source), envDefaults);
       if (!resolverForMat.materialize) throw new Error("materialize not supported for this source");
@@ -163,7 +166,10 @@ if (import.meta.main) {
       if (!source) {
         source = Deno.cwd();
       }
-      const envDefaults: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+      const envDefaults: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+        tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
+        forceReload: args.reload === true
+      };
       envDefaults.tokenValue = envDefaults.tokenEnv ? Deno.env.get(envDefaults.tokenEnv) : undefined;
       const rootUrl = source.startsWith("file:") ? new URL(source) : new URL(`file://${source}`);
       const matResolver = createResolver(rootUrl, envDefaults);
@@ -283,7 +289,10 @@ if (import.meta.main) {
   let resolver: Resolver | undefined;
 
   try {
-    const envDefaults: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+    const envDefaults: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+      tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
+      forceReload: args.reload === true
+    };
     envDefaults.tokenValue = envDefaults.tokenEnv ? Deno.env.get(envDefaults.tokenEnv) : undefined;
 
     let discovered: Partial<OxianConfig> | undefined;
@@ -361,7 +370,10 @@ if (import.meta.main) {
 
   if (cmd === "routes") {
     if (!resolver) {
-      const envDefaults: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+      const envDefaults: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+        tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
+        forceReload: args.reload === true
+      };
       envDefaults.tokenValue = envDefaults.tokenEnv ? Deno.env.get(envDefaults.tokenEnv) : undefined;
       resolver = createResolver(sourceStr ? new URL(sourceStr) : undefined, envDefaults);
     }
@@ -387,7 +399,10 @@ if (import.meta.main) {
       config = { ...config, runtime: { ...config.runtime, hotReload: true } } as EffectiveConfig;
     }
     if (!resolver) {
-      const envDefaults2: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+      const envDefaults2: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+        tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
+        forceReload: args.reload === true
+      };
       envDefaults2.tokenValue = envDefaults2.tokenEnv ? Deno.env.get(envDefaults2.tokenEnv) : undefined;
       resolver = createResolver(sourceStr ? new URL(sourceStr) : undefined, envDefaults2);
     }
@@ -396,7 +411,7 @@ if (import.meta.main) {
         ...baseArgs,
         // also forward app-specific flags
         ...Deno.args
-          .filter((a) => a.startsWith("--source=") || a.startsWith("--config=") || a.startsWith("--provider=") || a.startsWith("--port="))
+          .filter((a) => a.startsWith("--source=") || a.startsWith("--config=") || a.startsWith("--provider=") || a.startsWith("--port=") || a.startsWith("--reload") || a === "-r")
           .map((a) => a)
           .concat(["--hypervisor=false"]),
       ]
@@ -408,7 +423,10 @@ if (import.meta.main) {
 
   // start/dev default to starting the server
   if (!resolver) {
-    const envDefaults3: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+    const envDefaults3: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+      tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
+      forceReload: args.reload === true
+    };
     envDefaults3.tokenValue = envDefaults3.tokenEnv ? Deno.env.get(envDefaults3.tokenEnv) : undefined;
     resolver = createResolver(sourceStr ? new URL(sourceStr) : undefined, envDefaults3);
   }
@@ -416,7 +434,10 @@ if (import.meta.main) {
   try {
     const doMaterialize = args.materialize === true;
     if (doMaterialize && typeof args.source === "string" && typeof resolver.materialize === "function") {
-      const envDefaults3: { tokenEnv?: string; tokenValue?: string } = { tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN" };
+      const envDefaults3: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+        tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
+        forceReload: args.reload === true
+      };
       envDefaults3.tokenValue = envDefaults3.tokenEnv ? Deno.env.get(envDefaults3.tokenEnv) : undefined;
       const matDir = typeof args["materialize-dir"] === "string" ? args["materialize-dir"] : ".";
       const refresh = args["materialize-refresh"] === true;
