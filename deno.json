@@ -45,7 +45,7 @@
     "@std/cli/parse-args": "jsr:@std/cli@1.0.21/parse-args",
     "@std/jsonc/parse": "jsr:@std/jsonc@1.0.2/parse",
     "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64",
-    "@kitsonk/kv-toolbox": "jsr:@kitsonk/kv-toolbox@0.0.11"
+    "kv-toolbox/blob": "jsr:@kitsonk/kv-toolbox@0.30.0/blob"
   },
   "lock": false
 }
