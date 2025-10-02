@@ -1,6 +1,7 @@
 import { isAbsolute, toFileUrl, join, fromFileUrl } from "@std/path";
 import { importModule } from "./importer.ts";
 import { absolutize } from "../utils/root.ts";
+import { get, remove, set } from "kv-toolbox/blob";
 
 // Initialize Deno KV for caching
 let kvCache: Deno.Kv | null = null;
@@ -10,7 +11,40 @@ async function getKvCache(): Promise<Deno.Kv> {
             const kvDir = join(Deno.cwd(), ".deno");
             await Deno.mkdir(kvDir, { recursive: true });
             const kvPath = join(kvDir, "resolver_cache.db");
-            kvCache = await Deno.openKv(kvPath);
+            const kvCacheInstance = await Deno.openKv(kvPath);
+            
+            // Create a proxy to use kv-toolbox/blob methods for binary data
+            kvCache = new Proxy(kvCacheInstance, {
+                get(target, prop) {
+                    if (prop === 'get') {
+                        return async (key: Deno.KvKey) => {
+                            // Use kv-toolbox/blob get for binary data
+                            const result = await get(target, key);
+                            if (result.value) {
+                                // Decode the binary data back to the original value
+                                const decoder = new TextDecoder();
+                                const jsonStr = decoder.decode(result.value as unknown as ArrayBuffer);
+                                result.value = JSON.parse(jsonStr);
+                            }
+                            return result;
+                        };
+                    }
+                    if (prop === 'set') {
+                        return async (key: Deno.KvKey, value: unknown) => {
+                            // Encode the value as JSON string, then to binary
+                            const jsonStr = JSON.stringify(value);
+                            const encoder = new TextEncoder();
+                            const binaryData = encoder.encode(jsonStr);
+                            // Use kv-toolbox/blob set for binary data
+                            await set(target, key, binaryData);
+                            return { ok: true };
+                        };
+                    }
+                    // Pass through all other methods to the original KV instance
+                    const value = target[prop as keyof typeof target];
+                    return typeof value === 'function' ? value.bind(target) : value;
+                }
+            }) as Deno.Kv;
         } catch (err) {
             console.error("[resolver] Failed to open KV cache, using in-memory fallback:", err);
             kvCache = await Deno.openKv(); // fallback to in-memory
@@ -98,7 +132,7 @@ export interface Resolver {
 
 // Main entry point for creating a resolver
 export function createResolver(
-    baseUrl: URL | string | undefined, 
+    baseUrl: URL | string | undefined,
     opts: { tokenEnv?: string, tokenValue?: string, ttlMs?: number, forceReload?: boolean }
 ): Resolver {
     let type: "local" | "http" | "github" = "local";
@@ -208,8 +242,8 @@ export function createResolver(
                 const cached = await getCached<{ rootDir: URL; ref?: string; sha?: string; subdir?: string }>(matKey, 'object');
                 if (cached && !opts?.refresh && !forceReload) {
                     // Reconstruct URL from cached data
-                    return { 
-                        ...cached, 
+                    return {
+                        ...cached,
                         rootDir: new URL(typeof cached.rootDir === 'string' ? cached.rootDir : (cached.rootDir as URL).href)
                     };
                 }
@@ -386,7 +420,7 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
             if (exists && !opts.refresh) {
                 const base = toFileUrl(rootPath + "/");
                 const subdir = path ? path : undefined;
-                return { rootDir: subdir ? new URL(subdir.replace(/^\/?/, '' ) + '/', base) : base, ref, sha, subdir };
+                return { rootDir: subdir ? new URL(subdir.replace(/^\/?/, '') + '/', base) : base, ref, sha, subdir };
             }
             // Download tarball
             const tarUrl = new URL(`https://api.github.com/repos/${owner}/${repo}/tarball/${sha}`);
@@ -417,10 +451,10 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
             try { await Deno.remove(tmpTar); } catch { /* ignore */ }
             const base = toFileUrl(rootPath + "/");
             const subdir = path ? path : undefined;
-            return { rootDir: subdir ? new URL(subdir.replace(/^\/?/, '' ) + '/', base) : base, ref, sha, subdir };
+            return { rootDir: subdir ? new URL(subdir.replace(/^\/?/, '') + '/', base) : base, ref, sha, subdir };
         }
     } as unknown as Resolver;
-} 
+}
 
 // Minimal tar extractor sufficient for GitHub tarballs
 async function extractMinimalTar(bytes: Uint8Array, destDir: string): Promise<void> {

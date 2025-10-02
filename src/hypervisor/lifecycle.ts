@@ -179,8 +179,8 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         // to keep the request as the single source of truth.
 
         const forceReload = denoOptions.some((arg) => arg === "--reload" || arg === "-r" || arg.startsWith("--reload="));
-        const resolver = createResolver(selectedMerged.source || config.root, { 
-            tokenEnv: "GITHUB_TOKEN", 
+        const resolver = createResolver(selectedMerged.source || config.root, {
+            tokenEnv: "GITHUB_TOKEN",
             tokenValue: selectedMerged.githubToken,
             forceReload
         });
@@ -353,9 +353,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                 const m = typeof mat === 'boolean' ? { mode: 'always' as const } : (mat as { mode?: string; dir?: string; refresh?: boolean });
                 // const matDir = m.dir ? m.dir : (selectedMerged.isolated ? projectDir : projectDir);
                 const matArgs: string[] = [
-                    "run",
-                    "-A",
-                    `${import.meta.resolve('../../cli.ts')}`,
+                    ...denoArgs,
                     "materialize",
                     `--source=${effectiveSource}`,
                     `--materialize-dir=.`,
@@ -385,25 +383,24 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             }
 
             // Second step: run prepare (preRun hooks) in the materialized root
-                const prepArgs: string[] = [
-                    "run",
-                    "-A",
-                    `${import.meta.resolve('../../cli.ts')}`,
-                    "prepare",
-                   ...(effectiveSource ? [`--source=${effectiveSource}`] : []),
-                ];
-                const prepCmd = new Deno.Command(Deno.execPath(), {
-                    args: prepArgs,
-                    stdin: "null",
-                    stdout: "inherit",
-                    stderr: "inherit",
-                    cwd: projectDir,
-                    env: { ...(selectedMerged.env || {}), ...(selectedMerged.githubToken ? { GITHUB_TOKEN: selectedMerged.githubToken } : {}) },
-                });
-                const prepOut = await prepCmd.output();
-                if (!prepOut.success) {
-                    throw new Error(`[hv] prepare step failed for project ${project}`);
-                }
+            const prepArgs: string[] = [
+                ...denoArgs,
+                "prepare",
+                ...(effectiveSource ? [`--source=${effectiveSource}`] : []),
+            ];
+            
+            const prepCmd = new Deno.Command(Deno.execPath(), {
+                args: prepArgs,
+                stdin: "null",
+                stdout: "inherit",
+                stderr: "inherit",
+                cwd: projectDir,
+                env: { ...(selectedMerged.env || {}), ...(selectedMerged.githubToken ? { GITHUB_TOKEN: selectedMerged.githubToken } : {}) },
+            });
+            const prepOut = await prepCmd.output();
+            if (!prepOut.success) {
+                throw new Error(`[hv] prepare step failed for project ${project}`);
+            }
         }
 
         const finalScriptArgs = [
