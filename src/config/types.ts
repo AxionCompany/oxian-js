@@ -135,6 +135,11 @@ export type OxianConfig = {
           project?: string;
         }) => void | Promise<void>;
       };
+      // Request transformation hook: called before proxying to worker
+      onRequest?: (input: {
+        req: Request;
+        project: string;
+      }) => Promise<Request> | Request;
       // Single provider function (optional). When provided:
       // - Called with { req } to choose a project and per-request/project overrides.
       provider?: (

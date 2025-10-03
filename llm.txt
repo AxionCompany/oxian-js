@@ -226,6 +226,10 @@ This section describes the most relevant configuration keys. The full, authorita
       - enabled?: boolean; port?: number; pathPrefix?: string; onExport?: (input: { kind: "traces"|"metrics"|"logs"; headers: Record<string,string>; body: Uint8Array; contentType: string; project?: string }) => void | Promise<void>
       - Workers default OTLP endpoint to this collector when `logging.otel.enabled=true` and no endpoint provided.
       - Hypervisor injects `x-oxian-project` in OTLP headers so the collector can tag payloads by project.
+    - onRequest (TS config only): Request transformation hook called before proxying to workers.
+      - Type: (input: { req: Request; project: string }) => Promise<Request> | Request
+      - Allows modifying requests (headers, URL, body) before they reach workers.
+      - Example: Add authentication tokens, custom headers, transform URLs, etc.
 
 - permissions
   - net | read | write | env | ffi | hrtime | sys: Boolean | string[]. Future enforcement via hypervisor.

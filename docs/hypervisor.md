@@ -563,6 +563,78 @@ Workers are considered healthy when:
 4. **Shutdown workers** gracefully
 5. **Close** all connections
 
+## Request Transformation
+
+Transform requests before they reach workers using the `onRequest` callback (TypeScript config only):
+
+```ts
+// oxian.config.ts
+export default {
+  runtime: {
+    hv: {
+      onRequest: ({ req, project }) => {
+        // Modify requests before proxying to workers
+        const headers = new Headers(req.headers);
+        
+        // Add custom headers
+        headers.set("x-processed-by", "hypervisor");
+        headers.set("x-project", project);
+        headers.set("x-timestamp", Date.now().toString());
+        
+        // Add authentication token from environment
+        const token = Deno.env.get(`${project.toUpperCase()}_API_TOKEN`);
+        if (token) {
+          headers.set("authorization", `Bearer ${token}`);
+        }
+        
+        return new Request(req, { headers });
+      }
+    }
+  }
+};
+```
+
+### Common Use Cases
+
+**Add Authentication Tokens:**
+```ts
+onRequest: ({ req, project }) => {
+  const headers = new Headers(req.headers);
+  const token = Deno.env.get(`${project.toUpperCase()}_TOKEN`);
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  return new Request(req, { headers });
+}
+```
+
+**Request Auditing:**
+```ts
+onRequest: async ({ req, project }) => {
+  console.log(`[audit] ${project}: ${req.method} ${req.url}`);
+  const headers = new Headers(req.headers);
+  headers.set("x-audit-id", crypto.randomUUID());
+  return new Request(req, { headers });
+}
+```
+
+**URL Transformation:**
+```ts
+onRequest: ({ req, project }) => {
+  const url = new URL(req.url);
+  url.searchParams.set("source", "hypervisor");
+  url.searchParams.set("project", project);
+  return new Request(url, {
+    method: req.method,
+    headers: req.headers,
+    body: req.body
+  });
+}
+```
+
+**Error Handling:**
+- If `onRequest` throws an error, the hypervisor returns a 500 response
+- The request is not forwarded to workers
+- Error is logged automatically
+
 ## Advanced Patterns
 
 ### Custom Health Checks

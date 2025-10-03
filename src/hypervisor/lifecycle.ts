@@ -96,6 +96,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
     const projectIndices = new Map<string, number>();
     const readyWaiters = new Map<string, Array<() => void>>();
     const restarting = new Set<string>();
+    const spawning = new Set<string>();
     const projectLastLoad = new Map<string, number>();
     const projectLastActive = new Map<string, number>();
     const projectReady = new Map<string, boolean>();
@@ -166,6 +167,28 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
     }
 
     async function spawnWorker(selected: SelectedProject, idx?: number, denoOptionsIn?: string[], scriptArgsIn?: string[]): Promise<WorkerHandle> {
+        const project = selected.project;
+        
+        // Guard against concurrent spawns for the same project
+        if (spawning.has(project)) {
+            // Wait for the ongoing spawn to complete
+            await waitForProjectReady(project, hv.proxy?.timeoutMs ?? 300_000);
+            const pool = pools.get(project);
+            if (pool) {
+                return { port: pool.port, proc: pool.proc };
+            }
+            throw new Error(`Concurrent spawn detected but worker not available for project: ${project}`);
+        }
+        
+        spawning.add(project);
+        try {
+            return await doSpawnWorker(selected, idx, denoOptionsIn, scriptArgsIn);
+        } finally {
+            spawning.delete(project);
+        }
+    }
+
+    async function doSpawnWorker(selected: SelectedProject, idx?: number, denoOptionsIn?: string[], scriptArgsIn?: string[]): Promise<WorkerHandle> {
         const denoOptions = denoOptionsIn ?? cachedDenoOptions;
         const scriptArgs = scriptArgsIn ?? cachedScriptArgs;
 
@@ -512,7 +535,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         // Persist last spawn options for consistent restarts
         lastSpawnOptions.set(project, selectedMerged);
 
-        attachExitObserver(project, proc);
+        attachExitObserver(selected.project, proc);
         return { port, proc };
     }
 
