@@ -664,6 +664,33 @@ Behavior:
 - Requests matching a project’s API base path are proxied to that project’s worker.
 - Other paths are handled by that project’s `web` config (dev proxy if set; otherwise static serving if `staticDir` is set; otherwise 404).
 
+### Request Transformation
+
+Transform requests before they reach workers using the `onRequest` callback (TypeScript config only):
+
+```ts
+// oxian.config.ts
+export default {
+  runtime: {
+    hv: {
+      onRequest: ({ req, project }) => {
+        // Add custom headers, auth tokens, etc.
+        const headers = new Headers(req.headers);
+        headers.set("x-processed-by", "hypervisor");
+        headers.set("x-project", project);
+        return new Request(req, { headers });
+      }
+    }
+  }
+};
+```
+
+Use cases:
+- Add authentication tokens to all requests
+- Inject custom headers for downstream services
+- Transform request URLs or bodies
+- Implement request auditing/logging
+
 ### Worker idle shutdown
 
 You can automatically stop idle workers to save resources. An idle worker is one with no active requests/streams and no activity for a configured TTL. Long‑lived streams and SSE are respected: the worker remains active until the client closes the response body.

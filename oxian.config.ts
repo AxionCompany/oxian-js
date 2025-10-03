@@ -53,6 +53,13 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
                     }
                 },
             },
+            // Example: modify requests before passing to workers
+            onRequest: ({ req, project }: { req: Request; project: string }) => {
+                // Example: add a custom header to all requests
+                const headers = new Headers(req.headers);
+                headers.set("x-custom-header", `processed-by-hypervisor-for-${project}`);
+                return new Request(req, { headers });
+            },
             provider: async ({ req }: { req: Request }) => {
                 if (req) {
                     const host = new URL(req.url).hostname;

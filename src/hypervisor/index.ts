@@ -158,7 +158,18 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
     const pathname = url.pathname;
     const target = `http://127.0.0.1:${pool.port}${pathname}${url.search}`;
 
-    const headers = new Headers(req.headers);
+    // Apply request transformation hook if provided
+    let transformedReq = req;
+    if (typeof hv.onRequest === "function") {
+      try {
+        transformedReq = await hv.onRequest({ req, project: selected.project });
+      } catch (e) {
+        console.error(`[hv] onRequest callback error`, { project: selected.project, err: (e as Error)?.message });
+        return new Response(JSON.stringify({ error: { message: "Request transformation failed" } }), { status: 500, headers: { "content-type": "application/json; charset=utf-8" } });
+      }
+    }
+
+    const headers = new Headers(transformedReq.headers);
     if (hv.proxy?.passRequestId) {
       const hdr = config.logging?.requestIdHeader ?? "x-request-id";
       if (!headers.has(hdr)) headers.set(hdr, crypto.randomUUID());
@@ -168,14 +179,14 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
 
     try {
       const p0 = performance.now();
-      if (!PERF && !OTEL_OR_COLLECTOR) console.log(`[hv] proxy`, { project: selected.project, method: req.method, url: url.toString(), selected: selected.project, target });
+      if (!PERF && !OTEL_OR_COLLECTOR) console.log(`[hv] proxy`, { project: selected.project, method: transformedReq.method, url: url.toString(), selected: selected.project, target });
       const abortTimeoutMs = hv.proxy?.timeoutMs ?? 30000;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), abortTimeoutMs);
       // Track inflight and activity for idle decisions. We consider request active until response body completes.
       manager.incrementInflight(selected.project);
       manager.markProjectActivity(selected.project);
-      const res = await fetch(target, { method: req.method, headers, body: req.body, signal: controller.signal });
+      const res = await fetch(target, { method: transformedReq.method, headers, body: transformedReq.body, signal: controller.signal });
       clearTimeout(timer);
       if (PERF) console.log('[perf][hv] proxy_res', { project: selected.project, status: res.status, target, ms: Math.round(performance.now() - p0) });
       else if (!OTEL_OR_COLLECTOR) console.log(`[hv] proxy_res`, { project: selected.project, status: res.status, statusText: res.statusText, target });
@@ -230,10 +241,22 @@ export async function startHypervisor({ config, baseArgs }: { config: EffectiveC
         continue;
       }
       try {
-        const url = new URL(req.url);
+        // Apply request transformation hook if provided
+        let transformedReq = req;
+        if (typeof hv.onRequest === "function") {
+          try {
+            transformedReq = await hv.onRequest({ req, project });
+          } catch (_e) {
+            item.done = true;
+            if (item.timeoutId) clearTimeout(item.timeoutId as unknown as number);
+            resolve(new Response(JSON.stringify({ error: { message: "Request transformation failed" } }), { status: 500, headers: { "content-type": "application/json; charset=utf-8" } }));
+            continue;
+          }
+        }
+        const url = new URL(transformedReq.url);
         const pathname = url.pathname;
         const target = `http://localhost:${pool.port}${pathname}${url.search}`;
-        const res = await fetch(target, { method: req.method, headers: req.headers, body: req.body });
+        const res = await fetch(target, { method: transformedReq.method, headers: transformedReq.headers, body: transformedReq.body });
         item.done = true;
         if (item.timeoutId) clearTimeout(item.timeoutId as unknown as number);
         resolve(new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers }));

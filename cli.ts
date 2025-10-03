@@ -431,21 +431,21 @@ if (import.meta.main) {
     resolver = createResolver(sourceStr ? new URL(sourceStr) : undefined, envDefaults3);
   }
   // Optional inline materialize for worker/server process when --materialize flag is provided
-  try {
-    const doMaterialize = args.materialize === true;
-    if (doMaterialize && typeof args.source === "string" && typeof resolver.materialize === "function") {
-      const envDefaults3: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
-        tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
-        forceReload: args.reload === true
-      };
-      envDefaults3.tokenValue = envDefaults3.tokenEnv ? Deno.env.get(envDefaults3.tokenEnv) : undefined;
-      const matDir = typeof args["materialize-dir"] === "string" ? args["materialize-dir"] : ".";
-      const refresh = args["materialize-refresh"] === true;
-      const { rootDir } = await resolver.materialize({ dir: matDir, refresh });
-      resolver = createResolver(rootDir, envDefaults3);
-    }
-  } catch (e) {
-    console.error("[cli] inline materialize failed", (e as Error)?.message);
-  }
+  // try {
+  //   const doMaterialize = args.materialize === true;
+  //   if (doMaterialize && typeof args.source === "string" && typeof resolver.materialize === "function") {
+  //     const envDefaults3: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+  //       tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
+  //       forceReload: args.reload === true
+  //     };
+  //     envDefaults3.tokenValue = envDefaults3.tokenEnv ? Deno.env.get(envDefaults3.tokenEnv) : undefined;
+  //     const matDir = typeof args["materialize-dir"] === "string" ? args["materialize-dir"] : ".";
+  //     const refresh = args["materialize-refresh"] === true;
+  //     const { rootDir } = await resolver.materialize({ dir: matDir, refresh });
+  //     resolver = createResolver(rootDir, envDefaults3);
+  //   }
+  // } catch (e) {
+  //   console.error("[cli] inline materialize failed", (e as Error)?.message);
+  // }
   await startServer({ config, source: sourceStr }, resolver);
 } 
