@@ -282,7 +282,7 @@ export type OxianConfig = {
     pathRewrite?: (path: string, basePath: string) => string;
   };
   // Optional pre-run commands executed after materialization (in materialized root)
-  preRun?: Array<string | { cmd: string; cwd?: string; env?: Record<string, string> }>;
+  prepare?: Array<string | { cmd: string; cwd?: string; env?: Record<string, string> }>;
 };
 
 /**
