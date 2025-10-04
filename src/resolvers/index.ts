@@ -12,7 +12,7 @@ async function getKvCache(): Promise<Deno.Kv> {
             await Deno.mkdir(kvDir, { recursive: true });
             const kvPath = join(kvDir, "resolver_cache.db");
             const kvCacheInstance = await Deno.openKv(kvPath);
-            
+
             // Create a proxy to use kv-toolbox/blob methods for binary data
             kvCache = new Proxy(kvCacheInstance, {
                 get(target, prop) {
@@ -125,7 +125,7 @@ export interface Resolver {
     stat: (url: URL) => Promise<{ isFile: boolean }>;
     resolve: (specifier: string | URL) => Promise<URL>;
     import: (specifier: string | URL) => Promise<Record<string, unknown>>;
-    load: (url: URL) => Promise<string>;
+    load: (url: URL, opts: { encoding?: string | null }) => Promise<string | Uint8Array>;
     // Optional materialize method: downloads remote sources to a local directory and returns the rootDir
     materialize?: (opts?: { dir?: string; refresh?: boolean }) => Promise<{ rootDir: URL; ref?: string; sha?: string; subdir?: string }>;
 }
@@ -196,6 +196,10 @@ export function createResolver(
             } catch { return typeof input === "string"; }
         },
         resolve: async (specifier: string | URL) => {
+            // bypass cache for local files
+            if (type === "local") {
+                return resolverMap[type].resolve(specifier);
+            }
             const key = cacheKey("resolve", specifier);
             const cached = await getCached<URL>(key, 'url');
             if (cached) return cached;
@@ -205,6 +209,10 @@ export function createResolver(
             return url;
         },
         listDir: async (specifier: URL) => {
+            // bypass cache for local files
+            if (type === "local") {
+                return resolverMap[type].listDir(specifier);
+            }
             const key = cacheKey("listDir", specifier);
             const cached = await getCached<string[]>(key, 'array');
             if (cached) return cached;
@@ -215,6 +223,10 @@ export function createResolver(
             return array;
         },
         stat: async (specifier: URL) => {
+            // bypass cache for local files
+            if (type === "local") {
+                return resolverMap[type].stat(specifier);
+            }
             const key = cacheKey("stat", specifier);
             const cached = await getCached<{ isFile: boolean }>(key, 'object');
             if (cached) return cached;
@@ -228,16 +240,21 @@ export function createResolver(
             const mod = await importModule(await resolver.resolve(specifier), opts.ttlMs);
             return mod;
         },
-        load: async (specifier: URL) => {
+        load: async (specifier: URL, opts: { encoding?: string | null } = { encoding: "utf-8" }) => {
+            // bypass cache for local files
+            if (type === "local") {
+                return resolverMap[type].load(specifier, opts);
+            }
             const key = cacheKey("load", specifier);
-            const cached = await getCached<string>(key, 'object');
+            const cached = await getCached<string | Uint8Array>(key, 'object');
             if (cached) return cached;
-            const content = await resolverMap[type].load(specifier);
+            const content = await resolverMap[type].load(specifier, opts);
             await setCached(key, content);
             return content;
         },
         materialize: resolverMap[type] && (resolverMap[type] as unknown as { materialize?: Resolver["materialize"] }).materialize
             ? async (opts?: { dir?: string; refresh?: boolean }) => {
+                
                 const matKey = cacheKey("materialize", baseUrl?.toString() ?? "");
                 const cached = await getCached<{ rootDir: URL; ref?: string; sha?: string; subdir?: string }>(matKey, 'object');
                 if (cached && !opts?.refresh && !forceReload) {
@@ -289,8 +306,13 @@ export function createLocalResolver(baseUrl?: URL): Resolver {
             const info = Deno.statSync(URLspecifier.toString().replace("file://", ""));
             return Promise.resolve({ isFile: info.isFile });
         },
-        load(URLspecifier: URL) {
-            return Promise.resolve(Deno.readTextFile(URLspecifier.toString().replace("file://", "")));
+        async load(URLspecifier: URL, opts: { encoding?: string | null } = { encoding: "utf-8" }) {
+            const file = await Deno.readFile(URLspecifier.toString().replace("file://", ""));
+            if (opts?.encoding !== null) {
+                return Promise.resolve(new TextDecoder(opts?.encoding).decode(file));
+            }
+            return Promise.resolve(file);
+
         },
         materialize: (_opts?: { dir?: string; refresh?: boolean }) => {
             const root = baseUrl && baseUrl.protocol === "file:" ? baseUrl : new URL(`file://${Deno.cwd()}`);
@@ -322,7 +344,7 @@ export function createHttpResolver(baseUrl: URL): Resolver {
         stat(_specifier: URL) {
             return Promise.reject(new Error("http stat not implemented"));
         },
-        load: (specifier: URL) => {
+        load: (specifier: URL, opts: { encoding?: string | null } = { encoding: "utf-8" }) => {
             return fetch(specifier).then(res => res.text());
         },
         materialize: () => Promise.reject(new Error("http materialize not implemented"))
@@ -333,6 +355,7 @@ export function createHttpResolver(baseUrl: URL): Resolver {
 export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, tokenValue?: string }): Resolver {
     const token = opts.tokenValue ?? (opts.tokenEnv ? Deno.env.get(opts.tokenEnv) : undefined);
     async function ghFetch(url: URL): Promise<Response> {
+        console.log('[resolver] ghFetch', url.toString(), 'token', token, 'opts', opts);
         const headers: HeadersInit = {
             Accept: "application/vnd.github+json",
             "User-Agent": "oxian-js/0.0.1",
@@ -378,15 +401,22 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
             const api = new URL(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`);
             api.searchParams.set("ref", ref);
             const res = await ghFetch(api);
+            console.log('[resolver] stat key for', URLspecifier.toString(), res.status);
             if (res.status === 404) return { isFile: false };
-            if (!res.ok) throw new Error(`GitHub stat failed ${res.status} for ${api}`);
+            if (!res.ok) {
+                console.log('[resolver] stat not ok for', URLspecifier.toString(), 'res.status', res.status, 'res.ok', res.ok, 'res.body', await res.text());
+                throw new Error(`GitHub stat failed ${res.status} for ${api}`);
+            }
+            console.log('[resolver] stat ok for', URLspecifier.toString(), 'res.ok', res.ok);
             const json = await res.json() as { type?: string } | { message?: string };
+            console.log('[resolver] stat json for', URLspecifier.toString(), json);
             if ((json as { type?: string }).type === "file") {
                 return { isFile: true };
             }
+            console.log('[resolver] stat not file for', URLspecifier.toString());
             return { isFile: false };
         },
-        load: async (URLspecifier: URL) => {
+        load: async (URLspecifier: URL, opts: { encoding?: string | null } = { encoding: "utf-8" }) => {
             let apiUrl = URLspecifier;
             if (URLspecifier.protocol === 'https:' && URLspecifier.hostname === 'raw.githubusercontent.com') {
                 const [owner, repo, _1, _2, ref, ...path] = URLspecifier.pathname.split('/').filter(Boolean);

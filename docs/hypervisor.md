@@ -543,7 +543,7 @@ Monitor key metrics:
 1. **Hypervisor starts** on main port (8080)
 2. If project requires materialization:
    - Run `materialize` once to download/extract remote source to the worker cwd (isolated → `./.projects/<project>`)
-   - Run `prepare` to execute `preRun` hooks defined in the materialized `oxian.config.*`
+   - Run `prepare` to execute `prepare` hooks defined in the materialized `oxian.config.*`
 3. **Workers spawn** on sequential ports (9101, 9102, ...) with `--source` pointing to the materialized `file://` root (workers do not need `--allow-run`)
 3. **Health checks** verify worker readiness
 4. **Load balancer** starts routing requests

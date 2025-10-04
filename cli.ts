@@ -189,7 +189,7 @@ if (import.meta.main) {
         } catch { /* try next */ }
       }
       const cfgObj = (typeof matConfig === "function") ? await (matConfig as (defaults: Partial<OxianConfig>) => Partial<OxianConfig>)({}) : (matConfig as Partial<OxianConfig> | undefined);
-      const hooks = (cfgObj as { preRun?: Array<string | { cmd: string; cwd?: string; env?: Record<string, string> }> })?.preRun;
+      const hooks = (cfgObj as { prepare?: Array<string | { cmd: string; cwd?: string; env?: Record<string, string> }> })?.prepare;
       if (hooks && Array.isArray(hooks) && hooks.length) {
         for (const h of hooks) {
           const c = typeof h === "string" ? h : h.cmd;
@@ -342,7 +342,7 @@ if (import.meta.main) {
           ...(d.security ? { security: { ...config.security, ...d.security } } : {}),
           ...(d.loaders ? { loaders: { ...config.loaders, ...d.loaders } } : {}),
           ...(d.web ? { web: { ...config.web, ...d.web } } : {}),
-          ...(d.preRun ? { preRun: { ...config.preRun, ...d.preRun } } : {}),
+          ...(d.prepare ? { prepare: { ...config.prepare, ...d.prepare } } : {}),
           ...(d.compatibility ? { compatibility: { ...config.compatibility, ...d.compatibility } } : {}),
           server: { port: port ?? d.server?.port ?? config.server.port },
         } as EffectiveConfig;

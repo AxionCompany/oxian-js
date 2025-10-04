@@ -84,6 +84,8 @@ export type OxianConfig = {
         devProxyTarget?: string; // e.g., http://localhost:5173
         staticDir?: string;      // e.g., "dist"
         staticCacheControl?: string; // e.g., "public, max-age=31536000, immutable"
+        staticIndex?: string; // e.g., "index.html"
+        pathRewrite?: (path: string, basePath: string) => string;
       };
       // Config-only multi-project support
       projects?: Record<string, {
@@ -276,6 +278,8 @@ export type OxianConfig = {
     devProxyTarget?: string; // e.g., http://localhost:5173
     staticDir?: string;      // e.g., "dist"
     staticCacheControl?: string; // e.g., "public, max-age=31536000, immutable"
+    staticIndex?: string; // e.g., "index.html"
+    pathRewrite?: (path: string, basePath: string) => string;
   };
   // Optional pre-run commands executed after materialization (in materialized root)
   preRun?: Array<string | { cmd: string; cwd?: string; env?: Record<string, string> }>;
