@@ -132,9 +132,9 @@ Flags:
 - `--materialize-dir`: destination directory (default: current directory)
 - `--materialize-refresh`: force re-download and re-extract
 
-### `prepare` - Run preRun Hooks in a Materialized Root
+### `prepare` - Run prepare Commands
 
-Execute `preRun` commands declared in the materialized project’s `oxian.config.*` (e.g., install deps, build assets).
+Execute `prepare` commands declared in the materialized project’s `oxian.config.*` (e.g., install deps, build assets).
 
 ```bash
 deno run -A jsr:@oxian/oxian-js prepare --source=file:///abs/path/.oxian/materialized/github/owner/repo/<sha>/

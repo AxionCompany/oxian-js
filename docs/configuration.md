@@ -134,8 +134,8 @@ export default {
     "staticCacheControl": string
   },
   
-  // Optional pre-run commands executed after materialization (in materialized root)
-  "preRun": Array<string | { cmd: string; cwd?: string; env?: Record<string,string> }>
+  // Optional prepare commands executed before workers start
+  "prepare": Array<string | { cmd: string; cwd?: string; env?: Record<string,string> }>
 }
 ```
 

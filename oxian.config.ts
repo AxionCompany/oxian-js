@@ -85,5 +85,5 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
         middlewareMode: "this",
         useMiddlewareRequest: true,
     },
-    // preRun: ['touch test.txt'],
+    // prepare: ['touch test.txt'],
 });

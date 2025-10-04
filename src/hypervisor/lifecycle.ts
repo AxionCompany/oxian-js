@@ -78,8 +78,11 @@ async function detectHostDenoConfig(resolver: ReturnType<typeof createResolver>)
     const candidates = ["deno.json", "deno.jsonc"];
     for (const name of candidates) {
         try {
+            console.log('[hv] detecting host deno config', name);
             const resolved = await resolver.resolve(name);
+            console.log('[hv] resolved host deno config', resolved.toString());
             const { isFile } = await resolver.stat(resolved);
+            console.log('[hv] isFile', isFile);
             if (isFile) return resolved.toString();
         } catch (_err) { /* no local deno config at this candidate */ }
     }
@@ -228,8 +231,8 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             let maybeHostDenoConfig: { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> } = { imports: {}, scopes: {} };
             try {
                 const resolved = await resolver.resolve(effectiveDenoCfg);
-                const loaded = await resolver.load(resolved);
-                const picked = JSON.parse(loaded);
+                const loaded = await resolver.load(resolved, { encoding: "utf-8" });
+                const picked = JSON.parse(loaded as string);
                 if (picked && typeof picked === "object") {
                     maybeHostDenoConfig = picked as { imports?: Record<string, string>; scopes?: Record<string, Record<string, string>> };
                     if (Deno.env.get("OXIAN_DEBUG")) {
@@ -365,7 +368,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             ensureDir(`${projectDir}`);
         }
 
-        // Two-step flow: perform materialize (and preRun) in a separate CLI invocation, then spawn worker without allow-run
+        // Two-step flow: perform materialize (and prepare) in a separate CLI invocation, then spawn worker without allow-run
         {
             const hvMat = (config.runtime?.hv as { materialize?: unknown })?.materialize as boolean | { mode?: string; dir?: string; refresh?: boolean } | undefined;
             const projMat = ((config.runtime?.hv?.projects as Record<string, { materialize?: boolean | { mode?: string; dir?: string; refresh?: boolean } }> | undefined)?.[project]?.materialize);
@@ -405,7 +408,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
 
             }
 
-            // Second step: run prepare (preRun hooks) in the materialized root
+            // Second step: run prepare (prepare hooks)
             const prepArgs: string[] = [
                 ...denoArgs,
                 "prepare",

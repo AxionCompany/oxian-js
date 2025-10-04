@@ -225,9 +225,10 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         }
 
         if (basePath && basePath !== "/") {
+
           if (!path.startsWith(basePath)) {
             // Non-API path: handle via web config (prefer top-level config.web; fallback to runtime.hv.web)
-            const webCfg = (config.web ?? (config.runtime?.hv?.web ?? {})) as { devProxyTarget?: string; staticDir?: string; staticCacheControl?: string };
+            const webCfg = (config.web ?? (config.runtime?.hv?.web ?? {}))
             if (webCfg.devProxyTarget) {
               try {
                 const targetUrl = new URL(url.pathname + url.search, webCfg.devProxyTarget);
@@ -241,11 +242,11 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
               }
             }
             if (webCfg.staticDir) {
-              const cleaned = url.pathname.replace(/^\/+/, "");
+              const cleaned = webCfg.pathRewrite ?  webCfg.pathRewrite(url.href, "") : url.pathname.replace(/^\/+/, "");
               // Try static file
               try {
                 const fileUrl = await resolver.resolve(`${webCfg.staticDir}/${cleaned}`);
-                const file = await resolver.load(fileUrl);
+                const file = await resolver.load(fileUrl, { encoding: null });
                 const headers = new Headers();
                 const ct = guessContentType(fileUrl.pathname);
                 if (ct) headers.set("content-type", ct);
@@ -254,8 +255,8 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
               } catch {/* ignore and fallback to index */ }
               // SPA fallback
               try {
-                const indexUrl = await resolver.resolve(`${webCfg.staticDir}/index.html`);
-                const file = await resolver.load(indexUrl);
+                const indexUrl = await resolver.resolve(`${webCfg.staticDir}/${webCfg.staticIndex ?? 'index.html'}`);
+                const file = await resolver.load(indexUrl, { encoding: null });
                 const headers = new Headers({ "content-type": "text/html; charset=utf-8" });
                 if (webCfg.staticCacheControl) headers.set("cache-control", webCfg.staticCacheControl);
                 return new Response(file as string, { status: 200, headers });
