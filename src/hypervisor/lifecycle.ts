@@ -171,7 +171,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
 
     async function spawnWorker(selected: SelectedProject, idx?: number, denoOptionsIn?: string[], scriptArgsIn?: string[]): Promise<WorkerHandle> {
         const project = selected.project;
-        
+
         // Guard against concurrent spawns for the same project
         if (spawning.has(project)) {
             // Wait for the ongoing spawn to complete
@@ -182,7 +182,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             }
             throw new Error(`Concurrent spawn detected but worker not available for project: ${project}`);
         }
-        
+
         spawning.add(project);
         try {
             return await doSpawnWorker(selected, idx, denoOptionsIn, scriptArgsIn);
@@ -363,7 +363,25 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
         const effectiveConfig = selectedMerged.config ?? projCfg.config ?? globalConfig;
 
         // Determine project working directory early (needed for materialize step)
-        const projectDir = selectedMerged.isolated ? `./.projects/${project}` : Deno.cwd();
+
+        async function hashString(inputString: string) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(inputString); // Encode the string to a Uint8Array
+
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data); // Hash the data
+
+            // Convert ArrayBuffer to Array of bytes
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+
+            // Convert bytes to hex string
+            const hashHex = hashArray.map(byte => byte.toString(16).padStart(2, '0')).join('');
+
+            return hashHex;
+        }
+
+        const projectHash = await hashString(project);
+
+        const projectDir = selectedMerged.isolated ? `./.projects/${projectHash}` : Deno.cwd();
         if (selectedMerged.isolated) {
             ensureDir(`${projectDir}`);
         }
@@ -400,10 +418,6 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
                 try {
                     const text = new TextDecoder().decode(out.stdout);
                     const parsed = JSON.parse(text) as { ok?: boolean; rootDir?: string };
-                    if (parsed?.rootDir) {
-                        // Ensure we pass a clean file:// URL as source
-                        effectiveSource = parsed.rootDir;
-                    }
                 } catch { /* ignore parse errors */ }
 
             }
@@ -412,9 +426,8 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             const prepArgs: string[] = [
                 ...denoArgs,
                 "prepare",
-                ...(effectiveSource ? [`--source=${effectiveSource}`] : []),
             ];
-            
+
             const prepCmd = new Deno.Command(Deno.execPath(), {
                 args: prepArgs,
                 stdin: "null",
@@ -433,7 +446,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             `--port=${port}`,
             ...scriptArgs.filter((a) => !a.startsWith("--port=")),
             ...Deno.args.filter((a) => !a.startsWith("--source=") && !a.startsWith("--config=") && !a.startsWith("--hypervisor=")),
-            ...(effectiveSource ? [`--source=${effectiveSource}`] : []),
+            ...(effectiveSource && !selectedMerged.materialize && !selectedMerged.isolated ? [`--source=${effectiveSource}`] : []),
             ...(effectiveConfig ? [`--config=${effectiveConfig}`] : []),
         ];
 
@@ -495,6 +508,7 @@ export function createLifecycleManager(opts: { config: EffectiveConfig; onProjec
             console.log('[hv] spawning worker final args', [...denoArgs, ...finalScriptArgs]);
             console.log('[hv] spawning worker final env', spawnEnv);
             console.log('[hv] spawning worker final cwd', projectDir);
+
         }
 
         const proc = new Deno.Command(Deno.execPath(), {

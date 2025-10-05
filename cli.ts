@@ -137,7 +137,7 @@ if (import.meta.main) {
     try {
       const source = typeof args.source === "string" ? args.source : undefined;
       if (!source) throw new Error("--source is required for materialize");
-      const envDefaults: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+      const envDefaults: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = {
         tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
         forceReload: args.reload === true
       };
@@ -151,6 +151,7 @@ if (import.meta.main) {
       Deno.exit(0);
     } catch (e) {
       console.error("[cli] materialize error", (e as Error)?.message);
+      console.error(e);
       Deno.exit(1);
     }
   }
@@ -158,7 +159,7 @@ if (import.meta.main) {
 
   if (cmd === "prepare") {
 
-    if ((source?.startsWith("https:") || source?.startsWith("http:") || source?.startsWith("github:"))){
+    if ((source?.startsWith("https:") || source?.startsWith("http:") || source?.startsWith("github:"))) {
       Deno.exit(0);
     }
 
@@ -166,7 +167,7 @@ if (import.meta.main) {
       if (!source) {
         source = Deno.cwd();
       }
-      const envDefaults: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+      const envDefaults: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = {
         tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
         forceReload: args.reload === true
       };
@@ -202,7 +203,7 @@ if (import.meta.main) {
             stdin: "null",
             stdout: "inherit",
             stderr: "inherit",
-            cwd: cwd ?? fromFileUrl(rootUrl),
+            cwd: cwd ?? '.',
             env: env ? { ...env } : undefined,
           });
           const out = await proc.output();
@@ -289,7 +290,7 @@ if (import.meta.main) {
   let resolver: Resolver | undefined;
 
   try {
-    const envDefaults: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+    const envDefaults: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = {
       tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
       forceReload: args.reload === true
     };
@@ -370,7 +371,7 @@ if (import.meta.main) {
 
   if (cmd === "routes") {
     if (!resolver) {
-      const envDefaults: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+      const envDefaults: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = {
         tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
         forceReload: args.reload === true
       };
@@ -399,7 +400,7 @@ if (import.meta.main) {
       config = { ...config, runtime: { ...config.runtime, hotReload: true } } as EffectiveConfig;
     }
     if (!resolver) {
-      const envDefaults2: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+      const envDefaults2: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = {
         tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
         forceReload: args.reload === true
       };
@@ -423,7 +424,7 @@ if (import.meta.main) {
 
   // start/dev default to starting the server
   if (!resolver) {
-    const envDefaults3: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = { 
+    const envDefaults3: { tokenEnv?: string; tokenValue?: string; forceReload?: boolean } = {
       tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
       forceReload: args.reload === true
     };
