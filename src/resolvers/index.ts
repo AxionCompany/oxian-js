@@ -1,7 +1,7 @@
 import { isAbsolute, toFileUrl, join, fromFileUrl } from "@std/path";
 import { importModule } from "./importer.ts";
 import { absolutize } from "../utils/root.ts";
-import { get, remove, set } from "kv-toolbox/blob";
+import { get, set } from "kv-toolbox/blob";
 
 // Initialize Deno KV for caching
 let kvCache: Deno.Kv | null = null;
@@ -344,7 +344,7 @@ export function createHttpResolver(baseUrl: URL): Resolver {
         stat(_specifier: URL) {
             return Promise.reject(new Error("http stat not implemented"));
         },
-        load: (specifier: URL, opts: { encoding?: string | null } = { encoding: "utf-8" }) => {
+        load: (specifier: URL, _opts: { encoding?: string | null } = { encoding: "utf-8" }) => {
             return fetch(specifier).then(res => res.text());
         },
         materialize: () => Promise.reject(new Error("http materialize not implemented"))
@@ -355,7 +355,6 @@ export function createHttpResolver(baseUrl: URL): Resolver {
 export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, tokenValue?: string }): Resolver {
     const token = opts.tokenValue ?? (opts.tokenEnv ? Deno.env.get(opts.tokenEnv) : undefined);
     async function ghFetch(url: URL): Promise<Response> {
-        console.log('[resolver] ghFetch', url.toString(), 'token', token, 'opts', opts);
         const headers: HeadersInit = {
             Accept: "application/vnd.github+json",
             "User-Agent": "oxian-js/0.0.1",
@@ -401,22 +400,17 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
             const api = new URL(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`);
             api.searchParams.set("ref", ref);
             const res = await ghFetch(api);
-            console.log('[resolver] stat key for', URLspecifier.toString(), res.status);
             if (res.status === 404) return { isFile: false };
             if (!res.ok) {
-                console.log('[resolver] stat not ok for', URLspecifier.toString(), 'res.status', res.status, 'res.ok', res.ok, 'res.body', await res.text());
                 throw new Error(`GitHub stat failed ${res.status} for ${api}`);
             }
-            console.log('[resolver] stat ok for', URLspecifier.toString(), 'res.ok', res.ok);
             const json = await res.json() as { type?: string } | { message?: string };
-            console.log('[resolver] stat json for', URLspecifier.toString(), json);
             if ((json as { type?: string }).type === "file") {
                 return { isFile: true };
             }
-            console.log('[resolver] stat not file for', URLspecifier.toString());
             return { isFile: false };
         },
-        load: async (URLspecifier: URL, opts: { encoding?: string | null } = { encoding: "utf-8" }) => {
+        load: async (URLspecifier: URL, _opts: { encoding?: string | null } = { encoding: "utf-8" }) => {
             let apiUrl = URLspecifier;
             if (URLspecifier.protocol === 'https:' && URLspecifier.hostname === 'raw.githubusercontent.com') {
                 const [owner, repo, _1, _2, ref, ...path] = URLspecifier.pathname.split('/').filter(Boolean);
@@ -441,11 +435,17 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
             if (!commitRes.ok) throw new Error(`GitHub resolve ref failed ${commitRes.status} for ${commitApi}`);
             const commitJson = await commitRes.json() as { sha?: string };
             const sha = commitJson.sha || ref;
+            Deno.writeTextFileSync('resolver.txt', `opts.dir: ${String(opts.dir)}`, { append: true });
             const dirInput = opts.dir ? String(opts.dir) : '.'
+            Deno.writeTextFileSync('resolver.txt', `dirInput: ${String(dirInput)}`, { append: true });
             const dirAbs = isAbsolute(dirInput) ? dirInput : join(Deno.cwd(), dirInput);
+            Deno.writeTextFileSync('resolver.txt', `dirAbs: ${String(dirAbs)}`, { append: true });
             const rootPath = `${dirAbs.replace(/\/$/, '')}`
+            Deno.writeTextFileSync('resolver.txt', `rootPath: ${String(rootPath)}`, { append: true });
             try { Deno.mkdirSync(rootPath, { recursive: true }); } catch { /* ignore */ }
+            Deno.writeTextFileSync('resolver.txt', `Created dir: ${String(rootPath)}`, { append: true });
             const marker = `${rootPath}/.ok`;
+            Deno.writeTextFileSync('resolver.txt', `marker: ${String(marker)}`, { append: true });
             const exists = (() => { try { return Deno.statSync(marker).isFile; } catch { return false; } })();
             if (exists && !opts.refresh) {
                 const base = toFileUrl(rootPath + "/");
@@ -460,6 +460,7 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
             if (!reader) throw new Error("No response body from GitHub tarball");
             // Stream to temp file to simplify extraction
             const tmpTar = `${rootPath}.tar.gz.tmp`;
+            Deno.writeTextFileSync('resolver.txt', `tmpTar: ${String(tmpTar)}`, { append: true });
             const file = await Deno.open(tmpTar, { create: true, write: true, truncate: true });
             try {
                 while (true) {
@@ -472,11 +473,14 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
             }
             // Decompress and extract using built-ins
             const gz = await Deno.readFile(tmpTar);
+            Deno.writeTextFileSync('resolver.txt', `gz: ${String(gz)}`, { append: true });
             // Use Web Streams DecompressionStream where available
             const ds = new DecompressionStream('gzip');
             const decompressed = await new Response(new Blob([gz]).stream().pipeThrough(ds)).arrayBuffer();
+            Deno.writeTextFileSync('resolver.txt', `decompressed: ${String(decompressed).slice(0, 100)}...`, { append: true });
             // Minimal tar extractor: skip leading folder, safe paths only
             await extractMinimalTar(new Uint8Array(decompressed), rootPath);
+            Deno.writeTextFileSync('resolver.txt', `extracted: ${JSON.stringify({ owner, repo, ref, sha, at: new Date().toISOString() })}`, { append: true });
             try { await Deno.writeTextFile(marker, JSON.stringify({ owner, repo, ref, sha, at: new Date().toISOString() })); } catch { /* ignore */ }
             try { await Deno.remove(tmpTar); } catch { /* ignore */ }
             const base = toFileUrl(rootPath + "/");
@@ -488,7 +492,7 @@ export function createGithubResolver(baseUrl: URL, opts: { tokenEnv?: string, to
 
 // Minimal tar extractor sufficient for GitHub tarballs
 async function extractMinimalTar(bytes: Uint8Array, destDir: string): Promise<void> {
-    // Very small tar reader: 512-byte headers, ustar format. Extract regular files only.
+    // Robust tar reader: supports POSIX ustar, PAX headers, and GNU longnames. Extracts regular files and directories.
     const blockSize = 512;
     let offset = 0;
     const decoder = new TextDecoder();
@@ -500,44 +504,110 @@ async function extractMinimalTar(bytes: Uint8Array, destDir: string): Promise<vo
         const s = nulTerminated(str).trim();
         return s ? parseInt(s, 8) : 0;
     }
+
+    let pendingPaxPath: string | null = null;
+    let pendingLongName: string | null = null;
+
     while (offset + blockSize <= bytes.length) {
         const block = bytes.subarray(offset, offset + blockSize);
         offset += blockSize;
-        const name = nulTerminated(decoder.decode(block.subarray(0, 100)));
-        if (!name) {
-            // two consecutive zero blocks marks the end, but we just continue
+
+        const rawName = nulTerminated(decoder.decode(block.subarray(0, 100)));
+        const size = parseOctal(decoder.decode(block.subarray(124, 136)));
+        const typeflagCode = block[156] || 0;
+        const typeflag = String.fromCharCode(typeflagCode);
+        const prefix = nulTerminated(decoder.decode(block.subarray(345, 500)));
+
+        // End of archive: empty header
+        if (!rawName && size === 0 && typeflagCode === 0) {
+            // Skip to next header (usually another zero block) and continue
             continue;
         }
-        const size = parseOctal(decoder.decode(block.subarray(124, 136)));
-        const type = decoder.decode(block.subarray(156, 157));
-        const linkname = nulTerminated(decoder.decode(block.subarray(157, 257)));
-        const isFile = type === '0' || type === '';
+
+        // Handle PAX extended header (type 'x'): applies to the NEXT header
+        if (typeflag === 'x') {
+            const paxBytes = bytes.subarray(offset, offset + size);
+            const paxText = new TextDecoder().decode(paxBytes);
+            const lines = paxText.split('\n');
+            for (const line of lines) {
+                const spaceIdx = line.indexOf(' ');
+                const kv = spaceIdx >= 0 ? line.slice(spaceIdx + 1) : line;
+                const eqIdx = kv.indexOf('=');
+                if (eqIdx >= 0) {
+                    const key = kv.slice(0, eqIdx);
+                    const value = kv.slice(eqIdx + 1);
+                    if (key === 'path') pendingPaxPath = value;
+                }
+            }
+            const pad = (blockSize - (size % blockSize)) % blockSize;
+            offset += size + pad;
+            continue;
+        }
+
+        // Handle GNU longname (type 'L'): name for the NEXT header
+        if (typeflag === 'L') {
+            const nameBytes = bytes.subarray(offset, offset + size);
+            let longName = new TextDecoder().decode(nameBytes);
+            const nulIdx = longName.indexOf('\0');
+            if (nulIdx >= 0) longName = longName.slice(0, nulIdx);
+            pendingLongName = longName;
+            const pad = (blockSize - (size % blockSize)) % blockSize;
+            offset += size + pad;
+            continue;
+        }
+
+        // Build effective name
+        let headerName = rawName;
+        if (prefix) headerName = `${prefix}/${headerName}`;
+        if (pendingLongName) { headerName = pendingLongName; pendingLongName = null; }
+        if (pendingPaxPath) { headerName = pendingPaxPath; pendingPaxPath = null; }
+
         // Compute path without the top-level folder
-        const safe = name.split('/')
-            .slice(1) // drop leading repo folder
-            .filter((p) => !!p && p !== '.' && p !== '..')
-            .join('/');
+        const parts = headerName.split('/').filter(Boolean);
+        const safe = parts.slice(1).filter((p) => p !== '.' && p !== '..').join('/');
+        const isDirectory = typeflag === '5' || headerName.endsWith('/');
+        const isRegularFile = (typeflag === '0' || typeflag === '\0' || typeflag === '') && !isDirectory;
+
+        // If no safe path (e.g., top-level folder only), just skip payload
+        if (!safe) {
+            const pad = (blockSize - (size % blockSize)) % blockSize;
+            offset += size + pad;
+            continue;
+        }
+
         const fullPath = `${destDir}/${safe}`;
-        if (isFile) {
-            const content = bytes.subarray(offset, offset + size);
-            // ensure dir
+
+        if (isDirectory) {
+            try { Deno.mkdirSync(fullPath, { recursive: true }); } catch { /* ignore */ }
+            const pad = (blockSize - (size % blockSize)) % blockSize;
+            offset += size + pad;
+            continue;
+        }
+
+        if (isRegularFile) {
+            // Ensure parent directory exists
             const dir = fullPath.replace(/\/[^/]*$/, '');
             try { Deno.mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
+
+            // If a directory exists at file path, skip writing (defensive)
+            try {
+                const st = Deno.statSync(fullPath);
+                if (st.isDirectory) {
+                    const pad = (blockSize - (size % blockSize)) % blockSize;
+                    offset += size + pad;
+                    continue;
+                }
+            } catch { /* not exists, proceed */ }
+
+            const content = bytes.subarray(offset, offset + size);
             await Deno.writeFile(fullPath, content);
-            // advance to next 512 boundary
             const pad = (blockSize - (size % blockSize)) % blockSize;
             offset += size + pad;
-        } else {
-            // directory or other
-            if (safe) {
-                try { Deno.mkdirSync(fullPath, { recursive: true }); } catch { /* ignore */ }
-            }
-            // skip payload if any
-            const pad = (blockSize - (size % blockSize)) % blockSize;
-            offset += size + pad;
+            continue;
         }
-        if (linkname) {
-            // ignore links for safety
-        }
+
+        // Other types (symlink, hardlink, etc.) — skip payload
+        const pad = (blockSize - (size % blockSize)) % blockSize;
+        offset += size + pad;
     }
 }
