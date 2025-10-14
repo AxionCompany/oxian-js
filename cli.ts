@@ -257,12 +257,10 @@ if (import.meta.main) {
       let matConfig: unknown = undefined;
       for (const name of candidates) {
         try {
-          console.log("[cli] prepare matResolver", name, rootUrl);
           const mod = await matResolver.import(name);
           const pick = (mod?.default ?? (mod as { config?: unknown })?.config ??
             mod) as unknown;
           matConfig = pick;
-          console.log("[cli] prepare matConfig", name, matConfig);
           break;
         } catch { /* try next */ }
       }
@@ -438,7 +436,6 @@ if (import.meta.main) {
       for (const name of candidates) {
         try {
           const mod = await resolver.import(name);
-          console.log("[cli] import", name, mod);
           const pick = (mod.default ?? (mod as { config?: unknown }).config ??
             mod) as unknown;
           if (typeof pick === "function") {
@@ -490,9 +487,6 @@ if (import.meta.main) {
             : {}),
           server: { port: port ?? d.server?.port ?? config.server.port },
         } as EffectiveConfig;
-        if (prevDiscovered) {
-          console.log("[cli] applied remote config override", base ?? "local");
-        }
       }
     }
   } catch (e) {
