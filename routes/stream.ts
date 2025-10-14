@@ -6,4 +6,4 @@ export async function GET(_data: Data, { response }: Context) {
   await new Promise((r) => setTimeout(r, 2000));
   response.stream("world\n");
   return;
-} 
+}

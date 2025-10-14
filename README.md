@@ -2,7 +2,9 @@
 
 > **Turn simple ESM into enterprise-grade APIs**
 
-Oxian is a modern, zero-build framework that lets you create powerful APIs directly from TypeScript/JavaScript files. Run locally or from GitHub URLs in seconds.
+Oxian is a modern, zero-build framework that lets you create powerful APIs
+directly from TypeScript/JavaScript files. Run locally or from GitHub URLs in
+seconds.
 
 ```bash
 # Run instantly - no build step required!
@@ -66,7 +68,6 @@ curl -X POST -H "Content-Type: application/json" \
 # {"greeting":"Hello, World!"}
 ```
 
-
 ## 🔧 Init command
 
 Bootstrap a new Oxian project with sensible defaults and interactive prompts.
@@ -76,11 +77,13 @@ deno -A jsr:@oxian/oxian-js init
 ```
 
 This will:
+
 - Create/update `oxian.config.json` (asks for port, routesDir, logging level)
 - Create/update `deno.json` with useful tasks
 - Create/update `llm.txt` (local copy)
 
 If any target file already exists, you will be prompted per file:
+
 - [a]ppend: merge for JSON files; append content for text files
 - [o]verwrite: replace the file with the generated content
 - [c]ancel: skip that file
@@ -103,6 +106,7 @@ routes/
 ### Route Examples
 
 **Static routes:**
+
 ```ts
 // routes/users.ts
 export function GET() {
@@ -116,6 +120,7 @@ export function POST({ name, email }) {
 ```
 
 **Dynamic routes:**
+
 ```ts
 // routes/users/[id].ts
 export function GET({ id }) {
@@ -124,6 +129,7 @@ export function GET({ id }) {
 ```
 
 **Catch-all routes:**
+
 ```ts
 // routes/docs/[...slug].ts
 export function GET({ slug }) {
@@ -138,8 +144,8 @@ Every route handler receives two arguments:
 
 ```ts
 export async function GET(
-  data: Record<string, unknown>,    // Merged request data
-  context: Context                  // Request context & utilities
+  data: Record<string, unknown>, // Merged request data
+  context: Context, // Request context & utilities
 ) {
   return { success: true };
 }
@@ -162,11 +168,13 @@ export function PUT({ id, role, name }) {
 
 ### Request Body Parsing
 
-Oxian parses request bodies based on `Content-Type` and merges them into `data` (lowest priority), with query and path params overriding as shown above.
+Oxian parses request bodies based on `Content-Type` and merges them into `data`
+(lowest priority), with query and path params overriding as shown above.
 
 - **application/json**: Parsed JSON object. Empty body → `undefined`.
 - **text/plain**: Raw string.
-- **application/x-www-form-urlencoded**: Key/value object. Duplicate keys become arrays. Values are strings.
+- **application/x-www-form-urlencoded**: Key/value object. Duplicate keys become
+  arrays. Values are strings.
 - **multipart/form-data**:
   - Text fields: strings; duplicate keys become arrays of strings.
   - File fields: objects with base64 content and metadata:
@@ -178,7 +186,8 @@ Oxian parses request bodies based on `Content-Type` and merges them into `data` 
       base64: string; // file bytes encoded as base64
     };
     ```
-  - If a file field appears multiple times, `data[field]` is an array of `UploadedFile`.
+  - If a file field appears multiple times, `data[field]` is an array of
+    `UploadedFile`.
 
 Example (multipart upload):
 
@@ -198,12 +207,13 @@ export function POST({ userId, avatar }) {
     userId,
     filename: file?.filename,
     size: file?.size,
-    preview: file?.base64?.slice(0, 24) // sample usage
+    preview: file?.base64?.slice(0, 24), // sample usage
   };
 }
 ```
 
-Note: The original unparsed request body bytes are available at `context.request.rawBody` as a `Uint8Array`.
+Note: The original unparsed request body bytes are available at
+`context.request.rawBody` as a `Uint8Array`.
 
 ### Context Object
 
@@ -212,30 +222,30 @@ The `context` provides request details and response utilities:
 ```ts
 export function GET(data, context) {
   const {
-    requestId,           // Unique request identifier
-    request: {           // Request details
+    requestId, // Unique request identifier
+    request: { // Request details
       method,
       url,
       headers,
-      pathParams,        // { id: "123" }
-      queryParams,       // URLSearchParams object
-      query,             // Parsed query object
-      body,              // Parsed request body
-      raw                // Original Request object
+      pathParams, // { id: "123" }
+      queryParams, // URLSearchParams object
+      query, // Parsed query object
+      body, // Parsed request body
+      raw, // Original Request object
     },
-    dependencies,        // Injected dependencies
-    response: {          // Response utilities
-      send,              // Send response
-      stream,            // Streaming response
-      sse,               // Server-sent events
-      status,            // Set status code
-      headers,           // Set headers
-      statusText         // Set status text
+    dependencies, // Injected dependencies
+    response: { // Response utilities
+      send, // Send response
+      stream, // Streaming response
+      sse, // Server-sent events
+      status, // Set status code
+      headers, // Set headers
+      statusText, // Set status text
     },
-    oxian: {            // Framework internals
+    oxian: { // Framework internals
       route,
-      startedAt
-    }
+      startedAt,
+    },
   } = context;
 
   return { requestId };
@@ -248,10 +258,10 @@ Inject shared services and utilities using `dependencies.ts` files:
 
 ```ts
 // routes/dependencies.ts
-export default async function() {
+export default async function () {
   const db = await createDatabase();
   const redis = await createRedisClient();
-  
+
   return { db, redis };
 }
 ```
@@ -285,20 +295,21 @@ Add request/response processing with `middleware.ts`:
 
 ```ts
 // routes/middleware.ts
-export default function(data, context) {
+export default function (data, context) {
   // Add request ID to response headers
   context.response.headers({
-    "x-request-id": context.requestId
+    "x-request-id": context.requestId,
   });
 
   // Modify request data
   return {
-    data: { ...data, timestamp: Date.now() }
+    data: { ...data, timestamp: Date.now() },
   };
 }
 ```
 
 Middleware runs **before** your route handler and can:
+
 - Modify request data
 - Add response headers
 - Throw errors to short-circuit (e.g., auth)
@@ -312,10 +323,10 @@ Add cross-cutting concerns with `interceptors.ts`:
 export async function beforeRun(data, context) {
   // Start timing
   context.oxian.startedAt = performance.now();
-  
+
   // Add correlation ID
   return {
-    data: { ...data, correlationId: crypto.randomUUID() }
+    data: { ...data, correlationId: crypto.randomUUID() },
   };
 }
 
@@ -326,12 +337,13 @@ export async function afterRun(resultOrError, context) {
     requestId: context.requestId,
     route: context.oxian.route,
     duration,
-    success: !(resultOrError instanceof Error)
+    success: !(resultOrError instanceof Error),
   });
 }
 ```
 
 Interceptors wrap around the entire request lifecycle:
+
 - `beforeRun`: Executes before middleware and handlers
 - `afterRun`: Executes after handlers (success or error)
 
@@ -342,14 +354,14 @@ Interceptors wrap around the entire request lifecycle:
 ```ts
 export async function GET(_, { response }) {
   // Start streaming
-  response.stream({ 
-    headers: { "content-type": "text/plain" }
+  response.stream({
+    headers: { "content-type": "text/plain" },
   });
-  
+
   response.stream("Hello ");
-  await new Promise(r => setTimeout(r, 1000));
+  await new Promise((r) => setTimeout(r, 1000));
   response.stream("World!");
-  
+
   // Stream closes automatically when handler returns
 }
 ```
@@ -359,11 +371,11 @@ export async function GET(_, { response }) {
 ```ts
 export async function GET(_, { response }) {
   const sse = response.sse({ retry: 1000 });
-  
+
   let count = 0;
   const interval = setInterval(() => {
     sse.send({ count: ++count }, { event: "update" });
-    
+
     if (count >= 5) {
       clearInterval(interval);
       sse.close();
@@ -407,14 +419,14 @@ Or use TypeScript for dynamic configuration:
 // oxian.config.ts
 export default {
   server: {
-    port: process.env.PORT ? parseInt(process.env.PORT) : 8080
+    port: process.env.PORT ? parseInt(process.env.PORT) : 8080,
   },
   loaders: {
     github: {
       enabled: true,
-      tokenEnv: "GITHUB_TOKEN"
-    }
-  }
+      tokenEnv: "GITHUB_TOKEN",
+    },
+  },
 };
 ```
 
@@ -431,6 +443,7 @@ deno -A jsr:@oxian/oxian-js --source=https://github.com/owner/repo/tree/main/api
 ```
 
 Perfect for:
+
 - 🔄 **Rapid prototyping** - no git clone needed
 - 📚 **Documentation examples** - live, runnable code
 - 🎯 **Microservices** - deploy from any repo
@@ -452,13 +465,13 @@ deno -A jsr:@oxian/oxian-js --source=github:private-org/private-repo
 ```ts
 export function GET({ id }) {
   if (!id) {
-    throw { 
-      message: "ID required", 
-      statusCode: 400, 
-      statusText: "Bad Request" 
+    throw {
+      message: "ID required",
+      statusCode: 400,
+      statusText: "Bad Request",
     };
   }
-  
+
   // Or throw regular errors
   throw new Error("Something went wrong"); // → 500
 }
@@ -474,7 +487,7 @@ export function GET({ id }) {
     throw new OxianHttpError("ID required", {
       statusCode: 400,
       code: "MISSING_ID",
-      details: { field: "id" }
+      details: { field: "id" },
     });
   }
 }
@@ -490,7 +503,7 @@ export async function afterRun(resultOrError, context) {
     console.error({
       requestId: context.requestId,
       error: resultOrError.message,
-      stack: resultOrError.stack
+      stack: resultOrError.stack,
     });
   }
 }
@@ -506,9 +519,9 @@ export function GET(_, { response }) {
   response.status(201);
   response.headers({
     "location": "/users/123",
-    "cache-control": "no-cache"
+    "cache-control": "no-cache",
   });
-  
+
   // Send response
   response.send({ created: true });
 }
@@ -520,14 +533,14 @@ export function GET(_, { response }) {
 export function GET({ format }) {
   if (format === "xml") {
     return new Response("<data>Hello</data>", {
-      headers: { "content-type": "application/xml" }
+      headers: { "content-type": "application/xml" },
     });
   }
-  
+
   if (format === "text") {
     return "Plain text response";
   }
-  
+
   // Default JSON
   return { message: "JSON response" };
 }
@@ -563,21 +576,25 @@ Files are automatically reloaded in development:
 deno -A jsr:@oxian/oxian-js dev
 ```
 
-Changes to routes, dependencies, middleware, and interceptors trigger automatic reloads.
+Changes to routes, dependencies, middleware, and interceptors trigger automatic
+reloads.
 
 ## 🧩 Using with Vite (Frontend + Oxian)
 
-Oxian works great alongside Vite. In development, run both servers and let Oxian proxy non-API requests to Vite. In production, serve static files from Vite's `dist/` as a fallback when a request doesn't match any API route.
+Oxian works great alongside Vite. In development, run both servers and let Oxian
+proxy non-API requests to Vite. In production, serve static files from Vite's
+`dist/` as a fallback when a request doesn't match any API route.
 
 ### Dev setup
 
-1) Run Vite on its default port (5173):
+1. Run Vite on its default port (5173):
 
 ```bash
 npm run dev
 ```
 
-2) Run Oxian hypervisor on a different port (e.g., 8080) and configure a basePath for APIs, e.g., `/api`:
+2. Run Oxian hypervisor on a different port (e.g., 8080) and configure a
+   basePath for APIs, e.g., `/api`:
 
 ```json
 // oxian.config.json
@@ -593,7 +610,9 @@ npm run dev
 }
 ```
 
-With this, requests that don't match an Oxian API route can be proxied to the Vite dev server (configuration wiring described in docs). Your frontend fetches can target `/api/...` to hit Oxian and everything else serves your Vite app.
+With this, requests that don't match an Oxian API route can be proxied to the
+Vite dev server (configuration wiring described in docs). Your frontend fetches
+can target `/api/...` to hit Oxian and everything else serves your Vite app.
 
 ### Production setup
 
@@ -619,16 +638,24 @@ npm run build  # produces dist/
 }
 ```
 
-Oxian will try API routes under `/api`; if no match, it serves files from `dist/`. If a file is not found and no staticDir is configured, a 404 is returned.
+Oxian will try API routes under `/api`; if no match, it serves files from
+`dist/`. If a file is not found and no staticDir is configured, a 404 is
+returned.
 
-For more details and advanced options, see [Using Oxian with Vite](./docs/integrations-vite.md).
+For more details and advanced options, see
+[Using Oxian with Vite](./docs/integrations-vite.md).
 
 ### Per-project web configuration (multi-project)
 
-In multi-project setups, you can overlay per-project web behavior over the global `runtime.hv.web` settings. The hypervisor selects the project first (via `hv.provider` or `hv.select`), determines the effective API base path (project `routing.basePath` falling back to global), and for non-API requests applies the per-project web config:
+In multi-project setups, you can overlay per-project web behavior over the
+global `runtime.hv.web` settings. The hypervisor selects the project first (via
+`hv.provider` or `hv.select`), determines the effective API base path (project
+`routing.basePath` falling back to global), and for non-API requests applies the
+per-project web config:
 
 - `devProxyTarget`: Proxy non-API paths to a dev server (e.g., Vite)
-- `staticDir`: Serve static files for non-API paths in production, with SPA `index.html` fallback
+- `staticDir`: Serve static files for non-API paths in production, with SPA
+  `index.html` fallback
 - `staticCacheControl`: Optional cache-control header for static assets
 
 Example:
@@ -647,7 +674,10 @@ Example:
         },
         "appB": {
           "routing": { "basePath": "/b-api" },
-          "web": { "staticDir": "apps/b/dist", "staticCacheControl": "public, max-age=3600" }
+          "web": {
+            "staticDir": "apps/b/dist",
+            "staticCacheControl": "public, max-age=3600"
+          }
         }
       },
       "select": [
@@ -661,12 +691,16 @@ Example:
 ```
 
 Behavior:
-- Requests matching a project’s API base path are proxied to that project’s worker.
-- Other paths are handled by that project’s `web` config (dev proxy if set; otherwise static serving if `staticDir` is set; otherwise 404).
+
+- Requests matching a project’s API base path are proxied to that project’s
+  worker.
+- Other paths are handled by that project’s `web` config (dev proxy if set;
+  otherwise static serving if `staticDir` is set; otherwise 404).
 
 ### Request Transformation
 
-Transform requests before they reach workers using the `onRequest` callback (TypeScript config only):
+Transform requests before they reach workers using the `onRequest` callback
+(TypeScript config only):
 
 ```ts
 // oxian.config.ts
@@ -679,13 +713,14 @@ export default {
         headers.set("x-processed-by", "hypervisor");
         headers.set("x-project", project);
         return new Request(req, { headers });
-      }
-    }
-  }
+      },
+    },
+  },
 };
 ```
 
 Use cases:
+
 - Add authentication tokens to all requests
 - Inject custom headers for downstream services
 - Transform request URLs or bodies
@@ -693,11 +728,16 @@ Use cases:
 
 ### Worker idle shutdown
 
-You can automatically stop idle workers to save resources. An idle worker is one with no active requests/streams and no activity for a configured TTL. Long‑lived streams and SSE are respected: the worker remains active until the client closes the response body.
+You can automatically stop idle workers to save resources. An idle worker is one
+with no active requests/streams and no activity for a configured TTL. Long‑lived
+streams and SSE are respected: the worker remains active until the client closes
+the response body.
 
-- Configure per project via `runtime.hv.projects[<name>].idleTtlMs` or at spawn time via provider/`SelectedProject.idleTtlMs`.
+- Configure per project via `runtime.hv.projects[<name>].idleTtlMs` or at spawn
+  time via provider/`SelectedProject.idleTtlMs`.
 - Default is no TTL (workers do not auto‑stop unless configured).
-- Precedence: provider → per‑project config → `runtime.hv.autoscale.idleTtlMs` → disabled when none provided.
+- Precedence: provider → per‑project config → `runtime.hv.autoscale.idleTtlMs` →
+  disabled when none provided.
 
 Example:
 
@@ -715,8 +755,11 @@ Example:
 ```
 
 Behavior:
-- Every proxied request marks activity; inflight count decrements only after the response body completes. Idle countdown starts after that.
-- When `idleTtlMs` elapses with inflight=0, the worker is stopped. Next request spawns it on demand.
+
+- Every proxied request marks activity; inflight count decrements only after the
+  response body completes. Idle countdown starts after that.
+- When `idleTtlMs` elapses with inflight=0, the worker is stopped. Next request
+  spawns it on demand.
 
 ## 📝 TypeScript Support
 
@@ -770,14 +813,14 @@ my-api/
 
 ```ts
 // routes/dependencies.ts
-export default async function() {
+export default async function () {
   const config = {
     database: {
       url: Deno.env.get("DATABASE_URL") || "sqlite:///tmp/db.sqlite",
     },
     redis: {
-      url: Deno.env.get("REDIS_URL") || "redis://localhost:6379"
-    }
+      url: Deno.env.get("REDIS_URL") || "redis://localhost:6379",
+    },
   };
 
   const db = await createDatabase(config.database);
@@ -792,29 +835,29 @@ export default async function() {
 // routes/api/middleware.ts
 import { verify } from "https://deno.land/x/djwt/mod.ts";
 
-export default async function(data, context) {
+export default async function (data, context) {
   const authHeader = context.request.headers.get("authorization");
-  
+
   if (!authHeader?.startsWith("Bearer ")) {
-    throw { 
-      message: "Authentication required", 
-      statusCode: 401 
+    throw {
+      message: "Authentication required",
+      statusCode: 401,
     };
   }
 
   const token = authHeader.slice(7);
-  
+
   try {
     const payload = await verify(token, "your-secret-key", "HS256");
     return {
       context: {
-        user: payload
-      }
+        user: payload,
+      },
     };
   } catch {
-    throw { 
-      message: "Invalid token", 
-      statusCode: 401 
+    throw {
+      message: "Invalid token",
+      statusCode: 401,
     };
   }
 }
@@ -827,24 +870,24 @@ export default async function(data, context) {
 export async function POST({ name, email }, { dependencies }) {
   // Validate input
   if (!name || typeof name !== "string") {
-    throw { 
-      message: "Name is required", 
+    throw {
+      message: "Name is required",
       statusCode: 400,
-      details: { field: "name" }
+      details: { field: "name" },
     };
   }
 
   if (!email || !email.includes("@")) {
-    throw { 
-      message: "Valid email is required", 
+    throw {
+      message: "Valid email is required",
       statusCode: 400,
-      details: { field: "email" }
+      details: { field: "email" },
     };
   }
 
   const { db } = dependencies;
   const user = await db.users.create({ name, email });
-  
+
   return { user };
 }
 ```
@@ -855,25 +898,25 @@ export async function POST({ name, email }, { dependencies }) {
 // routes/interceptors.ts
 export async function beforeRun(data, context) {
   context.oxian.startedAt = performance.now();
-  
+
   console.log(JSON.stringify({
     requestId: context.requestId,
     method: context.request.method,
     url: context.request.url,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   }));
 }
 
 export async function afterRun(resultOrError, context) {
   const duration = performance.now() - context.oxian.startedAt;
   const isError = resultOrError instanceof Error;
-  
+
   console.log(JSON.stringify({
     requestId: context.requestId,
     route: context.oxian.route,
     duration: Math.round(duration),
     status: isError ? "error" : "success",
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   }));
 }
 ```
@@ -924,7 +967,7 @@ jobs:
       - uses: denoland/setup-deno@v1
         with:
           deno-version: v1.40
-      
+
       - name: Deploy
         run: |
           # Your deployment logic here
@@ -936,24 +979,28 @@ jobs:
 ### Common Issues
 
 **Port already in use:**
+
 ```bash
 # Use different port
 deno -A jsr:@oxian/oxian-js --port=3000
 ```
 
 **Module not found:**
+
 ```bash
 # Clear Deno cache
 deno cache --reload jsr:@oxian/oxian-js
 ```
 
 **Permission denied:**
+
 ```bash
 # Ensure all permissions
 deno run --allow-all jsr:@oxian/oxian-js
 ```
 
 **GitHub rate limiting:**
+
 ```bash
 # Set GitHub token
 export GITHUB_TOKEN=your_token
@@ -988,27 +1035,83 @@ export function GET(_, { dependencies }) {
     timestamp: new Date().toISOString(),
     version: "1.0.0",
     dependencies: {
-      database: dependencies.db ? "connected" : "disconnected"
+      database: dependencies.db ? "connected" : "disconnected",
+    },
+  };
+}
+```
+
+## 🤖 Building MCP Servers
+
+Oxian makes it easy to build **Model Context Protocol (MCP) servers** using streamable HTTP transport. MCP enables AI assistants to connect to external data sources and tools.
+
+### Quick Example
+
+```ts
+// routes/mcp/dependencies.ts
+import type { MCPServerConfig } from "@oxian/oxian-js/mcp";
+
+export default function() {
+  return {
+    mcpServer: {
+      info: { name: "my-mcp-server", version: "1.0.0" },
+      capabilities: { tools: {}, resources: {}, prompts: {} },
+      tools: [{
+        name: "get_data",
+        description: "Fetch data from the database",
+        inputSchema: { /* JSON Schema */ }
+      }],
+      resources: [],
+      resourceTemplates: [],
+      prompts: [],
+      toolHandlers: {
+        get_data: async (args) => ({ content: [{ type: "text", text: "..." }] })
+      },
+      readResource: (params) => ({ contents: [] }),
+      getPrompt: (params) => ({ messages: [] })
     }
   };
 }
 ```
 
+```ts
+// routes/mcp/index.ts
+import { handleMCPRequest, handleMCPInfo } from "@oxian/oxian-js/mcp";
+
+export async function POST(data, context) {
+  const mcpConfig = context.dependencies.mcpServer;
+  return await handleMCPRequest(data, context, mcpConfig);
+}
+
+export function GET(_data, context) {
+  const mcpConfig = context.dependencies.mcpServer;
+  return handleMCPInfo(mcpConfig);
+}
+```
+
+**Full example**: See [`routes/mcp/`](./routes/mcp/) for a complete weather MCP server with tools, resources, and resource templates.
+
+**Documentation**: [MCP Server Guide](./docs/mcp-server.md)
+
 ## 📚 Examples
 
 Explore example routes included in this repo:
 
+- **MCP Server**: `routes/mcp/` - Full MCP server with weather tools and resource templates
 - Basic index route: `routes/index.ts`
 - Dynamic params: `routes/users/[id].ts`
 - SSE stream: `routes/sse.ts`
 - Streaming response: `routes/stream.ts`
-- DI composition: `routes/dep-compose/dependencies.ts` and `routes/dep-compose/leaf/index.ts`
-- Middleware & interceptors: `routes/middleware.ts`, `routes/interceptors.ts`, `routes/users/middleware.ts`, `routes/order/a/interceptors.ts`
+- DI composition: `routes/dep-compose/dependencies.ts` and
+  `routes/dep-compose/leaf/index.ts`
+- Middleware & interceptors: `routes/middleware.ts`, `routes/interceptors.ts`,
+  `routes/users/middleware.ts`, `routes/order/a/interceptors.ts`
 - Catch-all docs: `routes/docs/[...slug].ts`
 
 ## 🤝 Contributing
 
-We welcome contributions! See our [Contributing Guide](./CONTRIBUTING.md) for details.
+We welcome contributions! See our [Contributing Guide](./CONTRIBUTING.md) for
+details.
 
 ### Development Setup
 
@@ -1028,6 +1131,6 @@ MIT License - see [LICENSE](./LICENSE) for details.
 
 **Built with ❤️ by the Oxian team**
 
-[Website](https://oxian.dev) • [Documentation](https://docs.oxian.dev) • [Discord](https://discord.gg/oxian) • [Twitter](https://twitter.com/oxiandev)
+[Website](https://oxiandigital.com/) • [Documentation](https://github.com/AxionCompany/oxian-js) •
 
 </div>

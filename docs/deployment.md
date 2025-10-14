@@ -1,6 +1,8 @@
 # 🚀 Deployment - Production Deployment Guide
 
-This comprehensive guide covers deploying Oxian applications to production environments, from simple single-instance deployments to sophisticated multi-region setups with auto-scaling and monitoring.
+This comprehensive guide covers deploying Oxian applications to production
+environments, from simple single-instance deployments to sophisticated
+multi-region setups with auto-scaling and monitoring.
 
 ## Deployment Overview
 
@@ -8,7 +10,6 @@ Oxian supports multiple deployment strategies:
 
 - **🐳 Container deployments** - Docker, Kubernetes, cloud containers
 - **🖥️ Traditional servers** - VPS, dedicated servers, on-premises
-
 
 ## Container Deployment
 
@@ -59,7 +60,7 @@ For local development and testing:
 
 ```yaml
 # docker-compose.yml
-version: '3.8'
+version: "3.8"
 
 services:
   api:
@@ -126,42 +127,42 @@ spec:
         app: oxian-api
     spec:
       containers:
-      - name: api
-        image: myregistry/oxian-api:latest
-        ports:
-        - containerPort: 8080
-        env:
-        - name: NODE_ENV
-          value: "production"
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: api-secrets
-              key: database-url
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: api-secrets
-              key: jwt-secret
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 5
+        - name: api
+          image: myregistry/oxian-api:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: api-secrets
+                  key: database-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: api-secrets
+                  key: jwt-secret
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
 ---
 apiVersion: v1
 kind: Service
@@ -171,8 +172,8 @@ spec:
   selector:
     app: oxian-api
   ports:
-  - port: 80
-    targetPort: 8080
+    - port: 80
+      targetPort: 8080
   type: ClusterIP
 ---
 apiVersion: networking.k8s.io/v1
@@ -183,16 +184,16 @@ metadata:
     nginx.ingress.kubernetes.io/rewrite-target: /
 spec:
   rules:
-  - host: api.myapp.com
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: oxian-api-service
-            port:
-              number: 80
+    - host: api.myapp.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: oxian-api-service
+                port:
+                  number: 80
 ```
 
 ### Secrets
@@ -223,7 +224,6 @@ kubectl get pods
 kubectl get services
 kubectl get ingress
 ```
-
 
 ## Environment Configuration
 
@@ -332,18 +332,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Setup Deno
         uses: denoland/setup-deno@v1
         with:
           deno-version: v1.40.x
-      
+
       - name: Run tests
         run: deno test -A
-      
+
       - name: Check formatting
         run: deno fmt --check
-      
+
       - name: Run linter
         run: deno lint
 
@@ -352,20 +352,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Log in to Container Registry
         uses: docker/login-action@v2
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v4
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-      
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v3
         with:
@@ -435,14 +435,14 @@ deploy:
 // routes/health.ts
 export async function GET(_, { dependencies }) {
   const { database, redis, externalAPI } = dependencies;
-  
+
   const health = {
     status: "healthy",
     timestamp: new Date().toISOString(),
     version: Deno.env.get("APP_VERSION") || "unknown",
-    checks: {}
+    checks: {},
   };
-  
+
   // Database check
   try {
     await database.ping();
@@ -451,7 +451,7 @@ export async function GET(_, { dependencies }) {
     health.checks.database = "unhealthy";
     health.status = "degraded";
   }
-  
+
   // Redis check
   try {
     await redis.ping();
@@ -460,7 +460,7 @@ export async function GET(_, { dependencies }) {
     health.checks.redis = "unhealthy";
     health.status = "degraded";
   }
-  
+
   // External API check
   try {
     await externalAPI.healthCheck();
@@ -469,11 +469,11 @@ export async function GET(_, { dependencies }) {
     health.checks.external_api = "unhealthy";
     health.status = "degraded";
   }
-  
+
   const statusCode = health.status === "healthy" ? 200 : 503;
   return new Response(JSON.stringify(health), {
     status: statusCode,
-    headers: { "content-type": "application/json" }
+    headers: { "content-type": "application/json" },
   });
 }
 ```
@@ -485,30 +485,30 @@ export async function GET(_, { dependencies }) {
 const metrics = {
   http_requests_total: new Map(),
   http_request_duration: new Map(),
-  active_connections: 0
+  active_connections: 0,
 };
 
 export function GET() {
   const output = [];
-  
+
   // HTTP requests total
   output.push("# TYPE http_requests_total counter");
   for (const [key, value] of metrics.http_requests_total) {
     output.push(`http_requests_total{${key}} ${value}`);
   }
-  
+
   // Request duration
   output.push("# TYPE http_request_duration histogram");
   for (const [key, value] of metrics.http_request_duration) {
     output.push(`http_request_duration{${key}} ${value}`);
   }
-  
+
   // Active connections
   output.push("# TYPE active_connections gauge");
   output.push(`active_connections ${metrics.active_connections}`);
-  
+
   return new Response(output.join("\n"), {
-    headers: { "content-type": "text/plain" }
+    headers: { "content-type": "text/plain" },
   });
 }
 ```
@@ -632,17 +632,18 @@ try {
 
 ```typescript
 // middleware/security.ts
-export default function(data, { response }) {
+export default function (data, { response }) {
   response.headers({
     "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
     "x-xss-protection": "1; mode=block",
     "referrer-policy": "strict-origin-when-cross-origin",
-    "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
-    "permissions-policy": "geolocation=(), microphone=(), camera=()"
+    "content-security-policy":
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
+    "permissions-policy": "geolocation=(), microphone=(), camera=()",
   });
-  
+
   return {};
 }
 ```
@@ -659,7 +660,7 @@ import * as Sentry from "https://deno.land/x/sentry/index.js";
 Sentry.init({
   dsn: Deno.env.get("SENTRY_DSN"),
   environment: Deno.env.get("NODE_ENV"),
-  tracesSampleRate: 0.1
+  tracesSampleRate: 0.1,
 });
 
 // Add to interceptors
@@ -668,11 +669,11 @@ export async function afterRun(resultOrError, context) {
     Sentry.captureException(resultOrError, {
       tags: {
         route: context.oxian.route,
-        method: context.request.method
+        method: context.request.method,
       },
       user: {
-        id: context.user?.id
-      }
+        id: context.user?.id,
+      },
     });
   }
 }
@@ -691,10 +692,10 @@ export function createProductionLogger() {
         timestamp: new Date().toISOString(),
         service: "oxian-api",
         version: Deno.env.get("APP_VERSION"),
-        ...meta
+        ...meta,
       }));
     },
-    
+
     error: (message: string, error: Error, meta: any = {}) => {
       console.error(JSON.stringify({
         level: "error",
@@ -702,14 +703,14 @@ export function createProductionLogger() {
         error: {
           name: error.name,
           message: error.message,
-          stack: error.stack
+          stack: error.stack,
         },
         timestamp: new Date().toISOString(),
         service: "oxian-api",
         version: Deno.env.get("APP_VERSION"),
-        ...meta
+        ...meta,
       }));
-    }
+    },
   };
 }
 ```
@@ -766,16 +767,16 @@ spec:
       scaleDownDelaySeconds: 30
       prePromotionAnalysis:
         templates:
-        - templateName: success-rate
+          - templateName: success-rate
         args:
-        - name: service-name
-          value: oxian-api-preview
+          - name: service-name
+            value: oxian-api-preview
       postPromotionAnalysis:
         templates:
-        - templateName: success-rate
+          - templateName: success-rate
         args:
-        - name: service-name
-          value: oxian-api-active
+          - name: service-name
+            value: oxian-api-active
   selector:
     matchLabels:
       app: oxian-api
@@ -785,8 +786,8 @@ spec:
         app: oxian-api
     spec:
       containers:
-      - name: oxian-api
-        image: myregistry/oxian-api:latest
+        - name: oxian-api
+          image: myregistry/oxian-api:latest
 ```
 
 ## Performance Optimization
@@ -821,16 +822,16 @@ spec:
 // caching/redis.ts
 export class RedisCache {
   constructor(private redis: RedisClient) {}
-  
+
   async get<T>(key: string): Promise<T | null> {
     const value = await this.redis.get(key);
     return value ? JSON.parse(value) : null;
   }
-  
+
   async set(key: string, value: any, ttl = 3600): Promise<void> {
     await this.redis.setex(key, ttl, JSON.stringify(value));
   }
-  
+
   async invalidate(pattern: string): Promise<void> {
     const keys = await this.redis.keys(pattern);
     if (keys.length > 0) {
@@ -868,9 +869,11 @@ export class RedisCache {
 
 ---
 
-Production deployment requires careful planning and robust infrastructure. Start with simple deployments and gradually add complexity as your application scales.
+Production deployment requires careful planning and robust infrastructure. Start
+with simple deployments and gradually add complexity as your application scales.
 
 **Next Steps:**
+
 - [Monitoring Guide](./monitoring.md) - Set up observability
 - [Security Guide](./security.md) - Harden your deployment
 - [Performance Guide](./performance.md) - Optimize for scale

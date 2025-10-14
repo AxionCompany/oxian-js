@@ -1,6 +1,7 @@
 # 🚀 Getting Started with Oxian
 
-This guide will help you create your first Oxian API in minutes and understand the core concepts.
+This guide will help you create your first Oxian API in minutes and understand
+the core concepts.
 
 ## Prerequisites
 
@@ -38,23 +39,23 @@ Create `routes/index.ts`:
 
 ```ts
 export function GET() {
-  return { 
+  return {
     message: "Hello from Oxian!",
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   };
 }
 
 export function POST({ name }) {
   if (!name) {
-    throw { 
-      message: "Name is required", 
-      statusCode: 400 
+    throw {
+      message: "Name is required",
+      statusCode: 400,
     };
   }
-  
-  return { 
+
+  return {
     greeting: `Hello, ${name}!`,
-    received: new Date().toISOString()
+    received: new Date().toISOString(),
   };
 }
 ```
@@ -66,6 +67,7 @@ deno run -A jsr:@oxian/oxian-js
 ```
 
 You should see:
+
 ```
 [cli] starting server { port: 8080, source: undefined }
 ```
@@ -154,12 +156,12 @@ Every handler receives two parameters:
 
 ```ts
 export function GET(
-  data,    // Merged request data (path params + query + body)
-  context  // Request context and utilities
+  data, // Merged request data (path params + query + body)
+  context, // Request context and utilities
 ) {
-  const { id } = data;                    // Path parameters
+  const { id } = data; // Path parameters
   const { requestId, response } = context; // Request context
-  
+
   return { user: { id } };
 }
 ```
@@ -174,12 +176,12 @@ Create `routes/users/[id].ts`:
 
 ```ts
 export function GET({ id }) {
-  return { 
-    user: { 
-      id, 
+  return {
+    user: {
+      id,
       name: `User ${id}`,
-      email: `user${id}@example.com`
-    }
+      email: `user${id}@example.com`,
+    },
   };
 }
 ```
@@ -195,7 +197,7 @@ export function GET({ q, limit = 10 }) {
   return {
     query: q,
     limit: parseInt(limit),
-    results: [`Result for "${q}"`]
+    results: [`Result for "${q}"`],
   };
 }
 ```
@@ -211,12 +213,13 @@ export function POST(data, { request }) {
   return {
     received: data,
     method: request.method,
-    headers: Object.fromEntries(request.headers.entries())
+    headers: Object.fromEntries(request.headers.entries()),
   };
 }
 ```
 
-Test: `curl -X POST -H "Content-Type: application/json" -d '{"test":"data"}' http://localhost:8080/echo`
+Test:
+`curl -X POST -H "Content-Type: application/json" -d '{"test":"data"}' http://localhost:8080/echo`
 
 ### 4. Response Control
 
@@ -227,9 +230,9 @@ export function GET(_, { response }) {
   response.status(201);
   response.headers({
     "x-custom": "header",
-    "cache-control": "no-cache"
+    "cache-control": "no-cache",
   });
-  
+
   return { created: true };
 }
 ```
@@ -242,15 +245,15 @@ Create `routes/error-demo.ts`:
 export function GET({ type }) {
   switch (type) {
     case "400":
-      throw { 
-        message: "Bad request demo", 
-        statusCode: 400 
+      throw {
+        message: "Bad request demo",
+        statusCode: 400,
       };
     case "404":
-      throw { 
-        message: "Not found demo", 
+      throw {
+        message: "Not found demo",
         statusCode: 404,
-        statusText: "Not Found"
+        statusText: "Not Found",
       };
     case "500":
       throw new Error("Internal server error demo");
@@ -261,6 +264,7 @@ export function GET({ type }) {
 ```
 
 Test different error types:
+
 - `curl http://localhost:8080/error-demo?type=400`
 - `curl http://localhost:8080/error-demo?type=404`
 - `curl http://localhost:8080/error-demo?type=500`
@@ -360,6 +364,7 @@ OXIAN_LOG_LEVEL=debug deno run -A jsr:@oxian/oxian-js dev
 ### 4. Hot Reload Patterns
 
 Oxian watches these file types for changes:
+
 - `*.ts`, `*.js` - Route handlers
 - `dependencies.ts` - Dependency injection
 - `middleware.ts` - Middleware
@@ -371,7 +376,8 @@ Oxian watches these file types for changes:
 Now that you understand the basics, dive deeper:
 
 1. **[Routing](./routing.md)** - Master dynamic routes, catch-all patterns
-2. **[Dependency Injection](./dependency-injection.md)** - Share services between routes
+2. **[Dependency Injection](./dependency-injection.md)** - Share services
+   between routes
 3. **[Middleware](./middleware.md)** - Add authentication, logging, validation
 4. **[Streaming & SSE](./streaming-and-sse.md)** - Build real-time features
 5. **[Deployment](./deployment.md)** - Deploy to production
@@ -411,4 +417,5 @@ deno cache --reload jsr:@oxian/oxian-js
 
 ---
 
-Ready to build amazing APIs? Continue with our [routing guide](./routing.md) to learn about dynamic routes and advanced patterns! 🚀
+Ready to build amazing APIs? Continue with our [routing guide](./routing.md) to
+learn about dynamic routes and advanced patterns! 🚀

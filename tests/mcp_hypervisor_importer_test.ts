@@ -23,12 +23,18 @@ Deno.test({
   // Serve a helper via HTTP to force use of importer + http loader somewhere in the app
   // We'll import this helper from a route during the test through the worker server implicitly.
   const helperServerPort = 18676;
-  const helperCode = `export function normalize(h: string | null): string { return (h||'').trim().toLowerCase(); }`;
+  const helperCode =
+    `export function normalize(h: string | null): string { return (h||'').trim().toLowerCase(); }`;
   const abort = new AbortController();
-  const helperServer = Deno.serve({ port: helperServerPort, signal: abort.signal }, (req) => {
+  const helperServer = Deno.serve({
+    port: helperServerPort,
+    signal: abort.signal,
+  }, (req) => {
     const url = new URL(req.url);
     if (url.pathname === "/helper.ts") {
-      return new Response(helperCode, { headers: { "content-type": "text/typescript; charset=utf-8" } });
+      return new Response(helperCode, {
+        headers: { "content-type": "text/typescript; charset=utf-8" },
+      });
     }
     return new Response("not found", { status: 404 });
   });
@@ -61,15 +67,23 @@ Deno.test({
     await waitForReady(`http://localhost:${port}/`);
 
     // Basic warm requests under different headers
-    const r1 = await fetch(`http://localhost:${port}/feature`, { headers: { "x-mcp-project": "alpha" } });
+    const r1 = await fetch(`http://localhost:${port}/feature`, {
+      headers: { "x-mcp-project": "alpha" },
+    });
     if (!r1.ok) throw new Error("alpha project route failed");
-    const r2 = await fetch(`http://localhost:${port}/feature`, { headers: { "x-mcp-project": "beta" } });
+    const r2 = await fetch(`http://localhost:${port}/feature`, {
+      headers: { "x-mcp-project": "beta" },
+    });
     if (!r2.ok) throw new Error("beta project route failed");
   } finally {
-    try { proc.kill(); } catch {}
-    try { await proc.output(); } catch {}
+    try {
+      proc.kill();
+    } catch {}
+    try {
+      await proc.output();
+    } catch {}
     abort.abort();
     await helperServer.finished.catch(() => {});
     await Deno.remove(cfgPath).catch(() => {});
   }
-}); 
+});

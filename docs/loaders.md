@@ -1,6 +1,9 @@
 # 🔄 Loaders - Local & Remote Execution
 
-Oxian's loader architecture enables running APIs from various sources without build steps. Load code from local files, GitHub repositories, HTTP URLs, or other custom sources. This makes Oxian perfect for rapid prototyping, documentation examples, and distributed microservices.
+Oxian's loader architecture enables running APIs from various sources without
+build steps. Load code from local files, GitHub repositories, HTTP URLs, or
+other custom sources. This makes Oxian perfect for rapid prototyping,
+documentation examples, and distributed microservices.
 
 ## Overview
 
@@ -247,11 +250,11 @@ const cacheKey = `github:${owner}/${repo}/${path}:${commitSha}`;
 {
   "loaders": {
     "github": {
-      "cacheTtlSec": 300,        // 5 minutes
+      "cacheTtlSec": 300, // 5 minutes
       "cacheDir": ".oxian-cache" // Local cache directory
     },
     "http": {
-      "cacheTtlSec": 60,         // 1 minute
+      "cacheTtlSec": 60, // 1 minute
       "respectCacheHeaders": true // Use HTTP cache headers
     }
   }
@@ -388,39 +391,39 @@ import { S3Client } from "https://deno.land/x/s3_lite_client@0.7.0/mod.ts";
 
 export class S3Loader implements Loader {
   scheme = "s3";
-  
+
   constructor(private s3: S3Client) {}
-  
+
   canHandle(url: URL): boolean {
     return url.protocol === "s3:";
   }
-  
+
   async load(url: URL) {
     // s3://bucket/path/to/file.ts
     const bucket = url.hostname;
     const key = url.pathname.slice(1);
-    
+
     try {
       const object = await this.s3.getObject(bucket, key);
       const content = await object.text();
-      
+
       return {
         content,
-        mediaType: key.endsWith(".ts") ? "ts" : "js"
+        mediaType: key.endsWith(".ts") ? "ts" : "js",
       };
     } catch (error) {
       throw new Error(`Failed to load from S3: ${error.message}`);
     }
   }
-  
+
   async listDir(url: URL): Promise<string[]> {
     const bucket = url.hostname;
     const prefix = url.pathname.slice(1);
-    
+
     const objects = await this.s3.listObjects(bucket, { prefix });
-    return objects.map(obj => obj.key);
+    return objects.map((obj) => obj.key);
   }
-  
+
   cacheKey(url: URL): string {
     return `s3:${url.hostname}${url.pathname}`;
   }
@@ -436,9 +439,9 @@ import { S3Loader } from "./loaders/s3.ts";
 export default {
   runtime: {
     customLoaders: [
-      new S3Loader(createS3Client())
-    ]
-  }
+      new S3Loader(createS3Client()),
+    ],
+  },
 };
 ```
 
@@ -551,9 +554,9 @@ deno run -A jsr:@oxian/oxian-js \
 {
   "loaders": {
     "github": {
-      "cacheTtlSec": 3600,     // Longer cache for production
-      "maxConcurrent": 10,     // Parallel downloads
-      "timeout": 30000         // Request timeout
+      "cacheTtlSec": 3600, // Longer cache for production
+      "maxConcurrent": 10, // Parallel downloads
+      "timeout": 30000 // Request timeout
     }
   }
 }
@@ -564,12 +567,14 @@ deno run -A jsr:@oxian/oxian-js \
 ### Common Issues
 
 **GitHub rate limiting:**
+
 ```bash
 # Set token to increase rate limits
 export GITHUB_TOKEN=ghp_your_token_here
 ```
 
 **Network timeouts:**
+
 ```json
 {
   "loaders": {
@@ -582,6 +587,7 @@ export GITHUB_TOKEN=ghp_your_token_here
 ```
 
 **Cache issues:**
+
 ```bash
 # Clear cache
 rm -rf .oxian-cache
@@ -662,9 +668,12 @@ export GITHUB_TOKEN=$(vault kv get -field=token secret/github)
 
 ---
 
-Loaders make Oxian incredibly flexible for modern deployment scenarios. Start with local development, then leverage GitHub and HTTP loaders for powerful deployment patterns.
+Loaders make Oxian incredibly flexible for modern deployment scenarios. Start
+with local development, then leverage GitHub and HTTP loaders for powerful
+deployment patterns.
 
 **Next Steps:**
+
 - [Deployment Guide](./deployment.md) - Production deployment strategies
 - [Configuration](./configuration.md) - Advanced configuration options
 - [Best Practices](./best-practices.md) - Production-ready patterns

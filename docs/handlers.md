@@ -1,6 +1,8 @@
 # 🎯 Handlers - Route Handler Functions
 
-Handlers are the core functions that process HTTP requests in Oxian. They receive parsed request data and context, then return responses or throw errors. This guide covers everything about writing effective, type-safe handlers.
+Handlers are the core functions that process HTTP requests in Oxian. They
+receive parsed request data and context, then return responses or throw errors.
+This guide covers everything about writing effective, type-safe handlers.
 
 ## Handler Signature
 
@@ -8,8 +10,8 @@ Every handler function follows the same signature:
 
 ```ts
 export async function METHOD(
-  data: Data,      // Merged request data (path + query + body)
-  context: Context // Request context and utilities
+  data: Data, // Merged request data (path + query + body)
+  context: Context, // Request context and utilities
 ): Promise<unknown | void> | unknown | void {
   // Handler logic here
   return response; // or throw error
@@ -43,10 +45,10 @@ export function DELETE(data, context) {
 }
 
 // Fallback for unsupported methods
-export default function(data, context) {
-  throw { 
+export default function (data, context) {
+  throw {
     message: `Method ${context.request.method} not allowed`,
-    statusCode: 405 
+    statusCode: 405,
   };
 }
 ```
@@ -82,12 +84,12 @@ export function GET({ id, postId }) {
 export function GET({ q, limit = 10, sort = "created" }) {
   // URL: /search?q=hello&limit=5&sort=updated
   // → q = "hello", limit = "5", sort = "updated"
-  
+
   return {
     query: q,
     limit: parseInt(limit),
     sort,
-    results: []
+    results: [],
   };
 }
 ```
@@ -99,26 +101,29 @@ export function GET({ q, limit = 10, sort = "created" }) {
 export function POST({ name, email, age }) {
   // Body: {"name":"John","email":"john@example.com","age":25}
   // → name = "John", email = "john@example.com", age = 25
-  
-  return { 
+
+  return {
     id: Math.random().toString(36),
     name,
     email,
-    age: age ? parseInt(age) : null
+    age: age ? parseInt(age) : null,
   };
 }
 ```
 
 ### Request Body Parsing Details
 
-Oxian parses bodies based on `Content-Type` and merges into `data` with the precedence: path > query > body.
+Oxian parses bodies based on `Content-Type` and merges into `data` with the
+precedence: path > query > body.
 
 - **application/json**: Parsed JSON. Empty body → `undefined`.
 - **text/plain**: Raw string.
-- **application/x-www-form-urlencoded**: Key/value object where duplicate keys produce arrays of strings.
+- **application/x-www-form-urlencoded**: Key/value object where duplicate keys
+  produce arrays of strings.
 - **multipart/form-data**:
   - Text fields are strings; duplicate keys produce arrays of strings.
-  - File fields are transformed into objects that include base64-encoded content and metadata:
+  - File fields are transformed into objects that include base64-encoded content
+    and metadata:
     ```ts
     type UploadedFile = {
       filename: string;
@@ -141,12 +146,14 @@ export function POST({ title, file }) {
     title: Array.isArray(title) ? title[0] : title,
     filename: f?.filename,
     bytes: f?.size,
-    contentType: f?.contentType
+    contentType: f?.contentType,
   };
 }
 ```
 
-You can also access the original raw request body bytes via `context.request.rawBody` (a `Uint8Array`). This is useful for signature verification or custom parsing.
+You can also access the original raw request body bytes via
+`context.request.rawBody` (a `Uint8Array`). This is useful for signature
+verification or custom parsing.
 
 ### Parameter Precedence Example
 
@@ -155,9 +162,9 @@ You can also access the original raw request body bytes via `context.request.raw
 export function PUT({ id, name, email }) {
   // URL: /users/123?id=456
   // Body: {"id": 789, "name": "John", "email": "john@example.com"}
-  
+
   // Result: id = "123" (path wins), name = "John", email = "john@example.com"
-  
+
   return { id, name, email };
 }
 ```
@@ -169,32 +176,32 @@ The `context` parameter provides request details and utilities:
 ```ts
 export function GET(data, context) {
   const {
-    requestId,        // Unique request identifier
-    request: {        // Request object
-      method,         // HTTP method
-      url,            // Full URL
-      headers,        // Headers object
-      pathParams,     // Path parameters object
-      queryParams,    // URLSearchParams object  
-      query,          // Parsed query object
-      body,           // Parsed body
-      raw             // Original Request object
+    requestId, // Unique request identifier
+    request: { // Request object
+      method, // HTTP method
+      url, // Full URL
+      headers, // Headers object
+      pathParams, // Path parameters object
+      queryParams, // URLSearchParams object
+      query, // Parsed query object
+      body, // Parsed body
+      raw, // Original Request object
     },
-    dependencies,     // Injected dependencies
-    response: {       // Response utilities
-      send,           // Send response manually
-      stream,         // Start streaming
-      sse,            // Server-sent events
-      status,         // Set status code
-      headers,        // Set headers
-      statusText      // Set status text
+    dependencies, // Injected dependencies
+    response: { // Response utilities
+      send, // Send response manually
+      stream, // Start streaming
+      sse, // Server-sent events
+      status, // Set status code
+      headers, // Set headers
+      statusText, // Set status text
     },
-    oxian: {         // Framework internals
-      route,          // Matched route pattern
-      startedAt       // Request start time
-    }
+    oxian: { // Framework internals
+      route, // Matched route pattern
+      startedAt, // Request start time
+    },
   } = context;
-  
+
   return { requestId, method, route };
 }
 ```
@@ -230,7 +237,7 @@ export function GET() {
 export function GET() {
   return new Response("Custom response", {
     status: 201,
-    headers: { "content-type": "text/plain" }
+    headers: { "content-type": "text/plain" },
   });
 }
 
@@ -249,17 +256,17 @@ Use `context.response` for fine-grained control:
 export function POST(data, { response }) {
   // Set status code
   response.status(201);
-  
+
   // Set headers
   response.headers({
     "location": "/users/123",
-    "x-custom": "header"
+    "x-custom": "header",
   });
-  
+
   // Send response
-  response.send({ 
+  response.send({
     created: true,
-    id: "123"
+    id: "123",
   });
 }
 ```
@@ -272,7 +279,7 @@ export function GET() {
   return data; // → 200 OK
 }
 
-export function POST({ /* data */ }, { response }) {
+export function POST({/* data */}, { response }) {
   response.status(201); // → 201 Created
   return { created: true };
 }
@@ -305,19 +312,19 @@ export function GET({ id }) {
     throw {
       message: "ID parameter required",
       statusCode: 400,
-      statusText: "Bad Request"
+      statusText: "Bad Request",
     };
   }
-  
+
   const user = findUser(id);
   if (!user) {
     throw {
       message: "User not found",
       statusCode: 404,
-      statusText: "Not Found"
+      statusText: "Not Found",
     };
   }
-  
+
   return user;
 }
 ```
@@ -332,10 +339,10 @@ export function GET({ id }) {
     throw new OxianHttpError("ID required", {
       statusCode: 400,
       code: "MISSING_ID",
-      details: { parameter: "id" }
+      details: { parameter: "id" },
     });
   }
-  
+
   return { user: { id } };
 }
 ```
@@ -361,20 +368,20 @@ export function GET({ id }) {
 ```ts
 export function GET({ format = "json" }, { response }) {
   const data = { message: "Hello world" };
-  
+
   switch (format) {
     case "xml":
       return new Response(
         `<response><message>${data.message}</message></response>`,
-        { headers: { "content-type": "application/xml" } }
+        { headers: { "content-type": "application/xml" } },
       );
-      
+
     case "csv":
       return new Response(
         "message\nHello world",
-        { headers: { "content-type": "text/csv" } }
+        { headers: { "content-type": "text/csv" } },
       );
-      
+
     default:
       return data; // JSON
   }
@@ -387,21 +394,21 @@ export function GET({ format = "json" }, { response }) {
 export function GET(data, { request }) {
   const accept = request.headers.get("accept");
   const userData = { id: 1, name: "John" };
-  
+
   if (accept?.includes("application/xml")) {
     return new Response(
       `<user><id>${userData.id}</id><name>${userData.name}</name></user>`,
-      { headers: { "content-type": "application/xml" } }
+      { headers: { "content-type": "application/xml" } },
     );
   }
-  
+
   if (accept?.includes("text/csv")) {
     return new Response(
       `id,name\n${userData.id},${userData.name}`,
-      { headers: { "content-type": "text/csv" } }
+      { headers: { "content-type": "text/csv" } },
     );
   }
-  
+
   return userData; // Default JSON
 }
 ```
@@ -412,26 +419,26 @@ export function GET(data, { request }) {
 export async function POST(data, { request }) {
   const formData = await request.raw.formData();
   const file = formData.get("file") as File;
-  
+
   if (!file) {
     throw { message: "No file uploaded", statusCode: 400 };
   }
-  
+
   // Validate file type
   if (!file.type.startsWith("image/")) {
     throw { message: "Only images allowed", statusCode: 400 };
   }
-  
+
   // Save file
   const filename = `uploads/${Date.now()}-${file.name}`;
   await Deno.writeFile(filename, new Uint8Array(await file.arrayBuffer()));
-  
+
   return {
     uploaded: true,
     filename: file.name,
     size: file.size,
     type: file.type,
-    url: `/files/${filename}`
+    url: `/files/${filename}`,
   };
 }
 ```
@@ -441,17 +448,17 @@ export async function POST(data, { request }) {
 ```ts
 export async function GET({ filename }, { response }) {
   const filePath = `./uploads/${filename}`;
-  
+
   try {
     const file = await Deno.open(filePath, { read: true });
     const stat = await file.stat();
-    
+
     response.headers({
       "content-type": "application/octet-stream",
       "content-disposition": `attachment; filename="${filename}"`,
-      "content-length": stat.size.toString()
+      "content-length": stat.size.toString(),
     });
-    
+
     // Stream file
     return new Response(file.readable);
   } catch {
@@ -465,22 +472,22 @@ export async function GET({ filename }, { response }) {
 ```ts
 export async function GET({ id }, { dependencies }) {
   const { database, cache } = dependencies;
-  
+
   // Check cache first
   const cached = await cache.get(`user:${id}`);
   if (cached) {
     return { ...cached, fromCache: true };
   }
-  
+
   // Fetch from database
   const user = await database.users.findById(id);
   if (!user) {
     throw { message: "User not found", statusCode: 404 };
   }
-  
+
   // Cache result
   await cache.set(`user:${id}`, user, { ttl: 300 });
-  
+
   return user;
 }
 ```
@@ -490,18 +497,18 @@ export async function GET({ id }, { dependencies }) {
 ```ts
 export async function POST({ users }, { dependencies }) {
   const { database } = dependencies;
-  
+
   if (!Array.isArray(users)) {
     throw { message: "Expected array of users", statusCode: 400 };
   }
-  
+
   if (users.length > 100) {
     throw { message: "Too many users (max 100)", statusCode: 400 };
   }
-  
+
   const results = [];
   const errors = [];
-  
+
   for (let i = 0; i < users.length; i++) {
     try {
       const user = await database.users.create(users[i]);
@@ -510,12 +517,12 @@ export async function POST({ users }, { dependencies }) {
       errors.push({ index: i, error: error.message });
     }
   }
-  
+
   return {
     created: results.length,
     errors: errors.length,
     results,
-    errors
+    errors,
   };
 }
 ```
@@ -530,16 +537,16 @@ export function POST({ name, email, age }) {
   if (!name || typeof name !== "string") {
     throw { message: "Name is required", statusCode: 400 };
   }
-  
+
   if (!email || typeof email !== "string" || !email.includes("@")) {
     throw { message: "Valid email is required", statusCode: 400 };
   }
-  
+
   // Validate optional fields
   if (age !== undefined && (typeof age !== "number" || age < 0 || age > 150)) {
     throw { message: "Age must be between 0 and 150", statusCode: 400 };
   }
-  
+
   return createUser({ name, email, age });
 }
 ```
@@ -552,7 +559,7 @@ import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 const UserSchema = z.object({
   name: z.string().min(1).max(100),
   email: z.string().email(),
-  age: z.number().min(0).max(150).optional()
+  age: z.number().min(0).max(150).optional(),
 });
 
 export function POST(data) {
@@ -564,7 +571,7 @@ export function POST(data) {
       throw {
         message: "Validation failed",
         statusCode: 400,
-        details: error.errors
+        details: error.errors,
       };
     }
     throw error;
@@ -578,7 +585,10 @@ export function POST(data) {
 
 ```ts
 // tests/handlers/users.test.ts
-import { assertEquals, assertThrows } from "https://deno.land/std@0.210.0/assert/mod.ts";
+import {
+  assertEquals,
+  assertThrows,
+} from "https://deno.land/std@0.210.0/assert/mod.ts";
 import { GET, POST } from "../../routes/users.ts";
 
 const mockContext = {
@@ -587,15 +597,15 @@ const mockContext = {
     database: {
       users: {
         findAll: () => [{ id: 1, name: "John" }],
-        create: (data) => ({ id: 2, ...data })
-      }
-    }
-  }
+        create: (data) => ({ id: 2, ...data }),
+      },
+    },
+  },
 };
 
 Deno.test("GET /users returns user list", async () => {
   const result = await GET({}, mockContext);
-  
+
   assertEquals(result.length, 1);
   assertEquals(result[0].name, "John");
 });
@@ -603,7 +613,7 @@ Deno.test("GET /users returns user list", async () => {
 Deno.test("POST /users creates user", async () => {
   const userData = { name: "Jane", email: "jane@example.com" };
   const result = await POST(userData, mockContext);
-  
+
   assertEquals(result.id, 2);
   assertEquals(result.name, "Jane");
 });
@@ -624,16 +634,16 @@ Deno.test("User API integration", async () => {
   const createResponse = await fetch("http://localhost:8080/users", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: "John", email: "john@example.com" })
+    body: JSON.stringify({ name: "John", email: "john@example.com" }),
   });
-  
+
   assertEquals(createResponse.status, 200);
   const created = await createResponse.json();
-  
+
   // Test getting user
   const getResponse = await fetch(`http://localhost:8080/users/${created.id}`);
   assertEquals(getResponse.status, 200);
-  
+
   const user = await getResponse.json();
   assertEquals(user.name, "John");
 });
@@ -669,23 +679,23 @@ interface Dependencies {
 
 export const GET: Handler = async ({ id }: Data, { dependencies }: Context) => {
   const { database } = dependencies as Dependencies;
-  
+
   const user = await database.users.findById(id);
   if (!user) {
     throw { message: "User not found", statusCode: 404 };
   }
-  
+
   return user;
 };
 
 export const POST: Handler = async (data: Data, { dependencies }: Context) => {
   const { database } = dependencies as Dependencies;
-  
+
   const createData: CreateUserData = {
     name: data.name as string,
-    email: data.email as string
+    email: data.email as string,
   };
-  
+
   const user = await database.users.create(createData);
   return user;
 };
@@ -699,7 +709,7 @@ import type { Context, Data } from "jsr:@oxian/oxian-js/types";
 
 export function createTypedHandler<TData, TResponse>(
   handler: (data: TData, context: Context) => Promise<TResponse> | TResponse,
-  validator?: (data: unknown) => TData
+  validator?: (data: unknown) => TData,
 ) {
   return async (data: Data, context: Context): Promise<TResponse> => {
     const validatedData = validator ? validator(data) : data as TData;
@@ -717,9 +727,9 @@ const createUserHandler = createTypedHandler<CreateUserData, User>(
     // Validate and transform data
     return {
       name: String(data.name),
-      email: String(data.email)
+      email: String(data.email),
     };
-  }
+  },
 );
 
 export const POST = createUserHandler;
@@ -758,7 +768,7 @@ import type { Context, Data } from "jsr:@oxian/oxian-js/types";
 
 export async function GET({ id }: Data, { dependencies }: Context) {
   const { userService } = dependencies;
-  
+
   try {
     const user = await userService.findById(id);
     return user;
@@ -772,7 +782,7 @@ export async function GET({ id }: Data, { dependencies }: Context) {
 
 export async function PUT({ id, ...updates }: Data, { dependencies }: Context) {
   const { userService } = dependencies;
-  
+
   try {
     const user = await userService.update(id, updates);
     return user;
@@ -781,7 +791,11 @@ export async function PUT({ id, ...updates }: Data, { dependencies }: Context) {
       throw { message: "User not found", statusCode: 404 };
     }
     if (error.code === "VALIDATION_ERROR") {
-      throw { message: "Invalid data", statusCode: 400, details: error.details };
+      throw {
+        message: "Invalid data",
+        statusCode: 400,
+        details: error.details,
+      };
     }
     throw { message: "Failed to update user", statusCode: 500 };
   }
@@ -789,7 +803,7 @@ export async function PUT({ id, ...updates }: Data, { dependencies }: Context) {
 
 export async function DELETE({ id }: Data, { dependencies }: Context) {
   const { userService } = dependencies;
-  
+
   try {
     await userService.delete(id);
     return { deleted: true, id };
@@ -804,9 +818,12 @@ export async function DELETE({ id }: Data, { dependencies }: Context) {
 
 ---
 
-Handlers are the heart of your Oxian application. Keep them simple, focused, and well-tested. Use the power of TypeScript and Oxian's context system to build robust, type-safe APIs.
+Handlers are the heart of your Oxian application. Keep them simple, focused, and
+well-tested. Use the power of TypeScript and Oxian's context system to build
+robust, type-safe APIs.
 
 **Next Steps:**
+
 - [Middleware](./middleware.md) - Process requests before handlers
 - [Interceptors](./interceptors.md) - Add cross-cutting concerns
 - [Error Handling](./error-handling.md) - Global error strategies

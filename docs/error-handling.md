@@ -1,6 +1,9 @@
 # 🚨 Error Handling - Robust Error Management
 
-Oxian provides comprehensive error handling capabilities that help you build resilient APIs. From simple throw statements to sophisticated error classification and global handling, this guide covers all aspects of error management in Oxian.
+Oxian provides comprehensive error handling capabilities that help you build
+resilient APIs. From simple throw statements to sophisticated error
+classification and global handling, this guide covers all aspects of error
+management in Oxian.
 
 ## Error Handling Overview
 
@@ -26,19 +29,19 @@ export function GET({ id }) {
     throw {
       message: "User ID is required",
       statusCode: 400,
-      statusText: "Bad Request"
+      statusText: "Bad Request",
     };
   }
-  
+
   const user = findUser(id);
   if (!user) {
     throw {
       message: "User not found",
       statusCode: 404,
-      statusText: "Not Found"
+      statusText: "Not Found",
     };
   }
-  
+
   return user;
 }
 ```
@@ -81,18 +84,18 @@ export function POST({ name, email }) {
     throw new OxianHttpError("Name is required", {
       statusCode: 400,
       code: "MISSING_NAME",
-      details: { field: "name", provided: name }
+      details: { field: "name", provided: name },
     });
   }
-  
+
   if (!email || !email.includes("@")) {
     throw new OxianHttpError("Valid email is required", {
       statusCode: 400,
       code: "INVALID_EMAIL",
-      details: { field: "email", provided: email }
+      details: { field: "email", provided: email },
     });
   }
-  
+
   return createUser({ name, email });
 }
 ```
@@ -101,10 +104,10 @@ export function POST({ name, email }) {
 
 ```ts
 class OxianHttpError extends Error {
-  code?: string;              // Error code
-  statusCode: number;         // HTTP status (default: 500)
-  statusText?: string;        // HTTP status text
-  details?: unknown;          // Additional details
+  code?: string; // Error code
+  statusCode: number; // HTTP status (default: 500)
+  statusText?: string; // HTTP status text
+  details?: unknown; // Additional details
 }
 ```
 
@@ -116,28 +119,28 @@ class OxianHttpError extends Error {
 // routes/users.ts
 export function POST(data) {
   const errors = [];
-  
+
   if (!data.name || typeof data.name !== "string") {
     errors.push({ field: "name", message: "Name is required" });
   }
-  
+
   if (!data.email || !data.email.includes("@")) {
     errors.push({ field: "email", message: "Valid email is required" });
   }
-  
+
   if (data.age !== undefined && (data.age < 0 || data.age > 150)) {
     errors.push({ field: "age", message: "Age must be between 0 and 150" });
   }
-  
+
   if (errors.length > 0) {
     throw {
       message: "Validation failed",
       statusCode: 400,
       code: "VALIDATION_ERROR",
-      details: { errors }
+      details: { errors },
     };
   }
-  
+
   return createUser(data);
 }
 ```
@@ -148,7 +151,7 @@ export function POST(data) {
 // routes/users/[id].ts
 export async function GET({ id }, { dependencies }) {
   const { userService } = dependencies;
-  
+
   try {
     const user = await userService.findById(id);
     return user;
@@ -158,10 +161,10 @@ export async function GET({ id }, { dependencies }) {
         message: `User with ID ${id} not found`,
         statusCode: 404,
         code: "USER_NOT_FOUND",
-        details: { userId: id }
+        details: { userId: id },
       };
     }
-    
+
     // Re-throw other errors
     throw error;
   }
@@ -177,22 +180,22 @@ export function GET(_, { user }) {
     throw {
       message: "Authentication required",
       statusCode: 401,
-      code: "AUTHENTICATION_REQUIRED"
+      code: "AUTHENTICATION_REQUIRED",
     };
   }
-  
+
   if (!user.roles?.includes("admin")) {
     throw {
       message: "Admin access required",
       statusCode: 403,
       code: "INSUFFICIENT_PERMISSIONS",
-      details: { 
-        required: ["admin"], 
-        provided: user.roles || [] 
-      }
+      details: {
+        required: ["admin"],
+        provided: user.roles || [],
+      },
     };
   }
-  
+
   return getAdminData();
 }
 ```
@@ -201,9 +204,9 @@ export function GET(_, { user }) {
 
 ```ts
 // middleware.ts
-export default function(data, context) {
+export default function (data, context) {
   const rateLimitResult = checkRateLimit(context.request);
-  
+
   if (rateLimitResult.exceeded) {
     throw {
       message: "Rate limit exceeded",
@@ -213,17 +216,17 @@ export default function(data, context) {
       details: {
         limit: rateLimitResult.limit,
         remaining: 0,
-        resetTime: rateLimitResult.resetTime
+        resetTime: rateLimitResult.resetTime,
       },
       headers: {
         "retry-after": rateLimitResult.retryAfter.toString(),
         "x-ratelimit-limit": rateLimitResult.limit.toString(),
         "x-ratelimit-remaining": "0",
-        "x-ratelimit-reset": rateLimitResult.resetTime.toString()
-      }
+        "x-ratelimit-reset": rateLimitResult.resetTime.toString(),
+      },
     };
   }
-  
+
   return {};
 }
 ```
@@ -240,13 +243,13 @@ export async function afterRun(resultOrError, context) {
   if (resultOrError instanceof Error || resultOrError?.statusCode >= 400) {
     return handleGlobalError(resultOrError, context);
   }
-  
+
   return resultOrError;
 }
 
 function handleGlobalError(error, context) {
   const { requestId, request } = context;
-  
+
   // Log error
   console.error("Request error:", {
     requestId,
@@ -254,9 +257,9 @@ function handleGlobalError(error, context) {
     url: request.url,
     error: error.message || error,
     stack: error.stack,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
-  
+
   // Transform error for response
   if (error instanceof Error) {
     // Unexpected errors - don't leak internal details
@@ -265,11 +268,11 @@ function handleGlobalError(error, context) {
         message: "Internal server error",
         code: "INTERNAL_ERROR",
         requestId,
-        timestamp: new Date().toISOString()
-      }
+        timestamp: new Date().toISOString(),
+      },
     };
   }
-  
+
   // Structured errors - return as-is with request context
   return {
     error: {
@@ -278,8 +281,8 @@ function handleGlobalError(error, context) {
       statusCode: error.statusCode || 500,
       details: error.details,
       requestId,
-      timestamp: new Date().toISOString()
-    }
+      timestamp: new Date().toISOString(),
+    },
   };
 }
 ```
@@ -291,19 +294,19 @@ function handleGlobalError(error, context) {
 export async function afterRun(resultOrError, context) {
   if (isError(resultOrError)) {
     const classified = classifyError(resultOrError);
-    
+
     // Log based on classification
     logError(classified, context);
-    
+
     // Send alerts for critical errors
     if (classified.severity === "critical") {
       await sendAlert(classified, context);
     }
-    
+
     // Transform error response
     return formatErrorResponse(classified, context);
   }
-  
+
   return resultOrError;
 }
 
@@ -313,14 +316,14 @@ function classifyError(error) {
     severity: "error",
     code: error.code || "UNKNOWN_ERROR",
     message: error.message || "Unknown error",
-    originalError: error
+    originalError: error,
   };
-  
+
   // Client errors (4xx)
   if (error.statusCode >= 400 && error.statusCode < 500) {
     classification.type = "client_error";
     classification.severity = "warning";
-    
+
     if (error.statusCode === 401) {
       classification.type = "authentication_error";
     } else if (error.statusCode === 403) {
@@ -331,32 +334,30 @@ function classifyError(error) {
     } else if (error.statusCode === 422) {
       classification.type = "validation_error";
     }
-  }
-  
-  // Server errors (5xx)
+  } // Server errors (5xx)
   else if (error.statusCode >= 500) {
     classification.type = "server_error";
     classification.severity = "critical";
-    
+
     if (error.message?.includes("database")) {
       classification.type = "database_error";
-    } else if (error.message?.includes("network") || error.message?.includes("fetch")) {
+    } else if (
+      error.message?.includes("network") || error.message?.includes("fetch")
+    ) {
       classification.type = "network_error";
     }
-  }
-  
-  // JavaScript errors
+  } // JavaScript errors
   else if (error instanceof Error) {
     classification.type = "runtime_error";
     classification.severity = "critical";
-    
+
     if (error.name === "TypeError") {
       classification.type = "type_error";
     } else if (error.name === "ReferenceError") {
       classification.type = "reference_error";
     }
   }
-  
+
   return classification;
 }
 ```
@@ -442,12 +443,12 @@ function logError(classified, context) {
       type: classified.type,
       code: classified.code,
       message: classified.message,
-      stack: classified.originalError?.stack
+      stack: classified.originalError?.stack,
     },
     user: context.user?.id,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   };
-  
+
   // Log based on severity
   switch (classified.severity) {
     case "critical":
@@ -474,24 +475,24 @@ const errorMetrics = {
   total: 0,
   by_code: new Map(),
   by_type: new Map(),
-  by_route: new Map()
+  by_route: new Map(),
 };
 
 export async function afterRun(resultOrError, context) {
   if (isError(resultOrError)) {
     const classified = classifyError(resultOrError);
-    
+
     // Update metrics
     errorMetrics.total++;
-    
+
     incrementCounter(errorMetrics.by_code, classified.code);
     incrementCounter(errorMetrics.by_type, classified.type);
     incrementCounter(errorMetrics.by_route, context.oxian.route);
-    
+
     // Send to external monitoring
     await sendErrorMetric(classified, context);
   }
-  
+
   return resultOrError;
 }
 
@@ -505,7 +506,7 @@ async function sendErrorMetric(classified, context) {
       method: "POST",
       headers: {
         "authorization": `Bearer ${Deno.env.get("MONITORING_API_KEY")}`,
-        "content-type": "application/json"
+        "content-type": "application/json",
       },
       body: JSON.stringify({
         metric: "api.errors",
@@ -514,10 +515,10 @@ async function sendErrorMetric(classified, context) {
           error_type: classified.type,
           error_code: classified.code,
           route: context.oxian.route,
-          severity: classified.severity
+          severity: classified.severity,
         },
-        timestamp: Date.now()
-      })
+        timestamp: Date.now(),
+      }),
     });
   }
 }
@@ -530,29 +531,29 @@ async function sendErrorMetric(classified, context) {
 ```ts
 export async function GET({ id }, { dependencies }) {
   const { externalAPI } = dependencies;
-  
+
   const maxRetries = 3;
   let lastError;
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const data = await externalAPI.fetchData(id);
       return data;
     } catch (error) {
       lastError = error;
-      
+
       // Don't retry client errors
       if (error.statusCode >= 400 && error.statusCode < 500) {
         throw error;
       }
-      
+
       // Wait before retry
       if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
       }
     }
   }
-  
+
   // All retries failed
   throw {
     message: "External service unavailable after retries",
@@ -560,8 +561,8 @@ export async function GET({ id }, { dependencies }) {
     code: "SERVICE_UNAVAILABLE",
     details: {
       attempts: maxRetries,
-      lastError: lastError.message
-    }
+      lastError: lastError.message,
+    },
   };
 }
 ```
@@ -573,26 +574,26 @@ class CircuitBreaker {
   constructor(
     private threshold = 5,
     private timeout = 60000,
-    private resetTimeout = 30000
+    private resetTimeout = 30000,
   ) {}
-  
+
   private failures = 0;
   private state = "closed"; // closed, open, half-open
   private nextAttempt = 0;
-  
+
   async execute<T>(fn: () => Promise<T>): Promise<T> {
     if (this.state === "open") {
       if (Date.now() < this.nextAttempt) {
         throw {
           message: "Circuit breaker is open",
           statusCode: 503,
-          code: "CIRCUIT_BREAKER_OPEN"
+          code: "CIRCUIT_BREAKER_OPEN",
         };
       } else {
         this.state = "half-open";
       }
     }
-    
+
     try {
       const result = await fn();
       this.onSuccess();
@@ -602,12 +603,12 @@ class CircuitBreaker {
       throw error;
     }
   }
-  
+
   private onSuccess() {
     this.failures = 0;
     this.state = "closed";
   }
-  
+
   private onFailure() {
     this.failures++;
     if (this.failures >= this.threshold) {
@@ -630,7 +631,7 @@ export async function GET({ id }) {
       // Return cached data or degraded response
       return getCachedUser(id) || {
         message: "Service temporarily unavailable",
-        statusCode: 503
+        statusCode: 503,
       };
     }
     throw error;
@@ -643,13 +644,13 @@ export async function GET({ id }) {
 ```ts
 export async function GET({ id }, { dependencies }) {
   const { primaryDB, cacheDB, fallbackAPI } = dependencies;
-  
+
   try {
     // Try primary database
     return await primaryDB.users.findById(id);
   } catch (primaryError) {
     console.warn("Primary DB failed, trying cache:", primaryError.message);
-    
+
     try {
       // Try cache
       const cached = await cacheDB.get(`user:${id}`);
@@ -659,7 +660,7 @@ export async function GET({ id }, { dependencies }) {
     } catch (cacheError) {
       console.warn("Cache failed:", cacheError.message);
     }
-    
+
     try {
       // Try fallback API
       const fallbackData = await fallbackAPI.getUser(id);
@@ -667,7 +668,7 @@ export async function GET({ id }, { dependencies }) {
     } catch (fallbackError) {
       console.error("All sources failed:", fallbackError.message);
     }
-    
+
     // All sources failed
     throw {
       message: "User data temporarily unavailable",
@@ -676,8 +677,8 @@ export async function GET({ id }, { dependencies }) {
       details: {
         primaryError: primaryError.message,
         cacheError: cacheError?.message,
-        fallbackError: fallbackError?.message
-      }
+        fallbackError: fallbackError?.message,
+      },
     };
   }
 }
@@ -689,14 +690,17 @@ export async function GET({ id }, { dependencies }) {
 
 ```ts
 // tests/error-handling.test.ts
-import { assertEquals, assertThrows } from "https://deno.land/std@0.210.0/assert/mod.ts";
+import {
+  assertEquals,
+  assertThrows,
+} from "https://deno.land/std@0.210.0/assert/mod.ts";
 import { GET } from "../routes/users/[id].ts";
 
 Deno.test("GET /users/[id] throws 404 for invalid ID", () => {
   assertThrows(
     () => GET({ id: "invalid" }, mockContext),
     Error,
-    "User not found"
+    "User not found",
   );
 });
 
@@ -714,7 +718,7 @@ Deno.test("GET /users/[id] throws 400 for missing ID", () => {
 Deno.test("API returns consistent error format", async () => {
   const response = await fetch("http://localhost:8080/users/invalid");
   assertEquals(response.status, 404);
-  
+
   const error = await response.json();
   assertEquals(typeof error.error.message, "string");
   assertEquals(typeof error.error.requestId, "string");
@@ -726,7 +730,7 @@ Deno.test("Rate limiting returns proper headers", async () => {
   for (let i = 0; i < 101; i++) {
     await fetch("http://localhost:8080/test");
   }
-  
+
   const response = await fetch("http://localhost:8080/test");
   assertEquals(response.status, 429);
   assert(response.headers.has("retry-after"));
@@ -765,7 +769,7 @@ export async function afterRun(resultOrError, context) {
   if (resultOrError instanceof Error) {
     // Never expose stack traces in production
     const isProduction = Deno.env.get("NODE_ENV") === "production";
-    
+
     return {
       error: {
         message: isProduction ? "Internal server error" : resultOrError.message,
@@ -773,11 +777,11 @@ export async function afterRun(resultOrError, context) {
         requestId: context.requestId,
         timestamp: new Date().toISOString(),
         // Only include stack in development
-        ...(isProduction ? {} : { stack: resultOrError.stack })
-      }
+        ...(isProduction ? {} : { stack: resultOrError.stack }),
+      },
     };
   }
-  
+
   return resultOrError;
 }
 ```
@@ -789,25 +793,28 @@ function sanitizeErrorDetails(details: any): any {
   if (!details || typeof details !== "object") {
     return details;
   }
-  
+
   const sensitiveFields = ["password", "token", "secret", "key"];
   const sanitized = { ...details };
-  
+
   for (const field of sensitiveFields) {
     if (sanitized[field]) {
       sanitized[field] = "[REDACTED]";
     }
   }
-  
+
   return sanitized;
 }
 ```
 
 ---
 
-Robust error handling is crucial for production APIs. Implement consistent error formats, proper logging, and graceful degradation to create resilient applications.
+Robust error handling is crucial for production APIs. Implement consistent error
+formats, proper logging, and graceful degradation to create resilient
+applications.
 
 **Next Steps:**
+
 - [Monitoring Guide](./monitoring.md) - Production monitoring
 - [Security Guide](./security.md) - Security best practices
 - [Best Practices](./best-practices.md) - Production patterns

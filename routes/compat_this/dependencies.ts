@@ -1,1 +1,1 @@
-export default ()=>({ val: 'ok-this' });
+export default () => ({ val: "ok-this" });
