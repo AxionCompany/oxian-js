@@ -92,11 +92,8 @@ async function detectHostDenoConfig(
   const candidates = ["deno.json", "deno.jsonc"];
   for (const name of candidates) {
     try {
-      console.log("[hv] detecting host deno config", name);
       const resolved = await resolver.resolve(name);
-      console.log("[hv] resolved host deno config", resolved.toString());
       const { isFile } = await resolver.stat(resolved);
-      console.log("[hv] isFile", isFile);
       if (isFile) return resolved.toString();
     } catch (_err) { /* no local deno config at this candidate */ }
   }
@@ -707,8 +704,6 @@ export function createLifecycleManager(
         ...denoArgs,
         ...finalScriptArgs,
       ]);
-      console.log("[hv] spawning worker final env", spawnEnv);
-      console.log("[hv] spawning worker final cwd", projectDir);
     }
 
     const proc = new Deno.Command(Deno.execPath(), {
