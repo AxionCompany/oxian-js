@@ -12,6 +12,7 @@ Golden Rules
 3) Prefer placing long-lived resources (DB/clients) in dependencies.ts factories, not inside handlers.
 4) Use standard Web APIs (fetch, etc) and ESM. Avoid Node-only APIs.
 5) Keep files idempotent; hot reload swaps workers and re-imports modules.
+6) Observability: rely on Deno OpenTelemetry auto-instrumentation; emit logs via console.*; configure via `logging.otel` and optional `runtime.hv.otelCollector`.
 
 Quick Start
 -----------
@@ -143,6 +144,71 @@ export async function beforeRun(data, context) { return { data: { ...data, start
 export async function afterRun(resultOrError, context) { /* log or transform */ }
 ```
 
+MCP Servers (Model Context Protocol)
+-------------------------------------
+Oxian provides built-in support for creating MCP servers using **streamable HTTP transport**.
+
+Quick example:
+```ts
+// routes/mcp/dependencies.ts
+import type { MCPServerConfig } from "@oxian/oxian-js/mcp";
+
+export default function() {
+  return {
+    mcpServer: {
+      info: { name: "my-mcp-server", version: "1.0.0" },
+      capabilities: { tools: {}, resources: {}, prompts: {} },
+      tools: [{
+        name: "get_data",
+        description: "Fetch data",
+        inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] }
+      }],
+      resources: [],
+      resourceTemplates: [{
+        uriTemplate: "data://{id}",
+        name: "Data by ID",
+        mimeType: "application/json"
+      }],
+      prompts: [],
+      toolHandlers: {
+        get_data: async (args) => ({ content: [{ type: "text", text: "..." }] })
+      },
+      readResource: (params) => {
+        // Handle static resources and templates
+        // Template params are merged: params.id for "data://{id}"
+        return { contents: [{ uri: params.uri, text: "..." }] };
+      },
+      getPrompt: (params) => ({ messages: [{ role: "user", content: { type: "text", text: "..." } }] })
+    }
+  };
+}
+```
+
+```ts
+// routes/mcp/index.ts
+import { handleMCPRequest, handleMCPInfo } from "@oxian/oxian-js/mcp";
+
+export async function POST(data, context) {
+  const mcpConfig = context.dependencies.mcpServer;
+  return await handleMCPRequest(data, context, mcpConfig);
+}
+
+export function GET(_data, context) {
+  const mcpConfig = context.dependencies.mcpServer;
+  return handleMCPInfo(mcpConfig);
+}
+```
+
+The framework handles:
+- JSON-RPC 2.0 parsing and validation
+- Session management (Mcp-Session-Id header)
+- Protocol version negotiation (2025-06-18, 2024-11-05)
+- Method routing (initialize, tools/list, tools/call, resources/list, resources/read, etc.)
+- Resource template URI matching (e.g., "data://{id}" matches "data://123" → params.id = "123")
+- Error formatting
+
+See full example: routes/mcp/ directory and docs/mcp-server.md
+
 Routing Conventions
 -------------------
 - `index.ts` maps to `/path/`
@@ -220,6 +286,15 @@ This section describes the most relevant configuration keys. The full, authorita
       - staticDir: In prod, serve non-API requests from a static directory (e.g., `dist`).
       - staticCacheControl: Cache-control header for static assets.
     - projects: Multi-project configuration with per-project routing basePath and overrides.
+      - Each project may set `idleTtlMs` (ms). When set, workers stop after being idle (no active requests/streams) for this duration. Default is disabled unless specified (provider → project → autoscale fallback).
+    - otelCollector (TS config only): Minimal built-in OTLP HTTP collector.
+      - enabled?: boolean; port?: number; pathPrefix?: string; onExport?: (input: { kind: "traces"|"metrics"|"logs"; headers: Record<string,string>; body: Uint8Array; contentType: string; project?: string }) => void | Promise<void>
+      - Workers default OTLP endpoint to this collector when `logging.otel.enabled=true` and no endpoint provided.
+      - Hypervisor injects `x-oxian-project` in OTLP headers so the collector can tag payloads by project.
+    - onRequest (TS config only): Request transformation hook called before proxying to workers.
+      - Type: (input: { req: Request; project: string }) => Promise<Request> | Request
+      - Allows modifying requests (headers, URL, body) before they reach workers.
+      - Example: Add authentication tokens, custom headers, transform URLs, etc.
 
 - permissions
   - net | read | write | env | ffi | hrtime | sys: Boolean | string[]. Future enforcement via hypervisor.
@@ -232,7 +307,7 @@ This section describes the most relevant configuration keys. The full, authorita
 - logging
   - level: `"debug" | "info" | "warn" | "error"`.
   - requestIdHeader: String. Header used to propagate request id.
-  - deprecations: Boolean. Show/hide deprecation warnings.
+  - otel: { enabled?: boolean; serviceName?: string; endpoint?: string; protocol?: "http/protobuf" | "http/json"; headers?: Record<string,string>; resourceAttributes?: Record<string,string>; propagators?: string; metricExportIntervalMs?: number; hooks?: { onInit?: Function; onRequestStart?: Function; onRequestEnd?: Function } }
 
 - compatibility
   - handlerMode: `"default" | "this" | "factory"` (legacy compatibility helpers).
@@ -299,12 +374,24 @@ Provide import aliases and JSR mappings to simplify imports in route code:
 }
 ```
 
-Remote Sources (GitHub Loader)
-------------------------------
-Run from GitHub without cloning:
+Remote Sources (Materialize & Prepare)
+--------------------------------------
+Two-step flow for production builds without giving workers run permission:
+
+1) Materialize remote source locally:
 ```bash
-deno -A jsr:@oxian/oxian-js --source=github:owner/repo/path?ref=main
+deno run -A jsr:@oxian/oxian-js materialize --source=github:owner/repo/path?ref=main --materialize-dir=.
 ```
+2) Run pre-run hooks (from materialized oxian.config.*):
+```bash
+deno run -A jsr:@oxian/oxian-js prepare --source=file:///abs/path/.oxian/materialized/github/owner/repo/<sha>/
+```
+3) Start server using the file:// root as --source (workers need no --allow-run):
+```bash
+deno run -A jsr:@oxian/oxian-js start --source=file:///abs/path/.oxian/materialized/github/owner/repo/<sha>/
+```
+
+Hypervisor automates this flow when `materialize` is enabled in config/provider: it runs `materialize`, then `prepare`, then spawns the worker with the materialized `file://` root.
 
 LLM Authoring Checklist
 -----------------------
@@ -321,6 +408,60 @@ Health & Observability
 ----------------------
 - Hypervisor exposes `HEAD /_health` for readiness.
 - Request IDs can be propagated via `logging.requestIdHeader`.
+ - OpenTelemetry (Deno): enable via `logging.otel.enabled=true`. To debug payloads, set `logging.otel.protocol = "http/json"` and decode body bytes with `new TextDecoder().decode(body)` in `hv.otelCollector.onExport`.
+
+Custom OTEL Hooks (recommended for advanced metrics/spans):
+```ts
+export default {
+  logging: {
+    otel: {
+      enabled: true,
+      hooks: {
+        onInit: ({ tracer, meter }) => {
+          const initCounter = meter.createCounter("app.init.count", { unit: "1" });
+          initCounter.add(1);
+        },
+        onRequestStart: ({ tracer, meter, span, requestId, method, url, project }) => {
+          span?.setAttribute("app.req.meta", `${project}:${method}`);
+          const active = meter.createUpDownCounter("http.server.active_requests", { unit: "1" });
+          active.add(1);
+        },
+        onRequestEnd: ({ span, meter, status, durationMs }) => {
+          span?.setAttribute("app.req.duration_ms", durationMs);
+          const active = meter.createUpDownCounter("http.server.active_requests", { unit: "1" });
+          active.add(-1);
+          const hist = meter.createHistogram("app.req.duration", { unit: "s" });
+          hist.record(durationMs / 1000);
+        }
+      }
+    }
+  }
+};
+```
+
+Built-in OTLP Collector (dev/local):
+```ts
+export default {
+  logging: { otel: { enabled: true, serviceName: "oxian-server" } },
+  runtime: {
+    hv: {
+      otelCollector: {
+        enabled: true,
+        port: 4318,
+        pathPrefix: "/v1",
+        onExport: async ({ kind, headers, body, contentType, project }) => {
+          console.log("[otel-collector] export", { kind, project, contentType, bytes: body.byteLength });
+        }
+      }
+    }
+  }
+};
+```
+
+Notes:
+- Prefer setting instrument units (e.g., "s", "ms", "By", "1") instead of encoding units in metric names.
+- Workers default to the built-in collector endpoint if `logging.otel.enabled=true` and no `endpoint` is set.
+- Hypervisor injects `x-oxian-project` into OTLP headers so the collector can tag payloads per project.
 
 Production Notes
 ----------------

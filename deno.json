@@ -1,12 +1,13 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.8.5",
+  "version": "0.11.0",
   "exports": {
     ".": "./cli.ts",
     "./server": "./src/server/server.ts",
     "./config": "./src/config/types.ts",
     "./runtime": "./src/runtime/module_loader.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./mcp": "./src/utils/mcp.ts"
   },
   "publish": {
     "include": [
@@ -24,7 +25,7 @@
       "oxian-framework-spec.md"
     ]
   },
-  "unstable":[
+  "unstable": [
     "raw-imports",
     "bare-node-builtins",
     "detect-cjs",
@@ -44,7 +45,8 @@
     "@std/path": "jsr:@std/path@1.1.1",
     "@std/cli/parse-args": "jsr:@std/cli@1.0.21/parse-args",
     "@std/jsonc/parse": "jsr:@std/jsonc@1.0.2/parse",
-    "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64"
+    "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64",
+    "kv-toolbox/blob": "jsr:@kitsonk/kv-toolbox@0.30.0/blob"
   },
   "lock": false
 }

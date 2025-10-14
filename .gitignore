@@ -1,6 +1,7 @@
 # Deno
 deno.lock
 deno_dir/
+.deno/
 .DS_Store
 
 # Logs
@@ -28,4 +29,5 @@ build/
 
 # Project specific
 deno/
+.projects/
 

@@ -1,4 +1,4 @@
-import type { } from "@std/path";
+import type {} from "@std/path";
 
 export type RouteRecord = {
   pattern: string;
@@ -6,7 +6,9 @@ export type RouteRecord = {
   fileUrl: URL;
 };
 
-export type RouteMatch = { route: RouteRecord; params: Record<string, string> } | null;
+export type RouteMatch =
+  | { route: RouteRecord; params: Record<string, string> }
+  | null;
 
 export type Router = {
   routes: RouteRecord[];
@@ -19,19 +21,27 @@ export type StatFn = (url: URL) => Promise<{ isFile: boolean }>;
 function toSegments(pattern: string): RouteRecord["segments"] {
   return pattern.split("/").filter(Boolean).map((seg) => {
     if (seg === "*") return { type: "catchall" } as const;
-    if (seg.startsWith(":")) return { type: "param", name: seg.slice(1) } as const;
+    if (seg.startsWith(":")) {
+      return { type: "param", name: seg.slice(1) } as const;
+    }
     return { type: "static" } as const;
   });
 }
 
 function compareSpecificity(a: RouteRecord, b: RouteRecord): number {
-  const score = (r: RouteRecord) => r.segments.reduce((acc, s) => acc + (s.type === "static" ? 3 : s.type === "param" ? 2 : 1), 0);
+  const score = (r: RouteRecord) =>
+    r.segments.reduce(
+      (acc, s) => acc + (s.type === "static" ? 3 : s.type === "param" ? 2 : 1),
+      0,
+    );
   return score(b) - score(a);
 }
 
 function ensureTrailingSlash(u: URL): URL {
   const copy = new URL(u.toString());
-  copy.pathname = copy.pathname.endsWith("/") ? copy.pathname : copy.pathname + "/";
+  copy.pathname = copy.pathname.endsWith("/")
+    ? copy.pathname
+    : copy.pathname + "/";
   return copy;
 }
 
@@ -52,7 +62,9 @@ function fileToPattern(relPath: string): string | null {
   return path === "" ? "/" : path;
 }
 
-export async function buildEagerRouter(opts: { routesRootUrl: URL; listDir: ListDirFn; stat: StatFn }): Promise<Router> {
+export async function buildEagerRouter(
+  opts: { routesRootUrl: URL; listDir: ListDirFn; stat: StatFn },
+): Promise<Router> {
   const { routesRootUrl, listDir, stat } = opts;
 
   async function walk(dirUrl: URL, prefix = ""): Promise<string[]> {
@@ -65,8 +77,7 @@ export async function buildEagerRouter(opts: { routesRootUrl: URL; listDir: List
         if (st.isFile) {
           if (name.startsWith("_")) continue;
           files.push(prefix + "/" + name);
-        }
-        else files.push(...(await walk(child, prefix + "/" + name)));
+        } else files.push(...(await walk(child, prefix + "/" + name)));
       } catch {
         // ignore
       }
@@ -75,7 +86,14 @@ export async function buildEagerRouter(opts: { routesRootUrl: URL; listDir: List
   }
 
   const relFiles = await walk(routesRootUrl, "");
-  const pipelineNames = new Set(["dependencies.ts", "middleware.ts", "interceptors.ts", "dependencies.js", "middleware.js", "interceptors.js"]);
+  const pipelineNames = new Set([
+    "dependencies.ts",
+    "middleware.ts",
+    "interceptors.ts",
+    "dependencies.js",
+    "middleware.js",
+    "interceptors.js",
+  ]);
   const routes: RouteRecord[] = [];
   for (const rel of relFiles) {
     const base = rel.split("/").pop()!;
@@ -107,19 +125,22 @@ export async function buildEagerRouter(opts: { routesRootUrl: URL; listDir: List
           break;
         } else if (rp.startsWith(":")) {
           params[rp.slice(1)] = decodeURIComponent(p);
-          i++; j++;
+          i++;
+          j++;
         } else if (rp === p) {
-          i++; j++;
+          i++;
+          j++;
         } else {
-          ok = false; break;
+          ok = false;
+          break;
         }
       }
-      if (ok && i === rparts.length && j === parts.length) return { route: r, params };
+      if (ok && i === rparts.length && j === parts.length) {
+        return { route: r, params };
+      }
     }
     return null;
   }
 
   return { routes, match };
 }
-
-

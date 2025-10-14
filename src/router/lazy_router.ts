@@ -4,7 +4,9 @@ export type RouteRecord = {
   fileUrl: URL;
 };
 
-export type RouteMatch = { route: RouteRecord; params: Record<string, string> } | null;
+export type RouteMatch =
+  | { route: RouteRecord; params: Record<string, string> }
+  | null;
 
 export type Router = {
   routes: RouteRecord[];
@@ -18,7 +20,9 @@ export type StatFn = (url: URL) => Promise<{ isFile: boolean }>;
 
 function ensureTrailingSlash(u: URL): URL {
   const copy = new URL(u.toString());
-  copy.pathname = copy.pathname.endsWith("/") ? copy.pathname : copy.pathname + "/";
+  copy.pathname = copy.pathname.endsWith("/")
+    ? copy.pathname
+    : copy.pathname + "/";
   return copy;
 }
 
@@ -27,7 +31,11 @@ function makeChildUrl(parent: URL, name: string): URL {
   return new URL(name, baseObj);
 }
 
-async function listEntries(dir: URL, listDir: ListDirFn, stat: StatFn): Promise<DirEntries> {
+async function listEntries(
+  dir: URL,
+  listDir: ListDirFn,
+  stat: StatFn,
+): Promise<DirEntries> {
   const names = await listDir(dir);
   const files = new Set<string>();
   const dirs = new Set<string>();
@@ -48,7 +56,9 @@ async function listEntries(dir: URL, listDir: ListDirFn, stat: StatFn): Promise<
 function toSegments(pattern: string): RouteRecord["segments"] {
   return pattern.split("/").filter(Boolean).map((seg) => {
     if (seg === "*") return { type: "catchall" } as const;
-    if (seg.startsWith(":")) return { type: "param", name: seg.slice(1) } as const;
+    if (seg.startsWith(":")) {
+      return { type: "param", name: seg.slice(1) } as const;
+    }
     return { type: "static" } as const;
   });
 }
@@ -62,7 +72,9 @@ function findFileBaseMatch(files: Set<string>, base: string): string | null {
   return null;
 }
 
-export function createLazyRouter(opts: { routesRootUrl: URL; listDir: ListDirFn; stat: StatFn }): Router & { __asyncMatch: (path: string) => Promise<RouteMatch> } {
+export function createLazyRouter(
+  opts: { routesRootUrl: URL; listDir: ListDirFn; stat: StatFn },
+): Router & { __asyncMatch: (path: string) => Promise<RouteMatch> } {
   const { routesRootUrl, listDir, stat } = opts;
 
   async function matchPath(path: string): Promise<RouteMatch> {
@@ -87,15 +99,27 @@ export function createLazyRouter(opts: { routesRootUrl: URL; listDir: ListDirFn;
         const directName = findFileBaseMatch(entries.files, seg);
         if (directName) {
           const fileUrl = makeChildUrl(curDir, directName);
-          return { route: { pattern: "/" + parts.join("/"), segments: toSegments("/" + parts.join("/")), fileUrl }, params };
+          return {
+            route: {
+              pattern: "/" + parts.join("/"),
+              segments: toSegments("/" + parts.join("/")),
+              fileUrl,
+            },
+            params,
+          };
         }
-        const paramName = [...entries.files].find((f) => /^\[[^\.]+\]\.(tsx?|jsx?)$/.test(f));
+        const paramName = [...entries.files].find((f) =>
+          /^\[[^\.]+\]\.(tsx?|jsx?)$/.test(f)
+        );
         if (paramName) {
           const name = paramName.match(/^\[(.+)\]\./)?.[1] ?? "param";
           params[name] = decodeURIComponent(seg);
           const pattern = "/" + [...parts.slice(0, -1), ":" + name].join("/");
           const fileUrl = makeChildUrl(curDir, paramName);
-          return { route: { pattern, segments: toSegments(pattern), fileUrl }, params };
+          return {
+            route: { pattern, segments: toSegments(pattern), fileUrl },
+            params,
+          };
         }
       }
 
@@ -107,7 +131,7 @@ export function createLazyRouter(opts: { routesRootUrl: URL; listDir: ListDirFn;
         consumed++;
         continue;
       }
-      
+
       const pdir = [...entries.dirs].find((d) => /^\[[^\.]+\]$/.test(d));
       if (pdir) {
         const name = pdir.slice(1, -1);
@@ -129,20 +153,30 @@ export function createLazyRouter(opts: { routesRootUrl: URL; listDir: ListDirFn;
       const fileUrl = makeChildUrl(curDir, indexName);
       const basePath = ensureTrailingSlash(routesRootUrl).pathname;
       const curPath = ensureTrailingSlash(curDir).pathname;
-      const rel = curPath.startsWith(basePath) ? curPath.slice(basePath.length) : curPath;
+      const rel = curPath.startsWith(basePath)
+        ? curPath.slice(basePath.length)
+        : curPath;
       const pattern = "/" + rel.split("/").filter(Boolean).join("/") + "/";
-      return { route: { pattern, segments: toSegments(pattern), fileUrl }, params };
+      return {
+        route: { pattern, segments: toSegments(pattern), fileUrl },
+        params,
+      };
     }
 
     if (catchAllUrl) {
       const basePath = ensureTrailingSlash(routesRootUrl).pathname;
       const curPath = ensureTrailingSlash(curDir).pathname;
-      const rel = curPath.startsWith(basePath) ? curPath.slice(basePath.length) : curPath;
+      const rel = curPath.startsWith(basePath)
+        ? curPath.slice(basePath.length)
+        : curPath;
       const relParts = rel.split("/").filter(Boolean);
       const depth = relParts.length;
       params.slug = parts.slice(depth).join("/");
       const pattern = "/" + relParts.join("/") + "/*";
-      return { route: { pattern, segments: toSegments(pattern), fileUrl: catchAllUrl }, params };
+      return {
+        route: { pattern, segments: toSegments(pattern), fileUrl: catchAllUrl },
+        params,
+      };
     }
 
     return null;
@@ -152,7 +186,7 @@ export function createLazyRouter(opts: { routesRootUrl: URL; listDir: ListDirFn;
     routes: [],
     match: (_path: string) => null,
     __asyncMatch: matchPath,
-  } as unknown as Router & { __asyncMatch: (path: string) => Promise<RouteMatch> };
+  } as unknown as Router & {
+    __asyncMatch: (path: string) => Promise<RouteMatch>;
+  };
 }
-
-

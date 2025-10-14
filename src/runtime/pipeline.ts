@@ -17,41 +17,82 @@ function toHttpResponse(result: unknown, state: ResponseState): void {
 export function shapeError(err: unknown): { status: number; body: unknown } {
   if (err && typeof err === "object" && "message" in err) {
     const anyErr = err as Record<string, unknown>;
-    const statusCode = typeof anyErr.statusCode === "number" ? anyErr.statusCode : undefined;
+    const statusCode = typeof anyErr.statusCode === "number"
+      ? anyErr.statusCode
+      : undefined;
     if (statusCode) {
-      return { status: statusCode, body: { error: (anyErr.message as string) ?? "Error" } };
+      return {
+        status: statusCode,
+        body: { error: (anyErr.message as string) ?? "Error" },
+      };
     }
   }
   if (err instanceof OxianHttpError) {
-    return { status: err.statusCode, body: { error: { message: err.message, code: err.code, details: err.details } } };
+    return {
+      status: err.statusCode,
+      body: {
+        error: { message: err.message, code: err.code, details: err.details },
+      },
+    };
   }
   if (Deno.env.get("OXIAN_DEBUG") === "1") {
     const e = err as Error;
-    return { status: 500, body: { error: { message: e?.message ?? "Internal Server Error", stack: e?.stack } } };
+    return {
+      status: 500,
+      body: {
+        error: {
+          message: e?.message ?? "Internal Server Error",
+          stack: e?.stack,
+        },
+      },
+    };
   }
   return { status: 500, body: { error: { message: "Internal Server Error" } } };
 }
 
-async function callHandlerWithCompatibility(modExport: unknown, data: Record<string, unknown>, context: Context, _state: ResponseState, handlerMode: string | undefined): Promise<unknown> {
+async function callHandlerWithCompatibility(
+  modExport: unknown,
+  data: Record<string, unknown>,
+  context: Context,
+  _state: ResponseState,
+  handlerMode: string | undefined,
+): Promise<unknown> {
   if (handlerMode === "this") {
-    const { logDeprecation } = await import("../logging/logger.ts");
-    logDeprecation("handlerMode 'this' is deprecated. Please migrate to (data, context)");
-    if (typeof modExport !== "function") throw new Error("Invalid handler export");
-    const bound = (modExport as (this: unknown, ...args: unknown[]) => unknown).bind(context.dependencies);
+    console.warn(
+      "[oxian] DEPRECATED: handlerMode 'this' is deprecated. Please migrate to (data, context)",
+    );
+    if (typeof modExport !== "function") {
+      throw new Error("Invalid handler export");
+    }
+    const bound = (modExport as (this: unknown, ...args: unknown[]) => unknown)
+      .bind(context.dependencies);
     // provide (data, { response })
     return await bound(data, { response: context.response });
   }
   if (handlerMode === "factory") {
-    const { logDeprecation } = await import("../logging/logger.ts");
-    logDeprecation("handlerMode 'factory' is deprecated. Please migrate to (data, context)");
-    if (typeof modExport !== "function") throw new Error("Invalid factory export");
+    console.warn(
+      "[oxian] DEPRECATED: handlerMode 'factory' is deprecated. Please migrate to (data, context)",
+    );
+    if (typeof modExport !== "function") {
+      throw new Error("Invalid factory export");
+    }
     const fn = (modExport as (deps: unknown) => unknown)(context.dependencies);
-    if (typeof fn !== "function") throw new Error("Factory did not return a function");
-    return await (fn as (data: Record<string, unknown>, ctx: { response: Context["response"] }) => unknown)(data, { response: context.response });
+    if (typeof fn !== "function") {
+      throw new Error("Factory did not return a function");
+    }
+    return await (fn as (
+      data: Record<string, unknown>,
+      ctx: { response: Context["response"] },
+    ) => unknown)(data, { response: context.response });
   }
   // default:
-  if (typeof modExport !== "function") throw new Error("Invalid handler export");
-  return await (modExport as (data: Record<string, unknown>, context: Context) => unknown)(data, context);
+  if (typeof modExport !== "function") {
+    throw new Error("Invalid handler export");
+  }
+  return await (modExport as (
+    data: Record<string, unknown>,
+    context: Context,
+  ) => unknown)(data, context);
 }
 
 export async function runHandler(
@@ -60,18 +101,35 @@ export async function runHandler(
   context: Context,
   state: ResponseState,
 ): Promise<{ result?: unknown; error?: unknown }> {
-  const isStreaming = () => state.body && typeof (state.body as ReadableStream).getReader === "function";
-  const isSse = () => (state.headers.get("content-type") || "").startsWith("text/event-stream");
+  const isStreaming = () =>
+    state.body &&
+    typeof (state.body as ReadableStream).getReader === "function";
+  const isSse = () =>
+    (state.headers.get("content-type") || "").startsWith("text/event-stream");
   try {
     // Determine compatibility mode from context (stored under oxian later if needed)
-    const handlerMode = (context as unknown as { compat?: { handlerMode?: string } }).compat?.handlerMode;
-    const maybePromise = callHandlerWithCompatibility(handler as unknown as unknown, data, context, state, handlerMode);
-    if (isStreaming() && typeof (maybePromise as Promise<unknown>)?.then === "function") {
+    const handlerMode =
+      (context as unknown as { compat?: { handlerMode?: string } }).compat
+        ?.handlerMode;
+    const maybePromise = callHandlerWithCompatibility(
+      handler as unknown as unknown,
+      data,
+      context,
+      state,
+      handlerMode,
+    );
+    if (
+      isStreaming() &&
+      typeof (maybePromise as Promise<unknown>)?.then === "function"
+    ) {
       (maybePromise as Promise<unknown>)
         .then((result) => {
           if (isSse()) {
             if (result !== undefined && state.streamWrite) {
-              const payload = typeof result === "string" || result instanceof Uint8Array ? result : JSON.stringify(result);
+              const payload =
+                typeof result === "string" || result instanceof Uint8Array
+                  ? result
+                  : JSON.stringify(result);
               state.streamWrite(payload);
             }
             // Auto-close SSE after handler settles unless keepOpen was requested by response.sse
@@ -91,7 +149,11 @@ export async function runHandler(
         .catch((err) => {
           const shaped = shapeError(err);
           if (state.streamWrite) {
-            state.streamWrite(typeof shaped.body === "string" ? shaped.body : JSON.stringify(shaped.body));
+            state.streamWrite(
+              typeof shaped.body === "string"
+                ? shaped.body
+                : JSON.stringify(shaped.body),
+            );
           }
           state.streamClose?.();
         });
@@ -117,7 +179,11 @@ export async function runHandler(
     const shaped = shapeError(err);
     if (isStreaming()) {
       if (state.streamWrite) {
-        state.streamWrite(typeof shaped.body === "string" ? shaped.body : JSON.stringify(shaped.body));
+        state.streamWrite(
+          typeof shaped.body === "string"
+            ? shaped.body
+            : JSON.stringify(shaped.body),
+        );
       }
       state.streamClose?.();
     } else {
@@ -126,4 +192,4 @@ export async function runHandler(
     }
     return { error: err };
   }
-} 
+}

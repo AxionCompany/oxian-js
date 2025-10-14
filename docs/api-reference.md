@@ -1,18 +1,21 @@
 # 📖 API Reference - Complete TypeScript Reference
 
-This comprehensive reference covers all types, interfaces, and APIs available in Oxian. Use this as your go-to reference for TypeScript development with Oxian.
+This comprehensive reference covers all types, interfaces, and APIs available in
+Oxian. Use this as your go-to reference for TypeScript development with Oxian.
 
 ## Core Types
 
 ### Data
 
-The `Data` type represents merged request data from path parameters, query parameters, and request body.
+The `Data` type represents merged request data from path parameters, query
+parameters, and request body.
 
 ```typescript
 export type Data = Record<string, unknown>;
 ```
 
 **Example Usage:**
+
 ```typescript
 export function GET({ id, limit, name }: Data) {
   // id from path params: /users/:id
@@ -53,6 +56,7 @@ type RequestDetails = {
 ```
 
 **Properties:**
+
 - `method` - HTTP method (GET, POST, etc.)
 - `url` - Full request URL
 - `headers` - Request headers
@@ -67,7 +71,9 @@ type RequestDetails = {
 ```typescript
 export type ResponseController = {
   send: (body: unknown, init?: ResponseInit) => void;
-  stream: (initOrChunk?: StreamInit | Uint8Array | string) => StreamWriter | void;
+  stream: (
+    initOrChunk?: StreamInit | Uint8Array | string,
+  ) => StreamWriter | void;
   sse: (init?: SSEInit) => SSEController;
   status: (code: number) => void;
   headers: (headers: Record<string, string>) => void;
@@ -152,12 +158,13 @@ type OxianInternals = {
 
 ```typescript
 export type Handler = (
-  data: Data, 
-  context: Context
+  data: Data,
+  context: Context,
 ) => Promise<unknown | void> | unknown | void;
 ```
 
 **Return Types:**
+
 - `object | array` - JSON response (200)
 - `string` - Text response (200)
 - `Uint8Array` - Binary response (200)
@@ -165,6 +172,7 @@ export type Handler = (
 - `void | undefined` - Empty response (200)
 
 **Example:**
+
 ```typescript
 export const GET: Handler = async ({ id }, { dependencies }) => {
   const { userService } = dependencies;
@@ -176,25 +184,34 @@ export const GET: Handler = async ({ id }, { dependencies }) => {
 
 ```typescript
 export type Middleware = (
-  data: Data, 
-  context: Context
+  data: Data,
+  context: Context,
 ) => MiddlewareResult;
 
-export type MiddlewareResult = {
-  data?: Data;
-  context?: Partial<Context>;
-} | void | Promise<{
-  data?: Data;
-  context?: Partial<Context>;
-} | void>;
+export type MiddlewareResult =
+  | {
+    data?: Data;
+    context?: Partial<Context>;
+  }
+  | void
+  | Promise<
+    {
+      data?: Data;
+      context?: Partial<Context>;
+    } | void
+  >;
 ```
 
 **Example:**
+
 ```typescript
-export default function middleware(data: Data, context: Context): MiddlewareResult {
+export default function middleware(
+  data: Data,
+  context: Context,
+): MiddlewareResult {
   return {
     data: { ...data, timestamp: Date.now() },
-    context: { user: getCurrentUser() }
+    context: { user: getCurrentUser() },
   };
 }
 ```
@@ -204,11 +221,15 @@ export default function middleware(data: Data, context: Context): MiddlewareResu
 ```typescript
 export type Interceptors = {
   beforeRun?: (data: Data, context: Context) => MiddlewareResult;
-  afterRun?: (resultOrError: unknown, context: Context) => unknown | void | Promise<unknown | void>;
+  afterRun?: (
+    resultOrError: unknown,
+    context: Context,
+  ) => unknown | void | Promise<unknown | void>;
 };
 ```
 
 **Example:**
+
 ```typescript
 export async function beforeRun(data: Data, context: Context) {
   // Setup logic
@@ -232,27 +253,28 @@ export class OxianHttpError extends Error {
   statusCode: number;
   statusText?: string;
   details?: unknown;
-  
+
   constructor(
-    message: string, 
+    message: string,
     opts?: {
       code?: string;
       statusCode?: number;
       statusText?: string;
       details?: unknown;
-    }
+    },
   );
 }
 ```
 
 **Example:**
+
 ```typescript
 import { OxianHttpError } from "jsr:@oxian/oxian-js/types";
 
 throw new OxianHttpError("User not found", {
   statusCode: 404,
   code: "USER_NOT_FOUND",
-  details: { userId: id }
+  details: { userId: id },
 });
 ```
 
@@ -272,12 +294,13 @@ type ErrorObject = {
 ```
 
 **Example:**
+
 ```typescript
 throw {
   message: "Validation failed",
   statusCode: 400,
   code: "VALIDATION_ERROR",
-  details: { errors: ["Email is required"] }
+  details: { errors: ["Email is required"] },
 };
 ```
 
@@ -514,7 +537,8 @@ type StatResult = {
 
 ### EffectiveConfig
 
-The resolved configuration after merging defaults, files, and environment variables.
+The resolved configuration after merging defaults, files, and environment
+variables.
 
 ```typescript
 export type EffectiveConfig = Required<OxianConfig> & {
@@ -543,7 +567,7 @@ Create type-safe handlers with validation:
 ```typescript
 export function createTypedHandler<TData, TResponse>(
   handler: (data: TData, context: Context) => Promise<TResponse> | TResponse,
-  validator?: (data: unknown) => TData
+  validator?: (data: unknown) => TData,
 ): Handler {
   return async (data: Data, context: Context): Promise<TResponse> => {
     const validatedData = validator ? validator(data) : data as TData;
@@ -553,6 +577,7 @@ export function createTypedHandler<TData, TResponse>(
 ```
 
 **Example:**
+
 ```typescript
 interface CreateUserData {
   name: string;
@@ -576,7 +601,7 @@ const createUserHandler = createTypedHandler<CreateUserData, User>(
       throw new Error("Name and email required");
     }
     return data as CreateUserData;
-  }
+  },
 );
 
 export const POST = createUserHandler;
@@ -590,29 +615,29 @@ Oxian recognizes these environment variables:
 
 ```typescript
 // Server configuration
-process.env.PORT                    // Server port
-process.env.HOST                    // Server hostname
+process.env.PORT; // Server port
+process.env.HOST; // Server hostname
 
 // Runtime configuration
-process.env.NODE_ENV                // Environment (development/production/test)
-process.env.OXIAN_HOT_RELOAD        // Enable hot reload (true/false)
-process.env.OXIAN_LOG_LEVEL         // Log level (debug/info/warn/error)
+process.env.NODE_ENV; // Environment (development/production/test)
+process.env.OXIAN_HOT_RELOAD; // Enable hot reload (true/false)
+process.env.OXIAN_LOG_LEVEL; // Log level (debug/info/warn/error)
 
 // Loaders
-process.env.GITHUB_TOKEN            // GitHub API token
-process.env.OXIAN_SOURCE            // Default source location
+process.env.GITHUB_TOKEN; // GitHub API token
+process.env.OXIAN_SOURCE; // Default source location
 
 // Security
-process.env.JWT_SECRET              // JWT signing secret
-process.env.CORS_ORIGINS            // Allowed CORS origins (comma-separated)
+process.env.JWT_SECRET; // JWT signing secret
+process.env.CORS_ORIGINS; // Allowed CORS origins (comma-separated)
 
 // Database
-process.env.DATABASE_URL            // Database connection string
-process.env.REDIS_URL               // Redis connection string
+process.env.DATABASE_URL; // Database connection string
+process.env.REDIS_URL; // Redis connection string
 
 // Monitoring
-process.env.SENTRY_DSN              // Sentry error tracking
-process.env.DATADOG_API_KEY         // DataDog monitoring
+process.env.SENTRY_DSN; // Sentry error tracking
+process.env.DATADOG_API_KEY; // DataDog monitoring
 ```
 
 ## CLI Types
@@ -621,14 +646,14 @@ process.env.DATADOG_API_KEY         // DataDog monitoring
 
 ```typescript
 type CLIArgs = {
-  config?: string;           // Configuration file path
-  source?: string;           // Source location
-  port?: number;             // Server port
-  hostname?: string;         // Server hostname
-  hypervisor?: boolean;      // Enable hypervisor
-  "deno-config"?: string;    // Deno configuration file
-  help?: boolean;            // Show help
-  debug?: boolean;           // Enable debug mode
+  config?: string; // Configuration file path
+  source?: string; // Source location
+  port?: number; // Server port
+  hostname?: string; // Server hostname
+  hypervisor?: boolean; // Enable hypervisor
+  "deno-config"?: string; // Deno configuration file
+  help?: boolean; // Show help
+  debug?: boolean; // Enable debug mode
 };
 ```
 
@@ -669,7 +694,7 @@ export interface ErrorHandler {
 ### Complete Handler with Types
 
 ```typescript
-import type { Handler, Context, Data } from "jsr:@oxian/oxian-js/types";
+import type { Context, Data, Handler } from "jsr:@oxian/oxian-js/types";
 
 interface UserQuery {
   id: string;
@@ -694,25 +719,25 @@ interface Dependencies {
 export const GET: Handler = async (data: Data, context: Context) => {
   const { id, include } = data as UserQuery;
   const { userService } = context.dependencies as Dependencies;
-  
+
   if (!id) {
     throw {
       message: "User ID is required",
       statusCode: 400,
-      code: "MISSING_USER_ID"
+      code: "MISSING_USER_ID",
     };
   }
-  
+
   const user = await userService.findById(id, include);
   if (!user) {
     throw {
       message: "User not found",
       statusCode: 404,
       code: "USER_NOT_FOUND",
-      details: { userId: id }
+      details: { userId: id },
     };
   }
-  
+
   return user;
 };
 ```
@@ -720,7 +745,7 @@ export const GET: Handler = async (data: Data, context: Context) => {
 ### Typed Middleware
 
 ```typescript
-import type { Middleware, Data, Context } from "jsr:@oxian/oxian-js/types";
+import type { Context, Data, Middleware } from "jsr:@oxian/oxian-js/types";
 
 interface AuthenticatedContext extends Context {
   user: {
@@ -731,27 +756,30 @@ interface AuthenticatedContext extends Context {
 }
 
 const authMiddleware: Middleware = async (data: Data, context: Context) => {
-  const token = context.request.headers.get("authorization")?.replace("Bearer ", "");
-  
+  const token = context.request.headers.get("authorization")?.replace(
+    "Bearer ",
+    "",
+  );
+
   if (!token) {
     throw {
       message: "Authentication required",
       statusCode: 401,
-      code: "AUTHENTICATION_REQUIRED"
+      code: "AUTHENTICATION_REQUIRED",
     };
   }
-  
+
   const user = await verifyToken(token);
   if (!user) {
     throw {
       message: "Invalid token",
       statusCode: 401,
-      code: "INVALID_TOKEN"
+      code: "INVALID_TOKEN",
     };
   }
-  
+
   return {
-    context: { user }
+    context: { user },
   };
 };
 
@@ -773,17 +801,17 @@ export interface AppDependencies {
 // routes/dependencies.ts
 import type { AppDependencies } from "../types/dependencies.ts";
 
-export default async function(): Promise<AppDependencies> {
+export default async function (): Promise<AppDependencies> {
   const database = await createDatabase();
   const cache = createCacheService();
   const logger = createLogger();
-  
+
   return {
     database,
     cache,
     logger,
     userService: createUserService(database, cache),
-    emailService: createEmailService()
+    emailService: createEmailService(),
   };
 }
 
@@ -799,9 +827,13 @@ export const GET: Handler = async (data, context) => {
 
 ---
 
-This API reference provides complete type information for building robust, type-safe applications with Oxian. Use TypeScript's autocomplete and type checking to catch errors early and improve development experience.
+This API reference provides complete type information for building robust,
+type-safe applications with Oxian. Use TypeScript's autocomplete and type
+checking to catch errors early and improve development experience.
 
 **Next Steps:**
+
 - [Getting Started](./getting-started.md) - Build your first API
 - [Best Practices](./best-practices.md) - Production patterns
-- [Examples Repository](https://github.com/oxian-org/examples) - Real-world examples
+- [Examples Repository](https://github.com/oxian-org/examples) - Real-world
+  examples
