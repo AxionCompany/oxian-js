@@ -1,6 +1,6 @@
 export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, logging = { level: "info" } }) => ({
     root,
-    basePath,
+    basePath:"/",
     loaders: {
         local: { enabled: true },
         github: { enabled: true, tokenEnv: "GITHUB_TOKEN", cacheTtlSec: 60 },

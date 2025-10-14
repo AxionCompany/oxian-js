@@ -226,6 +226,9 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
 
         if (basePath && basePath !== "/") {
 
+          console.log("path", path);
+          console.log("basePath", basePath);
+
           if (!path.startsWith(basePath)) {
             // Non-API path: handle via web config (prefer top-level config.web; fallback to runtime.hv.web)
             const webCfg = (config.web ?? (config.runtime?.hv?.web ?? {}))
