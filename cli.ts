@@ -435,7 +435,10 @@ if (import.meta.main) {
 
       for (const name of candidates) {
         try {
+          console.log("importing", name);
           const mod = await resolver.import(name);
+          console.log("resolved", await resolver.resolve(name));
+          console.log("mod", mod);
           const pick = (mod.default ?? (mod as { config?: unknown }).config ??
             mod) as unknown;
           if (typeof pick === "function") {
@@ -456,6 +459,7 @@ if (import.meta.main) {
           // continue to next candidate
         }
       }
+      console.log("discovered", discovered);
       // Shallow overlay: remote overrides local
       if (discovered && typeof discovered === "object") {
         const d = discovered as Partial<OxianConfig>;
