@@ -1,6 +1,8 @@
 # 🛣️ Routing - File-Based API Routes
 
-Oxian uses intuitive file-based routing that maps your file system structure directly to API endpoints. This approach, inspired by Next.js, makes your API structure predictable and easy to navigate.
+Oxian uses intuitive file-based routing that maps your file system structure
+directly to API endpoints. This approach, inspired by Next.js, makes your API
+structure predictable and easy to navigate.
 
 ## Basic Concepts
 
@@ -39,10 +41,10 @@ export function DELETE({ id }) {
 }
 
 // Fallback for any method not explicitly handled
-export default function({ method }) {
-  throw { 
-    message: `Method ${method} not allowed`, 
-    statusCode: 405 
+export default function ({ method }) {
+  throw {
+    message: `Method ${method} not allowed`,
+    statusCode: 405,
   };
 }
 ```
@@ -72,8 +74,8 @@ export function GET({ id }) {
     user: {
       id,
       name: `User ${id}`,
-      email: `user${id}@example.com`
-    }
+      email: `user${id}@example.com`,
+    },
   };
 }
 
@@ -89,6 +91,7 @@ export function DELETE({ id }) {
 ```
 
 **Test:**
+
 ```bash
 curl http://localhost:8080/users/123
 curl -X PUT -H "Content-Type: application/json" \
@@ -104,12 +107,13 @@ curl -X DELETE http://localhost:8080/users/123
 export function GET({ id, postId }) {
   return {
     user: { id },
-    post: { id: postId, title: `Post ${postId}` }
+    post: { id: postId, title: `Post ${postId}` },
   };
 }
 ```
 
 **Test:**
+
 ```bash
 curl http://localhost:8080/users/123/posts/456
 ```
@@ -131,19 +135,20 @@ routes/
 export function GET({ slug }) {
   // slug is an array of path segments
   // /docs/api/v1/users → slug = ["api", "v1", "users"]
-  
+
   return {
     page: slug.join("/"),
     segments: slug,
     breadcrumbs: slug.map((segment, index) => ({
       name: segment,
-      path: `/docs/${slug.slice(0, index + 1).join("/")}`
-    }))
+      path: `/docs/${slug.slice(0, index + 1).join("/")}`,
+    })),
   };
 }
 ```
 
 **Test:**
+
 ```bash
 curl http://localhost:8080/docs/api/v1/users
 # Response: {
@@ -155,7 +160,8 @@ curl http://localhost:8080/docs/api/v1/users
 
 ### Optional Catch-All
 
-Use `[[...param]]` for optional catch-all (matches both `/docs` and `/docs/anything`):
+Use `[[...param]]` for optional catch-all (matches both `/docs` and
+`/docs/anything`):
 
 ```ts
 // routes/docs/[[...slug]].ts
@@ -163,7 +169,7 @@ export function GET({ slug = [] }) {
   if (slug.length === 0) {
     return { page: "index", title: "Documentation Home" };
   }
-  
+
   return { page: slug.join("/"), segments: slug };
 }
 ```
@@ -186,6 +192,7 @@ routes/
 ```
 
 **Resolution examples:**
+
 - `/users` → `users.ts`
 - `/users/settings` → `users/settings.ts`
 - `/users/123` → `users/[id].ts`
@@ -234,12 +241,13 @@ export function GET({ q, limit = 10, sort = "created" }) {
     query: q,
     limit: parseInt(limit),
     sort,
-    results: [`Results for "${q}"`]
+    results: [`Results for "${q}"`],
   };
 }
 ```
 
 **Test:**
+
 ```bash
 curl "http://localhost:8080/search?q=hello&limit=5&sort=updated"
 ```
@@ -253,10 +261,10 @@ Handle multiple values for the same parameter:
 export function GET(data, { request }) {
   // URL: /filter?tags=js&tags=web&tags=api
   const tags = request.queryParams.getAll("tags");
-  
+
   return {
     tags,
-    count: tags.length
+    count: tags.length,
   };
 }
 ```
@@ -270,24 +278,25 @@ Request bodies are automatically parsed and merged:
 export function POST({ name, email, age }) {
   // Validate
   if (!name || !email) {
-    throw { 
-      message: "Name and email required", 
-      statusCode: 400 
+    throw {
+      message: "Name and email required",
+      statusCode: 400,
     };
   }
-  
+
   // Create user
   return {
     id: Math.random().toString(36),
     name,
     email,
     age: age ? parseInt(age) : null,
-    created: new Date().toISOString()
+    created: new Date().toISOString(),
   };
 }
 ```
 
 **Test:**
+
 ```bash
 curl -X POST -H "Content-Type: application/json" \
   -d '{"name":"John","email":"john@example.com","age":"25"}' \
@@ -296,7 +305,8 @@ curl -X POST -H "Content-Type: application/json" \
 
 ## Parameter Precedence
 
-When the same parameter exists in multiple places, Oxian follows this precedence:
+When the same parameter exists in multiple places, Oxian follows this
+precedence:
 
 1. **Path parameters** (highest priority)
 2. **Query parameters**
@@ -307,10 +317,10 @@ When the same parameter exists in multiple places, Oxian follows this precedence
 export function PUT({ id, name }) {
   // URL: /users/123?id=456
   // Body: {"id": 789, "name": "John"}
-  
+
   // id = "123" (from path, highest priority)
   // name = "John" (from body)
-  
+
   return { id, name };
 }
 ```
@@ -368,22 +378,23 @@ Handle different response formats:
 // routes/users/[id].ts
 export function GET({ id, format }, { request }) {
   const user = { id, name: `User ${id}` };
-  
+
   const acceptHeader = request.headers.get("accept");
   const formatParam = format || "json";
-  
+
   if (formatParam === "xml" || acceptHeader?.includes("application/xml")) {
     return new Response(
       `<user><id>${user.id}</id><name>${user.name}</name></user>`,
-      { headers: { "content-type": "application/xml" } }
+      { headers: { "content-type": "application/xml" } },
     );
   }
-  
+
   return user; // Default JSON
 }
 ```
 
 **Test:**
+
 ```bash
 curl http://localhost:8080/users/123?format=xml
 curl -H "Accept: application/xml" http://localhost:8080/users/123
@@ -397,7 +408,7 @@ Support method override for clients that can't send all HTTP methods:
 // routes/users/[id].ts
 export function POST({ id, _method, ...data }, { request }) {
   const method = _method || request.method;
-  
+
   switch (method.toUpperCase()) {
     case "PUT":
       return updateUser(id, data);
@@ -410,6 +421,7 @@ export function POST({ id, _method, ...data }, { request }) {
 ```
 
 **Test:**
+
 ```bash
 curl -X POST -H "Content-Type: application/json" \
   -d '{"_method":"PUT","name":"John"}' \
@@ -426,14 +438,14 @@ export function GET({ version }) {
   if (version === "v1") {
     return { users: [], version: "v1", deprecated: true };
   }
-  
+
   if (version === "v2") {
     return { users: [], version: "v2", features: ["pagination"] };
   }
-  
-  throw { 
-    message: `API version ${version} not supported`, 
-    statusCode: 404 
+
+  throw {
+    message: `API version ${version} not supported`,
+    statusCode: 404,
   };
 }
 ```
@@ -447,6 +459,7 @@ deno run -A jsr:@oxian/oxian-js routes
 ```
 
 Output:
+
 ```
 Routes:
   GET /
@@ -488,8 +501,8 @@ Error: Route conflict detected
 ```json
 {
   "routing": {
-    "trailingSlash": "always"   // /users → /users/
-    "trailingSlash": "never"    // /users/ → /users  
+    "trailingSlash": "always", // /users → /users/
+    "trailingSlash": "never", // /users/ → /users
     "trailingSlash": "preserve" // Keep as-is (default)
   }
 }
@@ -500,8 +513,8 @@ Error: Route conflict detected
 ```json
 {
   "routing": {
-    "discovery": "eager",    // Discover all routes at startup (default)
-    "discovery": "lazy"      // Discover routes on first request
+    "discovery": "eager", // Discover all routes at startup (default)
+    "discovery": "lazy" // Discover routes on first request
   }
 }
 ```
@@ -569,9 +582,13 @@ routes/
 
 ---
 
-File-based routing makes your API structure intuitive and maintainable. Start with simple static routes and gradually add dynamic patterns as your application grows.
+File-based routing makes your API structure intuitive and maintainable. Start
+with simple static routes and gradually add dynamic patterns as your application
+grows.
 
 **Next Steps:**
+
 - [Handlers Guide](./handlers.md) - Master handler functions
 - [Middleware](./middleware.md) - Add request processing
-- [Dependency Injection](./dependency-injection.md) - Share services between routes
+- [Dependency Injection](./dependency-injection.md) - Share services between
+  routes

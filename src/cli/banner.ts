@@ -24,5 +24,3 @@ export function printBanner(version?: string) {
 export function getBanner(): string {
   return BANNER;
 }
-
-

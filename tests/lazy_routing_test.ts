@@ -14,7 +14,11 @@ async function waitForReady(url: string, timeoutMs = 5000) {
 }
 
 async function startServerLazy(port: number) {
-  const proc = new Deno.Command("deno", { args: ["run", "-A", "cli.ts", `--port=${port}`, "--config=oxian.config.ts"], stdout: "piped", stderr: "piped" }).spawn();
+  const proc = new Deno.Command("deno", {
+    args: ["run", "-A", "cli.ts", `--port=${port}`, "--config=oxian.config.ts"],
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
   await waitForReady(`http://localhost:${port}/`);
   return proc;
 }
@@ -28,7 +32,9 @@ Deno.test("lazy: index and param routing", async () => {
     const rootJson = await root.json();
     if (rootJson.hello !== "world") throw new Error("unexpected root");
 
-    let res = await fetch("http://localhost:8131/users/1", { headers: { authorization: "Bearer a" } });
+    let res = await fetch("http://localhost:8131/users/1", {
+      headers: { authorization: "Bearer a" },
+    });
     const json = await res.json();
     if (json.id !== "1") throw new Error("param route failed");
 
@@ -36,8 +42,12 @@ Deno.test("lazy: index and param routing", async () => {
     const caj = await ca.json();
     if (!caj.slug) throw new Error("catch-all failed");
   } finally {
-    try { proc.kill(); } catch {}
+    try {
+      proc.kill();
+    } catch {}
     await proc.output();
-    try { await Deno.remove("oxian.config.ts"); } catch {}
+    try {
+      await Deno.remove("oxian.config.ts");
+    } catch {}
   }
-}); 
+});

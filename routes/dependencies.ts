@@ -4,6 +4,6 @@ export default async function () {
     ["2", { id: "2", name: "Linus" }],
   ]);
   const db = { users };
-  
-  return { db, feature:'test' } as const;
-} 
+
+  return { db, feature: "test" } as const;
+}

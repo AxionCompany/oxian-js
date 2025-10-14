@@ -1,4 +1,4 @@
-import { fromFileUrl, toFileUrl, isAbsolute, join } from "@std/path";
+import { fromFileUrl, isAbsolute, join, toFileUrl } from "@std/path";
 
 export function getRootUrl(root: string | URL | undefined): URL {
   if (!root) return toFileUrl(Deno.cwd());
@@ -27,5 +27,3 @@ export function absolutize(path: string): string {
   if (isAbsolute(path)) return path;
   return join(Deno.cwd(), path);
 }
-
-

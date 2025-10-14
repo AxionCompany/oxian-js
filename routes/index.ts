@@ -2,12 +2,11 @@ import type { Context, Data } from "oxian-js/types.ts";
 import fs from "node:fs";
 
 export async function GET(data: Data, context: Context) {
+  console.log(data);
 
-    console.log(data);
+  const dir = fs.readdirSync(".");
 
-    const dir = fs.readdirSync('.')
+  const env = Deno.env.toObject();
 
-    const env = Deno.env.toObject()
-
-    return { hello: "world", dir, env, data };
-} 
+  return { hello: "world", dir, env, data };
+}

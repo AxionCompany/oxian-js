@@ -1,12 +1,17 @@
 # 📈 Instrumentation & Observability
 
-Oxian embraces Deno's built-in OpenTelemetry integration for traces, metrics, and logs.
+Oxian embraces Deno's built-in OpenTelemetry integration for traces, metrics,
+and logs.
 
-- Traces: Spans are created automatically for Deno.serve requests. Oxian adds http.route, oxian.project, and http.request_id/oxian.request_id and updates span names with the route.
-- Metrics: Request duration, active requests, and body sizes are exported automatically. You can add your own counters/histograms via hooks.
+- Traces: Spans are created automatically for Deno.serve requests. Oxian adds
+  http.route, oxian.project, and http.request_id/oxian.request_id and updates
+  span names with the route.
+- Metrics: Request duration, active requests, and body sizes are exported
+  automatically. You can add your own counters/histograms via hooks.
 - Logs: console.* output is exported as OTLP logs.
 
-Reference: Deno OTEL docs: https://docs.deno.com/runtime/fundamentals/open_telemetry/
+Reference: Deno OTEL docs:
+https://docs.deno.com/runtime/fundamentals/open_telemetry/
 
 ## Enable OTEL
 
@@ -18,9 +23,9 @@ export default {
       serviceName: "oxian-server",
       protocol: "http/protobuf", // or "http/json" for debugging
       resourceAttributes: { env: "local" },
-      propagators: "tracecontext,baggage"
-    }
-  }
+      propagators: "tracecontext,baggage",
+    },
+  },
 };
 ```
 
@@ -38,18 +43,26 @@ export default {
         port: 4318,
         pathPrefix: "/v1",
         onExport: async ({ kind, headers, body, contentType, project }) => {
-          console.log("[otel-collector] export", { kind, project, contentType, bytes: body.byteLength });
-        }
-      }
-    }
-  }
+          console.log("[otel-collector] export", {
+            kind,
+            project,
+            contentType,
+            bytes: body.byteLength,
+          });
+        },
+      },
+    },
+  },
 };
 ```
 
 Notes:
-- Workers default the OTLP endpoint to the built-in collector when logging.otel.enabled=true and no endpoint is set.
+
+- Workers default the OTLP endpoint to the built-in collector when
+  logging.otel.enabled=true and no endpoint is set.
 - x-oxian-project is injected into exporter headers for project tagging.
-- To inspect payloads, set logging.otel.protocol = "http/json" and decode with new TextDecoder().decode(body).
+- To inspect payloads, set logging.otel.protocol = "http/json" and decode with
+  new TextDecoder().decode(body).
 
 ## Custom Spans & Metrics (Hooks)
 
@@ -65,26 +78,36 @@ export default {
           const counter = meter.createCounter("app.init.count", { unit: "1" });
           counter.add(1);
         },
-        onRequestStart: ({ tracer, meter, span, requestId, method, url, project }) => {
+        onRequestStart: (
+          { tracer, meter, span, requestId, method, url, project },
+        ) => {
           span?.setAttribute("app.req.meta", `${project}:${method}`);
-          const active = meter.createUpDownCounter("http.server.active_requests", { unit: "1" });
+          const active = meter.createUpDownCounter(
+            "http.server.active_requests",
+            { unit: "1" },
+          );
           active.add(1);
         },
         onRequestEnd: ({ span, meter, status, durationMs }) => {
           span?.setAttribute("app.req.duration_ms", durationMs);
-          const active = meter.createUpDownCounter("http.server.active_requests", { unit: "1" });
+          const active = meter.createUpDownCounter(
+            "http.server.active_requests",
+            { unit: "1" },
+          );
           active.add(-1);
           const hist = meter.createHistogram("app.req.duration", { unit: "s" });
           hist.record(durationMs / 1000);
-        }
-      }
-    }
-  }
+        },
+      },
+    },
+  },
 };
 ```
 
 Best practices:
-- Prefer units in instrument options (not in names). Use SI/UCUM like s, ms, By, 1.
+
+- Prefer units in instrument options (not in names). Use SI/UCUM like s, ms,
+  By, 1.
 - Avoid excessive cardinality in attributes.
 - Keep hooks fast and non-blocking.
 
