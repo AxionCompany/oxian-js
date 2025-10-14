@@ -491,7 +491,6 @@ if (import.meta.main) {
     }
   } catch (e) {
     console.error("[cli] config discovery failed", (e as Error)?.message);
-    console.error(e);
     Deno.exit(1);
   }
 
