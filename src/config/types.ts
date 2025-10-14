@@ -77,11 +77,15 @@ export type OxianConfig = {
       denoConfig?: string;
       // Request lifecycle timeouts (proxy-level)
       timeouts?: { connectMs?: number; headersMs?: number; idleMs?: number; totalMs?: number };
+      // Materialize settings for remote sources (global default)
+      materialize?: boolean | { mode?: "auto" | "always" | "never"; dir?: string; refresh?: boolean };
       // Web dev/prod integration
       web?: {
         devProxyTarget?: string; // e.g., http://localhost:5173
         staticDir?: string;      // e.g., "dist"
         staticCacheControl?: string; // e.g., "public, max-age=31536000, immutable"
+        staticIndex?: string; // e.g., "index.html"
+        pathRewrite?: (path: string, basePath: string) => string;
       };
       // Config-only multi-project support
       projects?: Record<string, {
@@ -91,30 +95,57 @@ export type OxianConfig = {
         // Optional GitHub token override for this project (enables per-worker tokens)
         githubToken?: string;
         routing?: { basePath?: string };
+        // Per-project web settings overlaying global hv.web
+        web?: {
+          devProxyTarget?: string;
+          staticDir?: string;
+          staticCacheControl?: string;
+        };
+        // Per-project materialization settings
+        materialize?: boolean | { mode?: "auto" | "always" | "never"; dir?: string; refresh?: boolean };
+        // Idle timeout: stop worker if no activity for this duration in ms
+        idleTtlMs?: number;
         worker?: { kind?: "process" | "thread"; pool?: { min?: number; max?: number } };
         strategy?: "round_robin" | "least_busy" | "sticky";
         stickyHeader?: string;
         timeouts?: { connectMs?: number; headersMs?: number; idleMs?: number; totalMs?: number };
         health?: { path?: string; intervalMs?: number; timeoutMs?: number };
         permissions?: {
-          net?: boolean | string[];
           read?: boolean | string[];
           write?: boolean | string[];
+          import?: boolean | string[];
           env?: boolean | string[];
-          ffi?: boolean;
-          hrtime?: boolean;
+          net?: boolean | string[];
+          ffi?: boolean | string[];
+          run?: boolean | string[];
           sys?: boolean | string[];
         };
         denoConfig?: string; // per-project override
         dependencies?: { initial?: Record<string, unknown> };
       }>;
+      // Built-in minimal OTLP HTTP collector (http/protobuf or http/json)
+      otelCollector?: {
+        enabled?: boolean;
+        port?: number; // default 4318
+        pathPrefix?: string; // default "/v1"
+        // Called for each export request; body is raw bytes (opaque to oxian)
+        onExport?: (input: {
+          kind: "traces" | "metrics" | "logs";
+          headers: Record<string, string>;
+          body: Uint8Array;
+          contentType: string;
+          project?: string;
+        }) => void | Promise<void>;
+      };
+      // Request transformation hook: called before proxying to worker
+      onRequest?: (input: {
+        req: Request;
+        project: string;
+      }) => Promise<Request> | Request;
       // Single provider function (optional). When provided:
-      // - At request time: called with { req } to choose a project and optional path rewrite.
-      // - At spawn time: called with { project } to supply per-project overrides (source/config/env/token).
+      // - Called with { req } to choose a project and per-request/project overrides.
       provider?: (
-        input:
-          | { req: Request; project?: never }
-          | { project: string; req?: never }
+        input: { req: Request }
       ) => Promise<{
         project: string;
         source?: string;
@@ -122,6 +153,17 @@ export type OxianConfig = {
         env?: Record<string, string>;
         githubToken?: string;
         stripPathPrefix?: string;
+        permissions?: {
+          net?: boolean | string[];
+          read?: boolean | string[];
+          write?: boolean | string[];
+          env?: boolean | string[];
+          import?: boolean | string[];
+          ffi?: boolean | string[];
+          run?: boolean | string[];
+          sys?: boolean | string[];
+        };
+        materialize?: boolean | { mode?: "auto" | "always" | "never"; dir?: string; refresh?: boolean };
       }> | {
         project: string;
         source?: string;
@@ -129,6 +171,17 @@ export type OxianConfig = {
         env?: Record<string, string>;
         githubToken?: string;
         stripPathPrefix?: string;
+        permissions?: {
+          net?: boolean | string[];
+          read?: boolean | string[];
+          write?: boolean | string[];
+          env?: boolean | string[];
+          import?: boolean | string[];
+          ffi?: boolean | string[];
+          run?: boolean | string[];
+          sys?: boolean | string[];
+        };
+        materialize?: boolean | { mode?: "auto" | "always" | "never"; dir?: string; refresh?: boolean };
       };
       // Declarative selection rules
       select?: Array<
@@ -153,7 +206,9 @@ export type OxianConfig = {
     read?: boolean | string[];
     write?: boolean | string[];
     env?: boolean | string[];
-    ffi?: boolean;
+    ffi?: boolean | string[];
+    import?: boolean | string[];
+    run?: boolean | string[];
     hrtime?: boolean;
     sys?: boolean | string[];
   };
@@ -166,7 +221,14 @@ export type OxianConfig = {
     discovery?: "eager" | "lazy"; // default: eager
   };
   security?: {
-    cors?: { allowedOrigins: string[]; allowedHeaders?: string[]; methods?: string[] };
+    cors?: {
+      allowedOrigins: string[];
+      allowedHeaders?: string[];
+      methods?: string[];
+      allowCredentials?: boolean;
+      exposeHeaders?: string[];
+      maxAge?: number;
+    };
     defaultHeaders?: Record<string, string>;
     scrubHeaders?: string[];
   };
@@ -175,6 +237,35 @@ export type OxianConfig = {
     requestIdHeader?: string;
     deprecations?: boolean; // default true
     performance?: boolean; // enable perf timing logs
+    // Optional structured log event callback; invoked for server and hypervisor events
+    onEvent?: (event: { level: "debug" | "info" | "warn" | "error"; time: string; source: string; project: string; payload: Record<string, unknown> }) => void;
+    // Control console output; true by default
+    console?: boolean;
+    // Sampling for callbacks (0..1). Default 1 (no sampling)
+    sampleRate?: number;
+    // Additional headers to redact in request logs
+    redactHeaders?: string[];
+    // When true, server consolidates a single end-of-request log with req/res and stdout
+    consolidateServerRequestLog?: boolean;
+    // When true, server attempts to capture console.* during request and include in stdout (best-effort)
+    captureConsole?: boolean;
+    // OpenTelemetry integration for workers and server
+    otel?: {
+      enabled?: boolean;
+      serviceName?: string;
+      endpoint?: string; // e.g., http://localhost:4318
+      protocol?: "http/protobuf" | "http/json";
+      headers?: Record<string, string>; // exporter headers
+      resourceAttributes?: Record<string, string>; // additional OTEL_RESOURCE_ATTRIBUTES
+      propagators?: string; // e.g., "tracecontext,baggage"
+      metricExportIntervalMs?: number; // OTEL_METRIC_EXPORT_INTERVAL
+      // Optional user hooks for custom spans/metrics
+      hooks?: {
+        onInit?: (input: { tracer?: unknown; meter?: unknown }) => unknown | Promise<unknown>;
+        onRequestStart?: (input: { tracer?: unknown; meter?: unknown; span?: unknown; requestId: string; method: string; url: string; project: string; state?: unknown }) => void | Promise<void>;
+        onRequestEnd?: (input: { tracer?: unknown; meter?: unknown; span?: unknown; requestId: string; method: string; url: string; project: string; status: number; durationMs: number; state?: unknown }) => void | Promise<void>;
+      };
+    };
   };
   compatibility?: {
     handlerMode?: "default" | "this" | "factory";
@@ -182,6 +273,16 @@ export type OxianConfig = {
     middlewareMode?: "default" | "this" | "factory" | "assign"; // defaults to 'default' when undefined
     useMiddlewareRequest?: boolean; // default false when undefined
   };
+  // Top-level Web dev/prod integration for worker context (preferred over runtime.hv.web)
+  web?: {
+    devProxyTarget?: string; // e.g., http://localhost:5173
+    staticDir?: string;      // e.g., "dist"
+    staticCacheControl?: string; // e.g., "public, max-age=31536000, immutable"
+    staticIndex?: string; // e.g., "index.html"
+    pathRewrite?: (path: string, basePath: string) => string;
+  };
+  // Optional pre-run commands executed after materialization (in materialized root)
+  prepare?: Array<string | { cmd: string; cwd?: string; env?: Record<string, string> }>;
 };
 
 /**

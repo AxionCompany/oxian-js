@@ -1,6 +1,9 @@
 # 🚀 Hypervisor - Multi-Process Scaling
 
-The Oxian Hypervisor is a powerful production feature that enables horizontal scaling by running multiple worker processes and load balancing requests between them. It's designed for high-traffic scenarios where you need better performance, fault isolation, and multi-tenancy.
+The Oxian Hypervisor is a powerful production feature that enables horizontal
+scaling by running multiple worker processes and load balancing requests between
+them. It's designed for high-traffic scenarios where you need better
+performance, fault isolation, and multi-tenancy.
 
 ## Overview
 
@@ -144,7 +147,9 @@ Configure the hypervisor in `oxian.config.json`:
 
 ## Multi-Project Support
 
-The hypervisor supports hosting multiple projects/applications with intelligent routing. You can use either declarative selection rules or a single provider function.
+The hypervisor supports hosting multiple projects/applications with intelligent
+routing. You can use either declarative selection rules or a single provider
+function.
 
 ### Project Configuration
 
@@ -170,22 +175,92 @@ The hypervisor supports hosting multiple projects/applications with intelligent 
         }
       },
       // Optional: provider (TypeScript config only)
-      // Called once per request; returns project and per-worker overrides
-      // Type: (input: { req: Request } | { project: string }) => Promise<{
-      //   project: string; source?: string; config?: string; env?: Record<string,string>;
-      //   githubToken?: string; stripPathPrefix?: string; isolated?: boolean
+      // Called once per request with { req }; returns project and overrides
+      // Type: (input: { req: Request }) => Promise<{
+      //   project: string;
+      //   source?: string;            // file:// or github:...
+      //   config?: string;            // per-project config path/URL
+      //   env?: Record<string,string>;
+      //   githubToken?: string;
+      //   stripPathPrefix?: string;
+      //   isolated?: boolean;         // run worker in ./.projects/<project>
+      //   materialize?: boolean | { mode?: "auto"|"always"|"never"; dir?: string; refresh?: boolean };
       // }> | { ... }
       "provider": "ts-only",
       // Or use declarative selection rules
-      "select": [ { "project": "api", "when": { "pathPrefix": "/api" } }, { "default": true, "project": "api" } ]
+      "select": [
+        { "project": "api", "when": { "pathPrefix": "/api" } },
+        { "default": true, "project": "api" }
+      ]
     }
   }
 }
 ```
 
+### Web Configuration (preferred top-level)
+
+Preferred: set `web` at the configuration top level (`config.web`) so workers
+(which actually serve static/dev proxy) read it directly. For backward
+compatibility, `runtime.hv.web` is still supported and used as a fallback.
+
+You can still configure per-project web behavior that overlays the global `web`.
+The hypervisor first selects the project based on provider/rules, then:
+
+1. Determines the effective API base path:
+   `hv.projects[project].routing.basePath` → global `basePath` → `/`.
+2. If the request path does not start with that base path, it applies the
+   selected project’s `web` config (merged with global `hv.web`).
+
+Available `web` options:
+
+- `devProxyTarget`: Proxy non-API paths to a dev server (e.g.,
+  `http://localhost:5173`).
+- `staticDir`: Serve static files for non-API paths in production; falls back to
+  `index.html` for SPA routes.
+- `staticCacheControl`: Optional cache-control header for static asset
+  responses.
+
+Example:
+
+```json
+{
+  "web": { "staticDir": "dist" },
+  "runtime": {
+    "hv": {
+      "projects": {
+        "appA": {
+          "routing": { "basePath": "/api" },
+          "web": { "devProxyTarget": "http://localhost:5173" }
+        },
+        "appB": {
+          "routing": { "basePath": "/b-api" },
+          "web": {
+            "staticDir": "apps/b/dist",
+            "staticCacheControl": "public, max-age=3600"
+          }
+        }
+      },
+      "select": [
+        { "project": "appA", "when": { "hostPrefix": "a." } },
+        { "project": "appB", "when": { "hostPrefix": "b." } },
+        { "default": true, "project": "appA" }
+      ]
+    }
+  }
+}
+```
+
+Behavior:
+
+- Requests matching a project’s API base path are proxied to that project’s
+  worker.
+- Other paths are handled by that project’s `web` config (dev proxy if set;
+  otherwise static serving if `staticDir` is set; otherwise 404).
+
 ### Provider (Single Function)
 
-Define a single function (only in TS/JS config) to both select the project and provide per-worker overrides.
+Define a single function (only in TS/JS config) to both select the project and
+provide per-worker overrides.
 
 ```ts
 // oxian.config.ts
@@ -201,13 +276,13 @@ export default ({}) => ({
             source: "github:AcmeOrg/api?ref=main",
             env: { FEATURE_FLAG: "1" },
             githubToken: Deno.env.get("GITHUB_TOKEN") || undefined,
-            isolated: true // optional per-worker DENO_DIR, with restricted write and read permissions to the project directory
+            isolated: true, // optional per-worker DENO_DIR, with restricted write and read permissions to the project directory
           };
         }
         return { project: "local" };
-      }
-    }
-  }
+      },
+    },
+  },
 });
 ```
 
@@ -255,6 +330,7 @@ Route requests to different projects based on various criteria:
 ```
 
 **Selection Criteria:**
+
 - `pathPrefix` - Route based on URL path
 - `hostEquals` - Exact hostname match
 - `hostPrefix` - Hostname starts with
@@ -280,6 +356,7 @@ Distributes requests evenly across workers:
 ```
 
 Perfect for:
+
 - ✅ Stateless applications
 - ✅ Even load distribution
 - ✅ Simple setup
@@ -300,6 +377,7 @@ Routes requests from the same client to the same worker:
 ```
 
 Perfect for:
+
 - ✅ Session-based applications
 - ✅ WebSocket connections
 - ✅ Stateful services
@@ -319,6 +397,7 @@ Routes to the worker with fewest active connections:
 ```
 
 Perfect for:
+
 - ✅ Variable request processing times
 - ✅ Optimal resource utilization
 - ✅ High-performance scenarios
@@ -346,7 +425,44 @@ Configure automatic scaling based on load:
 }
 ```
 
+### Idle Shutdown
+
+Workers can be stopped automatically when idle (no active requests/streams) for
+a configured duration. This saves resources during quiet periods.
+
+- Configure per project: `runtime.hv.projects[project].idleTtlMs` (ms)
+- Provider override at spawn: `SelectedProject.idleTtlMs`
+- Global fallback: `runtime.hv.autoscale.idleTtlMs`
+- Default: disabled (no idle stop unless configured)
+
+Semantics:
+
+- Inflight increments when the hypervisor starts proxying a request and
+  decrements only after the response body finishes streaming to the client. This
+  ensures long‑lived Streaming/SSE requests keep the worker alive until the
+  client closes.
+- Last activity is updated on request start and completion; the idle timer
+  compares current time to the last activity.
+- When `idleTtlMs` elapses with inflight=0, the worker is stopped intentionally;
+  it will not auto‑heal until a new request arrives (on‑demand spawn).
+
+Example:
+
+```json
+{
+  "runtime": {
+    "hv": {
+      "autoscale": { "idleTtlMs": 300000 },
+      "projects": {
+        "api": { "idleTtlMs": 120000 }
+      }
+    }
+  }
+}
+```
+
 **Auto-scaling Triggers:**
+
 - **Load-based** - Scale up when `targetInflightPerWorker` exceeded
 - **Latency-based** - Scale up when `maxAvgLatencyMs` exceeded
 - **Time-based** - Scale down after `idleTtlMs` idle time
@@ -364,6 +480,7 @@ deno run -A jsr:@oxian/oxian-js dev --hypervisor=false
 ```
 
 Development config:
+
 ```json
 {
   "runtime": {
@@ -383,6 +500,7 @@ deno run -A jsr:@oxian/oxian-js start
 ```
 
 Production config:
+
 ```json
 {
   "runtime": {
@@ -416,30 +534,50 @@ curl http://localhost:8080/_health
 curl http://localhost:9101/_health
 ```
 
-### Logging
+### OpenTelemetry
 
-The hypervisor provides structured logging:
+Oxian leverages Deno’s OpenTelemetry integration. Each incoming request creates
+a span; standard attributes are set automatically, and Oxian adds `http.route`
+and `oxian.project` when the route is known. Metrics are exported for request
+duration, active requests, and body sizes. `console.*` output is exported as
+OTLP logs.
 
-```json
-{
-  "timestamp": "2024-01-20T10:30:00.000Z",
-  "level": "info",
-  "message": "[hv] proxy",
-  "data": {
-    "method": "GET",
-    "url": "http://localhost:8080/api/users",
-    "selected": "api",
-    "target": "http://localhost:9101/users",
-    "requestId": "req_abc123"
-  }
-}
+For local development you can run a minimal built-in OTLP HTTP collector inside
+the hypervisor and receive export callbacks:
+
+```ts
+export default {
+  logging: { otel: { enabled: true, serviceName: "oxian-server" } },
+  runtime: {
+    hv: {
+      otelCollector: {
+        enabled: true,
+        port: 4318,
+        pathPrefix: "/v1",
+        onExport: async ({ kind, headers, body, contentType, project }) => {
+          console.log("[otel-collector] export", {
+            kind,
+            project,
+            contentType,
+            bytes: body.byteLength,
+          });
+        },
+      },
+    },
+  },
+};
 ```
 
-Enable debug logging:
+Notes:
 
-```bash
-OXIAN_LOG_LEVEL=debug deno run -A jsr:@oxian/oxian-js
-```
+- When `logging.otel.enabled` is true and no `endpoint` is provided, workers
+  default to the built-in collector (`http://127.0.0.1:<port>`).
+- The hypervisor injects `x-oxian-project: <project>` into OTLP headers so the
+  collector can tag payloads.
+- To inspect payloads, set `logging.otel.protocol = "http/json"` and decode
+  `body` as text/JSON.
+- For custom spans/metrics per request, define `logging.otel.hooks` (see
+  instrumentation.md). Hooks receive the active span and a meter instance.
 
 ### Metrics
 
@@ -447,7 +585,7 @@ Monitor key metrics:
 
 - **Request Rate** - Requests per second per worker
 - **Response Time** - Average latency per worker
-- **Error Rate** - Error percentage per worker  
+- **Error Rate** - Error percentage per worker
 - **Active Connections** - Current connections per worker
 - **Health Status** - Worker availability
 
@@ -456,13 +594,21 @@ Monitor key metrics:
 ### Startup Process
 
 1. **Hypervisor starts** on main port (8080)
-2. **Workers spawn** on sequential ports (9101, 9102, ...)
-3. **Health checks** verify worker readiness
-4. **Load balancer** starts routing requests
+2. If project requires materialization:
+   - Run `materialize` once to download/extract remote source to the worker cwd
+     (isolated → `./.projects/<project>`)
+   - Run `prepare` to execute `prepare` hooks defined in the materialized
+     `oxian.config.*`
+3. **Workers spawn** on sequential ports (9101, 9102, ...) with `--source`
+   pointing to the materialized `file://` root (workers do not need
+   `--allow-run`)
+4. **Health checks** verify worker readiness
+5. **Load balancer** starts routing requests
 
 ### Worker Health
 
 Workers are considered healthy when:
+
 - ✅ Process is running
 - ✅ Health endpoint responds (200 OK)
 - ✅ Response time < timeout threshold
@@ -475,6 +621,83 @@ Workers are considered healthy when:
 4. **Shutdown workers** gracefully
 5. **Close** all connections
 
+## Request Transformation
+
+Transform requests before they reach workers using the `onRequest` callback
+(TypeScript config only):
+
+```ts
+// oxian.config.ts
+export default {
+  runtime: {
+    hv: {
+      onRequest: ({ req, project }) => {
+        // Modify requests before proxying to workers
+        const headers = new Headers(req.headers);
+
+        // Add custom headers
+        headers.set("x-processed-by", "hypervisor");
+        headers.set("x-project", project);
+        headers.set("x-timestamp", Date.now().toString());
+
+        // Add authentication token from environment
+        const token = Deno.env.get(`${project.toUpperCase()}_API_TOKEN`);
+        if (token) {
+          headers.set("authorization", `Bearer ${token}`);
+        }
+
+        return new Request(req, { headers });
+      },
+    },
+  },
+};
+```
+
+### Common Use Cases
+
+**Add Authentication Tokens:**
+
+```ts
+onRequest: (({ req, project }) => {
+  const headers = new Headers(req.headers);
+  const token = Deno.env.get(`${project.toUpperCase()}_TOKEN`);
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  return new Request(req, { headers });
+});
+```
+
+**Request Auditing:**
+
+```ts
+onRequest: (async ({ req, project }) => {
+  console.log(`[audit] ${project}: ${req.method} ${req.url}`);
+  const headers = new Headers(req.headers);
+  headers.set("x-audit-id", crypto.randomUUID());
+  return new Request(req, { headers });
+});
+```
+
+**URL Transformation:**
+
+```ts
+onRequest: (({ req, project }) => {
+  const url = new URL(req.url);
+  url.searchParams.set("source", "hypervisor");
+  url.searchParams.set("project", project);
+  return new Request(url, {
+    method: req.method,
+    headers: req.headers,
+    body: req.body,
+  });
+});
+```
+
+**Error Handling:**
+
+- If `onRequest` throws an error, the hypervisor returns a 500 response
+- The request is not forwarded to workers
+- Error is logged automatically
+
 ## Advanced Patterns
 
 ### Custom Health Checks
@@ -485,19 +708,19 @@ Implement custom health logic:
 // routes/_health.ts
 export function GET(_, { dependencies }) {
   const { db, redis } = dependencies;
-  
+
   // Check dependencies
   const dbOk = await db.ping();
   const redisOk = await redis.ping();
-  
+
   if (!dbOk || !redisOk) {
     throw { statusCode: 503, message: "Dependencies unavailable" };
   }
-  
-  return { 
+
+  return {
     status: "healthy",
     dependencies: { db: dbOk, redis: redisOk },
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   };
 }
 ```
@@ -573,9 +796,9 @@ nproc
   "runtime": {
     "hv": {
       "autoscale": {
-        "idleTtlMs": 180000,  // Scale down after 3 min idle
-        "min": 1,             // Minimum workers
-        "max": 16             // Maximum workers
+        "idleTtlMs": 180000, // Scale down after 3 min idle
+        "min": 1, // Minimum workers
+        "max": 16 // Maximum workers
       }
     }
   }
@@ -589,9 +812,9 @@ nproc
   "runtime": {
     "hv": {
       "timeouts": {
-        "connectMs": 1000,    // Fast connection timeout
-        "headersMs": 5000,    // Header timeout
-        "totalMs": 30000      // Total request timeout
+        "connectMs": 1000, // Fast connection timeout
+        "headersMs": 5000, // Header timeout
+        "totalMs": 30000 // Total request timeout
       }
     }
   }
@@ -603,6 +826,7 @@ nproc
 ### Common Issues
 
 **Workers not starting:**
+
 ```bash
 # Check port availability
 netstat -tlnp | grep 910
@@ -612,6 +836,7 @@ OXIAN_LOG_LEVEL=debug deno run -A jsr:@oxian/oxian-js
 ```
 
 **High latency:**
+
 ```bash
 # Increase worker count
 {
@@ -624,6 +849,7 @@ OXIAN_LOG_LEVEL=debug deno run -A jsr:@oxian/oxian-js
 ```
 
 **Memory issues:**
+
 ```bash
 # Enable auto-scaling
 {
@@ -660,7 +886,7 @@ curl -s http://localhost:9101/_health | jq
 ### ✅ Do
 
 - Use hypervisor for production deployments
-- Monitor worker health and metrics  
+- Monitor worker health and metrics
 - Configure appropriate timeouts
 - Enable auto-scaling for variable load
 - Use sticky sessions for stateful apps
@@ -719,7 +945,7 @@ curl -s http://localhost:9101/_health | jq
           "when": { "pathPrefix": "/tenant-a" }
         },
         {
-          "project": "tenant-b", 
+          "project": "tenant-b",
           "when": { "pathPrefix": "/tenant-b" }
         }
       ]
@@ -730,9 +956,12 @@ curl -s http://localhost:9101/_health | jq
 
 ---
 
-The hypervisor is a powerful tool for scaling Oxian applications. Start simple and gradually add complexity as your needs grow. For most applications, the default configuration provides excellent performance and reliability.
+The hypervisor is a powerful tool for scaling Oxian applications. Start simple
+and gradually add complexity as your needs grow. For most applications, the
+default configuration provides excellent performance and reliability.
 
 **Next Steps:**
+
 - [Configuration Guide](./configuration.md)
 - [Deployment Best Practices](./deployment.md)
 - [Monitoring & Observability](./monitoring.md)

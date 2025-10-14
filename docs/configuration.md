@@ -1,6 +1,8 @@
 # ⚙️ Configuration - Customize Your Oxian App
 
-Oxian provides flexible configuration through JSON or TypeScript files, environment variables, and command-line arguments. This guide covers all configuration options and best practices.
+Oxian provides flexible configuration through JSON or TypeScript files,
+environment variables, and command-line arguments. This guide covers all
+configuration options and best practices.
 
 ## Configuration Files
 
@@ -28,6 +30,28 @@ The simplest way to configure Oxian is with `oxian.config.json`:
 }
 ```
 
+### Hypervisor OTLP Collector (TypeScript config)
+
+Enable a minimal built-in OTLP HTTP collector inside the hypervisor. Workers
+default their OTLP endpoint to this collector when `logging.otel.enabled=true`
+and no explicit `endpoint` is set.
+
+```typescript
+{
+  "runtime": {
+    "hv": {
+      "otelCollector": {
+        "enabled": boolean,
+        "port": number,        // default 4318
+        "pathPrefix": string,  // default "/v1"
+        // Called per export: { kind: "traces"|"metrics"|"logs", headers, body, contentType, project }
+        "onExport": Function
+      }
+    }
+  }
+}
+```
+
 ### TypeScript Configuration
 
 For dynamic configuration, use `oxian.config.ts`:
@@ -36,28 +60,28 @@ For dynamic configuration, use `oxian.config.ts`:
 // oxian.config.ts
 export default {
   server: {
-    port: parseInt(Deno.env.get("PORT") || "8080")
+    port: parseInt(Deno.env.get("PORT") || "8080"),
   },
   routing: {
-    routesDir: Deno.env.get("NODE_ENV") === "test" ? "test-routes" : "routes"
+    routesDir: Deno.env.get("NODE_ENV") === "test" ? "test-routes" : "routes",
   },
   runtime: {
     hotReload: Deno.env.get("NODE_ENV") !== "production",
     dependencies: {
       initial: {
         environment: Deno.env.get("NODE_ENV") || "development",
-        version: "1.0.0"
-      }
-    }
+        version: "1.0.0",
+      },
+    },
   },
   security: {
     cors: {
-      allowedOrigins: Deno.env.get("ALLOWED_ORIGINS")?.split(",") || ["*"]
-    }
+      allowedOrigins: Deno.env.get("ALLOWED_ORIGINS")?.split(",") || ["*"],
+    },
   },
   logging: {
-    level: (Deno.env.get("LOG_LEVEL") as any) || "info"
-  }
+    level: (Deno.env.get("LOG_LEVEL") as any) || "info",
+  },
 };
 ```
 
@@ -69,11 +93,11 @@ You can also use `oxian.config.js`:
 // oxian.config.js
 export default {
   server: {
-    port: process.env.PORT || 8080
+    port: process.env.PORT || 8080,
   },
   runtime: {
-    hotReload: process.env.NODE_ENV !== "production"
-  }
+    hotReload: process.env.NODE_ENV !== "production",
+  },
 };
 ```
 
@@ -105,7 +129,17 @@ export default {
   "logging": LoggingConfig,
   
   // Loader configuration
-  "loaders": LoadersConfig
+  "loaders": LoadersConfig,
+  
+  // Preferred top-level web config used by workers (fallback: runtime.hv.web)
+  "web": {
+    "devProxyTarget": string,
+    "staticDir": string,
+    "staticCacheControl": string
+  },
+  
+  // Optional prepare commands executed before workers start
+  "prepare": Array<string | { cmd: string; cwd?: string; env?: Record<string,string> }>
 }
 ```
 
@@ -206,19 +240,28 @@ export default {
 {
   "logging": {
     // Log level
-    "level": "debug" | "info" | "warn" | "error", // default: "info"
-    
+    "level": "debug" | "info" | "warn" | "error",
+
     // Request ID header name
-    "requestIdHeader": string,       // default: "x-request-id"
-    
-    // Enable structured logging
-    "structured": boolean,           // default: true
-    
-    // Log format
-    "format": "json" | "pretty",     // default: "json"
-    
-    // Enable request logging
-    "requests": boolean              // default: true
+    "requestIdHeader": string,
+
+    // Deno OpenTelemetry auto-instrumentation
+    "otel": {
+      "enabled": boolean,
+      "serviceName": string,
+      "endpoint": string, // e.g., http://localhost:4318
+      "protocol": "http/protobuf" | "http/json",
+      "headers": Record<string, string>,
+      "resourceAttributes": Record<string, string>,
+      "propagators": string, // e.g., "tracecontext,baggage"
+      "metricExportIntervalMs": number,
+      // Optional hooks for custom spans/metrics
+      "hooks": {
+        "onInit"?: (input: { tracer?: unknown; meter?: unknown }) => unknown | Promise<unknown>,
+        "onRequestStart"?: (input: { tracer?: unknown; meter?: unknown; span?: unknown; requestId: string; method: string; url: string; project: string; state?: unknown }) => void | Promise<void>,
+        "onRequestEnd"?: (input: { tracer?: unknown; meter?: unknown; span?: unknown; requestId: string; method: string; url: string; project: string; status: number; durationMs: number; state?: unknown }) => void | Promise<void>
+      }
+    }
   }
 }
 ```
@@ -384,56 +427,56 @@ const env = Deno.env.get("NODE_ENV") || "development";
 
 const baseConfig = {
   routing: {
-    routesDir: "routes"
+    routesDir: "routes",
   },
   logging: {
-    requestIdHeader: "x-request-id"
-  }
+    requestIdHeader: "x-request-id",
+  },
 };
 
 const envConfigs = {
   development: {
     server: { port: 3000 },
     runtime: { hotReload: true },
-    logging: { level: "debug", format: "pretty" }
+    logging: { level: "debug", format: "pretty" },
   },
-  
+
   staging: {
     server: { port: 8080 },
     runtime: { hotReload: false },
     logging: { level: "info", format: "json" },
     security: {
       cors: {
-        allowedOrigins: ["https://staging.myapp.com"]
-      }
-    }
+        allowedOrigins: ["https://staging.myapp.com"],
+      },
+    },
   },
-  
+
   production: {
     server: { port: 8080 },
-    runtime: { 
+    runtime: {
       hotReload: false,
       hv: {
         enabled: true,
-        workers: "auto"
-      }
+        workers: "auto",
+      },
     },
     logging: { level: "warn", format: "json" },
     security: {
       cors: {
-        allowedOrigins: ["https://myapp.com"]
+        allowedOrigins: ["https://myapp.com"],
       },
       defaultHeaders: {
         "strict-transport-security": "max-age=31536000; includeSubDomains",
-        "x-content-type-options": "nosniff"
-      }
-    }
-  }
+        "x-content-type-options": "nosniff",
+      },
+    },
+  },
 };
 
 export default {
   ...baseConfig,
-  ...envConfigs[env]
+  ...envConfigs[env],
 };
 ```
 
@@ -448,11 +491,11 @@ export default {
         features: {
           newUserApi: Deno.env.get("FEATURE_NEW_USER_API") === "true",
           advancedMetrics: Deno.env.get("FEATURE_ADVANCED_METRICS") === "true",
-          betaFeatures: Deno.env.get("FEATURE_BETA") === "true"
-        }
-      }
-    }
-  }
+          betaFeatures: Deno.env.get("FEATURE_BETA") === "true",
+        },
+      },
+    },
+  },
 };
 ```
 
@@ -462,7 +505,7 @@ Usage in routes:
 // routes/users.ts
 export function GET(_, { dependencies }) {
   const { features } = dependencies;
-  
+
   if (features.newUserApi) {
     return getUsersV2();
   } else {
@@ -478,30 +521,30 @@ export function GET(_, { dependencies }) {
 const dbConfig = {
   development: {
     type: "sqlite",
-    url: "./dev.db"
+    url: "./dev.db",
   },
   test: {
     type: "sqlite",
-    url: ":memory:"
+    url: ":memory:",
   },
   production: {
     type: "postgresql",
     url: Deno.env.get("DATABASE_URL"),
     pool: {
       min: 5,
-      max: 20
-    }
-  }
+      max: 20,
+    },
+  },
 };
 
 export default {
   runtime: {
     dependencies: {
       initial: {
-        database: dbConfig[Deno.env.get("NODE_ENV") || "development"]
-      }
-    }
-  }
+        database: dbConfig[Deno.env.get("NODE_ENV") || "development"],
+      },
+    },
+  },
 };
 ```
 
@@ -517,24 +560,24 @@ export default {
           email: {
             provider: Deno.env.get("EMAIL_PROVIDER") || "console",
             apiKey: Deno.env.get("SENDGRID_API_KEY"),
-            from: Deno.env.get("EMAIL_FROM") || "noreply@example.com"
+            from: Deno.env.get("EMAIL_FROM") || "noreply@example.com",
           },
           storage: {
             provider: Deno.env.get("STORAGE_PROVIDER") || "local",
             bucket: Deno.env.get("S3_BUCKET"),
             region: Deno.env.get("S3_REGION"),
             accessKey: Deno.env.get("S3_ACCESS_KEY"),
-            secretKey: Deno.env.get("S3_SECRET_KEY")
+            secretKey: Deno.env.get("S3_SECRET_KEY"),
           },
           monitoring: {
             enabled: Deno.env.get("MONITORING_ENABLED") === "true",
             apiKey: Deno.env.get("DATADOG_API_KEY"),
-            service: "oxian-api"
-          }
-        }
-      }
-    }
-  }
+            service: "oxian-api",
+          },
+        },
+      },
+    },
+  },
 };
 ```
 
@@ -546,26 +589,26 @@ export default {
 // oxian.config.ts
 function validateConfig(config: any) {
   const required = ["server.port"];
-  
+
   for (const path of required) {
-    const value = path.split('.').reduce((obj, key) => obj?.[key], config);
+    const value = path.split(".").reduce((obj, key) => obj?.[key], config);
     if (value === undefined) {
       throw new Error(`Required configuration missing: ${path}`);
     }
   }
-  
+
   // Validate port range
   if (config.server?.port < 1 || config.server?.port > 65535) {
     throw new Error("Port must be between 1 and 65535");
   }
-  
+
   return config;
 }
 
 const config = {
   server: {
-    port: parseInt(Deno.env.get("PORT") || "8080")
-  }
+    port: parseInt(Deno.env.get("PORT") || "8080"),
+  },
   // ... other config
 };
 
@@ -581,24 +624,24 @@ import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 const ConfigSchema = z.object({
   server: z.object({
     port: z.number().min(1).max(65535),
-    hostname: z.string().optional()
+    hostname: z.string().optional(),
   }),
   runtime: z.object({
     hotReload: z.boolean().optional(),
     hv: z.object({
       enabled: z.boolean().optional(),
-      workers: z.union([z.number(), z.literal("auto")]).optional()
-    }).optional()
+      workers: z.union([z.number(), z.literal("auto")]).optional(),
+    }).optional(),
   }).optional(),
   logging: z.object({
-    level: z.enum(["debug", "info", "warn", "error"]).optional()
-  }).optional()
+    level: z.enum(["debug", "info", "warn", "error"]).optional(),
+  }).optional(),
 });
 
 const rawConfig = {
   server: {
-    port: parseInt(Deno.env.get("PORT") || "8080")
-  }
+    port: parseInt(Deno.env.get("PORT") || "8080"),
+  },
   // ... other config
 };
 
@@ -687,7 +730,7 @@ export default ConfigSchema.parse(rawConfig);
           "when": { "pathPrefix": "/users" }
         },
         {
-          "project": "orders", 
+          "project": "orders",
           "when": { "pathPrefix": "/orders" }
         },
         {
@@ -715,16 +758,16 @@ const env = await load();
 
 export default {
   server: {
-    port: parseInt(env.PORT || "8080")
+    port: parseInt(env.PORT || "8080"),
   },
   runtime: {
     dependencies: {
       initial: {
         dbUrl: env.DATABASE_URL,
-        apiKey: env.API_KEY
-      }
-    }
-  }
+        apiKey: env.API_KEY,
+      },
+    },
+  },
 };
 ```
 
@@ -748,16 +791,19 @@ try {
 export default {
   // Use loaded environment variables
   server: {
-    port: parseInt(env.PORT || "8080")
-  }
+    port: parseInt(env.PORT || "8080"),
+  },
 };
 ```
 
 ---
 
-Configuration in Oxian is designed to be flexible and powerful while maintaining simplicity. Start with JSON for basic setups and move to TypeScript when you need dynamic behavior.
+Configuration in Oxian is designed to be flexible and powerful while maintaining
+simplicity. Start with JSON for basic setups and move to TypeScript when you
+need dynamic behavior.
 
 **Next Steps:**
+
 - [Deployment Guide](./deployment.md) - Deploy with proper configuration
 - [Environment Variables](./environment.md) - Manage secrets and settings
 - [Best Practices](./best-practices.md) - Configuration patterns and tips

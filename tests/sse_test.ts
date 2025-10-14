@@ -14,7 +14,11 @@ async function waitForReady(url: string, timeoutMs = 5000) {
 }
 
 async function startServer(port: number) {
-  const proc = new Deno.Command("deno", { args: ["run", "-A", "cli.ts", `--port=${port}`], stdout: "piped", stderr: "piped" }).spawn();
+  const proc = new Deno.Command("deno", {
+    args: ["run", "-A", "cli.ts", `--port=${port}`],
+    stdout: "piped",
+    stderr: "piped",
+  }).spawn();
   await waitForReady(`http://localhost:${port}/`);
   return proc;
 }
@@ -47,8 +51,12 @@ Deno.test("SSE route emits events and closes", async () => {
     }
     if (dataEvents < 3) throw new Error("expected at least 3 events");
   } finally {
-    try { await reader?.cancel(); } catch {}
-    try { proc.kill(); } catch {}
+    try {
+      await reader?.cancel();
+    } catch {}
+    try {
+      proc.kill();
+    } catch {}
     await proc.output();
   }
-}); 
+});

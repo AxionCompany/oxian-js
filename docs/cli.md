@@ -1,6 +1,8 @@
 # 🖥️ CLI - Command Line Interface
 
-The Oxian CLI provides powerful commands for development, deployment, and maintenance. This guide covers all CLI features, from basic usage to advanced automation scripts.
+The Oxian CLI provides powerful commands for development, deployment, and
+maintenance. This guide covers all CLI features, from basic usage to advanced
+automation scripts.
 
 ## Installation & Basic Usage
 
@@ -74,6 +76,7 @@ deno run -A jsr:@oxian/oxian-js dev --no-hot-reload
 ```
 
 Development mode automatically:
+
 - Enables hot reload
 - Sets log level to debug
 - Enables pretty printing
@@ -113,6 +116,41 @@ Routes:
   DELETE /users/:id            routes/users/[id].ts
   GET    /docs/*               routes/docs/[...slug].ts
 ```
+
+### `materialize` - Download/Extract Remote Source
+
+Download and extract a remote source (e.g., GitHub) to a local directory.
+Outputs a JSON with the local `file://` root.
+
+```bash
+deno run -A jsr:@oxian/oxian-js materialize \
+  --source=github:owner/repo?ref=main \
+  --materialize-dir=.
+
+# Example output
+{"ok":true,"rootDir":"file:///abs/path/.oxian/materialized/github/owner/repo/<sha>/","ref":"main","sha":"<sha>","subdir":null}
+```
+
+Flags:
+
+- `--source`: remote specifier (github:, https:) or file://
+- `--materialize-dir`: destination directory (default: current directory)
+- `--materialize-refresh`: force re-download and re-extract
+
+### `prepare` - Run prepare Commands
+
+Execute `prepare` commands declared in the materialized project’s
+`oxian.config.*` (e.g., install deps, build assets).
+
+```bash
+deno run -A jsr:@oxian/oxian-js prepare --source=file:///abs/path/.oxian/materialized/github/owner/repo/<sha>/
+```
+
+Notes:
+
+- `prepare` expects `--source` to point at a local `file://` root previously
+  produced by `materialize`.
+- Commands run using `/bin/sh -lc` (POSIX) or `cmd /c` (Windows).
 
 ## Configuration Options
 
@@ -363,49 +401,49 @@ if (Test-Path ".env.development") {
 
 ```javascript
 // scripts/cli-wrapper.js
-const { spawn } = require('child_process');
+const { spawn } = require("child_process");
 
 class OxianCLI {
   constructor() {
-    this.baseCmd = ['deno', 'run', '-A', 'jsr:@oxian/oxian-js'];
+    this.baseCmd = ["deno", "run", "-A", "jsr:@oxian/oxian-js"];
   }
 
   async start(options = {}) {
-    const args = [...this.baseCmd, 'start'];
-    
+    const args = [...this.baseCmd, "start"];
+
     if (options.port) args.push(`--port=${options.port}`);
     if (options.config) args.push(`--config=${options.config}`);
     if (options.source) args.push(`--source=${options.source}`);
-    
+
     return this.run(args);
   }
 
   async dev(options = {}) {
-    const args = [...this.baseCmd, 'dev'];
-    
+    const args = [...this.baseCmd, "dev"];
+
     if (options.port) args.push(`--port=${options.port}`);
-    if (options.debug) args.push('--debug');
-    
+    if (options.debug) args.push("--debug");
+
     return this.run(args);
   }
 
   async routes(options = {}) {
-    const args = [...this.baseCmd, 'routes'];
-    
+    const args = [...this.baseCmd, "routes"];
+
     if (options.format) args.push(`--format=${options.format}`);
-    if (options.verbose) args.push('--verbose');
-    
+    if (options.verbose) args.push("--verbose");
+
     return this.run(args);
   }
 
   run(args) {
     return new Promise((resolve, reject) => {
       const process = spawn(args[0], args.slice(1), {
-        stdio: 'inherit',
-        shell: true
+        stdio: "inherit",
+        shell: true,
       });
 
-      process.on('close', (code) => {
+      process.on("close", (code) => {
         if (code === 0) {
           resolve();
         } else {
@@ -438,29 +476,29 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Setup Deno
-      uses: denoland/setup-deno@v1
-      with:
-        deno-version: v1.40.x
-    
-    - name: Check routes
-      run: deno run -A jsr:@oxian/oxian-js routes
-    
-    - name: Start server in background
-      run: deno run -A jsr:@oxian/oxian-js start --port=8080 &
-      
-    - name: Wait for server
-      run: |
-        timeout 30 bash -c 'until curl -f http://localhost:8080/health; do sleep 1; done'
-    
-    - name: Run API tests
-      run: |
-        curl -f http://localhost:8080/
-        curl -f http://localhost:8080/health
+      - uses: actions/checkout@v3
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.40.x
+
+      - name: Check routes
+        run: deno run -A jsr:@oxian/oxian-js routes
+
+      - name: Start server in background
+        run: deno run -A jsr:@oxian/oxian-js start --port=8080 &
+
+      - name: Wait for server
+        run: |
+          timeout 30 bash -c 'until curl -f http://localhost:8080/health; do sleep 1; done'
+
+      - name: Run API tests
+        run: |
+          curl -f http://localhost:8080/
+          curl -f http://localhost:8080/health
 ```
 
 ### Docker
@@ -481,7 +519,7 @@ CMD ["deno", "run", "-A", "jsr:@oxian/oxian-js", "start"]
 ### Docker Compose
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   api:
@@ -503,6 +541,7 @@ services:
 ### Common Issues
 
 **Permission errors:**
+
 ```bash
 # Ensure all permissions are granted
 deno run -A jsr:@oxian/oxian-js
@@ -512,6 +551,7 @@ deno run --allow-net --allow-read --allow-env jsr:@oxian/oxian-js
 ```
 
 **Port already in use:**
+
 ```bash
 # Use different port
 deno run -A jsr:@oxian/oxian-js --port=3001
@@ -522,6 +562,7 @@ netstat -tulpn | grep :8080
 ```
 
 **Module not found:**
+
 ```bash
 # Clear Deno cache
 deno cache --reload jsr:@oxian/oxian-js
@@ -531,6 +572,7 @@ deno --version
 ```
 
 **GitHub token issues:**
+
 ```bash
 # Check token
 echo $GITHUB_TOKEN
@@ -668,9 +710,11 @@ deno task routes
 
 ---
 
-The Oxian CLI is designed to be simple yet powerful. Start with basic commands and gradually build more sophisticated automation as your project grows.
+The Oxian CLI is designed to be simple yet powerful. Start with basic commands
+and gradually build more sophisticated automation as your project grows.
 
 **Next Steps:**
+
 - [Configuration Guide](./configuration.md) - Advanced configuration
 - [Deployment Guide](./deployment.md) - Production deployment
 - [Best Practices](./best-practices.md) - CLI automation patterns

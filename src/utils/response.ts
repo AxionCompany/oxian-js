@@ -11,23 +11,33 @@ export type ResponseState = {
   sseKeepOpen?: boolean;
 };
 
-export function createResponseController(): { controller: ResponseController; state: ResponseState } {
+export function createResponseController(): {
+  controller: ResponseController;
+  state: ResponseState;
+} {
   const state: ResponseState = { status: 200, headers: new Headers() };
 
-  let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+  let streamController: ReadableStreamDefaultController<Uint8Array> | null =
+    null;
 
   const encoder = new TextEncoder();
 
   const controller: ResponseController = {
     send(body: unknown, init) {
       if (init?.status !== undefined) state.status = init.status;
-      if (init?.headers) for (const [k, v] of Object.entries(init.headers)) state.headers.set(k, v);
+      if (init?.headers) {
+        for (const [k, v] of Object.entries(init.headers)) {
+          state.headers.set(k, v);
+        }
+      }
       if (init?.statusText) state.statusText = init.statusText;
       state.body = body;
     },
     stream(initOrChunk) {
       // If first arg is a chunk, ensure stream is open and write without closing.
-      if (typeof initOrChunk === "string" || initOrChunk instanceof Uint8Array) {
+      if (
+        typeof initOrChunk === "string" || initOrChunk instanceof Uint8Array
+      ) {
         // If stream is not open yet, open it with defaults
         if (!(state.body instanceof ReadableStream)) {
           const w = controller.stream({});
@@ -41,38 +51,79 @@ export function createResponseController(): { controller: ResponseController; st
 
       const init = initOrChunk;
       if (init?.status !== undefined) state.status = init.status;
-      if (init?.headers) for (const [k, v] of Object.entries(init.headers)) state.headers.set(k, v);
+      if (init?.headers) {
+        for (const [k, v] of Object.entries(init.headers)) {
+          state.headers.set(k, v);
+        }
+      }
       if (init?.statusText) state.statusText = init.statusText;
 
       // Hint intermediaries not to buffer streamed responses
-      state.headers.set("cache-control", state.headers.get("cache-control") ?? "no-cache, no-transform");
-      state.headers.set("x-accel-buffering", state.headers.get("x-accel-buffering") ?? "no");
+      state.headers.set(
+        "cache-control",
+        state.headers.get("cache-control") ?? "no-cache, no-transform",
+      );
+      state.headers.set(
+        "x-accel-buffering",
+        state.headers.get("x-accel-buffering") ?? "no",
+      );
 
       let resolveDone: () => void;
-      const done = new Promise<void>((res) => { resolveDone = res; });
+      const done = new Promise<void>((res) => {
+        resolveDone = res;
+      });
 
       const rs = new ReadableStream<Uint8Array>({
-        start(c) { streamController = c; },
-        cancel() { streamController = null; resolveDone?.(); },
+        start(c) {
+          streamController = c;
+        },
+        cancel() {
+          streamController = null;
+          resolveDone?.();
+        },
       });
       state.body = rs;
 
       const writeFnBase = (chunk: Uint8Array | string) => {
         if (!streamController) return;
         if (typeof chunk === "string") {
-          if (chunk === "") { try { streamController.close(); } catch (_e) { /* ignore close error */ } streamController = null; resolveDone?.(); return; }
+          if (chunk === "") {
+            try {
+              streamController.close();
+            } catch (_e) { /* ignore close error */ }
+            streamController = null;
+            resolveDone?.();
+            return;
+          }
           streamController.enqueue(encoder.encode(chunk));
           return;
         }
-        if (chunk.byteLength === 0) { try { streamController.close(); } catch (_e) { /* ignore close error */ } streamController = null; resolveDone?.(); return; }
+        if (chunk.byteLength === 0) {
+          try {
+            streamController.close();
+          } catch (_e) { /* ignore close error */ }
+          streamController = null;
+          resolveDone?.();
+          return;
+        }
         streamController.enqueue(chunk);
       };
 
-      type WriteFn = ((chunk: Uint8Array | string) => void) & { close?: () => void; done?: Promise<void> };
+      type WriteFn = ((chunk: Uint8Array | string) => void) & {
+        close?: () => void;
+        done?: Promise<void>;
+      };
       const writeFn: WriteFn = writeFnBase as WriteFn;
 
       state.streamWrite = writeFnBase;
-      state.streamClose = () => { if (!streamController) return; try { streamController.close(); } catch (_e) { /* ignore close error */ } streamController = null; resolveDone?.(); };
+      state.streamClose = () => {
+        if (!streamController) return;
+        try {
+          streamController.close();
+        } catch (_e) { /* ignore close error */ }
+        streamController = null;
+        resolveDone?.();
+      };
 
       // Expose explicit close() and done for convenience
       writeFn.close = state.streamClose;
@@ -88,14 +139,25 @@ export function createResponseController(): { controller: ResponseController; st
       state.headers.set("cache-control", "no-cache");
       state.headers.set("connection", "keep-alive");
       state.headers.set("x-accel-buffering", "no");
-      if (init?.headers) for (const [k, v] of Object.entries(init.headers)) state.headers.set(k, v);
+      if (init?.headers) {
+        for (const [k, v] of Object.entries(init.headers)) {
+          state.headers.set(k, v);
+        }
+      }
 
       let resolveDone: () => void;
-      const done = new Promise<void>((res) => { resolveDone = res; });
+      const done = new Promise<void>((res) => {
+        resolveDone = res;
+      });
 
       const rs = new ReadableStream<Uint8Array>({
-        start(c) { streamController = c; },
-        cancel() { streamController = null; resolveDone?.(); },
+        start(c) {
+          streamController = c;
+        },
+        cancel() {
+          streamController = null;
+          resolveDone?.();
+        },
       });
       state.body = rs;
 
@@ -107,22 +169,39 @@ export function createResponseController(): { controller: ResponseController; st
       if (init?.retry !== undefined) writeLine(`retry: ${init.retry}`);
 
       const api = {
-        send: (data: unknown, opts?: { event?: string; id?: string; retry?: number }) => {
+        send: (
+          data: unknown,
+          opts?: { event?: string; id?: string; retry?: number },
+        ) => {
           if (!streamController) return;
           if (opts?.id) writeLine(`id: ${opts.id}`);
           if (opts?.event) writeLine(`event: ${opts.event}`);
           if (opts?.retry !== undefined) writeLine(`retry: ${opts.retry}`);
-          const payload = typeof data === "string" ? data : JSON.stringify(data);
+          const payload = typeof data === "string"
+            ? data
+            : JSON.stringify(data);
           for (const line of payload.split("\n")) writeLine(`data: ${line}`);
           writeLine(""); // dispatch
         },
         comment: (text: string) => writeLine(`:${text}`),
-        close: () => { if (!streamController) return; try { streamController.close(); } catch (_e) { /* ignore close error */ } streamController = null; resolveDone?.(); },
-        get done() { return done; },
+        close: () => {
+          if (!streamController) return;
+          try {
+            streamController.close();
+          } catch (_e) { /* ignore close error */ }
+          streamController = null;
+          resolveDone?.();
+        },
+        get done() {
+          return done;
+        },
       };
 
       // Also expose close via state for pipeline
-      state.streamWrite = (chunk) => api.send(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+      state.streamWrite = (chunk) =>
+        api.send(
+          typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk),
+        );
       state.streamClose = api.close;
 
       return api;
@@ -144,18 +223,43 @@ export function createResponseController(): { controller: ResponseController; st
 export function finalizeResponse(state: ResponseState): Response {
   const body = state.body;
   if (body === undefined || body === null) {
-    return new Response(null, { status: state.status, statusText: state.statusText, headers: state.headers });
+    return new Response(null, {
+      status: state.status,
+      statusText: state.statusText,
+      headers: state.headers,
+    });
   }
   if (body instanceof ReadableStream) {
-    if (!state.headers.has("content-type")) state.headers.set("content-type", "text/plain; charset=utf-8");
-    return new Response(body, { status: state.status, statusText: state.statusText, headers: state.headers });
+    if (!state.headers.has("content-type")) {
+      state.headers.set("content-type", "text/plain; charset=utf-8");
+    }
+    return new Response(body, {
+      status: state.status,
+      statusText: state.statusText,
+      headers: state.headers,
+    });
   }
   if (typeof body === "string" || body instanceof Uint8Array) {
     if (!state.headers.has("content-type")) {
-      state.headers.set("content-type", typeof body === "string" ? "text/plain; charset=utf-8" : "application/octet-stream");
+      state.headers.set(
+        "content-type",
+        typeof body === "string"
+          ? "text/plain; charset=utf-8"
+          : "application/octet-stream",
+      );
     }
-    return new Response(body, { status: state.status, statusText: state.statusText, headers: state.headers });
+    return new Response(body, {
+      status: state.status,
+      statusText: state.statusText,
+      headers: state.headers,
+    });
   }
-  if (!state.headers.has("content-type")) state.headers.set("content-type", "application/json; charset=utf-8");
-  return new Response(JSON.stringify(body), { status: state.status, statusText: state.statusText, headers: state.headers });
-} 
+  if (!state.headers.has("content-type")) {
+    state.headers.set("content-type", "application/json; charset=utf-8");
+  }
+  return new Response(JSON.stringify(body), {
+    status: state.status,
+    statusText: state.statusText,
+    headers: state.headers,
+  });
+}

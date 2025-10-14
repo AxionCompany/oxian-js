@@ -1,6 +1,7 @@
 ## Using Oxian with Vite
 
-This guide shows how to run Oxian alongside a Vite frontend in both development and production.
+This guide shows how to run Oxian alongside a Vite frontend in both development
+and production.
 
 ### Goals
 
@@ -13,13 +14,13 @@ This guide shows how to run Oxian alongside a Vite frontend in both development 
 
 ### Development
 
-1) Start Vite (default `http://localhost:5173`):
+1. Start Vite (default `http://localhost:5173`):
 
 ```bash
 npm run dev
 ```
 
-2) Configure Oxian to serve APIs on `/api` and proxy everything else to Vite:
+2. Configure Oxian to serve APIs on `/api` and proxy everything else to Vite:
 
 ```json
 // oxian.config.json
@@ -44,13 +45,14 @@ npm run dev
 
 ### Production
 
-1) Build your frontend:
+1. Build your frontend:
 
 ```bash
 npm run build
 ```
 
-2) Configure Oxian to serve static files from the build output as fallback for non-API routes:
+2. Configure Oxian to serve static files from the build output as fallback for
+   non-API routes:
 
 ```json
 // oxian.config.json
@@ -69,6 +71,7 @@ npm run build
 ```
 
 Behavior:
+
 - API requests under `/api` hit Oxian routes.
 - Other paths attempt to resolve from `dist/`.
 - If a file isn’t found (and no `staticDir` is configured), Oxian returns 404.
@@ -96,8 +99,10 @@ my-app/
 
 ### Notes
 
-- The hypervisor supports blue/green restarts and a short in-memory queue to reduce downtime during worker restarts.
-- For monorepos, you can run Oxian in the workspace root and point `routing.routesDir` to your API folder.
-- If you prefer to keep Vite as the primary dev server, you can also set up Vite’s proxy to forward `/api` → Oxian. The approach above keeps Oxian as the single entry point instead.
-
-
+- The hypervisor supports blue/green restarts and a short in-memory queue to
+  reduce downtime during worker restarts.
+- For monorepos, you can run Oxian in the workspace root and point
+  `routing.routesDir` to your API folder.
+- If you prefer to keep Vite as the primary dev server, you can also set up
+  Vite’s proxy to forward `/api` → Oxian. The approach above keeps Oxian as the
+  single entry point instead.
