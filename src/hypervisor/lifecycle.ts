@@ -599,8 +599,7 @@ export function createLifecycleManager(
         !a.startsWith("--source=") && !a.startsWith("--config=") &&
         !a.startsWith("--hypervisor=")
       ),
-      ...(effectiveSource && !selectedMerged.materialize &&
-          !selectedMerged.isolated
+      ...(effectiveSource && !selectedMerged.materialize 
         ? [`--source=${effectiveSource}`]
         : []),
       ...(effectiveConfig ? [`--config=${effectiveConfig}`] : []),
@@ -775,7 +774,6 @@ export function createLifecycleManager(
     restarting.add(project);
     try {
       const idx = getProjectIndex(project) ?? 0;
-      console.log(`[hv] restart requested`, { project });
       const basis = lastSpawnOptions.get(project) ??
         { project } as SelectedProject;
       const next = await spawnWorker(
