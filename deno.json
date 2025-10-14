@@ -42,7 +42,7 @@
   ],
   "imports": {
     "oxian-js/": "./src/",
-    "@oxian/oxian-js": "jsr:@oxian/oxian-js@^0.1.0",
+    "@oxian/oxian-js/mcp": "jsr:@oxian/oxian-js@^0.1.0/mcp",
     "@std/path": "jsr:@std/path@1.1.1",
     "@std/cli/parse-args": "jsr:@std/cli@1.0.21/parse-args",
     "@std/jsonc/parse": "jsr:@std/jsonc@1.0.2/parse",
