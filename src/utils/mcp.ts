@@ -277,7 +277,7 @@ function matchUriTemplate(uri: string, template: string): Record<string, string>
 // MCP Protocol Handlers Factory
 // ============================================================================
 
-export function createMCPHandlers(config: MCPServerConfig, context?: Context) {
+export function createMCPHandlers(config: MCPServerConfig, context?: Context): Record<string, (params?: unknown) => unknown | Promise<unknown>> {
   const SUPPORTED_VERSION = "2025-06-18";
   const FALLBACK_VERSION = "2024-11-05"; // For backwards compatibility
 
@@ -659,7 +659,7 @@ export async function handleMCPRequest(
  * @param _data - Request data (unused)
  * @param context - Oxian request context
  */
-export function handleMCPSessionDelete(_data: Data, context: Context) {
+export function handleMCPSessionDelete(_data: Data, context: Context): { message?: string; error?: string } {
   const sessionId = context.request.raw.headers.get("mcp-session-id");
   
   if (!sessionId) {
@@ -697,7 +697,38 @@ export function handleMCPSessionDelete(_data: Data, context: Context) {
  * @param mcpConfig - MCP server configuration
  * @returns Server information object
  */
-export function handleMCPInfo(mcpConfig: MCPServerConfig) {
+export function handleMCPInfo(mcpConfig: MCPServerConfig): {
+  protocol: string;
+  protocolVersion: string;
+  transport: string;
+  server: ServerInfo;
+  capabilities: ServerCapabilities;
+  endpoints: Record<string, string>;
+  headers: {
+    required: Record<string, string>;
+    optional: Record<string, string>;
+  };
+  sessionManagement: {
+    enabled: boolean;
+    note: string;
+  };
+  authentication: {
+    type: string;
+    note: string;
+  };
+  usage: {
+    initialize: {
+      method: string;
+      headers: Record<string, string>;
+      body: Record<string, unknown>;
+    };
+    request: {
+      method: string;
+      headers: Record<string, string>;
+      body: Record<string, unknown>;
+    };
+  };
+} {
   return {
     protocol: "MCP (Model Context Protocol)",
     protocolVersion: "2025-06-18",
@@ -712,7 +743,7 @@ export function handleMCPInfo(mcpConfig: MCPServerConfig) {
     headers: {
       required: {
         "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
+        "Accept": "application/json",
         "MCP-Protocol-Version": "2025-06-18",
       },
       optional: {
@@ -732,7 +763,7 @@ export function handleMCPInfo(mcpConfig: MCPServerConfig) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Accept": "application/json, text/event-stream",
+          "Accept": "application/json",
         },
         body: {
           jsonrpc: "2.0",
@@ -752,7 +783,7 @@ export function handleMCPInfo(mcpConfig: MCPServerConfig) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Accept": "application/json, text/event-stream",
+          "Accept": "application/json",
           "MCP-Protocol-Version": "2025-06-18",
           "Mcp-Session-Id": "session-id-from-initialize",
         },
