@@ -33,6 +33,11 @@ export function createResponseController(): {
       if (init?.statusText) state.statusText = init.statusText;
       state.body = body;
     },
+    redirect(url: string, status: 301 | 302 | 303 | 307 | 308 = 302) {
+      state.status = status;
+      state.headers.set("location", url);
+      // Do not set a body here; let finalizeResponse return an empty body with proper status
+    },
     stream(initOrChunk) {
       // If first arg is a chunk, ensure stream is open and write without closing.
       if (

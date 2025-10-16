@@ -268,6 +268,7 @@ export function createLifecycleManager(
     const forceReload = denoOptions.some((arg) =>
       arg === "--reload" || arg === "-r" || arg.startsWith("--reload=")
     );
+
     const resolver = createResolver(selectedMerged.source || config.root, {
       tokenEnv: "GITHUB_TOKEN",
       tokenValue: selectedMerged.githubToken,
@@ -292,9 +293,12 @@ export function createLifecycleManager(
       (hv.projects as Record<string, { denoConfig?: string }>)[project]) ||
       {} as { denoConfig?: string };
     const effectiveDenoCfg = projectCfg.denoConfig ?? hostDenoCfg;
+
+
     if (Deno.env.get("OXIAN_DEBUG")) {
       console.log("[hv] effectiveDenoCfg", effectiveDenoCfg);
     }
+
     if (!denoOptions.includes("--config") && effectiveDenoCfg) {
       let maybeHostDenoConfig: {
         imports?: Record<string, string>;
@@ -456,10 +460,6 @@ export function createLifecycleManager(
       }
     }
 
-    if (Deno.env.get("OXIAN_DEBUG")) {
-      console.log("[hv] denoArgs", denoArgs);
-    }
-
     denoArgs.push(`${import.meta.resolve("../../cli.ts")}`);
 
     const globalSource = Deno.args.find((a) => a.startsWith("--source="))
@@ -542,6 +542,7 @@ export function createLifecycleManager(
           `--materialize-dir=.`,
           ...(m.refresh ? ["--materialize-refresh"] : []),
         ];
+
         const matCmd = new Deno.Command(Deno.execPath(), {
           args: matArgs,
           stdin: "null",

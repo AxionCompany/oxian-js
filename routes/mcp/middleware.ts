@@ -3,9 +3,9 @@
  * Simple API key-based authentication
  */
 
-import type { Data, Context } from "../../src/types.ts";
+import type { Data, Context } from "@oxian/oxian-js/types";
 
-export default function(_data: Data, context: Context) {
+export default function(_data: Data, context: Context) {  
   // Get the expected API key from environment variable
   const expectedApiKey = Deno.env.get("MCP_API_KEY");
 
