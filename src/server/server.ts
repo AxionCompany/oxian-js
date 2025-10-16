@@ -210,6 +210,14 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
     return await context.with(context.active(), async () => {
       try {
         const url = new URL(req.url);
+        // Reconstruct original URL when behind hypervisor using X-Forwarded-* headers
+        const xfProto = req.headers.get("x-forwarded-proto");
+        const xfHost = req.headers.get("x-forwarded-host");
+        const xfPath = req.headers.get("x-forwarded-path");
+        const xfQuery = req.headers.get("x-forwarded-query");
+        const originalUrl = xfProto && xfHost
+          ? `${xfProto}://${xfHost}${xfPath || url.pathname}${xfQuery ? `?${xfQuery}` : url.search}`
+          : req.url;
         // Prefer hypervisor-provided project header; fallback to config/runtime default
         const projectFromHv = req.headers.get("x-oxian-project") || "default";
         const basePath = config.basePath ?? "/";
@@ -225,9 +233,6 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         }
 
         if (basePath && basePath !== "/") {
-
-          console.log("path", path);
-          console.log("basePath", basePath);
 
           if (!path.startsWith(basePath)) {
             // Non-API path: handle via web config (prefer top-level config.web; fallback to runtime.hv.web)
@@ -316,7 +321,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
           requestId,
           request: {
             method: req.method,
-            url: req.url,
+            url: originalUrl,
             headers: req.headers,
             pathParams,
             queryParams,

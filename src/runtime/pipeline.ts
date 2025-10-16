@@ -1,10 +1,24 @@
 import type { Context, Handler } from "../core/types.ts";
 import { OxianHttpError } from "../core/types.ts";
-import { ResponseState } from "../utils/response.ts";
+import type { ResponseState } from "../utils/response.ts";
 
 function toHttpResponse(result: unknown, state: ResponseState): void {
   if (state.body !== undefined) return;
   if (result === undefined) {
+    return;
+  }
+  // If a native Fetch API Response is returned, adopt its fields into state
+  if (result instanceof Response) {
+    state.status = result.status;
+    state.statusText = result.statusText || state.statusText;
+    // Merge headers from the Response, overriding existing keys
+    for (const [k, v] of result.headers.entries()) {
+      state.headers.set(k, v);
+    }
+    // If the Response has a body, forward it; otherwise keep body undefined
+    if (result.body) {
+      state.body = result.body;
+    }
     return;
   }
   if (typeof result === "string" || result instanceof Uint8Array) {
@@ -19,11 +33,24 @@ export function shapeError(err: unknown): { status: number; body: unknown } {
     const anyErr = err as Record<string, unknown>;
     const statusCode = typeof anyErr.statusCode === "number"
       ? anyErr.statusCode
-      : undefined;
+      : (typeof (anyErr as { status?: unknown }).status === "number"
+        ? (anyErr as { status?: number }).status
+        : undefined);
     if (statusCode) {
+      const msg = typeof anyErr.message === "string"
+        ? anyErr.message
+        : "Error";
+      const code = typeof anyErr.code === "string" ? anyErr.code : undefined;
+      const details = (anyErr as { details?: unknown }).details;
       return {
         status: statusCode,
-        body: { error: (anyErr.message as string) ?? "Error" },
+        body: {
+          error: {
+            message: msg,
+            ...(code ? { code } : {}),
+            ...(details !== undefined ? { details } : {}),
+          },
+        },
       };
     }
   }

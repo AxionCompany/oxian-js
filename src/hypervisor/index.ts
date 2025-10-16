@@ -194,6 +194,8 @@ export async function startHypervisor(
       );
     }
 
+    console.log("[hv] selected", selected);
+
     // All requests are proxied to the selected worker; project-specific web handling occurs inside the worker server
 
     let pool = manager.getPool(selected.project);
@@ -255,6 +257,13 @@ export async function startHypervisor(
     }
 
     const headers = new Headers(transformedReq.headers);
+    // Preserve original client information for the worker
+    const orig = new URL(req.url);
+    headers.set("x-forwarded-proto", orig.protocol.replace(":", ""));
+    headers.set("x-forwarded-host", orig.host);
+    headers.set("x-forwarded-port", orig.port || (orig.protocol === "https:" ? "443" : "80"));
+    headers.set("x-forwarded-path", orig.pathname);
+    headers.set("x-forwarded-query", orig.search.replace(/^\?/, ""));
     if (hv.proxy?.passRequestId) {
       const hdr = config.logging?.requestIdHeader ?? "x-request-id";
       if (!headers.has(hdr)) headers.set(hdr, crypto.randomUUID());
@@ -286,6 +295,7 @@ export async function startHypervisor(
         headers,
         body: transformedReq.body,
         signal: controller.signal,
+        redirect: "manual",
       });
       clearTimeout(timer);
       if (PERF) {
@@ -412,10 +422,22 @@ export async function startHypervisor(
         const url = new URL(transformedReq.url);
         const pathname = url.pathname;
         const target = `http://localhost:${pool.port}${pathname}${url.search}`;
+        // Build forwarded headers for queued requests as well
+        const headers = new Headers(transformedReq.headers);
+        const orig = new URL(req.url);
+        headers.set("x-forwarded-proto", orig.protocol.replace(":", ""));
+        headers.set("x-forwarded-host", orig.host);
+        headers.set(
+          "x-forwarded-port",
+          orig.port || (orig.protocol === "https:" ? "443" : "80"),
+        );
+        headers.set("x-forwarded-path", orig.pathname);
+        headers.set("x-forwarded-query", orig.search.replace(/^\?/, ""));
         const res = await fetch(target, {
           method: transformedReq.method,
-          headers: transformedReq.headers,
+          headers,
           body: transformedReq.body,
+          redirect: "manual",
         });
         item.done = true;
         if (item.timeoutId) clearTimeout(item.timeoutId as unknown as number);

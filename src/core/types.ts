@@ -92,6 +92,11 @@ export type ResponseController = {
   status: (code: number) => void;
   headers: (headers: Record<string, string>) => void;
   statusText: (text: string) => void;
+  /**
+   * Sets an HTTP redirect with a Location header and status code (default 302).
+   * Body remains empty unless previously set.
+   */
+  redirect: (url: string, status?: 301 | 302 | 303 | 307 | 308) => void;
 };
 
 /**
