@@ -356,7 +356,7 @@ export function createLifecycleManager(
       const jsonStr = JSON.stringify(mergedImportMap);
       const dataUrl = `data:application/json;base64,${btoa(jsonStr)}`;
       denoArgs.push(`--import-map=${dataUrl}`);
-      denoArgs.push(`--no-prompt`);
+      // denoArgs.push(`--no-prompt`);
 
       if (Deno.env.get("OXIAN_DEBUG")) {
         console.log("[hv] import meta", import.meta.url);

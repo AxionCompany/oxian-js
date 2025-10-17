@@ -62,6 +62,7 @@ export function shapeError(err: unknown): { status: number; body: unknown } {
       },
     };
   }
+  console.error("[unhandled] Error", err);
   if (Deno.env.get("OXIAN_DEBUG") === "1") {
     const e = err as Error;
     return {
@@ -92,9 +93,9 @@ async function callHandlerWithCompatibility(
       throw new Error("Invalid handler export");
     }
     const bound = (modExport as (this: unknown, ...args: unknown[]) => unknown)
-      .bind(context.dependencies);
+      .bind({ ...context.dependencies, ...context.request });
     // provide (data, { response })
-    return await bound(data, { response: context.response });
+    return await bound(data, context.response);
   }
   if (handlerMode === "factory") {
     console.warn(
