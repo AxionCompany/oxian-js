@@ -215,7 +215,7 @@ export function createLifecycleManager(
           err: (e as Error)?.message,
         });
       }
-    }).catch(() => {/* ignore */});
+    }).catch(() => {/* ignore */ });
   }
 
   async function spawnWorker(
@@ -468,7 +468,7 @@ export function createLifecycleManager(
       ?.split("=")[1];
     const projCfg = (hv.projects &&
       (hv.projects as Record<string, { source?: string; config?: string }>)[
-        project
+      project
       ]) || {} as { source?: string; config?: string };
     let effectiveSource = selectedMerged.source ?? projCfg.source ??
       globalSource;
@@ -600,7 +600,7 @@ export function createLifecycleManager(
         !a.startsWith("--source=") && !a.startsWith("--config=") &&
         !a.startsWith("--hypervisor=")
       ),
-      ...(effectiveSource && !selectedMerged.materialize 
+      ...(effectiveSource && !selectedMerged.materialize
         ? [`--source=${effectiveSource}`]
         : []),
       ...(effectiveConfig ? [`--config=${effectiveConfig}`] : []),
@@ -676,13 +676,11 @@ export function createLifecycleManager(
         }
       }
     } catch { /* ignore otel env config errors */ }
-    spawnEnv.DENO_AUTH_TOKENS = `${
-      spawnEnv.DENO_AUTH_TOKENS ? spawnEnv.DENO_AUTH_TOKENS + ";" : ""
-    }${
-      selectedMerged.githubToken
+    spawnEnv.DENO_AUTH_TOKENS = `${spawnEnv.DENO_AUTH_TOKENS ? spawnEnv.DENO_AUTH_TOKENS + ";" : ""
+      }${selectedMerged.githubToken
         ? `${selectedMerged.githubToken}@raw.githubusercontent.com`
         : ""
-    }`;
+      }`;
 
     if (Deno.env.get("OXIAN_DEBUG")) {
       console.log("[hv] globalSource", globalSource);
@@ -691,8 +689,10 @@ export function createLifecycleManager(
 
     if (selectedMerged.isolated) {
       spawnEnv.DENO_DIR = `./.deno/DENO_DIR`;
-      finalScriptArgs.push(`--allow-read=${projectDir + "/**/*"}`);
-      finalScriptArgs.push(`--allow-write=${projectDir + "/**/*"}`);
+      const allowRead = finalScriptArgs.find((a) => a.startsWith("--allow-read="))?.split("=")[1] ?? "";
+      const allowWrite = finalScriptArgs.find((a) => a.startsWith("--allow-write="))?.split("=")[1] ?? "";
+      finalScriptArgs.push(`--allow-read=${allowRead ? allowRead + "/**/*" + `,${projectDir}/**/*` : `${projectDir}/**/*`}`);
+      finalScriptArgs.push(`--allow-write=${allowWrite ? allowWrite + "/**/*" + `,${projectDir}/**/*` : `${projectDir}/**/*`}`);
     }
 
     if (Deno.env.get("OXIAN_DEBUG")) {
