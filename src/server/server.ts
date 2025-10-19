@@ -11,13 +11,13 @@
 
 
 
-import type { EffectiveConfig } from "../config/types.ts";
+import type { EffectiveConfig } from "../config/index.ts";
 // previous custom logger removed; use OTEL and minimal console
 import { trace, metrics, context } from "npm:@opentelemetry/api@1";
 
 import { createResponseController, finalizeResponse } from "../utils/response.ts";
 import { parseQuery, parseRequestBody, mergeData } from "../utils/request.ts";
-import type { Context, Data, Handler } from "../core/types.ts";
+import type { Context, Data, Handler } from "../core/index.ts";
 import { loadRouteModule, getHandlerExport } from "../runtime/module_loader.ts";
 import { runHandler, shapeError } from "../runtime/pipeline.ts";
 import { composeDependencies } from "../runtime/dependencies.ts";

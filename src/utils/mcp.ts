@@ -8,12 +8,16 @@
  * @module utils/mcp
  */
 
-import type { Data, Context } from "../core/types.ts";
+import type { Data, Context } from "../core/index.ts";
 
 // ============================================================================
 // MCP Protocol Types (Re-exported for convenience)
 // ============================================================================
 
+/**
+ * JSON-RPC 2.0 request payload used by MCP transports.
+ * See https://www.jsonrpc.org/specification#request_object
+ */
 export interface JsonRpcRequest {
   jsonrpc: "2.0";
   id?: string | number | null;
@@ -21,6 +25,10 @@ export interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
+/**
+ * JSON-RPC 2.0 response payload used by MCP transports.
+ * See https://www.jsonrpc.org/specification#response_object
+ */
 export interface JsonRpcResponse {
   jsonrpc: "2.0";
   id: string | number | null;
@@ -28,22 +36,35 @@ export interface JsonRpcResponse {
   error?: JsonRpcError;
 }
 
+/**
+ * JSON-RPC 2.0 error object for responses.
+ * See https://www.jsonrpc.org/specification#error_object
+ */
 export interface JsonRpcError {
   code: number;
   message: string;
   data?: unknown;
 }
 
+/**
+ * Basic MCP server information reported to clients.
+ */
 export interface ServerInfo {
   name: string;
   version: string;
 }
 
+/**
+ * Client information received from MCP clients.
+ */
 export interface ClientInfo {
   name: string;
   version: string;
 }
 
+/**
+ * Server capability flags for tools, resources, prompts, and logging.
+ */
 export interface ServerCapabilities {
   tools?: {
     listChanged?: boolean;
@@ -58,6 +79,9 @@ export interface ServerCapabilities {
   logging?: Record<string, unknown>;
 }
 
+/**
+ * Describes a callable tool exposed by the MCP server.
+ */
 export interface Tool {
   name: string;
   description: string;
@@ -68,11 +92,17 @@ export interface Tool {
   };
 }
 
+/**
+ * Parameters for invoking a tool via JSON-RPC.
+ */
 export interface ToolCallParams {
   name: string;
   arguments?: Record<string, unknown>;
 }
 
+/**
+ * Tool response shape supporting text, images, and resources.
+ */
 export interface ToolResponse {
   content: Array<{
     type: "text" | "image" | "resource";
@@ -83,6 +113,9 @@ export interface ToolResponse {
   isError?: boolean;
 }
 
+/**
+ * A static resource exposed by the MCP server.
+ */
 export interface Resource {
   uri: string;
   name: string;
@@ -90,6 +123,10 @@ export interface Resource {
   mimeType?: string;
 }
 
+/**
+ * A URI template describing a family of resources.
+ * Example: weather://{city}
+ */
 export interface ResourceTemplate {
   uriTemplate: string;
   name: string;
@@ -97,6 +134,9 @@ export interface ResourceTemplate {
   mimeType?: string;
 }
 
+/**
+ * The contents of a resource as returned by the server.
+ */
 export interface ResourceContents {
   uri: string;
   mimeType?: string;
@@ -104,6 +144,9 @@ export interface ResourceContents {
   blob?: string;
 }
 
+/**
+ * A prompt definition exposed by the MCP server.
+ */
 export interface Prompt {
   name: string;
   description?: string;
@@ -114,6 +157,9 @@ export interface Prompt {
   }>;
 }
 
+/**
+ * A single prompt message with role and typed content.
+ */
 export interface PromptMessage {
   role: "user" | "assistant";
   content: {
@@ -124,6 +170,9 @@ export interface PromptMessage {
   };
 }
 
+/**
+ * Parameters for the MCP initialize request.
+ */
 export interface InitializeParams {
   protocolVersion: string;
   capabilities: {
@@ -135,46 +184,76 @@ export interface InitializeParams {
   clientInfo: ClientInfo;
 }
 
+/**
+ * Result payload for MCP initialize response.
+ */
 export interface InitializeResult {
   protocolVersion: string;
   capabilities: ServerCapabilities;
   serverInfo: ServerInfo;
 }
 
+/**
+ * Result payload for tools/list.
+ */
 export interface ListToolsResult {
   tools: Tool[];
 }
 
+/**
+ * Result payload for tools/call.
+ */
 export interface CallToolResult {
   content: ToolResponse["content"];
   isError?: boolean;
 }
 
+/**
+ * Result payload for resources/list.
+ */
 export interface ListResourcesResult {
   resources: Resource[];
 }
 
+/**
+ * Parameters for resources/read request.
+ */
 export interface ReadResourceParams {
   uri: string;
 }
 
+/**
+ * Result payload for resources/read.
+ */
 export interface ReadResourceResult {
   contents: ResourceContents[];
 }
 
+/**
+ * Result payload for resources/templates/list.
+ */
 export interface ListResourceTemplatesResult {
   resourceTemplates: ResourceTemplate[];
 }
 
+/**
+ * Result payload for prompts/list.
+ */
 export interface ListPromptsResult {
   prompts: Prompt[];
 }
 
+/**
+ * Parameters for prompts/get request.
+ */
 export interface GetPromptParams {
   name: string;
   arguments?: Record<string, unknown>;
 }
 
+/**
+ * Result payload for prompts/get.
+ */
 export interface GetPromptResult {
   description?: string;
   messages: PromptMessage[];
@@ -184,6 +263,9 @@ export interface GetPromptResult {
 // MCP Server Configuration
 // ============================================================================
 
+/**
+ * Configuration for building an MCP server on Oxian.
+ */
 export interface MCPServerConfig {
   info: ServerInfo;
   capabilities: ServerCapabilities;
@@ -200,6 +282,9 @@ export interface MCPServerConfig {
 // JSON-RPC Error Codes
 // ============================================================================
 
+/**
+ * Common JSON-RPC error codes used by server helpers.
+ */
 export const JSON_RPC_ERRORS = {
   PARSE_ERROR: -32700,
   INVALID_REQUEST: -32600,
@@ -212,10 +297,22 @@ export const JSON_RPC_ERRORS = {
 // Helper Functions
 // ============================================================================
 
+/**
+ * Create a JSON-RPC error payload.
+ * @param code - JSON-RPC error code (use JSON_RPC_ERRORS)
+ * @param message - Human-readable error message
+ * @param data - Optional vendor-specific error data
+ */
 export function createJsonRpcError(code: number, message: string, data?: unknown): JsonRpcError {
   return { code, message, data };
 }
 
+/**
+ * Create a JSON-RPC 2.0 response payload (result or error).
+ * @param id - Request id (null for parse errors)
+ * @param result - Optional successful result
+ * @param error - Optional error object
+ */
 export function createJsonRpcResponse(
   id: string | number | null,
   result?: unknown,
@@ -277,6 +374,12 @@ function matchUriTemplate(uri: string, template: string): Record<string, string>
 // MCP Protocol Handlers Factory
 // ============================================================================
 
+/**
+ * Build a map of MCP method handlers from configuration.
+ * @param config - MCP server configuration (tools, resources, prompts, handlers)
+ * @param context - Optional Oxian context for session management
+ * @returns Record of JSON-RPC method names to handler functions
+ */
 export function createMCPHandlers(config: MCPServerConfig, context?: Context): Record<string, (params?: unknown) => unknown | Promise<unknown>> {
   const SUPPORTED_VERSION = "2025-06-18";
   const FALLBACK_VERSION = "2024-11-05"; // For backwards compatibility

@@ -1,22 +1,6 @@
-export type RouteRecord = {
-  pattern: string;
-  segments: Array<{ type: "static" | "param" | "catchall"; name?: string }>;
-  fileUrl: URL;
-};
-
-export type RouteMatch =
-  | { route: RouteRecord; params: Record<string, string> }
-  | null;
-
-export type Router = {
-  routes: RouteRecord[];
-  match: (path: string) => RouteMatch;
-};
+import type { RouteRecord, RouteMatch, Router, ListDirFn, StatFn } from "./types.ts";
 
 type DirEntries = { files: Set<string>; dirs: Set<string> };
-
-export type ListDirFn = (dir: URL) => Promise<string[]>;
-export type StatFn = (url: URL) => Promise<{ isFile: boolean }>;
 
 function ensureTrailingSlash(u: URL): URL {
   const copy = new URL(u.toString());

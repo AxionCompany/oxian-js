@@ -763,9 +763,78 @@ Behavior:
 
 ## 📝 TypeScript Support
 
-Oxian is built with TypeScript-first design:
+Oxian is built with TypeScript-first design. You can use types via imports or JSDoc comments.
+
+### Quick Start: JSDoc (No Imports Needed)
+
+Use JSDoc comments for instant autocomplete without importing types:
 
 ```ts
+// routes/users/[id].ts
+
+/**
+ * @param {import("@oxian/oxian-js/types").Data} data
+ * @param {import("@oxian/oxian-js/types").Context} context
+ */
+export async function GET(data, context) {
+  // Full autocomplete and type checking!
+  const userId = data.id;
+  const db = context.dependencies.database;
+  
+  return { user: { id: userId } };
+}
+```
+
+### Importing Types
+
+All framework types are available from `@oxian/oxian-js/types`:
+
+```ts
+// Core handler types
+import type { 
+  Context,           // Request context with dependencies & response
+  Data,              // Merged request data (params + query + body)
+  Handler,           // Route handler function signature
+  Middleware,        // Middleware function signature
+  Interceptors,      // Interceptor configuration
+  ResponseController // Response helper methods
+} from "@oxian/oxian-js/types";
+
+// Configuration
+import type { 
+  OxianConfig,       // Configuration schema
+  EffectiveConfig    // Resolved configuration with defaults
+} from "@oxian/oxian-js/types";
+
+// Error handling
+import { OxianHttpError } from "@oxian/oxian-js/types";
+
+// MCP (Model Context Protocol) types
+import type { 
+  MCPServerConfig,   // MCP server configuration
+  Tool,              // Tool definition
+  Resource,          // Resource definition
+  ResourceTemplate,  // Resource template (URI patterns)
+  Prompt,            // Prompt definition
+  JsonRpcRequest,    // JSON-RPC request
+  JsonRpcResponse,   // JSON-RPC response
+  ServerInfo,        // Server information
+  ClientInfo         // Client information
+} from "@oxian/oxian-js/types";
+
+// MCP helper functions
+import { 
+  handleMCPRequest,      // Main request handler
+  handleMCPInfo,         // GET info handler
+  createMCPHandlers,     // Create handler map
+  JSON_RPC_ERRORS        // Error code constants
+} from "@oxian/oxian-js/types";
+```
+
+### Type-Safe Handlers
+
+```ts
+// routes/users/[id].ts
 import type { Context, Data, Handler } from "@oxian/oxian-js/types";
 
 interface User {
@@ -774,11 +843,68 @@ interface User {
   email: string;
 }
 
-export const GET: Handler = async ({ id }: Data, { dependencies }: Context) => {
-  const { db } = dependencies as { db: UserDatabase };
-  const user: User = await db.findById(id);
-  return user;
+export const GET: Handler = async (data: Data, context: Context) => {
+  const { db } = context.dependencies as { db: Database };
+  const user: User = await db.findById(data.id);
+  return { user };
 };
+```
+
+### Type-Safe Dependencies
+
+```ts
+// routes/dependencies.ts
+import type { Context } from "@oxian/oxian-js/types";
+
+interface Database {
+  query: (sql: string) => Promise<unknown[]>;
+  findById: (id: string) => Promise<User>;
+}
+
+export default async function(context?: Context): Promise<{ database: Database }> {
+  const database: Database = await createDatabase();
+  return { database };
+}
+```
+
+### Type-Safe Middleware
+
+```ts
+// routes/middleware.ts
+import type { Data, Context, Middleware } from "@oxian/oxian-js/types";
+
+export default function(data: Data, context: Context) {
+  const token = context.request.headers.get("authorization");
+  
+  return {
+    data: { ...data, authenticated: !!token },
+    context: {
+      dependencies: {
+        ...context.dependencies,
+        user: { id: "123", role: "admin" }
+      }
+    }
+  };
+} satisfies Middleware;
+```
+
+### Type-Safe Interceptors
+
+```ts
+// routes/interceptors.ts
+import type { Data, Context, Interceptors } from "@oxian/oxian-js/types";
+
+export async function beforeRun(data: Data, context: Context) {
+  console.log(`Processing ${context.request.method} ${context.request.url}`);
+  return { data: { ...data, startTime: Date.now() } };
+}
+
+export async function afterRun(result: unknown, context: Context) {
+  const duration = Date.now() - (context.oxian.startedAt || 0);
+  console.log(`Completed in ${duration}ms`);
+}
+
+export default { beforeRun, afterRun } satisfies Interceptors;
 ```
 
 ## 🎯 Best Practices
@@ -1045,27 +1171,46 @@ export function GET(_, { dependencies }) {
 
 Oxian makes it easy to build **Model Context Protocol (MCP) servers** using streamable HTTP transport. MCP enables AI assistants to connect to external data sources and tools.
 
-### Quick Example
+### Quick Example with Types
+
+All MCP types are available from `@oxian/oxian-js/types`:
 
 ```ts
 // routes/mcp/dependencies.ts
-import type { MCPServerConfig } from "@oxian/oxian-js/mcp";
+import type { 
+  MCPServerConfig, 
+  Tool, 
+  CallToolResult 
+} from "@oxian/oxian-js/types";
 
-export default function() {
+export default function(): { mcpServer: MCPServerConfig } {
+  const tools: Tool[] = [{
+    name: "get_data",
+    description: "Fetch data from the database",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "SQL query" }
+      },
+      required: ["query"]
+    }
+  }];
+
   return {
     mcpServer: {
       info: { name: "my-mcp-server", version: "1.0.0" },
       capabilities: { tools: {}, resources: {}, prompts: {} },
-      tools: [{
-        name: "get_data",
-        description: "Fetch data from the database",
-        inputSchema: { /* JSON Schema */ }
-      }],
+      tools,
       resources: [],
       resourceTemplates: [],
       prompts: [],
       toolHandlers: {
-        get_data: async (args) => ({ content: [{ type: "text", text: "..." }] })
+        get_data: async (args): Promise<CallToolResult> => ({
+          content: [{ 
+            type: "text", 
+            text: `Query result for: ${args.query}` 
+          }]
+        })
       },
       readResource: (params) => ({ contents: [] }),
       getPrompt: (params) => ({ messages: [] })
@@ -1076,16 +1221,36 @@ export default function() {
 
 ```ts
 // routes/mcp/index.ts
-import { handleMCPRequest, handleMCPInfo } from "@oxian/oxian-js/mcp";
+import type { Data, Context } from "@oxian/oxian-js/types";
+import { 
+  handleMCPRequest, 
+  handleMCPInfo,
+  type MCPServerConfig 
+} from "@oxian/oxian-js/types";
 
-export async function POST(data, context) {
-  const mcpConfig = context.dependencies.mcpServer;
+export async function POST(data: Data, context: Context) {
+  const mcpConfig = context.dependencies.mcpServer as MCPServerConfig;
   return await handleMCPRequest(data, context, mcpConfig);
 }
 
-export function GET(_data, context) {
-  const mcpConfig = context.dependencies.mcpServer;
+export function GET(_data: Data, context: Context) {
+  const mcpConfig = context.dependencies.mcpServer as MCPServerConfig;
   return handleMCPInfo(mcpConfig);
+}
+```
+
+Or with JSDoc (no imports):
+
+```ts
+// routes/mcp/index.ts
+/**
+ * @param {import("@oxian/oxian-js/types").Data} data
+ * @param {import("@oxian/oxian-js/types").Context} context
+ */
+export async function POST(data, context) {
+  const { handleMCPRequest } = await import("@oxian/oxian-js/types");
+  const mcpConfig = context.dependencies.mcpServer;
+  return await handleMCPRequest(data, context, mcpConfig);
 }
 ```
 

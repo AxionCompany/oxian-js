@@ -26,9 +26,20 @@ routes/
   dependencies.ts
 ```
 
-Example `routes/index.ts`:
+Example `routes/index.ts` (with JSDoc - no imports needed):
 ```ts
-import { Data, Context } from 'oxian-js' // import types for type-safety
+/**
+ * @param {import("@oxian/oxian-js/types").Data} data
+ * @param {import("@oxian/oxian-js/types").Context} context
+ */
+export function GET(data, context) {
+  return { message: "Hello, Oxian!" };
+}
+```
+
+Or with explicit imports:
+```ts
+import type { Data, Context } from '@oxian/oxian-js/types';
 
 export function GET(data: Data, context: Context) {
   return { message: "Hello, Oxian!" };
@@ -37,9 +48,10 @@ export function GET(data: Data, context: Context) {
 
 Example `routes/users/[id].ts`:
 ```ts
-import { Data, Context } from 'oxian-js' // import types for type-safety
-
-export async function GET({ id }: Data) {
+/**
+ * @param {import("@oxian/oxian-js/types").Data} data
+ */
+export async function GET({ id }) {
   return { user: { id } };
 }
 ```
@@ -57,6 +69,58 @@ Call endpoint (dynamic param example):
 ```bash
 curl http://localhost:8080/users/123
 ```
+
+TypeScript Support
+------------------
+Oxian provides full type safety via imports or JSDoc comments.
+
+**Approach 1: JSDoc (Recommended - No Imports)**
+```ts
+// routes/users/[id].ts
+/**
+ * @param {import("@oxian/oxian-js/types").Data} data
+ * @param {import("@oxian/oxian-js/types").Context} context
+ */
+export async function GET(data, context) {
+  // Full autocomplete and type checking!
+  const db = context.dependencies.database;
+  return { user: await db.findById(data.id) };
+}
+```
+
+**Approach 2: Explicit Type Imports**
+```ts
+// routes/users/[id].ts
+import type { Data, Context, Handler } from '@oxian/oxian-js/types';
+
+export const GET: Handler = async (data: Data, context: Context) => {
+  const db = context.dependencies.database;
+  return { user: await db.findById(data.id) };
+};
+```
+
+**Available Types from `@oxian/oxian-js/types`:**
+
+Core Types:
+- `Context` - Request context (requestId, request, dependencies, response, oxian)
+- `Data` - Request data (merged params + query + body)
+- `Handler` - Handler function signature
+- `Middleware` - Middleware function signature
+- `Interceptors` - Interceptor configuration
+- `ResponseController` - Response helper methods
+- `OxianHttpError` - HTTP error class
+- `OxianConfig` - Configuration schema
+- `EffectiveConfig` - Resolved configuration
+
+MCP (Model Context Protocol) Types:
+- `MCPServerConfig` - MCP server configuration
+- `Tool` / `ToolCallParams` / `ToolResponse` - Tool definitions
+- `Resource` / `ResourceTemplate` / `ResourceContents` - Resource types
+- `Prompt` / `PromptMessage` - Prompt definitions
+- `JsonRpcRequest` / `JsonRpcResponse` / `JsonRpcError` - JSON-RPC 2.0
+- `ServerInfo` / `ClientInfo` / `ServerCapabilities` - Server metadata
+- `InitializeParams` / `InitializeResult` - Initialize handshake
+- `handleMCPRequest` / `handleMCPInfo` - Helper functions
 
 Handler Contract
 ----------------

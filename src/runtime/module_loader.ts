@@ -10,23 +10,9 @@
  */
 
 import type { Resolver } from "../resolvers/types.ts";
+import type { LoadedModule } from "./types.ts";
 
-/**
- * Represents a loaded JavaScript/TypeScript module.
- *
- * This type represents any module that has been dynamically imported,
- * containing all the exported symbols from that module as key-value pairs.
- *
- * @example
- * ```typescript
- * const module: LoadedModule = {
- *   GET: (data, context) => { ... },
- *   POST: (data, context) => { ... },
- *   default: (data, context) => { ... }
- * };
- * ```
- */
-export type LoadedModule = Record<string, unknown>;
+export type { LoadedModule };
 
 const moduleCache = new Map<string, LoadedModule>();
 
