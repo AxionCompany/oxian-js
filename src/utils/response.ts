@@ -1,15 +1,7 @@
-import type { ResponseController } from "../core/types.ts";
+import type { ResponseController } from "../core/index.ts";
+import type { ResponseState } from "../server/types.ts";
 
-export type ResponseState = {
-  status: number;
-  headers: Headers;
-  statusText?: string;
-  body?: unknown;
-  streamWrite?: (chunk: Uint8Array | string) => void;
-  streamClose?: () => void;
-  // internal flag to control SSE lifecycle
-  sseKeepOpen?: boolean;
-};
+export type { ResponseState };
 
 export function createResponseController(): {
   controller: ResponseController;

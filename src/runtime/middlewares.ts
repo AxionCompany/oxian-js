@@ -1,5 +1,5 @@
-import type { Context, Data, Middleware } from "../core/types.ts";
-import type { OxianConfig } from "../config/types.ts";
+import type { Context, Data, Middleware } from "../core/index.ts";
+import type { OxianConfig } from "../config/index.ts";
 import type { Resolver } from "../resolvers/index.ts";
 
 function isMiddlewareObjectResult(

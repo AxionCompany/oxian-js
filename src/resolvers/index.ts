@@ -485,7 +485,6 @@ export function createGithubResolver(
     };
     if (token) headers["Authorization"] = `token ${token}`;
     const res = await fetch(url, { headers });
-    console.log("[ghFetch] res", url, headers, await res.clone().text());
     return res;
   }
 
