@@ -14,7 +14,7 @@ import { fromFileUrl } from "@std/path";
 import { startServer } from "./src/server/server.ts";
 import { resolveRouter } from "./src/router/index.ts";
 import { printBanner } from "./src/cli/banner.ts";
-import type { EffectiveConfig, OxianConfig } from "./src/config/types.ts";
+import type { EffectiveConfig, OxianConfig } from "./src/types.ts";
 import type { Resolver } from "./src/resolvers/types.ts";
 import { createResolver } from "./src/resolvers/index.ts";
 
