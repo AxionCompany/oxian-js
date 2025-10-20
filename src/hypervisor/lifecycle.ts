@@ -118,11 +118,6 @@ export async function startHypervisor(
         : url.pathname;
       const kind = routes.get(trimmed);
       if (!kind) return new Response("Not found", { status: 404 });
-      const ct = req.headers.get("content-type") || "";
-      const hdrs: Record<string, string> = {};
-      req.headers.forEach((v, k) => {
-        hdrs[k] = v;
-      });
       const projectFromHeader = req.headers.get("x-oxian-project") || undefined;
       let shouldForward = true;
       try {
@@ -133,8 +128,6 @@ export async function startHypervisor(
             kind,
             req: reqForHook,
             project: projectFromHeader,
-            contentType: ct,
-            headers: hdrs,
           });
         }
       } catch { /* ignore user callback errors; default to forward */ }
@@ -621,9 +614,6 @@ export async function startHypervisor(
   }
 
   await server.finished;
-  try {
-    await collectorServer?.finished;
-  } catch { /* ignore */ }
   try {
     await otelProxyServer?.finished;
   } catch { /* ignore */ }
