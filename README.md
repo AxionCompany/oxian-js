@@ -1145,7 +1145,7 @@ OTEL_DENO=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 deno -A jsr:@ox
 
 Oxian uses Deno’s OpenTelemetry integration for traces, metrics, and logs. You can:
 - Enable auto-instrumentation via config (`logging.otel.enabled`).
-- Run a built-in OTLP HTTP collector in the hypervisor (`runtime.hv.otelCollector`).
+- Run a built-in OTLP HTTP proxy in the hypervisor (`runtime.hv.otelProxy`) and optionally forward to a collector.
 - Add custom spans/metrics via `logging.otel.hooks` (onInit/onRequestStart/onRequestEnd).
 
 See the full guide: [docs/instrumentation.md](./docs/instrumentation.md)

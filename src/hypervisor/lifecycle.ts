@@ -89,7 +89,7 @@ export async function startHypervisor(
   }
 
   const OTEL_OR_COLLECTOR = (config.logging?.otel?.enabled === true) ||
-    (hv.otelCollector?.enabled === true);
+    (hv.otelCollector?.enabled === true) || (hv.otelProxy?.enabled === true);
   if (PERF) {
     console.log("[perf][hv] public listening", {
       project: "default",
@@ -99,17 +99,19 @@ export async function startHypervisor(
   // Start idle checker to reap idle workers
   manager.startIdleChecker();
   // Optional built-in OTLP HTTP collector
-  let collectorServer: Deno.HttpServer | undefined;
-  if (hv.otelCollector?.enabled) {
-    const collectorPort = hv.otelCollector.port ?? 4318;
-    const prefix = (hv.otelCollector.pathPrefix ?? "/v1").replace(/\/$/, "");
-    const onExport = hv.otelCollector.onExport;
+
+  let otelProxyServer: Deno.HttpServer | undefined;
+  if (hv.otelProxy?.enabled) {
+    const proxyPort = hv.otelProxy.port ?? 4318;
+    const prefix = (hv.otelProxy.pathPrefix ?? "/v1").replace(/\/$/, "");
+    const upstream = hv.otelProxy.upstream || config.logging.otel?.endpoint;
+    const onReq = hv.otelProxy.onRequest;
     const routes = new Map<string, "traces" | "metrics" | "logs">([
       ["/traces", "traces"],
       ["/metrics", "metrics"],
       ["/logs", "logs"],
     ]);
-    collectorServer = Deno.serve({ port: collectorPort }, async (req) => {
+    otelProxyServer = Deno.serve({ port: proxyPort }, async (req) => {
       const url = new URL(req.url);
       const trimmed = url.pathname.startsWith(prefix)
         ? url.pathname.slice(prefix.length)
@@ -121,20 +123,44 @@ export async function startHypervisor(
       req.headers.forEach((v, k) => {
         hdrs[k] = v;
       });
-      const ab = await req.arrayBuffer().catch(() => new ArrayBuffer(0));
       const projectFromHeader = req.headers.get("x-oxian-project") || undefined;
+      let shouldForward = true;
       try {
-        await onExport?.({
-          kind,
-          headers: hdrs,
-          body: new Uint8Array(ab),
-          contentType: ct,
-          project: projectFromHeader,
-        });
-      } catch { /* ignore user callback errors */ }
+        if (typeof onReq === "function") {
+          // Pass a clone so the callback can safely read the body without consuming the original
+          const reqForHook = req.clone();
+          shouldForward = await onReq({
+            kind,
+            req: reqForHook,
+            project: projectFromHeader,
+            contentType: ct,
+            headers: hdrs,
+          });
+        }
+      } catch { /* ignore user callback errors; default to forward */ }
+      if (!shouldForward || !upstream) {
+        return new Response(null, { status: 202 });
+      }
+      const fwdUrl = upstream.replace(/\/$/, "") + trimmed;
+      const fwdHeaders = new Headers(req.headers);
+      try {
+        if (projectFromHeader) fwdHeaders.set("x-oxian-project", projectFromHeader);
+      } catch { /* ignore */ }
+      const fwdReq = new Request(fwdUrl, {
+        method: req.method,
+        headers: fwdHeaders,
+        body: (req.method === "GET" || req.method === "HEAD")
+          ? undefined
+          : req.body ?? undefined,
+      });
+      try {
+        const fwdRes = await fetch(fwdReq);
+        return new Response(null, { status: fwdRes.status || 202 });
+      } catch { /* ignore upstream errors, respond 202 to exporter */ }
       return new Response(null, { status: 202 });
     });
   }
+  console.log('public port', publicPort)
   const server = Deno.serve({ port: publicPort }, async (req) => {
     const url = new URL(req.url);
 
@@ -597,6 +623,9 @@ export async function startHypervisor(
   await server.finished;
   try {
     await collectorServer?.finished;
+  } catch { /* ignore */ }
+  try {
+    await otelProxyServer?.finished;
   } catch { /* ignore */ }
   try {
     manager.shutdown();
@@ -1126,7 +1155,7 @@ export function createLifecycleManager(
         }
         try {
           const text = new TextDecoder().decode(out.stdout);
-          const parsed = JSON.parse(text) as { ok?: boolean; rootDir?: string };
+          JSON.parse(text) as { ok?: boolean; rootDir?: string };
         } catch { /* ignore parse errors */ }
       }
 
@@ -1191,24 +1220,26 @@ export function createLifecycleManager(
           propagators?: string;
           metricExportIntervalMs?: number;
         };
-      if (otelCfg?.enabled) {
+      if (otelCfg?.enabled || config.runtime?.hv?.otelProxy?.enabled) {
         spawnEnv.OTEL_DENO = "true";
         if (otelCfg.serviceName) {
           spawnEnv.OTEL_SERVICE_NAME = otelCfg.serviceName;
         }
-        // Default to built-in collector if no endpoint is provided
-        const builtInCollectorPort = config.runtime?.hv?.otelCollector?.enabled
-          ? (config.runtime?.hv?.otelCollector?.port ?? 4318)
+        // Default to built-in collector or proxy if no endpoint is provided
+        const builtInProxyPort = config.runtime?.hv?.otelProxy?.enabled
+          ? (config.runtime?.hv?.otelProxy?.port ?? 4318)
           : undefined;
-        if (otelCfg.endpoint) {
-          spawnEnv.OTEL_EXPORTER_OTLP_ENDPOINT = otelCfg.endpoint;
-        } else if (builtInCollectorPort) {
+
+        if (builtInProxyPort) {
           spawnEnv.OTEL_EXPORTER_OTLP_ENDPOINT =
-            `http://127.0.0.1:${builtInCollectorPort}`;
+            `http://127.0.0.1:${builtInProxyPort}`;
+        } else if (otelCfg.endpoint) {
+          spawnEnv.OTEL_EXPORTER_OTLP_ENDPOINT = otelCfg.endpoint;
         }
         if (otelCfg.protocol) {
           spawnEnv.OTEL_EXPORTER_OTLP_PROTOCOL = otelCfg.protocol as string;
         }
+
         {
           const headerPairs: string[] = [];
           if (otelCfg.headers && Object.keys(otelCfg.headers).length) {
@@ -1257,6 +1288,7 @@ export function createLifecycleManager(
       finalScriptArgs.push(`--allow-write=${allowWrite ? allowWrite + "/**/*" + `,${projectDir}/**/*` : `${projectDir}/**/*`}`);
     }
 
+
     if (Deno.env.get("OXIAN_DEBUG")) {
       console.log("[hv] projectDir", projectDir);
     }
@@ -1267,6 +1299,8 @@ export function createLifecycleManager(
         ...finalScriptArgs,
       ]);
     }
+
+    console.log("[hv] spawning env", spawnEnv);
 
     const proc = new Deno.Command(Deno.execPath(), {
       args: [...denoArgs, ...finalScriptArgs],

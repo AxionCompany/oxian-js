@@ -542,25 +542,26 @@ and `oxian.project` when the route is known. Metrics are exported for request
 duration, active requests, and body sizes. `console.*` output is exported as
 OTLP logs.
 
-For local development you can run a minimal built-in OTLP HTTP collector inside
-the hypervisor and receive export callbacks:
+For local development you can run a minimal built-in OTLP HTTP proxy inside
+the hypervisor and choose per-request whether to forward or drop:
 
 ```ts
 export default {
   logging: { otel: { enabled: true, serviceName: "oxian-server" } },
   runtime: {
     hv: {
-      otelCollector: {
+      otelProxy: {
         enabled: true,
         port: 4318,
         pathPrefix: "/v1",
-        onExport: async ({ kind, headers, body, contentType, project }) => {
-          console.log("[otel-collector] export", {
-            kind,
-            project,
-            contentType,
-            bytes: body.byteLength,
-          });
+        upstream: Deno.env.get("OTEL_EXPORTER_OTLP_ENDPOINT"),
+        onRequest: async ({ req, project, kind, contentType }) => {
+          // `req` is safe to read here; original body is streamed to upstream
+          if ((contentType || "").includes("json")) {
+            const text = await req.text();
+            console.log("[otel] sample", { kind, size: text.length });
+          }
+          return ["default", "billing"].includes(project || "default");
         },
       },
     },
@@ -571,11 +572,9 @@ export default {
 Notes:
 
 - When `logging.otel.enabled` is true and no `endpoint` is provided, workers
-  default to the built-in collector (`http://127.0.0.1:<port>`).
-- The hypervisor injects `x-oxian-project: <project>` into OTLP headers so the
-  collector can tag payloads.
-- To inspect payloads, set `logging.otel.protocol = "http/json"` and decode
-  `body` as text/JSON.
+  default to the built-in proxy (`http://127.0.0.1:<port>`).
+- The hypervisor injects `x-oxian-project: <project>` into OTLP headers for tagging.
+- If `upstream` is not specified or `onRequest` returns false, the proxy responds 202 and drops the payload.
 - For custom spans/metrics per request, define `logging.otel.hooks` (see
   instrumentation.md). Hooks receive the active span and a meter instance.
 
