@@ -12,7 +12,7 @@
 
 
 import type { EffectiveConfig } from "../config/index.ts";
-// previous custom logger removed; use OTEL and minimal console
+// Use console.* for OTEL log export (Deno only supports console, not Logs API)
 import { trace, metrics, context } from "npm:@opentelemetry/api@1";
 
 import { createResponseController, finalizeResponse } from "../utils/response.ts";
@@ -26,46 +26,6 @@ import { runMiddlewares } from "../runtime/middlewares.ts";
 import { resolveRouter } from "../router/index.ts";
 import { buildLocalChain, buildRemoteChain, discoverPipelineFiles } from "../runtime/pipeline_discovery.ts";
 import type { Resolver } from "../resolvers/types.ts";
-
-/**
- * Structured logger that ensures request_id is always attached to OTEL log records.
- * When using Deno's auto-instrumentation, console.log/error are captured as log records,
- * but we must include the request_id as a log attribute for the collector to read.
- */
-function createRequestLogger(requestId: string) {
-  return {
-    info: (message: string, attributes?: Record<string, unknown>) => {
-      console.log(message, {
-        "oxian.request_id": requestId,
-        "request.id": requestId,
-        ...attributes,
-      });
-    },
-    error: (message: string, attributes?: Record<string, unknown>) => {
-      console.error(message, {
-        "oxian.request_id": requestId,
-        "request.id": requestId,
-        ...attributes,
-      });
-    },
-    warn: (message: string, attributes?: Record<string, unknown>) => {
-      console.warn(message, {
-        "oxian.request_id": requestId,
-        "request.id": requestId,
-        ...attributes,
-      });
-    },
-    debug: (message: string, attributes?: Record<string, unknown>) => {
-      if (Deno.env.get("OXIAN_DEBUG")) {
-        console.log(message, {
-          "oxian.request_id": requestId,
-          "request.id": requestId,
-          ...attributes,
-        });
-      }
-    },
-  };
-}
 
 // Minimal MIME type mapping for static serving
 const mimeByExt: Record<string, string> = {
@@ -200,14 +160,14 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
   if (PERF) console.log('[perf][server] listening', { port: config.server?.port ?? 8080 });
   const server = Deno.serve({ port: config.server?.port ?? 8080 }, async (req) => {
     const startedAt = performance.now();
-    const hdrRequestId = config.logging?.requestIdHeader ? req.headers.get(config.logging.requestIdHeader) : undefined;
-    const requestId = hdrRequestId || crypto.randomUUID();
-
-    // Create request-scoped logger that ensures request_id is in all log records
-    const logger = createRequestLogger(requestId);
 
     // Run request handling within OTEL context for proper propagation
     return await context.with(context.active(), async () => {
+      // Use spanId as requestId for automatic trace correlation
+      const activeSpan = trace.getActiveSpan();
+      const spanContext = activeSpan?.spanContext();
+      const hdrRequestId = config.logging?.requestIdHeader ? req.headers.get(config.logging.requestIdHeader) : undefined;
+      const requestId = hdrRequestId || spanContext?.spanId || crypto.randomUUID();
       try {
         const url = new URL(req.url);
         // Reconstruct original URL when behind hypervisor using X-Forwarded-* headers
@@ -245,12 +205,12 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
                 const res = await fetch(targetUrl.toString(), { method: req.method, headers, body: req.body });
                 return new Response(res.body, { status: res.status, statusText: res.statusText, headers: res.headers });
               } catch (e) {
-                logger.error("web_dev_proxy_error", { err: (e as Error)?.message });
+                console.error("web_dev_proxy_error", { err: (e as Error)?.message });
                 return new Response("Dev proxy error", { status: 502 });
               }
             }
             if (webCfg.staticDir) {
-              const cleaned = webCfg.pathRewrite ?  webCfg.pathRewrite(url.href, "") : url.pathname.replace(/^\/+/, "");
+              const cleaned = webCfg.pathRewrite ? webCfg.pathRewrite(url.href, "") : url.pathname.replace(/^\/+/, "");
               // Try static file
               try {
                 const fileUrl = await resolver.resolve(`${webCfg.staticDir}/${cleaned}`);
@@ -352,38 +312,44 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
           }
         }
 
-        // Enrich active span with route, project, and request id (OTEL) and call user start hook
+        // Enrich active span and automatically record per-request metrics and logs
         try {
           const activeSpan = trace.getActiveSpan();
           if (activeSpan) {
             const routePattern = (match as unknown as { route?: { pattern?: string } })?.route?.pattern ?? path;
             // Set span attributes using OpenTelemetry semantic conventions
-            activeSpan.setAttribute("http.route", routePattern);
-            activeSpan.setAttribute("oxian.project", projectFromHv);
-            activeSpan.setAttribute("oxian.request_id", requestId);
-            // Also set as span event for better visibility
-            activeSpan.addEvent("request.start", {
-              "request.id": requestId,
-              "request.project": projectFromHv,
-              "request.route": routePattern,
+            activeSpan.setAttributes({
+              "http.route": routePattern,
+              "oxian.project": projectFromHv,
             });
             activeSpan.updateName(`${req.method} ${routePattern}`);
+
+            // Auto-record start metrics with stable attributes (no request_id)
+            const meter = metrics.getMeter("oxian", "1");
+            const attrs = { "http.route": routePattern, "http.method": req.method, "oxian.project": projectFromHv } as Record<string, string | number>;
+            try {
+              const activeCounter = meter.createUpDownCounter("http.server.active_requests", { unit: "1" });
+              activeCounter.add(1, attrs);
+              const reqCounter = meter.createCounter("http.server.requests", { unit: "1" });
+              reqCounter.add(1, attrs);
+            } catch { /* avoid hard failure if meter not available */ }
+
 
             // Call user start hook
             try {
               const tracer = trace.getTracer("oxian", "1");
-              const meter = metrics.getMeter("oxian", "1");
-              await config.logging?.otel?.hooks?.onRequestStart?.({ tracer, meter, span: activeSpan, requestId, method: req.method, url: req.url, project: projectFromHv });
+              const meterHook = metrics.getMeter("oxian", "1");
+              await config.logging?.otel?.hooks?.onRequestStart?.({ tracer, meter: meterHook, span: activeSpan, requestId, method: req.method, url: req.url, project: projectFromHv });
             } catch (hookErr) {
-              logger.debug("[server] OTEL user hook error", { error: hookErr });
+              if (Deno.env.get("OXIAN_DEBUG")) console.log("[server] OTEL user hook error", { error: hookErr });
             }
           } else {
             // Log when span is not available for debugging
-            logger.debug("[server] No active OTEL span found for request", { path });
+            if (Deno.env.get("OXIAN_DEBUG")) console.log("[server] No active OTEL span found for request", { path });
           }
         } catch (spanErr) {
           // Log span errors in debug mode instead of silently ignoring
-          logger.debug("[server] OTEL span error", { error: spanErr });
+          if (Deno.env.get("OXIAN_DEBUG")) console.log("[server] OTEL span error", { error: spanErr });
         }
 
         // Unified pipeline discovery
@@ -402,7 +368,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         try {
 
           // Inject config-defined deps as the base
-          const baseDeps = { logger };
+          const baseDeps = {};
           context.dependencies = baseDeps;
           // Compose route dependencies on top
           const composeStart = performance.now();
@@ -429,7 +395,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
             if (PERF) console.log('[perf][server] runMiddlewares', { ms: Math.round(runMiddlewaresEnd - runMiddlewaresStart) });
           }
         } catch (err) {
-          logger.error("pipeline_error", {
+          console.error("pipeline_error", {
             err: (err as Error)?.message,
             stack: (err as Error)?.stack
           });
@@ -474,13 +440,22 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
           const activeSpan = trace.getActiveSpan();
           if (activeSpan) {
             // Add final attributes and event to span
-            activeSpan.setAttribute("http.response.status_code", res.status);
-            activeSpan.setAttribute("oxian.request.duration_ms", Math.round(performance.now() - startedAt));
-            activeSpan.addEvent("request.end", {
-              "request.id": requestId,
-              "response.status": res.status,
-              "request.duration_ms": Math.round(performance.now() - startedAt),
+            activeSpan.setAttributes({
+              "http.response.status_code": res.status,
+              "oxian.request.duration_ms": Math.round(performance.now() - startedAt)
             });
+
+            // Auto-record end metrics
+            const meter = metrics.getMeter("oxian", "1");
+            const routePattern = (match as unknown as { route?: { pattern?: string } })?.route?.pattern ?? path;
+            const attrs = { "http.route": routePattern, "http.method": req.method, "http.status_code": res.status, "oxian.project": projectFromHv } as Record<string, string | number>;
+            try {
+              const activeCounter = meter.createUpDownCounter("http.server.active_requests", { unit: "1" });
+              activeCounter.add(-1, attrs);
+              const latency = meter.createHistogram("http.server.request.duration", { unit: "ms" });
+              latency.record(Math.round(performance.now() - startedAt), attrs);
+            } catch { /* ignore */ }
+
           }
 
           // Call user end hook
@@ -498,12 +473,12 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
             durationMs: Math.round(performance.now() - startedAt)
           });
         } catch (hookErr) {
-          logger.debug("[server] OTEL end hook error", { error: hookErr });
+          if (Deno.env.get("OXIAN_DEBUG")) console.log("[server] OTEL end hook error", { error: hookErr });
         }
         return res;
 
       } catch (err) {
-        logger.error("unhandled", { err: (err as Error).message });
+        console.error("unhandled", { err: (err as Error).message });
 
         // Mark span as error in OTEL
         try {
@@ -511,7 +486,6 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
           if (activeSpan) {
             activeSpan.recordException(err as Error);
             activeSpan.setStatus({ code: 2, message: (err as Error).message }); // code 2 = ERROR
-            activeSpan.setAttribute("oxian.request_id", requestId);
             activeSpan.addEvent("request.error", {
               "request.id": requestId,
               "error.message": (err as Error).message,
@@ -519,7 +493,7 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
             });
           }
         } catch (spanErr) {
-          logger.debug("[server] OTEL error span update failed", { error: spanErr });
+          if (Deno.env.get("OXIAN_DEBUG")) console.log("[server] OTEL error span update failed", { error: spanErr });
         }
 
         const headers = new Headers({ "content-type": "application/json; charset=utf-8" });

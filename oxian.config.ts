@@ -1,6 +1,6 @@
-export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, logging = { level: "info" } }) => ({
+export default ({ root = Deno.cwd(), basePath: _basePath = "/", server = { port: 8080 }, logging = { level: "info" } }) => ({
     root,
-    basePath:"/",
+    basePath: "/",
     loaders: {
         local: { enabled: true },
         github: { enabled: true, tokenEnv: "GITHUB_TOKEN", cacheTtlSec: 60 },
@@ -13,7 +13,7 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
         otel: {
             enabled: false,
             serviceName: "oxian-server",
-            // When omitted, workers will default to the built-in collector below
+            // When omitted, workers will default to the built-in OTLP proxy below
             // endpoint: "http://localhost:4318",
             protocol: "http/json",
             propagators: "tracecontext,baggage",
@@ -38,19 +38,21 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
             merge: "shallow",
         },
         hv: {
-            // Minimal built-in OTLP HTTP collector; workers default to this when no endpoint provided above
-            otelCollector: {
+            // Minimal built-in OTLP HTTP proxy; workers default to this when no endpoint provided above
+            otelProxy: {
                 enabled: true,
                 port: 4318,
                 pathPrefix: "/v1",
-                onExport: async ({ kind, headers: _headers, body, contentType, project }: { kind: string; headers: Record<string, string>; body: Uint8Array; contentType: string; project?: string }) => {
-                    if ((contentType || "").includes("json")) {
-                        const text = new TextDecoder().decode(body);
-                        const json = JSON.stringify(JSON.parse(text));
-                        console.log("[otel-collector] export json", json);
-                    } else {
-                        console.log("[otel-collector] export binary", { kind, project, contentType, bytes: body.byteLength });
+                // Forward to external collector when provided; otherwise, proxy will accept and drop (202)
+                // upstream: Deno.env.get("OTEL_EXPORTER_OTLP_ENDPOINT") || "",
+                // Return true to forward, false to drop. Example: allowlist by project
+                onRequest: async (input: { req: Request; kind?: string }) => {
+                    if (input.kind === "traces") {
+                        console.log("[otel-proxy] onReques Metrics", await input?.req?.text());
+                    } else if (input.kind === "logs") {
+                        console.log("[otel-proxy] onRequest Logs", await input?.req?.text());
                     }
+                    return false;
                 },
             },
             // Example: modify requests before passing to workers
@@ -60,7 +62,7 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
                 headers.set("x-custom-header", `processed-by-hypervisor-for-${project}`);
                 return new Request(req, { headers });
             },
-            provider: async ({ req }: { req: Request }) => {
+            provider: ({ req }: { req: Request }) => {
                 if (req) {
                     const host = new URL(req.url).hostname;
                     if (host === "localhost") return {
@@ -72,7 +74,7 @@ export default ({ root = Deno.cwd(), basePath = "/", server = { port: 8080 }, lo
                         source: "github:AxionCompany/oxian-js?ref=main",
                         env: { CUSTOM: "1" },
                         githubToken: Deno.env.get("GITHUB_TOKEN") || undefined,
-                        isolated: true,       
+                        isolated: true,
                         // materialize: true
                     };
                     return { project: "local" };
