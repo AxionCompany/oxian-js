@@ -14,7 +14,7 @@ import { fromFileUrl } from "@std/path";
 import { startServer } from "./src/server/server.ts";
 import { resolveRouter } from "./src/router/index.ts";
 import { printBanner } from "./src/cli/banner.ts";
-import type { EffectiveConfig, OxianConfig } from "./src/config/types.ts";
+import type { EffectiveConfig, OxianConfig } from "./src/types.ts";
 import type { Resolver } from "./src/resolvers/types.ts";
 import { createResolver } from "./src/resolvers/index.ts";
 
@@ -378,6 +378,14 @@ if (import.meta.main) {
       await writeJsonWithPrompt("deno.json", denoAppJson);
       await writeTextWithPrompt("llm.txt", llmText);
 
+      // Create quickstart route
+      try {
+        await Deno.mkdir(routesDirVal, { recursive: true });
+      } catch { /* ignore */ }
+      const helloRoutePath = `${routesDirVal}/index.ts`;
+      const helloRoute = `export function GET() {\n  return { message: \"Hello, Oxian!\" };\n}\n`;
+      await writeTextWithPrompt(helloRoutePath, helloRoute);
+
       console.log("[cli] init completed");
       Deno.exit(0);
     } catch (e) {
@@ -424,7 +432,7 @@ if (import.meta.main) {
     for (const base of bases) {
       resolver = createResolver(base ? new URL(base) : undefined, envDefaults);
 
-      const prevDiscovered = discovered;
+      // retain hook point for future differential merging if needed
       // Resolve repository root-ish for github and http(by path), then try well-known config names
       const candidates = [
         "oxian.config.ts",

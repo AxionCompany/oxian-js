@@ -21,7 +21,7 @@ import type {
   Tool,
   CallToolResult,
   MCPServerConfig,
-} from "@oxian/oxian-js/mcp.ts";
+} from "@oxian/oxian-js/mcp";
 
 // Define your tool
 const myTool: Tool = {
@@ -78,8 +78,8 @@ export default function() {
 Create `routes/mcp/index.ts`:
 
 ```typescript
-import type { Data, Context } from "@oxian/oxian-js/types.ts";
-import { handleMCPRequest, handleMCPInfo } from "@oxian/oxian-js/mcp.ts";
+import type { Data, Context } from "@oxian/oxian-js/types";
+import { handleMCPRequest, handleMCPInfo } from "@oxian/oxian-js/mcp";
 
 export async function POST(data: Data, context: Context) {
   const mcpConfig = context.dependencies.mcpServer;
@@ -103,7 +103,7 @@ export function GET(_data: Data, context: Context) {
 Create `routes/mcp/middleware.ts`:
 
 ```typescript
-import type { Data, Context } from "@oxian/oxian-js/types.ts";
+import type { Data, Context } from "@oxian/oxian-js/types";
 
 export default function(_data: Data, context: Context) {
   const apiKey = Deno.env.get("MCP_API_KEY");
@@ -152,7 +152,7 @@ import type {
   ServerInfo,
   ServerCapabilities,
   ClientInfo,
-} from "@oxian/oxian-js/mcp.ts";
+} from "@oxian/oxian-js/mcp";
 ```
 
 ## 🔧 Framework Utilities
@@ -242,7 +242,7 @@ See the reference implementation in `routes/mcp/`:
 
 ### 1. Type Everything
 ```typescript
-import type { Tool, CallToolResult } from "@oxian/oxian-js/mcp.ts";
+import type { Tool, CallToolResult } from "@oxian/oxian-js/mcp";
 
 const myTool: Tool = { /* ... */ };
 
@@ -253,7 +253,7 @@ async function callMyTool(args: Record<string, unknown>): Promise<CallToolResult
 
 ### 2. Use MCPServerConfig Type
 ```typescript
-import type { MCPServerConfig } from "@oxian/oxian-js/mcp.ts";
+import type { MCPServerConfig } from "@oxian/oxian-js/mcp";
 
 const mcpServer: MCPServerConfig = {
   // TypeScript ensures you include all required fields

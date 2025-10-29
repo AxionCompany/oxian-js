@@ -123,19 +123,24 @@ export type OxianConfig = {
         denoConfig?: string; // per-project override
         dependencies?: { initial?: Record<string, unknown> };
       }>;
-      // Built-in minimal OTLP HTTP collector (http/protobuf or http/json)
+      // Built-in minimal OTLP HTTP collector (http/protobuf or http/json); accepts and returns 202
       otelCollector?: {
         enabled?: boolean;
         port?: number; // default 4318
         pathPrefix?: string; // default "/v1"
-        // Called for each export request; body is raw bytes (opaque to oxian)
-        onExport?: (input: {
+      };
+      // Minimal OTLP HTTP proxy: accepts OTLP HTTP and optionally forwards to an upstream collector
+      otelProxy?: {
+        enabled?: boolean;
+        port?: number; // default 4318
+        pathPrefix?: string; // default "/v1"
+        upstream?: string; // e.g., http://localhost:4318
+        // Return true to forward to upstream, false to drop (respond 202). `req` is a clone; reading it won't affect forwarding.
+        onRequest?: (input: {
           kind: "traces" | "metrics" | "logs";
-          headers: Record<string, string>;
-          body: Uint8Array;
-          contentType: string;
+          req: Request;
           project?: string;
-        }) => void | Promise<void>;
+        }) => boolean | Promise<boolean>;
       };
       // Request transformation hook: called before proxying to worker
       onRequest?: (input: {

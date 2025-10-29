@@ -9,10 +9,10 @@
 
 import type { Data, Context } from "@oxian/oxian-js/types";
 import type { MCPServerConfig } from "@oxian/oxian-js/mcp";
-import { 
-  handleMCPRequest, 
-  handleMCPInfo,
-  handleMCPSessionDelete 
+import {
+    handleMCPRequest,
+    handleMCPInfo,
+    handleMCPSessionDelete
 } from "@oxian/oxian-js/mcp";
 
 /**
@@ -28,17 +28,21 @@ import {
  * - Response formatting
  */
 export async function POST(data: Data, context: Context) {
-  try {
-    // Extract MCP config from dependencies (defined in dependencies.ts)
-    const mcpConfig = (context.dependencies as { mcpServer: MCPServerConfig }).mcpServer;
-    
-    return await handleMCPRequest(data, context, mcpConfig);
-  } catch (error) {
-    console.error("Error handling MCP request", error);
-    return {
-      error: "Internal server error"
-    };
-  }
+    try {
+        // Extract MCP config from dependencies (defined in dependencies.ts)
+        const { dependencies } = context;
+
+        const { mcpServer } = dependencies;
+
+        const mcpConfig = mcpServer as MCPServerConfig;
+
+        return await handleMCPRequest(data, context, mcpConfig);
+    } catch (error) {
+        console.error("Error handling MCP request", error);
+        return {
+            error: "Internal server error"
+        };
+    }
 }
 
 /**
@@ -51,17 +55,19 @@ export async function POST(data: Data, context: Context) {
  * - Usage examples
  */
 export function GET(_data: Data, context: Context) {
-  try {
-    // Extract MCP config from dependencies and return server info
-    const mcpConfig = (context.dependencies as { mcpServer: MCPServerConfig }).mcpServer;
-    return handleMCPInfo(mcpConfig);
-  } catch (error) {
-    console.error("Error in GET handler:", error);
-    return {
-      error: "Internal server error",
-      message: error instanceof Error ? error.message : String(error)
-    };
-  }
+    try {
+        // Extract MCP config from dependencies and return server info
+        const { dependencies } = context;
+        const { mcpServer } = dependencies;
+        const mcpConfig = mcpServer as MCPServerConfig;
+        return handleMCPInfo(mcpConfig);
+    } catch (error) {
+        console.error("Error in GET handler:", error);
+        return {
+            error: "Internal server error",
+            message: error instanceof Error ? error.message : String(error)
+        };
+    }
 }
 
 /**
@@ -71,5 +77,5 @@ export function GET(_data: Data, context: Context) {
  * Requires Mcp-Session-Id header.
  */
 export function DELETE(data: Data, context: Context) {
-  return handleMCPSessionDelete(data, context);
+    return handleMCPSessionDelete(data, context);
 }

@@ -1,11 +1,8 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.11.1",
+  "version": "0.12.2",
   "exports": {
     ".": "./cli.ts",
-    "./server": "./src/server/server.ts",
-    "./config": "./src/config/types.ts",
-    "./runtime": "./src/runtime/module_loader.ts",
     "./types": "./src/types.ts",
     "./mcp": "./src/utils/mcp.ts"
   },
@@ -42,7 +39,7 @@
   ],
   "imports": {
     "oxian-js/": "./src/",
-    "@oxian/oxian-js/mcp": "jsr:@oxian/oxian-js@^0.11.0/mcp",
+    "@oxian/oxian-js": "jsr:@oxian/oxian-js@^0.12.0",
     "@std/path": "jsr:@std/path@1.1.1",
     "@std/cli/parse-args": "jsr:@std/cli@1.0.21/parse-args",
     "@std/jsonc/parse": "jsr:@std/jsonc@1.0.2/parse",

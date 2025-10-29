@@ -26,9 +26,20 @@ routes/
   dependencies.ts
 ```
 
-Example `routes/index.ts`:
+Example `routes/index.ts` (with JSDoc - no imports needed):
 ```ts
-import { Data, Context } from 'oxian-js' // import types for type-safety
+/**
+ * @param {import("@oxian/oxian-js/types").Data} data
+ * @param {import("@oxian/oxian-js/types").Context} context
+ */
+export function GET(data, context) {
+  return { message: "Hello, Oxian!" };
+}
+```
+
+Or with explicit imports:
+```ts
+import type { Data, Context } from '@oxian/oxian-js/types';
 
 export function GET(data: Data, context: Context) {
   return { message: "Hello, Oxian!" };
@@ -37,9 +48,10 @@ export function GET(data: Data, context: Context) {
 
 Example `routes/users/[id].ts`:
 ```ts
-import { Data, Context } from 'oxian-js' // import types for type-safety
-
-export async function GET({ id }: Data) {
+/**
+ * @param {import("@oxian/oxian-js/types").Data} data
+ */
+export async function GET({ id }) {
   return { user: { id } };
 }
 ```
@@ -57,6 +69,58 @@ Call endpoint (dynamic param example):
 ```bash
 curl http://localhost:8080/users/123
 ```
+
+TypeScript Support
+------------------
+Oxian provides full type safety via imports or JSDoc comments.
+
+**Approach 1: JSDoc (Recommended - No Imports)**
+```ts
+// routes/users/[id].ts
+/**
+ * @param {import("@oxian/oxian-js/types").Data} data
+ * @param {import("@oxian/oxian-js/types").Context} context
+ */
+export async function GET(data, context) {
+  // Full autocomplete and type checking!
+  const db = context.dependencies.database;
+  return { user: await db.findById(data.id) };
+}
+```
+
+**Approach 2: Explicit Type Imports**
+```ts
+// routes/users/[id].ts
+import type { Data, Context, Handler } from '@oxian/oxian-js/types';
+
+export const GET: Handler = async (data: Data, context: Context) => {
+  const db = context.dependencies.database;
+  return { user: await db.findById(data.id) };
+};
+```
+
+**Available Types from `@oxian/oxian-js/types`:**
+
+Core Types:
+- `Context` - Request context (requestId, request, dependencies, response, oxian)
+- `Data` - Request data (merged params + query + body)
+- `Handler` - Handler function signature
+- `Middleware` - Middleware function signature
+- `Interceptors` - Interceptor configuration
+- `ResponseController` - Response helper methods
+- `OxianHttpError` - HTTP error class
+- `OxianConfig` - Configuration schema
+- `EffectiveConfig` - Resolved configuration
+
+MCP (Model Context Protocol) Types:
+- `MCPServerConfig` - MCP server configuration
+- `Tool` / `ToolCallParams` / `ToolResponse` - Tool definitions
+- `Resource` / `ResourceTemplate` / `ResourceContents` - Resource types
+- `Prompt` / `PromptMessage` - Prompt definitions
+- `JsonRpcRequest` / `JsonRpcResponse` / `JsonRpcError` - JSON-RPC 2.0
+- `ServerInfo` / `ClientInfo` / `ServerCapabilities` - Server metadata
+- `InitializeParams` / `InitializeResult` - Initialize handshake
+- `handleMCPRequest` / `handleMCPInfo` - Helper functions
 
 Handler Contract
 ----------------
@@ -108,7 +172,7 @@ Additionally, the original raw request bytes are available as `context.request.r
 Sending Responses
 -----------------
 1) Return a value: it will be serialized (JSON by default) unless you return a Response/stream.
-2) Or use `context.response.send(body, init)` to set status/headers explicitly.
+2) Or use `context.response.send(body, init)` to set status/headers explicitly. **`send()` now behaves like Express:** the HTTP response is flushed as soon as it is called, so do not await additional work that the client must see; schedule background work with `queueMicrotask`, `setTimeout`, or a job queue instead.
 3) Streaming: `const write = response.stream({ headers: { "content-type": "text/plain" } }); write("chunk"); write.close?.();`
 4) SSE: `const sse = response.sse({ retry: 1000, keepOpen: true }); sse.send({ tick: 1 }, { event: "ticks" }); sse.close();`
 
@@ -287,10 +351,11 @@ This section describes the most relevant configuration keys. The full, authorita
       - staticCacheControl: Cache-control header for static assets.
     - projects: Multi-project configuration with per-project routing basePath and overrides.
       - Each project may set `idleTtlMs` (ms). When set, workers stop after being idle (no active requests/streams) for this duration. Default is disabled unless specified (provider → project → autoscale fallback).
-    - otelCollector (TS config only): Minimal built-in OTLP HTTP collector.
-      - enabled?: boolean; port?: number; pathPrefix?: string; onExport?: (input: { kind: "traces"|"metrics"|"logs"; headers: Record<string,string>; body: Uint8Array; contentType: string; project?: string }) => void | Promise<void>
-      - Workers default OTLP endpoint to this collector when `logging.otel.enabled=true` and no endpoint provided.
-      - Hypervisor injects `x-oxian-project` in OTLP headers so the collector can tag payloads by project.
+    - otelProxy (TS config only): Minimal built-in OTLP HTTP proxy.
+      - enabled?: boolean; port?: number; pathPrefix?: string; upstream?: string; onRequest?: (input: { kind: "traces"|"metrics"|"logs"; req: Request; project?: string; contentType: string; headers: Record<string,string> }) => boolean | Promise<boolean>
+      - Note: `req` is a clone; reading it won't consume the forwarded body. Original body is streamed to upstream.
+      - Workers default OTLP endpoint to this proxy when `logging.otel.enabled=true` and no endpoint provided.
+      - Hypervisor injects `x-oxian-project` in OTLP headers for tagging. If no `upstream` or onRequest=false, proxy responds 202 and drops.
     - onRequest (TS config only): Request transformation hook called before proxying to workers.
       - Type: (input: { req: Request; project: string }) => Promise<Request> | Request
       - Allows modifying requests (headers, URL, body) before they reach workers.
@@ -398,7 +463,7 @@ LLM Authoring Checklist
 - Place new API under the routes directory; use `[param]` and `[...slug]` when needed.
 - Export method functions in UPPERCASE or a default handler.
 - Keep stateful clients in `dependencies.ts` factories; reuse via `context.dependencies`.
-- Use `response.send` for custom status/headers; otherwise return values directly.
+- Use `response.send` for custom status/headers; calling it ends the response immediately, so do background work without awaiting it afterwards.
 - For SSE, call `response.sse({ keepOpen: true })` and `close()` to finish.
 - Avoid Node-specific APIs; rely on Web APIs and ESM.
 - Update `deno.json` import map if introducing new aliases.
@@ -407,8 +472,9 @@ LLM Authoring Checklist
 Health & Observability
 ----------------------
 - Hypervisor exposes `HEAD /_health` for readiness.
-- Request IDs can be propagated via `logging.requestIdHeader`.
- - OpenTelemetry (Deno): enable via `logging.otel.enabled=true`. To debug payloads, set `logging.otel.protocol = "http/json"` and decode body bytes with `new TextDecoder().decode(body)` in `hv.otelCollector.onExport`.
+- Request IDs default to spanId for automatic trace correlation; can be overridden via `logging.requestIdHeader`.
+ - OpenTelemetry (Deno): enable via `logging.otel.enabled=true`. To debug payloads with proxy, set `logging.otel.protocol = "http/json"` and inspect payloads inside `hv.otelProxy.onRequest`.
+ - Logging: use console.* for log export (attributes are stringified into body); use span.addEvent() for structured attributes.
 
 Custom OTEL Hooks (recommended for advanced metrics/spans):
 ```ts
@@ -445,13 +511,12 @@ export default {
   logging: { otel: { enabled: true, serviceName: "oxian-server" } },
   runtime: {
     hv: {
-      otelCollector: {
+      otelProxy: {
         enabled: true,
         port: 4318,
         pathPrefix: "/v1",
-        onExport: async ({ kind, headers, body, contentType, project }) => {
-          console.log("[otel-collector] export", { kind, project, contentType, bytes: body.byteLength });
-        }
+        upstream: "http://collector:4318",
+        onRequest: ({ project }) => ["default", "billing"].includes(project || "default")
       }
     }
   }

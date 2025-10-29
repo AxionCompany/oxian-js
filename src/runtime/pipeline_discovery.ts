@@ -1,12 +1,8 @@
 import { dirname, fromFileUrl, join, toFileUrl } from "@std/path";
 import type { Resolver } from "../resolvers/index.ts";
+import type { PipelineFiles } from "./types.ts";
 
-export type PipelineFiles = {
-  dependencyFiles: URL[];
-  middlewareFiles: URL[];
-  interceptorFiles: URL[];
-  sharedFiles: URL[];
-};
+export type { PipelineFiles };
 
 export async function discoverPipelineFiles(
   chain: Array<string | URL>,
@@ -116,27 +112,7 @@ export async function discoverPipelineFiles(
     const [depsjsOk, depstsOk, mwjsOk, mwtsOk, icjsOk, ictsOk, shjsOk, shtsOk] =
       await Promise.all(promises);
 
-    if (DEBUG) {
-      try {
-        console.log("[pipeline] probe", {
-          level: typeof level === "string" ? level : level.toString(),
-          depsjs: typeof depsjs === "string" ? depsjs : depsjs.toString(),
-          depsjsOk,
-          depsts: typeof depsts === "string" ? depsts : depsts.toString(),
-          depstsOk,
-          mwjs: typeof mwjs === "string" ? mwjs : mwjs.toString(),
-          mwjsOk,
-          mwts: typeof mwts === "string" ? mwts : mwts.toString(),
-          mwtsOk,
-          icjs: typeof icjs === "string" ? icjs : icjs.toString(),
-          icjsOk,
-          shjs: typeof shjs === "string" ? shjs : shjs.toString(),
-          shjsOk,
-          shts: typeof shts === "string" ? shts : shts.toString(),
-          shtsOk,
-        });
-      } catch (_e) { /* ignore log error */ }
-    }
+   
     if (depsjsOk) {
       files.dependencyFiles.push(
         typeof depsjs === "string" ? toFileUrl(depsjs) : depsjs,
