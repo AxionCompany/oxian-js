@@ -134,6 +134,14 @@ export async function runHandler(
     typeof (state.body as ReadableStream).getReader === "function";
   const isSse = () =>
     (state.headers.get("content-type") || "").startsWith("text/event-stream");
+
+  let resolveSendSignal: (() => void) | undefined;
+  const sendSignal = new Promise<void>((resolve) => {
+    resolveSendSignal = resolve;
+  });
+  state.onSend = () => resolveSendSignal?.();
+  if (state.responded) resolveSendSignal?.();
+
   try {
     // Determine compatibility mode from context (stored under oxian later if needed)
     const handlerMode =
@@ -146,10 +154,23 @@ export async function runHandler(
       state,
       handlerMode,
     );
-    if (
-      isStreaming() &&
-      typeof (maybePromise as Promise<unknown>)?.then === "function"
-    ) {
+    const isThenable =
+      typeof (maybePromise as Promise<unknown>)?.then === "function";
+
+    if (state.responded && !isStreaming()) {
+      if (isThenable) {
+        Promise.resolve(maybePromise).catch((err) => {
+          console.error(
+            "[oxian] Handler rejected after response.send completed",
+            err,
+          );
+        });
+      }
+      state.onSend = undefined;
+      return { result: undefined };
+    }
+
+    if (isStreaming() && isThenable) {
       (maybePromise as Promise<unknown>)
         .then((result) => {
           if (isSse()) {
@@ -185,8 +206,52 @@ export async function runHandler(
           }
           state.streamClose?.();
         });
+      state.onSend = undefined;
       return { result: undefined };
     }
+
+    if (!isStreaming()) {
+      type Outcome =
+        | { type: "handler"; result: unknown }
+        | { type: "error"; error: unknown }
+        | { type: "send" };
+
+      const handlerOutcome: Promise<Outcome> = isThenable
+        ? (maybePromise as Promise<unknown>).then<Outcome, Outcome>(
+          (result) => ({ type: "handler", result }),
+          (error) => ({ type: "error", error }),
+        )
+        : Promise.resolve({ type: "handler", result: maybePromise });
+
+      const raceCandidates: Promise<Outcome>[] = [handlerOutcome];
+      if (!state.responded) {
+        raceCandidates.push(sendSignal.then<Outcome>(() => ({ type: "send" })));
+      }
+
+      const firstSettled = await Promise.race(raceCandidates);
+
+      if (firstSettled.type === "send") {
+        handlerOutcome.then((outcome) => {
+          if (outcome.type === "error") {
+            console.error(
+              "[oxian] Handler rejected after response.send completed",
+              outcome.error,
+            );
+          }
+        });
+        state.onSend = undefined;
+        return { result: undefined };
+      }
+
+      state.onSend = undefined;
+      if (firstSettled.type === "error") {
+        throw firstSettled.error;
+      }
+      const { result } = firstSettled;
+      toHttpResponse(result, state);
+      return { result };
+    }
+
     const result = await maybePromise;
     if (isStreaming()) {
       // If handler returned synchronously, auto-close stream when it completes (SSE and non-SSE)
@@ -199,8 +264,10 @@ export async function runHandler(
       }
       // For regular streams, keep open until handler returns; then close here
       if (!(isSse() && state.sseKeepOpen)) state.streamClose?.();
+      state.onSend = undefined;
       return { result: undefined };
     }
+    state.onSend = undefined;
     toHttpResponse(result, state);
     return { result };
   } catch (err) {
@@ -218,6 +285,7 @@ export async function runHandler(
       state.status = shaped.status;
       state.body = shaped.body;
     }
+    state.onSend = undefined;
     return { error: err };
   }
 }

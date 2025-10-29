@@ -271,6 +271,8 @@ export function POST(data, { response }) {
 }
 ```
 
+> Tip: `response.send()` finalizes the HTTP reply immediately. If you still need to do work, kick it off without awaiting (for example, `queueMicrotask(() => ...)`) so the client sees the response right away.
+
 ### Status Code Patterns
 
 ```ts

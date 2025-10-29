@@ -527,6 +527,8 @@ export function GET(_, { response }) {
 }
 ```
 
+> ℹ️ `response.send()` finalizes the HTTP reply immediately (similar to Express). If you need to kick off background work after sending, do it without awaiting the result—for example with `queueMicrotask(() => doWorkLater())`.
+
 ### Different Response Types
 
 ```ts

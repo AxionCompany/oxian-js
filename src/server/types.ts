@@ -10,7 +10,7 @@
  * This type tracks the current state of an HTTP response being constructed,
  * including status, headers, body, and streaming state.
  */
-export type ResponseState = {
+export interface ResponseState {
   status: number;
   headers: Headers;
   statusText?: string;
@@ -19,5 +19,9 @@ export type ResponseState = {
   streamClose?: () => void;
   // internal flag to control SSE lifecycle
   sseKeepOpen?: boolean;
-};
+  // marker for whether response.send has been invoked
+  responded?: boolean;
+  // hook for runHandler to observe early send invocation
+  onSend?: () => void;
+}
 

@@ -23,7 +23,17 @@ export function createResponseController(): {
         }
       }
       if (init?.statusText) state.statusText = init.statusText;
+      if (state.responded) {
+        if (Deno.env.get("OXIAN_DEBUG")) {
+          console.warn("[oxian] response.send called after response already sent; ignoring");
+        }
+        return;
+      }
+      state.responded = true;
       state.body = body;
+      const onSend = state.onSend;
+      state.onSend = undefined;
+      onSend?.();
     },
     redirect(url: string, status: 301 | 302 | 303 | 307 | 308 = 302) {
       state.status = status;
