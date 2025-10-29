@@ -172,7 +172,7 @@ Additionally, the original raw request bytes are available as `context.request.r
 Sending Responses
 -----------------
 1) Return a value: it will be serialized (JSON by default) unless you return a Response/stream.
-2) Or use `context.response.send(body, init)` to set status/headers explicitly.
+2) Or use `context.response.send(body, init)` to set status/headers explicitly. **`send()` now behaves like Express:** the HTTP response is flushed as soon as it is called, so do not await additional work that the client must see; schedule background work with `queueMicrotask`, `setTimeout`, or a job queue instead.
 3) Streaming: `const write = response.stream({ headers: { "content-type": "text/plain" } }); write("chunk"); write.close?.();`
 4) SSE: `const sse = response.sse({ retry: 1000, keepOpen: true }); sse.send({ tick: 1 }, { event: "ticks" }); sse.close();`
 
@@ -463,7 +463,7 @@ LLM Authoring Checklist
 - Place new API under the routes directory; use `[param]` and `[...slug]` when needed.
 - Export method functions in UPPERCASE or a default handler.
 - Keep stateful clients in `dependencies.ts` factories; reuse via `context.dependencies`.
-- Use `response.send` for custom status/headers; otherwise return values directly.
+- Use `response.send` for custom status/headers; calling it ends the response immediately, so do background work without awaiting it afterwards.
 - For SSE, call `response.sse({ keepOpen: true })` and `close()` to finish.
 - Avoid Node-specific APIs; rely on Web APIs and ESM.
 - Update `deno.json` import map if introducing new aliases.

@@ -834,6 +834,9 @@ export function createLifecycleManager(
     denoOptionsIn?: string[],
     scriptArgsIn?: string[],
   ): Promise<WorkerHandle> {
+
+    const entryPoint = import.meta.resolve("../../cli.ts").toString();
+
     const denoOptions = denoOptionsIn ?? cachedDenoOptions;
     const scriptArgs = scriptArgsIn ?? cachedScriptArgs;
 
@@ -1041,8 +1044,6 @@ export function createLifecycleManager(
       }
     }
 
-    denoArgs.push(`${import.meta.resolve("../../cli.ts")}`);
-
     const globalSource = Deno.args.find((a) => a.startsWith("--source="))
       ?.split("=")[1];
     const globalConfig = Deno.args.find((a) => a.startsWith("--config="))
@@ -1118,6 +1119,7 @@ export function createLifecycleManager(
         // const matDir = m.dir ? m.dir : (selectedMerged.isolated ? projectDir : projectDir);
         const matArgs: string[] = [
           ...denoArgs,
+          entryPoint,
           "materialize",
           `--source=${effectiveSource}`,
           `--materialize-dir=.`,
@@ -1152,6 +1154,7 @@ export function createLifecycleManager(
       // Second step: run prepare (prepare hooks)
       const prepArgs: string[] = [
         ...denoArgs,
+        entryPoint,
         "prepare",
       ];
 
@@ -1272,11 +1275,36 @@ export function createLifecycleManager(
 
     if (selectedMerged.isolated) {
       spawnEnv.DENO_DIR = `./.deno/DENO_DIR`;
-      const allowRead = finalScriptArgs.find((a) => a.startsWith("--allow-read="))?.split("=")[1] ?? "";
-      const allowWrite = finalScriptArgs.find((a) => a.startsWith("--allow-write="))?.split("=")[1] ?? "";
-      finalScriptArgs.push(`--allow-read=${allowRead ? allowRead + "/**/*" + `,${projectDir}/**/*` : `${projectDir}/**/*`}`);
-      finalScriptArgs.push(`--allow-write=${allowWrite ? allowWrite + "/**/*" + `,${projectDir}/**/*` : `${projectDir}/**/*`}`);
+
+      denoArgs.splice(denoArgs.indexOf("-A"), 1);
+      const allowRead = denoArgs.find((a) => a.startsWith("--allow-read="))?.split("=")[1] ?? "";
+      const allowWrite = denoArgs.find((a) => a.startsWith("--allow-write="))?.split("=")[1] ?? "";
+      // add other allow-* arguments
+
+      // only read and write to projectDir
+      denoArgs.push(`--allow-read=${allowRead ? allowRead  + `,./` : `./`}`);
+      denoArgs.push(`--allow-write=${allowWrite ? allowWrite + "./" + `,./` : `./`}`);
+
+      // allow net, ffi, sys
+      denoArgs.push(`--allow-net`);
+      // allow ffi
+      denoArgs.push(`--allow-ffi`);
+      // allow sys
+      denoArgs.push(`--allow-sys`);
+      // allow import
+      denoArgs.push(`--allow-import`);
+      // allow env
+      denoArgs.push(`--allow-env`);
+      // allow run to specific applications dir, defaults to os's applications dir  
+      denoArgs.push(`--allow-run`);
+      // allow hrtime
+      denoArgs.push(`--allow-hrtime`);
+
     }
+
+
+
+    denoArgs.push(entryPoint);
 
 
     if (Deno.env.get("OXIAN_DEBUG")) {
