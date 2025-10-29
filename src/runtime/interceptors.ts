@@ -1,4 +1,4 @@
-import type { Context, Data, Interceptors } from "../core/types.ts";
+import type { Context, Data, Interceptors } from "../core/index.ts";
 import type { Resolver } from "../resolvers/index.ts";
 
 const interceptorsCache = new Map<string, Record<string, unknown>>();

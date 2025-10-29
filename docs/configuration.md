@@ -30,22 +30,23 @@ The simplest way to configure Oxian is with `oxian.config.json`:
 }
 ```
 
-### Hypervisor OTLP Collector (TypeScript config)
+### Hypervisor OTLP Proxy (TypeScript config)
 
-Enable a minimal built-in OTLP HTTP collector inside the hypervisor. Workers
-default their OTLP endpoint to this collector when `logging.otel.enabled=true`
-and no explicit `endpoint` is set.
+Enable a minimal OTLP HTTP proxy inside the hypervisor. Workers default their
+OTLP endpoint to this proxy when `logging.otel.enabled=true` and no explicit
+`endpoint` is set.
 
 ```typescript
 {
   "runtime": {
     "hv": {
-      "otelCollector": {
-        "enabled": boolean,
-        "port": number,        // default 4318
-        "pathPrefix": string,  // default "/v1"
-        // Called per export: { kind: "traces"|"metrics"|"logs", headers, body, contentType, project }
-        "onExport": Function
+      "otelProxy": {
+        "enabled": true,
+        "port": 4318,
+        "pathPrefix": "/v1",
+        "upstream": "http://collector:4318",
+        // Return true to forward to upstream, false to drop (respond 202)
+        "onRequest": Function
       }
     }
   }

@@ -1,4 +1,4 @@
-import type { Data } from "../core/types.ts";
+import type { Data } from "../core/index.ts";
 import { encodeBase64 } from "@std/encoding/base64";
 
 export async function parseRequestBody(req: Request): Promise<unknown> {

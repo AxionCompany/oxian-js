@@ -1,22 +1,5 @@
 import type {} from "@std/path";
-
-export type RouteRecord = {
-  pattern: string;
-  segments: Array<{ type: "static" | "param" | "catchall"; name?: string }>;
-  fileUrl: URL;
-};
-
-export type RouteMatch =
-  | { route: RouteRecord; params: Record<string, string> }
-  | null;
-
-export type Router = {
-  routes: RouteRecord[];
-  match: (path: string) => RouteMatch;
-};
-
-export type ListDirFn = (dir: URL) => Promise<string[]>;
-export type StatFn = (url: URL) => Promise<{ isFile: boolean }>;
+import type { RouteRecord, RouteMatch, Router, ListDirFn, StatFn } from "./types.ts";
 
 function toSegments(pattern: string): RouteRecord["segments"] {
   return pattern.split("/").filter(Boolean).map((seg) => {

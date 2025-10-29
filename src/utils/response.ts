@@ -1,15 +1,7 @@
-import type { ResponseController } from "../core/types.ts";
+import type { ResponseController } from "../core/index.ts";
+import type { ResponseState } from "../server/types.ts";
 
-export type ResponseState = {
-  status: number;
-  headers: Headers;
-  statusText?: string;
-  body?: unknown;
-  streamWrite?: (chunk: Uint8Array | string) => void;
-  streamClose?: () => void;
-  // internal flag to control SSE lifecycle
-  sseKeepOpen?: boolean;
-};
+export type { ResponseState };
 
 export function createResponseController(): {
   controller: ResponseController;
@@ -31,7 +23,22 @@ export function createResponseController(): {
         }
       }
       if (init?.statusText) state.statusText = init.statusText;
+      if (state.responded) {
+        if (Deno.env.get("OXIAN_DEBUG")) {
+          console.warn("[oxian] response.send called after response already sent; ignoring");
+        }
+        return;
+      }
+      state.responded = true;
       state.body = body;
+      const onSend = state.onSend;
+      state.onSend = undefined;
+      onSend?.();
+    },
+    redirect(url: string, status: 301 | 302 | 303 | 307 | 308 = 302) {
+      state.status = status;
+      state.headers.set("location", url);
+      // Do not set a body here; let finalizeResponse return an empty body with proper status
     },
     stream(initOrChunk) {
       // If first arg is a chunk, ensure stream is open and write without closing.

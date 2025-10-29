@@ -1,31 +1,11 @@
-import type { EffectiveConfig } from "../config/types.ts";
+import type { EffectiveConfig } from "../config/index.ts";
 import { createLazyRouter } from "./lazy_router.ts";
 import { buildEagerRouter } from "./eager_router.ts";
 import type { Resolver } from "../resolvers/index.ts";
+import type { ResolvedRouter } from "./types.ts";
 
-export type ResolvedRouter = {
-  router: {
-    routes: Array<{ pattern: string }>;
-    match: (
-      path: string,
-    ) => {
-      route: { pattern: string; fileUrl: URL };
-      params: Record<string, string>;
-    } | null;
-  } & {
-    __asyncMatch?: (
-      path: string,
-    ) => Promise<
-      {
-        route: { pattern: string; fileUrl: URL };
-        params: Record<string, string>;
-      } | null
-    >;
-  };
-  loaderManager: { getLoaders: () => unknown[] };
-  isRemote: boolean;
-  routesRootUrl?: URL;
-};
+// Re-export types for public API
+export type { ResolvedRouter, RouteRecord, RouteMatch, Router } from "./types.ts";
 
 export async function resolveRouter(
   { config }: { config: EffectiveConfig },

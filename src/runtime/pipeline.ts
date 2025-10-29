@@ -1,10 +1,24 @@
-import type { Context, Handler } from "../core/types.ts";
-import { OxianHttpError } from "../core/types.ts";
-import { ResponseState } from "../utils/response.ts";
+import type { Context, Handler } from "../core/index.ts";
+import { OxianHttpError } from "../core/index.ts";
+import type { ResponseState } from "../server/types.ts";
 
 function toHttpResponse(result: unknown, state: ResponseState): void {
   if (state.body !== undefined) return;
   if (result === undefined) {
+    return;
+  }
+  // If a native Fetch API Response is returned, adopt its fields into state
+  if (result instanceof Response) {
+    state.status = result.status;
+    state.statusText = result.statusText || state.statusText;
+    // Merge headers from the Response, overriding existing keys
+    for (const [k, v] of result.headers.entries()) {
+      state.headers.set(k, v);
+    }
+    // If the Response has a body, forward it; otherwise keep body undefined
+    if (result.body) {
+      state.body = result.body;
+    }
     return;
   }
   if (typeof result === "string" || result instanceof Uint8Array) {
@@ -19,11 +33,24 @@ export function shapeError(err: unknown): { status: number; body: unknown } {
     const anyErr = err as Record<string, unknown>;
     const statusCode = typeof anyErr.statusCode === "number"
       ? anyErr.statusCode
-      : undefined;
+      : (typeof (anyErr as { status?: unknown }).status === "number"
+        ? (anyErr as { status?: number }).status
+        : undefined);
     if (statusCode) {
+      const msg = typeof anyErr.message === "string"
+        ? anyErr.message
+        : "Error";
+      const code = typeof anyErr.code === "string" ? anyErr.code : undefined;
+      const details = (anyErr as { details?: unknown }).details;
       return {
         status: statusCode,
-        body: { error: (anyErr.message as string) ?? "Error" },
+        body: {
+          error: {
+            message: msg,
+            ...(code ? { code } : {}),
+            ...(details !== undefined ? { details } : {}),
+          },
+        },
       };
     }
   }
@@ -35,6 +62,7 @@ export function shapeError(err: unknown): { status: number; body: unknown } {
       },
     };
   }
+  console.error("[unhandled] Error", err);
   if (Deno.env.get("OXIAN_DEBUG") === "1") {
     const e = err as Error;
     return {
@@ -65,9 +93,9 @@ async function callHandlerWithCompatibility(
       throw new Error("Invalid handler export");
     }
     const bound = (modExport as (this: unknown, ...args: unknown[]) => unknown)
-      .bind(context.dependencies);
+      .bind({ ...context.dependencies, ...context.request });
     // provide (data, { response })
-    return await bound(data, { response: context.response });
+    return await bound(data, context.response);
   }
   if (handlerMode === "factory") {
     console.warn(
@@ -106,6 +134,14 @@ export async function runHandler(
     typeof (state.body as ReadableStream).getReader === "function";
   const isSse = () =>
     (state.headers.get("content-type") || "").startsWith("text/event-stream");
+
+  let resolveSendSignal: (() => void) | undefined;
+  const sendSignal = new Promise<void>((resolve) => {
+    resolveSendSignal = resolve;
+  });
+  state.onSend = () => resolveSendSignal?.();
+  if (state.responded) resolveSendSignal?.();
+
   try {
     // Determine compatibility mode from context (stored under oxian later if needed)
     const handlerMode =
@@ -118,10 +154,23 @@ export async function runHandler(
       state,
       handlerMode,
     );
-    if (
-      isStreaming() &&
-      typeof (maybePromise as Promise<unknown>)?.then === "function"
-    ) {
+    const isThenable =
+      typeof (maybePromise as Promise<unknown>)?.then === "function";
+
+    if (state.responded && !isStreaming()) {
+      if (isThenable) {
+        Promise.resolve(maybePromise).catch((err) => {
+          console.error(
+            "[oxian] Handler rejected after response.send completed",
+            err,
+          );
+        });
+      }
+      state.onSend = undefined;
+      return { result: undefined };
+    }
+
+    if (isStreaming() && isThenable) {
       (maybePromise as Promise<unknown>)
         .then((result) => {
           if (isSse()) {
@@ -157,8 +206,52 @@ export async function runHandler(
           }
           state.streamClose?.();
         });
+      state.onSend = undefined;
       return { result: undefined };
     }
+
+    if (!isStreaming()) {
+      type Outcome =
+        | { type: "handler"; result: unknown }
+        | { type: "error"; error: unknown }
+        | { type: "send" };
+
+      const handlerOutcome: Promise<Outcome> = isThenable
+        ? (maybePromise as Promise<unknown>).then<Outcome, Outcome>(
+          (result) => ({ type: "handler", result }),
+          (error) => ({ type: "error", error }),
+        )
+        : Promise.resolve({ type: "handler", result: maybePromise });
+
+      const raceCandidates: Promise<Outcome>[] = [handlerOutcome];
+      if (!state.responded) {
+        raceCandidates.push(sendSignal.then<Outcome>(() => ({ type: "send" })));
+      }
+
+      const firstSettled = await Promise.race(raceCandidates);
+
+      if (firstSettled.type === "send") {
+        handlerOutcome.then((outcome) => {
+          if (outcome.type === "error") {
+            console.error(
+              "[oxian] Handler rejected after response.send completed",
+              outcome.error,
+            );
+          }
+        });
+        state.onSend = undefined;
+        return { result: undefined };
+      }
+
+      state.onSend = undefined;
+      if (firstSettled.type === "error") {
+        throw firstSettled.error;
+      }
+      const { result } = firstSettled;
+      toHttpResponse(result, state);
+      return { result };
+    }
+
     const result = await maybePromise;
     if (isStreaming()) {
       // If handler returned synchronously, auto-close stream when it completes (SSE and non-SSE)
@@ -171,8 +264,10 @@ export async function runHandler(
       }
       // For regular streams, keep open until handler returns; then close here
       if (!(isSse() && state.sseKeepOpen)) state.streamClose?.();
+      state.onSend = undefined;
       return { result: undefined };
     }
+    state.onSend = undefined;
     toHttpResponse(result, state);
     return { result };
   } catch (err) {
@@ -190,6 +285,7 @@ export async function runHandler(
       state.status = shaped.status;
       state.body = shaped.body;
     }
+    state.onSend = undefined;
     return { error: err };
   }
 }
