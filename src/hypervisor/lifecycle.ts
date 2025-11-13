@@ -216,8 +216,6 @@ export async function startHypervisor(
       );
     }
 
-    console.log("[hv] selected", selected);
-
     // All requests are proxied to the selected worker; project-specific web handling occurs inside the worker server
 
     let pool = manager.getPool(selected.project);
@@ -326,13 +324,6 @@ export async function startHypervisor(
           status: res.status,
           target,
           ms: Math.round(performance.now() - p0),
-        });
-      } else if (!OTEL_OR_COLLECTOR) {
-        console.log(`[hv] proxy_res`, {
-          project: selected.project,
-          status: res.status,
-          statusText: res.statusText,
-          target,
         });
       }
       const body = res.body;
@@ -594,7 +585,7 @@ export async function startHypervisor(
       const routesDir = config.routing?.routesDir ?? "routes";
       const watchDir = join(root, routesDir);
       const watcher = Deno.watchFs([watchDir], { recursive: true });
-      console.log(`[hv] watching`, { dir: watchDir });
+      console.log(`[hv] watching`, JSON.stringify({ dir: watchDir }));
       let timer: number | undefined;
       (async () => {
         for await (const _ev of watcher) {
@@ -1302,10 +1293,7 @@ export function createLifecycleManager(
 
     }
 
-
-
     denoArgs.push(entryPoint);
-
 
     if (Deno.env.get("OXIAN_DEBUG")) {
       console.log("[hv] projectDir", projectDir);
@@ -1317,8 +1305,6 @@ export function createLifecycleManager(
         ...finalScriptArgs,
       ]);
     }
-
-    console.log("[hv] spawning env", spawnEnv);
 
     const proc = new Deno.Command(Deno.execPath(), {
       args: [...denoArgs, ...finalScriptArgs],
