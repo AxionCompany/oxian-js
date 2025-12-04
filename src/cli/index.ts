@@ -30,14 +30,20 @@ async function readLocalLLM(): Promise<string> {
   // 2) Try HTTP(S) fetch when running from remote URL
   if (src.protocol === "http:" || src.protocol === "https:") {
     try {
-      const res = await fetch(src.toString());
+      const res = await fetch(import.meta.resolve(src.toString()));
       if (res.ok) return await res.text();
     } catch { /* fallthrough */ }
   }
-  // 3) Fallback using resolver importer (supports remote + raw imports)
+
+  // 3) If is jsr: then use the fetch resolver to fetch the file
+  if (src.toString().startsWith("jsr:")) {
+    const res = await fetch(import.meta.resolve(src.toString()));
+    if (res.ok) return await res.text();
+  }
+
+  // 4) Fallback using resolver importer (supports remote + raw imports)
   try {
-    const resolver = createResolver(src, {});
-    const mod = await resolver.import(src);
+    const mod = await import(src.toString());
     const candidate = (mod as { default?: unknown })?.default ?? (mod as unknown);
     if (typeof candidate === "string") return candidate;
     throw new Error(
