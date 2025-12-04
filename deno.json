@@ -1,10 +1,10 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.12.6",
+  "version": "0.12.7",
   "exports": {
     ".": "./cli.ts",
     "./types": "./src/types.ts",
-    "./mcp": "./src/utils/mcp.ts",
+    "./mcp": "./src/utils/mcp.ts"
   },
   "publish": {
     "include": [
