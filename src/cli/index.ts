@@ -34,12 +34,15 @@ async function readLocalLLM(): Promise<string> {
       if (res.ok) return await res.text();
     } catch { /* fallthrough */ }
   }
-  // 3) Fallback to raw import (requires raw-imports capability)
+  // 3) Fallback using resolver importer (supports remote + raw imports)
   try {
-    const { default: content } = await import(src.toString(), {
-      with: { type: "text" },
-    });
-    return content as unknown as string;
+    const resolver = createResolver(src, {});
+    const mod = await resolver.import(src);
+    const candidate = (mod as { default?: unknown })?.default ?? (mod as unknown);
+    if (typeof candidate === "string") return candidate;
+    throw new Error(
+      `[cli] unexpected llm.txt content type: ${typeof candidate}`,
+    );
   } catch (e) {
     throw new Error(`[cli] failed to load llm.txt: ${(e as Error)?.message}`);
   }
@@ -347,7 +350,7 @@ export async function main() {
       // deno.json template for apps using oxian-js
       const denoAppJson: Record<string, unknown> = {
         imports: {
-          "@oxian/oxian-js": "jsr:@oxian/oxian-js",
+          "@oxianjs": "jsr:@oxian/oxian-js",
         },
         tasks: {
           dev: "deno run -A --env -r jsr:@oxian/oxian-js dev",
