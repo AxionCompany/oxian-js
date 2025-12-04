@@ -5,7 +5,6 @@
     ".": "./cli.ts",
     "./types": "./src/types.ts",
     "./mcp": "./src/utils/mcp.ts",
-    "./llm.txt": "./llm.txt"
   },
   "publish": {
     "include": [
