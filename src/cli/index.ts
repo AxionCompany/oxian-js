@@ -20,7 +20,7 @@ import { createResolver } from "../resolvers/index.ts";
 
 // Helpers for init command (hoisted to module scope for linting)
 async function readLocalLLM(): Promise<string> {
-  const src = new URL("./llm.txt", import.meta.url);
+  const src = new URL("../../llm.txt", import.meta.url);
   // 1) Try reading from filesystem when available
   if (src.protocol === "file:") {
     try {
@@ -30,14 +30,14 @@ async function readLocalLLM(): Promise<string> {
   // 2) Try HTTP(S) fetch when running from remote URL
   if (src.protocol === "http:" || src.protocol === "https:") {
     try {
-      const res = await fetch(import.meta.resolve(src.toString()));
+      const res = await fetch(src.toString());
       if (res.ok) return await res.text();
     } catch { /* fallthrough */ }
   }
 
   // 3) If is jsr: then use the fetch resolver to fetch the file
   if (src.toString().startsWith("jsr:")) {
-    const res = await fetch(import.meta.resolve('../../llm.txt'));
+    const res = await fetch(src.toString());
     if (res.ok) return await res.text();
   }
 
