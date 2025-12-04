@@ -37,7 +37,7 @@ async function readLocalLLM(): Promise<string> {
 
   // 3) If is jsr: then use the fetch resolver to fetch the file
   if (src.toString().startsWith("jsr:")) {
-    const res = await fetch(import.meta.resolve(src.toString()));
+    const res = await fetch(import.meta.resolve('jsr:@oxian/oxian-js/llm.txt'));
     if (res.ok) return await res.text();
   }
 

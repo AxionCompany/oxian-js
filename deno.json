@@ -1,10 +1,11 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.12.5",
+  "version": "0.12.6",
   "exports": {
     ".": "./cli.ts",
     "./types": "./src/types.ts",
-    "./mcp": "./src/utils/mcp.ts"
+    "./mcp": "./src/utils/mcp.ts",
+    "./llm.txt": "./llm.txt"
   },
   "publish": {
     "include": [
@@ -14,7 +15,8 @@
       "deno.json",
       "docs/**",
       "README.md",
-      "LICENSE*"
+      "LICENSE*",
+      "llm.txt"
     ],
     "exclude": [
       "tests/**",
