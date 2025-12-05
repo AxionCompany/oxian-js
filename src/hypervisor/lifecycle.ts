@@ -153,7 +153,7 @@ export async function startHypervisor(
       return new Response(null, { status: 202 });
     });
   }
-  console.log('public port', publicPort)
+
   const server = Deno.serve({ port: publicPort }, async (req) => {
     const url = new URL(req.url);
 
@@ -665,6 +665,7 @@ async function detectHostDenoConfig(
   for (const name of candidates) {
     try {
       const resolved = await resolver.resolve(name);
+      console.log('resolved deno config', resolved)
       const { isFile } = await resolver.stat(resolved);
       if (isFile) return resolved.toString();
     } catch (_err) { /* no local deno config at this candidate */ }
