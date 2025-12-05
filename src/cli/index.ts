@@ -159,6 +159,7 @@ export async function main() {
       "deno-config",
       "out",
       "materialize-dir",
+      "routes-dir",
     ],
     boolean: [
       "help",
@@ -406,6 +407,9 @@ export async function main() {
   const port = typeof args.port === "string" ? Number(args.port) : undefined;
   const sourceStr = typeof args.source === "string" ? args.source : undefined;
   const configStr = typeof args.config === "string" ? args.config : undefined;
+  const routesDir = typeof args["routes-dir"] === "string"
+    ? args["routes-dir"]
+    : undefined;
 
   let config: EffectiveConfig = {
     root: Deno.cwd(),
@@ -533,6 +537,13 @@ export async function main() {
     config = {
       ...config,
       server: { ...config.server, port },
+    } as EffectiveConfig;
+  }
+
+  if (routesDir) {
+    config = {
+      ...config,
+      routing: { ...config.routing, dir: routesDir },
     } as EffectiveConfig;
   }
 
