@@ -900,7 +900,7 @@ export function createLifecycleManager(
       const hostImports = (maybeHostDenoConfig?.imports) ?? {};
       const hostScopes = (maybeHostDenoConfig?.scopes) ?? {};
       const mergedImports: Record<string, string> = {
-        ...(denoJson.imports || {}),
+        ...(denoJson?.imports || {}),
         ...hostImports,
       };
       const libSrcBase = new URL("../", import.meta.url);
@@ -938,7 +938,7 @@ export function createLifecycleManager(
       }
 
       // add deno unstable flags based on local deno.json
-      denoJson.unstable?.forEach((flag) => {
+      denoJson?.unstable?.forEach((flag) => {
         denoArgs.push(`--unstable-${flag}`);
       });
 
