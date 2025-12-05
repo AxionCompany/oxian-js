@@ -1141,31 +1141,35 @@ export function createLifecycleManager(
           JSON.parse(text) as { ok?: boolean; rootDir?: string };
         } catch { /* ignore parse errors */ }
       }
+      
+      if (config?.prepare){
 
-      // Second step: run prepare (prepare hooks)
-      const prepArgs: string[] = [
-        ...denoArgs,
-        entryPoint,
-        "prepare",
-      ];
-
-      const prepCmd = new Deno.Command(Deno.execPath(), {
-        args: prepArgs,
-        stdin: "null",
-        stdout: "inherit",
-        stderr: "inherit",
-        cwd: projectDir,
-        env: {
-          ...(selectedMerged.env || {}),
-          ...(selectedMerged.githubToken
-            ? { GITHUB_TOKEN: selectedMerged.githubToken }
-            : {}),
-        },
-      });
-      const prepOut = await prepCmd.output();
-      if (!prepOut.success) {
-        throw new Error(`[hv] prepare step failed for project ${project}`);
+        // Second step: run prepare (prepare hooks)
+        const prepArgs: string[] = [
+          ...denoArgs,
+          entryPoint,
+          "prepare",
+        ];
+        
+        const prepCmd = new Deno.Command(Deno.execPath(), {
+          args: prepArgs,
+          stdin: "null",
+          stdout: "inherit",
+          stderr: "inherit",
+          cwd: projectDir,
+          env: {
+            ...(selectedMerged.env || {}),
+            ...(selectedMerged.githubToken
+              ? { GITHUB_TOKEN: selectedMerged.githubToken }
+              : {}),
+          },
+        });
+        const prepOut = await prepCmd.output();
+        if (!prepOut.success) {
+          throw new Error(`[hv] prepare step failed for project ${project}`);
+        }
       }
+
     }
 
     const finalScriptArgs = [
