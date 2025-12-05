@@ -412,8 +412,13 @@ export function createLocalResolver(baseUrl?: URL): Resolver {
     },
     listDir(URLspecifier: URL) {
       const path = fromFileUrl(URLspecifier);
-      const entries = Array.from(Deno.readDirSync(path));
-      return Promise.resolve(entries.map((entry) => entry.name));
+      try {
+        const entries = Array.from(Deno.readDirSync(path));
+        return Promise.resolve(entries.map((entry) => entry.name));
+      } catch (e) {
+        if (e instanceof Deno.errors.NotFound) return Promise.resolve([]);
+        throw e;
+      }
     },
     stat(URLspecifier: URL) {
       const info = Deno.statSync(fromFileUrl(URLspecifier));
