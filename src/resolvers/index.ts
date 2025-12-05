@@ -398,23 +398,19 @@ export function createLocalResolver(baseUrl?: URL): Resolver {
       return Promise.resolve(toFileUrl(absolutize(joined)));
     },
     listDir(URLspecifier: URL) {
-      const path = URLspecifier.toString().replace("file://", "");
+      const path = fromFileUrl(URLspecifier);
       const entries = Array.from(Deno.readDirSync(path));
       return Promise.resolve(entries.map((entry) => entry.name));
     },
     stat(URLspecifier: URL) {
-      const info = Deno.statSync(
-        URLspecifier.toString().replace("file://", ""),
-      );
+      const info = Deno.statSync(fromFileUrl(URLspecifier));
       return Promise.resolve({ isFile: info.isFile });
     },
     async load(
       URLspecifier: URL,
       opts: { encoding?: string | null } = { encoding: "utf-8" },
     ) {
-      const file = await Deno.readFile(
-        URLspecifier.toString().replace("file://", ""),
-      );
+      const file = await Deno.readFile(fromFileUrl(URLspecifier));
       if (opts?.encoding !== null) {
         return Promise.resolve(new TextDecoder(opts?.encoding).decode(file));
       }
@@ -423,7 +419,7 @@ export function createLocalResolver(baseUrl?: URL): Resolver {
     materialize: (_opts?: { dir?: string; refresh?: boolean }) => {
       const root = baseUrl && baseUrl.protocol === "file:"
         ? baseUrl
-        : new URL(`file://${Deno.cwd()}`);
+        : toFileUrl(Deno.cwd());
       return Promise.resolve({ rootDir: root });
     },
   } as unknown as Resolver;
