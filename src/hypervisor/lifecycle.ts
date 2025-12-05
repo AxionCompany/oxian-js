@@ -981,6 +981,8 @@ export function createLifecycleManager(
       } else {
         denoArgs.push(`-A`);
       }
+    } else {
+      denoArgs.push(`-A`);
     }
 
     // Decide whether to use --reload based on invalidateCacheAt vs last load
