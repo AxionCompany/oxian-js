@@ -411,7 +411,13 @@ export async function main() {
     root: Deno.cwd(),
     basePath: "/",
     server: {
-      port: (Deno.env.get("PORT") ? Number(Deno.env.get("PORT")) : 8080),
+      port: (() => {
+        try {
+          return Deno.env.get("PORT") ? Number(Deno.env.get("PORT")) : 8080;
+        } catch {
+          return 8080;
+        }
+      })(),
     },
     logging: { level: "info" },
   };
@@ -429,11 +435,23 @@ export async function main() {
       tokenValue?: string;
       forceReload?: boolean;
     } = {
-      tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
+      tokenEnv: (() => {
+        try {
+          return Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN";
+        } catch {
+          return "GITHUB_TOKEN";
+        }
+      })(),
       forceReload: args.reload === true,
     };
     envDefaults.tokenValue = envDefaults.tokenEnv
-      ? Deno.env.get(envDefaults.tokenEnv)
+      ? (() => {
+        try {
+          return Deno.env.get(envDefaults.tokenEnv);
+        } catch {
+          return undefined;
+        }
+      })()
       : undefined;
 
     let discovered: Partial<OxianConfig> | undefined;
