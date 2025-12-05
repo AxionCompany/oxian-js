@@ -543,7 +543,7 @@ export async function main() {
   if (routesDir) {
     config = {
       ...config,
-      routing: { ...config.routing, dir: routesDir },
+      routing: { ...config.routing, routesDir: routesDir },
     } as EffectiveConfig;
   }
 
