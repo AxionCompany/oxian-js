@@ -295,7 +295,7 @@ export async function startHypervisor(
 
     try {
       const p0 = performance.now();
-      if (!PERF && !OTEL_OR_COLLECTOR) {
+      if (!PERF && OTEL_OR_COLLECTOR) {
         console.log(`[hv] proxy`, {
           project: selected.project,
           method: transformedReq.method,
@@ -665,7 +665,6 @@ async function detectHostDenoConfig(
   for (const name of candidates) {
     try {
       const resolved = await resolver.resolve(name);
-      console.log('resolved deno config', resolved)
       const { isFile } = await resolver.stat(resolved);
       if (isFile) return resolved.toString();
     } catch (_err) { /* no local deno config at this candidate */ }
