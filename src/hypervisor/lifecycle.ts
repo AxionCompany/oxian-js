@@ -153,7 +153,7 @@ export async function startHypervisor(
       return new Response(null, { status: 202 });
     });
   }
-  console.log('public port', publicPort)
+
   const server = Deno.serve({ port: publicPort }, async (req) => {
     const url = new URL(req.url);
 
@@ -215,8 +215,6 @@ export async function startHypervisor(
         },
       );
     }
-
-    console.log("[hv] selected", selected);
 
     // All requests are proxied to the selected worker; project-specific web handling occurs inside the worker server
 
@@ -297,7 +295,7 @@ export async function startHypervisor(
 
     try {
       const p0 = performance.now();
-      if (!PERF && !OTEL_OR_COLLECTOR) {
+      if (!PERF && OTEL_OR_COLLECTOR) {
         console.log(`[hv] proxy`, {
           project: selected.project,
           method: transformedReq.method,
@@ -326,13 +324,6 @@ export async function startHypervisor(
           status: res.status,
           target,
           ms: Math.round(performance.now() - p0),
-        });
-      } else if (!OTEL_OR_COLLECTOR) {
-        console.log(`[hv] proxy_res`, {
-          project: selected.project,
-          status: res.status,
-          statusText: res.statusText,
-          target,
         });
       }
       const body = res.body;
@@ -594,7 +585,7 @@ export async function startHypervisor(
       const routesDir = config.routing?.routesDir ?? "routes";
       const watchDir = join(root, routesDir);
       const watcher = Deno.watchFs([watchDir], { recursive: true });
-      console.log(`[hv] watching`, { dir: watchDir });
+      console.log(`[hv] watching`, JSON.stringify({ dir: watchDir }));
       let timer: number | undefined;
       (async () => {
         for await (const _ev of watcher) {
@@ -1150,31 +1141,35 @@ export function createLifecycleManager(
           JSON.parse(text) as { ok?: boolean; rootDir?: string };
         } catch { /* ignore parse errors */ }
       }
+      
+      if (config?.prepare){
 
-      // Second step: run prepare (prepare hooks)
-      const prepArgs: string[] = [
-        ...denoArgs,
-        entryPoint,
-        "prepare",
-      ];
-
-      const prepCmd = new Deno.Command(Deno.execPath(), {
-        args: prepArgs,
-        stdin: "null",
-        stdout: "inherit",
-        stderr: "inherit",
-        cwd: projectDir,
-        env: {
-          ...(selectedMerged.env || {}),
-          ...(selectedMerged.githubToken
-            ? { GITHUB_TOKEN: selectedMerged.githubToken }
-            : {}),
-        },
-      });
-      const prepOut = await prepCmd.output();
-      if (!prepOut.success) {
-        throw new Error(`[hv] prepare step failed for project ${project}`);
+        // Second step: run prepare (prepare hooks)
+        const prepArgs: string[] = [
+          ...denoArgs,
+          entryPoint,
+          "prepare",
+        ];
+        
+        const prepCmd = new Deno.Command(Deno.execPath(), {
+          args: prepArgs,
+          stdin: "null",
+          stdout: "inherit",
+          stderr: "inherit",
+          cwd: projectDir,
+          env: {
+            ...(selectedMerged.env || {}),
+            ...(selectedMerged.githubToken
+              ? { GITHUB_TOKEN: selectedMerged.githubToken }
+              : {}),
+          },
+        });
+        const prepOut = await prepCmd.output();
+        if (!prepOut.success) {
+          throw new Error(`[hv] prepare step failed for project ${project}`);
+        }
       }
+
     }
 
     const finalScriptArgs = [
@@ -1302,10 +1297,7 @@ export function createLifecycleManager(
 
     }
 
-
-
     denoArgs.push(entryPoint);
-
 
     if (Deno.env.get("OXIAN_DEBUG")) {
       console.log("[hv] projectDir", projectDir);
@@ -1317,8 +1309,6 @@ export function createLifecycleManager(
         ...finalScriptArgs,
       ]);
     }
-
-    console.log("[hv] spawning env", spawnEnv);
 
     const proc = new Deno.Command(Deno.execPath(), {
       args: [...denoArgs, ...finalScriptArgs],
