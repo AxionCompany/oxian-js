@@ -71,7 +71,7 @@ export default ({ root = Deno.cwd(), basePath: _basePath = "/", server = { port:
                     };
                     if (host === "0.0.0.0") return {
                         project: "github",
-                        source: "github:AxionCompany/oxian-js?ref=main",
+                        source: "github:copilotzhq/jaze-test?ref=main",
                         env: { CUSTOM: "1" },
                         githubToken: Deno.env.get("GITHUB_TOKEN") || undefined,
                         isolated: true,

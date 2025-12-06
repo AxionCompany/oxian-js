@@ -1,59 +1,69 @@
 import { fromFileUrl, isAbsolute, join, toFileUrl } from "@std/path";
 import { importModule } from "./importer.ts";
 import { absolutize } from "../utils/root.ts";
-import { get, set } from "kv-toolbox/blob";
 
-// Initialize Deno KV for caching
-let kvCache: Deno.Kv | null = null;
-async function getKvCache(): Promise<Deno.Kv> {
-  if (!kvCache) {
+// Minimal KV interface replacement
+interface MinimalKv {
+  get<T>(key: readonly unknown[]): Promise<{ value: T | null; ts?: number }>;
+  set(key: readonly unknown[], value: unknown): Promise<void>;
+}
+
+class FileKv implements MinimalKv {
+  private path: string;
+  private mem: Record<string, { value: unknown; ts: number }> = {};
+  private loaded = false;
+
+  constructor(path: string) {
+    this.path = path;
+  }
+
+  private async load(force = false) {
+    if (this.loaded && !force) return;
     try {
-      const kvDir = join(Deno.cwd(), ".deno");
-      await Deno.mkdir(kvDir, { recursive: true });
-      const kvPath = join(kvDir, "resolver_cache.db");
-      const kvCacheInstance = await Deno.openKv(kvPath);
-
-      // Create a proxy to use kv-toolbox/blob methods for binary data
-      kvCache = new Proxy(kvCacheInstance, {
-        get(target, prop) {
-          if (prop === "get") {
-            return async (key: Deno.KvKey) => {
-              // Use kv-toolbox/blob get for binary data
-              const result = await get(target, key);
-              if (result.value) {
-                // Decode the binary data back to the original value
-                const decoder = new TextDecoder();
-                const jsonStr = decoder.decode(
-                  result.value as unknown as ArrayBuffer,
-                );
-                result.value = JSON.parse(jsonStr);
-              }
-              return result;
-            };
-          }
-          if (prop === "set") {
-            return async (key: Deno.KvKey, value: unknown) => {
-              // Encode the value as JSON string, then to binary
-              const jsonStr = JSON.stringify(value);
-              const encoder = new TextEncoder();
-              const binaryData = encoder.encode(jsonStr);
-              // Use kv-toolbox/blob set for binary data
-              await set(target, key, binaryData);
-              return { ok: true };
-            };
-          }
-          // Pass through all other methods to the original KV instance
-          const value = target[prop as keyof typeof target];
-          return typeof value === "function" ? value.bind(target) : value;
-        },
-      }) as Deno.Kv;
-    } catch (err) {
-      console.error(
-        "[resolver] Failed to open KV cache, using in-memory fallback:",
-        err,
-      );
-      kvCache = await Deno.openKv(); // fallback to in-memory
+      const txt = await Deno.readTextFile(this.path);
+      this.mem = JSON.parse(txt);
+    } catch {
+      this.mem = {};
     }
+    this.loaded = true;
+  }
+
+  private async flush() {
+    try {
+      await Deno.writeTextFile(this.path, JSON.stringify(this.mem, null, 2));
+    } catch { /* ignore write errors (e.g. no permissions) */ }
+  }
+
+  async get<T>(key: readonly unknown[]): Promise<{ value: T | null; ts?: number }> {
+    await this.load();
+    // If missing in memory, try one fresh load just in case another process wrote it
+    let k = JSON.stringify(key);
+    if (!this.mem[k]) {
+        await this.load(true);
+        k = JSON.stringify(key);
+    }
+    const entry = this.mem[k];
+    return { value: (entry?.value as T) ?? null, ts: entry?.ts };
+  }
+
+  async set(key: readonly unknown[], value: unknown): Promise<void> {
+    // Always load fresh before set to avoid overwriting other processes' updates
+    await this.load(true);
+    const k = JSON.stringify(key);
+    this.mem[k] = { value, ts: Date.now() };
+    await this.flush();
+  }
+}
+
+let kvCache: MinimalKv | null = null;
+async function getKvCache(): Promise<MinimalKv> {
+  if (!kvCache) {
+    const kvDir = join(Deno.cwd(), ".deno");
+    try {
+      await Deno.mkdir(kvDir, { recursive: true });
+    } catch { /* ignore */ }
+    const kvPath = join(kvDir, "resolver_cache.json");
+    kvCache = new FileKv(kvPath);
   }
   return kvCache;
 }
@@ -171,10 +181,12 @@ export function createResolver(
     tokenValue?: string;
     ttlMs?: number;
     forceReload?: boolean;
+    invalidateAt?: number;
   },
 ): Resolver {
   let type: "local" | "http" | "github" = "local";
   const forceReload = opts.forceReload ?? false;
+  const invalidateAt = opts.invalidateAt;
 
   try {
     if (baseUrl && !(baseUrl instanceof URL)) {
@@ -223,6 +235,7 @@ export function createResolver(
     const kv = await getKvCache();
     const entry = await kv.get<string>(key);
     if (!entry.value) return null;
+    if (invalidateAt && entry.ts && entry.ts < invalidateAt) return null;
     return deserializeFromKv(entry.value, type) as T;
   }
 
@@ -399,8 +412,13 @@ export function createLocalResolver(baseUrl?: URL): Resolver {
     },
     listDir(URLspecifier: URL) {
       const path = fromFileUrl(URLspecifier);
-      const entries = Array.from(Deno.readDirSync(path));
-      return Promise.resolve(entries.map((entry) => entry.name));
+      try {
+        const entries = Array.from(Deno.readDirSync(path));
+        return Promise.resolve(entries.map((entry) => entry.name));
+      } catch (e) {
+        if (e instanceof Deno.errors.NotFound) return Promise.resolve([]);
+        throw e;
+      }
     },
     stat(URLspecifier: URL) {
       const info = Deno.statSync(fromFileUrl(URLspecifier));

@@ -346,27 +346,27 @@ function matchUriTemplate(uri: string, template: string): Record<string, string>
   // Convert template to regex pattern
   // Replace {param} with capture groups
   const paramNames: string[] = [];
-  
+
   // First escape special regex characters in the template
   const escapedTemplate = template.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  
+
   // Then replace escaped \{param\} with capture groups
   const regexPattern = escapedTemplate.replace(/\\{([^}]+)\\}/g, (_, paramName) => {
     paramNames.push(paramName);
     return "([^/]+)"; // Match any characters except /
   });
-  
+
   const regex = new RegExp(`^${regexPattern}$`);
   const match = uri.match(regex);
-  
+
   if (!match) return null;
-  
+
   // Extract parameters
   const params: Record<string, string> = {};
   paramNames.forEach((name, index) => {
     params[name] = match[index + 1];
   });
-  
+
   return params;
 }
 
@@ -486,7 +486,7 @@ export function createMCPHandlers(config: MCPServerConfig, context?: Context): R
         // If direct read fails, try matching against resource templates
         for (const template of config.resourceTemplates) {
           const templateParams = matchUriTemplate(resourceParams.uri, template.uriTemplate);
-          
+
           if (templateParams) {
             // Found a matching template - pass both URI and extracted params
             try {
@@ -503,7 +503,7 @@ export function createMCPHandlers(config: MCPServerConfig, context?: Context): R
             }
           }
         }
-        
+
         // No template matched, throw the original error
         throw createJsonRpcError(
           JSON_RPC_ERRORS.INTERNAL_ERROR,
@@ -573,7 +573,7 @@ export async function handleMCPRequest(
   // Security: Validate Origin header to prevent DNS rebinding attacks
   // ============================================================================
   const origin = request.raw.headers.get("origin");
-  
+
   if (origin) {
     try {
       const originUrl = new URL(origin);
@@ -593,7 +593,7 @@ export async function handleMCPRequest(
   // Protocol Version Header Validation (2025-06-18 spec)
   // ============================================================================
   const protocolVersionHeader = request.raw.headers.get("mcp-protocol-version");
-  
+
   // Note: Protocol version is primarily negotiated during initialization
   // and stored in the session. We validate it here for informational purposes.
   if (protocolVersionHeader && protocolVersionHeader !== "2025-06-18" && protocolVersionHeader !== "2024-11-05") {
@@ -604,11 +604,11 @@ export async function handleMCPRequest(
   // Session Management (2025-06-18 spec)
   // ============================================================================
   const sessionId = request.raw.headers.get("mcp-session-id");
-  
+
   // Validate session for non-initialization requests
-  const isInitRequest = typeof data === "object" && data !== null && 
-                        "method" in data && data.method === "initialize";
-  
+  const isInitRequest = typeof data === "object" && data !== null &&
+    "method" in data && data.method === "initialize";
+
   if (!isInitRequest && sessionId) {
     const session = sessionStore.get(sessionId);
     if (!session) {
@@ -631,14 +631,14 @@ export async function handleMCPRequest(
   if (acceptHeader) {
     const acceptsJson = acceptHeader.includes("application/json");
     const acceptsAll = acceptHeader.includes("*/*");
-    
+
     if (!acceptsJson && !acceptsAll) {
       response.status(400);
       return createJsonRpcResponse(
         null,
         undefined,
         createJsonRpcError(
-          JSON_RPC_ERRORS.INVALID_REQUEST, 
+          JSON_RPC_ERRORS.INVALID_REQUEST,
           "Accept header must include 'application/json'"
         )
       );
@@ -699,22 +699,24 @@ export async function handleMCPRequest(
     if (jsonRpcRequest.method === "initialize" && result && typeof result === "object" && "_sessionId" in result) {
       const initResult = result as InitializeResult & { _sessionId?: string };
       const newSessionId = initResult._sessionId;
-      
+
       if (newSessionId) {
         // Store session
         sessionStore.set(newSessionId, {
           protocolVersion: initResult.protocolVersion,
           createdAt: Date.now()
         });
-        
+
         // Set session ID header per spec
         response.headers({
           "Mcp-Session-Id": newSessionId
         });
-        
+
         // Remove internal field from response
-        const { _sessionId, ...cleanResult } = initResult;
-        
+        const cleanResult = Array.isArray(initResult)
+          ? initResult
+          : (({ _sessionId, ...rest }) => rest)(initResult);
+
         return createJsonRpcResponse(jsonRpcRequest.id ?? null, cleanResult);
       }
     }
@@ -734,6 +736,10 @@ export async function handleMCPRequest(
     response.headers({
       "Content-Type": "application/json"
     });
+
+    if (Deno.env.get("MCP_DEBUG")) {
+      console.log("MCP Response:", result);
+    }
 
     return createJsonRpcResponse(jsonRpcRequest.id ?? null, result);
   } catch (err) {
@@ -764,7 +770,7 @@ export async function handleMCPRequest(
  */
 export function handleMCPSessionDelete(_data: Data, context: Context): { message?: string; error?: string } {
   const sessionId = context.request.raw.headers.get("mcp-session-id");
-  
+
   if (!sessionId) {
     context.response.status(400);
     return {
@@ -773,7 +779,7 @@ export function handleMCPSessionDelete(_data: Data, context: Context): { message
   }
 
   const deleted = sessionStore.delete(sessionId);
-  
+
   if (deleted) {
     context.response.status(200);
     return {

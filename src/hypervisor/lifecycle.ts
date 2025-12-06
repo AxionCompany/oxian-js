@@ -981,6 +981,8 @@ export function createLifecycleManager(
       } else {
         denoArgs.push(`-A`);
       }
+    } else {
+      denoArgs.push(`-A`);
     }
 
     // Decide whether to use --reload based on invalidateCacheAt vs last load
@@ -1108,8 +1110,14 @@ export function createLifecycleManager(
           ? { mode: "always" as const }
           : (mat as { mode?: string; dir?: string; refresh?: boolean });
         // const matDir = m.dir ? m.dir : (selectedMerged.isolated ? projectDir : projectDir);
+        // Materialize requires full permissions to download/write files
+        const matDenoArgs = denoArgs.filter((a) =>
+          !a.startsWith("--allow-") && !a.startsWith("--deny-") && a !== "-A"
+        );
+        matDenoArgs.push("-A");
+
         const matArgs: string[] = [
-          ...denoArgs,
+          ...matDenoArgs,
           entryPoint,
           "materialize",
           `--source=${effectiveSource}`,
@@ -1141,36 +1149,40 @@ export function createLifecycleManager(
           JSON.parse(text) as { ok?: boolean; rootDir?: string };
         } catch { /* ignore parse errors */ }
       }
-      
-      if (config?.prepare){
 
-        // Second step: run prepare (prepare hooks)
-        const prepArgs: string[] = [
-          ...denoArgs,
-          entryPoint,
-          "prepare",
-        ];
-        
-        const prepCmd = new Deno.Command(Deno.execPath(), {
-          args: prepArgs,
-          stdin: "null",
-          stdout: "inherit",
-          stderr: "inherit",
-          cwd: projectDir,
-          env: {
-            ...(selectedMerged.env || {}),
-            ...(selectedMerged.githubToken
-              ? { GITHUB_TOKEN: selectedMerged.githubToken }
-              : {}),
-          },
-        });
-        const prepOut = await prepCmd.output();
-        if (!prepOut.success) {
-          throw new Error(`[hv] prepare step failed for project ${project}`);
-        }
+
+      // Second step: run prepare (prepare hooks)
+      // Prepare requires full permissions to run arbitrary hooks and read configs
+      const prepDenoArgs = denoArgs.filter((a) =>
+        !a.startsWith("--allow-") && !a.startsWith("--deny-") && a !== "-A"
+      );
+      prepDenoArgs.push("-A");
+
+      const prepArgs: string[] = [
+        ...prepDenoArgs,
+        entryPoint,
+        "prepare",
+      ];
+
+      const prepCmd = new Deno.Command(Deno.execPath(), {
+        args: prepArgs,
+        stdin: "null",
+        stdout: "inherit",
+        stderr: "inherit",
+        cwd: projectDir,
+        env: {
+          ...(selectedMerged.env || {}),
+          ...(selectedMerged.githubToken
+            ? { GITHUB_TOKEN: selectedMerged.githubToken }
+            : {}),
+        },
+      });
+      const prepOut = await prepCmd.output();
+      if (!prepOut.success) {
+        throw new Error(`[hv] prepare step failed for project ${project}`);
       }
-
     }
+
 
     const finalScriptArgs = [
       `--port=${port}`,
@@ -1277,7 +1289,7 @@ export function createLifecycleManager(
       // add other allow-* arguments
 
       // only read and write to projectDir
-      denoArgs.push(`--allow-read=${allowRead ? allowRead  + `,./` : `./`}`);
+      denoArgs.push(`--allow-read=${allowRead ? allowRead + `,./` : `./`}`);
       denoArgs.push(`--allow-write=${allowWrite ? allowWrite + "./" + `,./` : `./`}`);
 
       // allow net, ffi, sys
