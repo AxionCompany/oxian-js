@@ -693,11 +693,6 @@ export async function handleMCPRequest(
   try {
     const result = await handler(jsonRpcRequest.params);
 
-    if (Deno.env.get("MCP_DEBUG")) {
-      console.log("MCP Response:", result);
-    }
-
-
     // ============================================================================
     // Handle initialization response (set session ID header per 2025-06-18 spec)
     // ============================================================================
@@ -721,10 +716,6 @@ export async function handleMCPRequest(
         const cleanResult = Array.isArray(initResult)
           ? initResult
           : (({ _sessionId, ...rest }) => rest)(initResult);
-
-        if (Deno.env.get("MCP_DEBUG")) {
-          console.log("MCP Response in Initialize:", result);
-        }
 
         return createJsonRpcResponse(jsonRpcRequest.id ?? null, cleanResult);
       }
