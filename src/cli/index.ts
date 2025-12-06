@@ -159,6 +159,7 @@ export async function main() {
       "deno-config",
       "out",
       "materialize-dir",
+      "routes-dir",
     ],
     boolean: [
       "help",
@@ -406,12 +407,21 @@ export async function main() {
   const port = typeof args.port === "string" ? Number(args.port) : undefined;
   const sourceStr = typeof args.source === "string" ? args.source : undefined;
   const configStr = typeof args.config === "string" ? args.config : undefined;
+  const routesDir = typeof args["routes-dir"] === "string"
+    ? args["routes-dir"]
+    : undefined;
 
   let config: EffectiveConfig = {
     root: Deno.cwd(),
     basePath: "/",
     server: {
-      port: (Deno.env.get("PORT") ? Number(Deno.env.get("PORT")) : 8080),
+      port: (() => {
+        try {
+          return Deno.env.get("PORT") ? Number(Deno.env.get("PORT")) : 8080;
+        } catch {
+          return 8080;
+        }
+      })(),
     },
     logging: { level: "info" },
   };
@@ -429,11 +439,23 @@ export async function main() {
       tokenValue?: string;
       forceReload?: boolean;
     } = {
-      tokenEnv: Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN",
+      tokenEnv: (() => {
+        try {
+          return Deno.env.get("TOKEN_ENV") || "GITHUB_TOKEN";
+        } catch {
+          return "GITHUB_TOKEN";
+        }
+      })(),
       forceReload: args.reload === true,
     };
     envDefaults.tokenValue = envDefaults.tokenEnv
-      ? Deno.env.get(envDefaults.tokenEnv)
+      ? (() => {
+        try {
+          return Deno.env.get(envDefaults.tokenEnv);
+        } catch {
+          return undefined;
+        }
+      })()
       : undefined;
 
     let discovered: Partial<OxianConfig> | undefined;
@@ -515,6 +537,13 @@ export async function main() {
     config = {
       ...config,
       server: { ...config.server, port },
+    } as EffectiveConfig;
+  }
+
+  if (routesDir) {
+    config = {
+      ...config,
+      routing: { ...config.routing, routesDir: routesDir },
     } as EffectiveConfig;
   }
 
