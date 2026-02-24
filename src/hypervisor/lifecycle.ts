@@ -1473,7 +1473,7 @@ export function createLifecycleManager(
         const inflight = projectInflight.get(project) ?? 0;
         if (inflight > 0) continue;
         const ttl = getIdleTtlForProject(project);
-        if (ttl === undefined) continue;
+        if (ttl === undefined || ttl === 0) continue;
         const lastActive = projectLastActive.get(project) ??
           projectLastLoad.get(project) ?? 0;
         if (lastActive === 0) continue;
