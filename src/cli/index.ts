@@ -518,9 +518,7 @@ export async function main() {
             ? { loaders: { ...config.loaders, ...d.loaders } }
             : {}),
           ...(d.web ? { web: { ...config.web, ...d.web } } : {}),
-          ...(d.prepare
-            ? { prepare: { ...config.prepare, ...d.prepare } }
-            : {}),
+          ...(d.prepare ? { prepare: d.prepare } : {}),
           ...(d.compatibility
             ? { compatibility: { ...config.compatibility, ...d.compatibility } }
             : {}),
