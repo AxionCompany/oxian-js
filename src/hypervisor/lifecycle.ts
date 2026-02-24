@@ -316,7 +316,9 @@ export async function startHypervisor(
         body: transformedReq.body,
         signal: controller.signal,
         redirect: "manual",
-      });
+        // Enable streaming request body for large uploads
+        duplex: "half",
+      } as RequestInit);
       clearTimeout(timer);
       if (PERF) {
         console.log("[perf][hv] proxy_res", {
@@ -451,7 +453,9 @@ export async function startHypervisor(
           headers,
           body: transformedReq.body,
           redirect: "manual",
-        });
+          // Enable streaming request body for large uploads
+          duplex: "half",
+        } as RequestInit);
         item.done = true;
         if (item.timeoutId) clearTimeout(item.timeoutId as unknown as number);
         resolve(

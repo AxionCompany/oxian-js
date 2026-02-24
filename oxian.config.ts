@@ -60,7 +60,13 @@ export default ({ root = Deno.cwd(), basePath: _basePath = "/", server = { port:
                 // Example: add a custom header to all requests
                 const headers = new Headers(req.headers);
                 headers.set("x-custom-header", `processed-by-hypervisor-for-${project}`);
-                return new Request(req, { headers });
+                // Preserve streaming body with duplex for large uploads
+                return new Request(req.url, { 
+                    method: req.method,
+                    headers, 
+                    body: req.body,
+                    duplex: "half",
+                } as RequestInit);
             },
             provider: ({ req }: { req: Request }) => {
                 if (req) {
