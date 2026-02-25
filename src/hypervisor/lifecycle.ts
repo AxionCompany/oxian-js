@@ -32,7 +32,6 @@ export async function startHypervisor(
   { config, baseArgs }: { config: EffectiveConfig; baseArgs: string[] },
   _resolver: Resolver,
 ) {
-
   const hv = config.runtime?.hv ?? {};
   const publicPort = config.server?.port ?? 8080;
   const PERF = config.logging?.performance === true;
@@ -137,7 +136,9 @@ export async function startHypervisor(
       const fwdUrl = upstream.replace(/\/$/, "") + trimmed;
       const fwdHeaders = new Headers(req.headers);
       try {
-        if (projectFromHeader) fwdHeaders.set("x-oxian-project", projectFromHeader);
+        if (projectFromHeader) {
+          fwdHeaders.set("x-oxian-project", projectFromHeader);
+        }
       } catch { /* ignore */ }
       const fwdReq = new Request(fwdUrl, {
         method: req.method,
@@ -251,6 +252,30 @@ export async function startHypervisor(
       });
     }
 
+    // If provider invalidation timestamp changed/newer, restart worker before proxying.
+    // This makes UI "Reload" effective immediately for already-running workers.
+    try {
+      if (manager.shouldRestartForInvalidation(selected.project, selected)) {
+        await manager.restartProject(
+          selected.project,
+          undefined,
+          undefined,
+          selected,
+        );
+        pool = manager.getPool(selected.project);
+      }
+    } catch { /* ignore invalidation restart errors and continue */ }
+
+    if (!pool) {
+      const body = JSON.stringify({
+        error: { message: "No worker available" },
+      });
+      return new Response(body, {
+        status: 503,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+
     const pathname = url.pathname;
     const target = `http://127.0.0.1:${pool.port}${pathname}${url.search}`;
 
@@ -281,7 +306,10 @@ export async function startHypervisor(
     const orig = new URL(req.url);
     headers.set("x-forwarded-proto", orig.protocol.replace(":", ""));
     headers.set("x-forwarded-host", orig.host);
-    headers.set("x-forwarded-port", orig.port || (orig.protocol === "https:" ? "443" : "80"));
+    headers.set(
+      "x-forwarded-port",
+      orig.port || (orig.protocol === "https:" ? "443" : "80"),
+    );
     headers.set("x-forwarded-path", orig.pathname);
     headers.set("x-forwarded-query", orig.search.replace(/^\?/, ""));
     if (hv.proxy?.passRequestId) {
@@ -791,7 +819,7 @@ export function createLifecycleManager(
           err: (e as Error)?.message,
         });
       }
-    }).catch(() => {/* ignore */ });
+    }).catch(() => {/* ignore */});
   }
 
   async function spawnWorker(
@@ -829,7 +857,6 @@ export function createLifecycleManager(
     denoOptionsIn?: string[],
     scriptArgsIn?: string[],
   ): Promise<WorkerHandle> {
-
     const entryPoint = import.meta.resolve("../../cli.ts").toString();
 
     const denoOptions = denoOptionsIn ?? cachedDenoOptions;
@@ -872,7 +899,6 @@ export function createLifecycleManager(
       (hv.projects as Record<string, { denoConfig?: string }>)[project]) ||
       {} as { denoConfig?: string };
     const effectiveDenoCfg = projectCfg.denoConfig ?? hostDenoCfg;
-
 
     if (Deno.env.get("OXIAN_DEBUG")) {
       console.log("[hv] effectiveDenoCfg", effectiveDenoCfg);
@@ -1047,7 +1073,7 @@ export function createLifecycleManager(
       ?.split("=")[1];
     const projCfg = (hv.projects &&
       (hv.projects as Record<string, { source?: string; config?: string }>)[
-      project
+        project
       ]) || {} as { source?: string; config?: string };
     const effectiveSource = selectedMerged.source ?? projCfg.source ??
       globalSource;
@@ -1126,7 +1152,8 @@ export function createLifecycleManager(
           "materialize",
           `--source=${effectiveSource}`,
           `--materialize-dir=.`,
-          ...(m.refresh ? ["--materialize-refresh"] : []),
+          // Also force materialize refresh when invalidateCacheAt requests reload.
+          ...(m.refresh || shouldReload ? ["--materialize-refresh"] : []),
         ];
 
         const matCmd = new Deno.Command(Deno.execPath(), {
@@ -1153,7 +1180,6 @@ export function createLifecycleManager(
           JSON.parse(text) as { ok?: boolean; rootDir?: string };
         } catch { /* ignore parse errors */ }
       }
-
 
       // Second step: run prepare (prepare hooks)
       // Prepare requires full permissions to run arbitrary hooks and read configs
@@ -1186,7 +1212,6 @@ export function createLifecycleManager(
         throw new Error(`[hv] prepare step failed for project ${project}`);
       }
     }
-
 
     const finalScriptArgs = [
       `--port=${port}`,
@@ -1273,11 +1298,13 @@ export function createLifecycleManager(
         }
       }
     } catch { /* ignore otel env config errors */ }
-    spawnEnv.DENO_AUTH_TOKENS = `${spawnEnv.DENO_AUTH_TOKENS ? spawnEnv.DENO_AUTH_TOKENS + ";" : ""
-      }${selectedMerged.githubToken
+    spawnEnv.DENO_AUTH_TOKENS = `${
+      spawnEnv.DENO_AUTH_TOKENS ? spawnEnv.DENO_AUTH_TOKENS + ";" : ""
+    }${
+      selectedMerged.githubToken
         ? `${selectedMerged.githubToken}@raw.githubusercontent.com`
         : ""
-      }`;
+    }`;
 
     if (Deno.env.get("OXIAN_DEBUG")) {
       console.log("[hv] globalSource", globalSource);
@@ -1288,13 +1315,19 @@ export function createLifecycleManager(
       spawnEnv.DENO_DIR = `./.deno/DENO_DIR`;
 
       denoArgs.splice(denoArgs.indexOf("-A"), 1);
-      const allowRead = denoArgs.find((a) => a.startsWith("--allow-read="))?.split("=")[1] ?? "";
-      const allowWrite = denoArgs.find((a) => a.startsWith("--allow-write="))?.split("=")[1] ?? "";
+      const allowRead = denoArgs.find((a) =>
+        a.startsWith("--allow-read=")
+      )?.split("=")[1] ?? "";
+      const allowWrite = denoArgs.find((a) =>
+        a.startsWith("--allow-write=")
+      )?.split("=")[1] ?? "";
       // add other allow-* arguments
 
       // only read and write to projectDir
       denoArgs.push(`--allow-read=${allowRead ? allowRead + `,./` : `./`}`);
-      denoArgs.push(`--allow-write=${allowWrite ? allowWrite + "./" + `,./` : `./`}`);
+      denoArgs.push(
+        `--allow-write=${allowWrite ? allowWrite + "./" + `,./` : `./`}`,
+      );
 
       // allow net, ffi, sys
       denoArgs.push(`--allow-net`);
@@ -1306,11 +1339,10 @@ export function createLifecycleManager(
       denoArgs.push(`--allow-import`);
       // allow env
       denoArgs.push(`--allow-env`);
-      // allow run to specific applications dir, defaults to os's applications dir  
+      // allow run to specific applications dir, defaults to os's applications dir
       denoArgs.push(`--allow-run`);
       // allow hrtime
       denoArgs.push(`--allow-hrtime`);
-
     }
 
     denoArgs.push(entryPoint);
@@ -1386,16 +1418,45 @@ export function createLifecycleManager(
     return { port, proc };
   }
 
+  function toMs(v: string | number | Date | undefined): number | undefined {
+    if (v === undefined) return undefined;
+    if (v instanceof Date) return v.getTime();
+    if (typeof v === "number") return v;
+    if (typeof v === "string") {
+      const t = Date.parse(v);
+      return Number.isNaN(t) ? undefined : t;
+    }
+    return undefined;
+  }
+
+  function shouldRestartForInvalidation(
+    project: string,
+    selected: SelectedProject,
+  ): boolean {
+    const selectedAt = toMs(selected.invalidateCacheAt);
+    if (selectedAt === undefined) return false;
+
+    const lastSelected = lastSpawnOptions.get(project);
+    const lastSelectedAt = toMs(lastSelected?.invalidateCacheAt);
+    if (lastSelectedAt !== undefined && lastSelectedAt === selectedAt) {
+      return false;
+    }
+
+    const lastLoad = projectLastLoad.get(project) ?? 0;
+    return selectedAt > lastLoad || lastSelectedAt !== selectedAt;
+  }
+
   async function restartProject(
     project: string,
     denoOptionsIn?: string[],
     scriptArgsIn?: string[],
+    basisIn?: SelectedProject,
   ) {
     if (restarting.has(project)) return;
     restarting.add(project);
     try {
       const idx = getProjectIndex(project) ?? 0;
-      const basis = lastSpawnOptions.get(project) ??
+      const basis = basisIn ?? lastSpawnOptions.get(project) ??
         { project } as SelectedProject;
       const next = await spawnWorker(
         basis,
@@ -1520,6 +1581,7 @@ export function createLifecycleManager(
     waitForProjectReady,
     spawnWorker,
     restartProject,
+    shouldRestartForInvalidation,
     registerWorker,
     getPool,
     isProjectReady: (project: string) => projectReady.get(project) === true,
