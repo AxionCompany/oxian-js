@@ -544,6 +544,8 @@ export async function startHypervisor(
     if (body) {
       const reader = body.getReader();
       let received = 0;
+      let buffered = 0;
+      let exceededMaxBodyBytes = false;
       const chunks: Uint8Array[] = [];
       try {
         while (true) {
@@ -551,22 +553,28 @@ export async function startHypervisor(
           if (done) break;
           if (value) {
             received += value.byteLength;
-            if (received > maxBodyBytes) break;
+            if (received > maxBodyBytes) {
+              exceededMaxBodyBytes = true;
+              break;
+            }
             chunks.push(value);
+            buffered += value.byteLength;
           }
         }
       } catch { /* ignore read errors */ }
-      const merged = new Uint8Array(received);
-      let offset = 0;
-      for (const c of chunks) {
-        merged.set(c, offset);
-        offset += c.byteLength;
+      if (!exceededMaxBodyBytes) {
+        const merged = new Uint8Array(buffered);
+        let offset = 0;
+        for (const c of chunks) {
+          merged.set(c, offset);
+          offset += c.byteLength;
+        }
+        const h2 = new Headers(req.headers);
+        try {
+          h2.set("x-oxian-project", project);
+        } catch { /* ignore */ }
+        cloned = new Request(req, { body: merged, headers: h2 });
       }
-      const h2 = new Headers(req.headers);
-      try {
-        h2.set("x-oxian-project", project);
-      } catch { /* ignore */ }
-      cloned = new Request(req, { body: merged, headers: h2 });
     }
 
     const resP = new Promise<Response>((resolve, reject) => {

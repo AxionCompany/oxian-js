@@ -411,7 +411,12 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         const mod = await loadRouteModule((match as unknown as { route: { fileUrl: URL } }).route.fileUrl, resolver);
         const loadRouteModuleEnd = performance.now();
         if (PERF) console.log('[perf][server] loadRouteModule', { ms: Math.round(loadRouteModuleEnd - loadRouteModuleStart) });
-        const exportVal = getHandlerExport(mod, req.method);
+        let exportVal = getHandlerExport(mod, req.method);
+        // RFC 7231: HEAD must be handled like GET but with no response body
+        const isHead = req.method === "HEAD";
+        if (isHead && typeof exportVal !== "function") {
+          exportVal = getHandlerExport(mod, "GET");
+        }
         let resultOrError: unknown = undefined;
         if (typeof exportVal !== "function") {
           state.status = 405;
@@ -430,6 +435,11 @@ export async function startServer(opts: { config: EffectiveConfig; source?: stri
         await runInterceptorsAfter(files.interceptorFiles, resultOrError, context, resolver);
         const runInterceptorsAfterEnd = performance.now();
         if (PERF) console.log('[perf][server] runInterceptorsAfter', { ms: Math.round(runInterceptorsAfterEnd - runInterceptorsAfterStart) });
+
+        // For HEAD requests, strip the body (RFC 7231 §4.3.2)
+        if (isHead) {
+          state.body = null;
+        }
 
         // Finalize the response
         const finalizeResponseStart = performance.now();
