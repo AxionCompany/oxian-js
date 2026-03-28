@@ -246,16 +246,21 @@ export function finalizeResponse(state: ResponseState): Response {
       headers: state.headers,
     });
   }
-  if (typeof body === "string" || body instanceof Uint8Array) {
+  if (typeof body === "string") {
     if (!state.headers.has("content-type")) {
-      state.headers.set(
-        "content-type",
-        typeof body === "string"
-          ? "text/plain; charset=utf-8"
-          : "application/octet-stream",
-      );
+      state.headers.set("content-type", "text/plain; charset=utf-8");
     }
     return new Response(body, {
+      status: state.status,
+      statusText: state.statusText,
+      headers: state.headers,
+    });
+  }
+  if (body instanceof Uint8Array) {
+    if (!state.headers.has("content-type")) {
+      state.headers.set("content-type", "application/octet-stream");
+    }
+    return new Response(body.buffer as ArrayBuffer, {
       status: state.status,
       statusText: state.statusText,
       headers: state.headers,
