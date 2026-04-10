@@ -305,7 +305,6 @@ export async function main() {
           if (!out.success) throw new Error(`[cli] prepare failed: ${c}`);
         }
       }
-      console.log(JSON.stringify({ ok: true }));
       Deno.exit(0);
     } catch (e) {
       console.error("[cli] prepare error", (e as Error)?.message);

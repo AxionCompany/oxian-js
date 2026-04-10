@@ -301,6 +301,42 @@ export async function startHypervisor(
       }
     }
 
+    // Buffer request body before proxy fetch so retry can reuse it (Fix B)
+    let bufferedBody: Uint8Array | null = null;
+    const reqMethod = transformedReq.method;
+    const hasBody = reqMethod !== "GET" && reqMethod !== "HEAD" &&
+      transformedReq.body;
+    if (hasBody) {
+      try {
+        const [forFetch, forBuffer] = transformedReq.body!.tee();
+        transformedReq = new Request(transformedReq, {
+          body: forFetch,
+          headers: transformedReq.headers,
+        });
+        const reader = forBuffer.getReader();
+        const chunks: Uint8Array[] = [];
+        let totalLen = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            totalLen += value.byteLength;
+          }
+        }
+        const merged = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const c of chunks) {
+          merged.set(c, offset);
+          offset += c.byteLength;
+        }
+        bufferedBody = merged;
+      } catch {
+        // If tee fails (body already consumed), proceed without buffer
+        bufferedBody = null;
+      }
+    }
+
     const headers = new Headers(transformedReq.headers);
     // Preserve original client information for the worker
     const orig = new URL(req.url);
@@ -389,20 +425,45 @@ export async function startHypervisor(
         headers: res.headers,
       });
     } catch (e) {
-      if (!OTEL_OR_COLLECTOR) {
-        console.error(`[hv] proxy_err`, {
-          project: selected.project,
-          target,
-          err: (e as Error)?.message,
-        });
+      // Always log proxy errors regardless of OTEL config (Fix E)
+      console.error(`[hv] proxy_err`, {
+        project: selected.project,
+        target,
+        errName: (e as Error)?.name,
+        err: (e as Error)?.message,
+      });
+      // Fix C: always decrement inflight on proxy failure
+      manager.decrementInflight(selected.project);
+
+      // Fix A: distinguish timeout from connection errors
+      const isTimeout = (e as Error)?.name === "AbortError" ||
+        (e as Error)?.name === "TimeoutError";
+
+      if (isTimeout) {
+        // Worker may still be healthy; return 504 without killing it
+        return new Response(
+          JSON.stringify({ error: { message: "Gateway Timeout" } }),
+          {
+            status: 504,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          },
+        );
       }
-      // Auto-heal: restart target project and retry once or queue
+
+      // Connection error → worker is likely dead, restart + re-enqueue
       try {
         await manager.restartProject(selected.project);
       } catch { /* ignore */ }
+      // Fix B: use buffered body for retry instead of consumed req
+      const retryReq = bufferedBody
+        ? new Request(req, {
+          body: bufferedBody as unknown as BodyInit,
+          headers: req.headers,
+        })
+        : req;
       return await enqueueAndWait(
         selected.project,
-        req,
+        retryReq,
         queueCfg.maxItems ?? 100,
         queueCfg.maxBodyBytes ?? 1_048_576,
         queueCfg.maxWaitMs ?? (hv.proxy?.timeoutMs ?? 300_000),
@@ -476,6 +537,9 @@ export async function startHypervisor(
         );
         headers.set("x-forwarded-path", orig.pathname);
         headers.set("x-forwarded-query", orig.search.replace(/^\?/, ""));
+        // Fix D: track inflight for queued requests to prevent premature idle shutdown
+        manager.incrementInflight(project);
+        manager.markProjectActivity(project);
         const res = await fetch(target, {
           method: transformedReq.method,
           headers,
@@ -493,7 +557,11 @@ export async function startHypervisor(
             headers: res.headers,
           }),
         );
+        manager.decrementInflight(project);
+        manager.markProjectActivity(project);
       } catch (e) {
+        manager.decrementInflight(project);
+        manager.markProjectActivity(project);
         item.done = true;
         if (item.timeoutId) clearTimeout(item.timeoutId as unknown as number);
         reject(e);
