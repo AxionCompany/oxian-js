@@ -1,6 +1,6 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.12.26",
+  "version": "0.13.0",
   "exports": {
     ".": "./cli.ts",
     "./types": "./src/types.ts",

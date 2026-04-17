@@ -1,8 +1,10 @@
 /**
  * @fileoverview Context and ResponseController types for Oxian request handling.
- * 
+ *
  * @module core/context
  */
+
+import type { RouteParamValue } from "../router/types.ts";
 
 /**
  * Interface for controlling HTTP responses in route handlers.
@@ -90,6 +92,7 @@ export type ResponseController = {
  * export async function GET(data: Data, context: Context) {
  *   const { method, url } = context.request;
  *   const userId = context.request.pathParams.id;
+ *   const nestedPath = context.request.pathParams.path;
  *   const database = context.dependencies.database;
  *
  *   context.response.send({ userId, method, url });
@@ -102,7 +105,7 @@ export type Context = {
     method: string;
     url: string;
     headers: Headers;
-    pathParams: Record<string, string>;
+    pathParams: Record<string, RouteParamValue>;
     queryParams: URLSearchParams;
     query: Record<string, string | string[]>;
     body: unknown;
@@ -113,4 +116,3 @@ export type Context = {
   response: ResponseController;
   oxian: { route: string; startedAt: number };
 };
-

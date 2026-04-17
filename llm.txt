@@ -277,7 +277,7 @@ Routing Conventions
 -------------------
 - `index.ts` maps to `/path/`
 - `[id].ts` maps to `/path/:id`
-- `[...slug].ts` maps to `/path/*` with `slug`
+- `[...param].ts` maps to `/path/*` with `param` as a string array
 - Supported extensions: .ts, .tsx, .js, .jsx
 
 Errors
@@ -460,7 +460,7 @@ Hypervisor automates this flow when `materialize` is enabled in config/provider:
 
 LLM Authoring Checklist
 -----------------------
-- Place new API under the routes directory; use `[param]` and `[...slug]` when needed.
+- Place new API under the routes directory; use `[param]` and `[...path]` when needed.
 - Export method functions in UPPERCASE or a default handler.
 - Keep stateful clients in `dependencies.ts` factories; reuse via `context.dependencies`.
 - Use `response.send` for custom status/headers; calling it ends the response immediately, so do background work without awaiting it afterwards.
@@ -550,5 +550,4 @@ Internal source reference (for contributors):
 - Hypervisor: `src/hv/main.ts`
 - Config types: `src/config/types.ts`
 - Vite integration doc: `docs/integrations-vite.md`
-
 

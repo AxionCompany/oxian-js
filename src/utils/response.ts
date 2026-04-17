@@ -14,6 +14,16 @@ export function createResponseController(): {
 
   const encoder = new TextEncoder();
 
+  // Notify runHandler that a response body has started (send/stream/sse).
+  // Safe to call multiple times; runHandler clears state.onSend after the
+  // first invocation. Callers must not assume state.responded is set — only
+  // `send()` marks a buffered response as complete.
+  const notifySendStarted = () => {
+    const onSend = state.onSend;
+    state.onSend = undefined;
+    onSend?.();
+  };
+
   const controller: ResponseController = {
     send(body: unknown, init) {
       if (init?.status !== undefined) state.status = init.status;
@@ -31,9 +41,7 @@ export function createResponseController(): {
       }
       state.responded = true;
       state.body = body;
-      const onSend = state.onSend;
-      state.onSend = undefined;
-      onSend?.();
+      notifySendStarted();
     },
     redirect(url: string, status: 301 | 302 | 303 | 307 | 308 = 302) {
       state.status = status;
@@ -136,6 +144,12 @@ export function createResponseController(): {
       writeFn.close = state.streamClose;
       writeFn.done = done;
 
+      // Signal runHandler that a streaming body is now live so it can
+      // finalize the Response and let the HTTP layer start consuming
+      // chunks as they are produced (rather than buffering until the
+      // handler promise resolves).
+      notifySendStarted();
+
       return writeFn;
     },
     sse(init) {
@@ -210,6 +224,12 @@ export function createResponseController(): {
           typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk),
         );
       state.streamClose = api.close;
+
+      // Signal runHandler that a streaming body is now live so it can
+      // finalize the Response and let the HTTP layer start consuming
+      // SSE chunks as they are produced (rather than buffering until
+      // the handler promise resolves).
+      notifySendStarted();
 
       return api;
     },

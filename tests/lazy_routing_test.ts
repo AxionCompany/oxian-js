@@ -14,8 +14,15 @@ async function waitForReady(url: string, timeoutMs = 5000) {
 }
 
 async function startServerLazy(port: number) {
+  const configUrl = new URL("./oxian.config.ts", import.meta.url).href;
   const proc = new Deno.Command("deno", {
-    args: ["run", "-A", "cli.ts", `--port=${port}`, "--config=oxian.config.ts"],
+    args: [
+      "run",
+      "-A",
+      "cli.ts",
+      `--port=${port}`,
+      `--config=${configUrl}`,
+    ],
     stdout: "piped",
     stderr: "piped",
   }).spawn();
@@ -40,7 +47,12 @@ Deno.test("lazy: index and param routing", async () => {
 
     const ca = await fetch("http://localhost:8131/docs/guide/intro");
     const caj = await ca.json();
-    if (!caj.slug) throw new Error("catch-all failed");
+    if (
+      !Array.isArray(caj.path) || caj.path.length !== 2 ||
+      caj.path[0] !== "guide" || caj.path[1] !== "intro"
+    ) {
+      throw new Error("catch-all failed");
+    }
   } finally {
     try {
       proc.kill();

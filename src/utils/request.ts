@@ -1,4 +1,5 @@
 import type { Data } from "../core/index.ts";
+import type { RouteParamValue } from "../router/types.ts";
 import { encodeBase64 } from "@std/encoding/base64";
 
 export async function parseRequestBody(req: Request): Promise<unknown> {
@@ -74,7 +75,7 @@ export function parseQuery(
 }
 
 export function mergeData(
-  pathParams: Record<string, string>,
+  pathParams: Record<string, RouteParamValue>,
   query: Record<string, string | string[]>,
   body: unknown,
 ): Data {

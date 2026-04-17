@@ -100,7 +100,7 @@ routes/
 │   ├── [id].ts       → GET,POST /users/:id
 │   └── settings.ts   → GET /users/settings
 └── docs/
-    └── [...slug].ts  → GET /docs/* (catch-all)
+    └── [...path].ts  → GET /docs/* (catch-all)
 ```
 
 ### Route Examples
@@ -131,10 +131,10 @@ export function GET({ id }) {
 **Catch-all routes:**
 
 ```ts
-// routes/docs/[...slug].ts
-export function GET({ slug }) {
-  // slug will be an array: /docs/api/v1 → ["api", "v1"]
-  return { page: slug.join("/") };
+// routes/docs/[...path].ts
+export function GET({ path }) {
+  // path will be an array: /docs/api/v1 → ["api", "v1"]
+  return { page: path.join("/") };
 }
 ```
 
@@ -527,7 +527,9 @@ export function GET(_, { response }) {
 }
 ```
 
-> ℹ️ `response.send()` finalizes the HTTP reply immediately (similar to Express). If you need to kick off background work after sending, do it without awaiting the result—for example with `queueMicrotask(() => doWorkLater())`.
+> ℹ️ `response.send()` finalizes the HTTP reply immediately (similar to
+> Express). If you need to kick off background work after sending, do it without
+> awaiting the result—for example with `queueMicrotask(() => doWorkLater())`.
 
 ### Different Response Types
 
@@ -765,7 +767,8 @@ Behavior:
 
 ## 📝 TypeScript Support
 
-Oxian is built with TypeScript-first design. You can use types via imports or JSDoc comments.
+Oxian is built with TypeScript-first design. You can use types via imports or
+JSDoc comments.
 
 ### Quick Start: JSDoc (No Imports Needed)
 
@@ -782,7 +785,7 @@ export async function GET(data, context) {
   // Full autocomplete and type checking!
   const userId = data.id;
   const db = context.dependencies.database;
-  
+
   return { user: { id: userId } };
 }
 ```
@@ -793,43 +796,43 @@ All framework types are available from `@oxian/oxian-js/types`:
 
 ```ts
 // Core handler types
-import type { 
-  Context,           // Request context with dependencies & response
-  Data,              // Merged request data (params + query + body)
-  Handler,           // Route handler function signature
-  Middleware,        // Middleware function signature
-  Interceptors,      // Interceptor configuration
-  ResponseController // Response helper methods
+import type {
+  Context, // Request context with dependencies & response
+  Data, // Merged request data (params + query + body)
+  Handler, // Route handler function signature
+  Interceptors, // Interceptor configuration
+  Middleware, // Middleware function signature
+  ResponseController, // Response helper methods
 } from "@oxian/oxian-js/types";
 
 // Configuration
-import type { 
-  OxianConfig,       // Configuration schema
-  EffectiveConfig    // Resolved configuration with defaults
+import type {
+  EffectiveConfig, // Resolved configuration with defaults
+  OxianConfig, // Configuration schema
 } from "@oxian/oxian-js/types";
 
 // Error handling
 import { OxianHttpError } from "@oxian/oxian-js/types";
 
 // MCP (Model Context Protocol) types
-import type { 
-  MCPServerConfig,   // MCP server configuration
-  Tool,              // Tool definition
-  Resource,          // Resource definition
-  ResourceTemplate,  // Resource template (URI patterns)
-  Prompt,            // Prompt definition
-  JsonRpcRequest,    // JSON-RPC request
-  JsonRpcResponse,   // JSON-RPC response
-  ServerInfo,        // Server information
-  ClientInfo         // Client information
+import type {
+  ClientInfo, // Client information
+  JsonRpcRequest, // JSON-RPC request
+  JsonRpcResponse, // JSON-RPC response
+  MCPServerConfig, // MCP server configuration
+  Prompt, // Prompt definition
+  Resource, // Resource definition
+  ResourceTemplate, // Resource template (URI patterns)
+  ServerInfo, // Server information
+  Tool, // Tool definition
 } from "@oxian/oxian-js/types";
 
 // MCP helper functions
-import { 
-  handleMCPRequest,      // Main request handler
-  handleMCPInfo,         // GET info handler
-  createMCPHandlers,     // Create handler map
-  JSON_RPC_ERRORS        // Error code constants
+import {
+  createMCPHandlers, // Create handler map
+  handleMCPInfo, // GET info handler
+  handleMCPRequest, // Main request handler
+  JSON_RPC_ERRORS, // Error code constants
 } from "@oxian/oxian-js/types";
 ```
 
@@ -863,7 +866,9 @@ interface Database {
   findById: (id: string) => Promise<User>;
 }
 
-export default async function(context?: Context): Promise<{ database: Database }> {
+export default async function (
+  context?: Context,
+): Promise<{ database: Database }> {
   const database: Database = await createDatabase();
   return { database };
 }
@@ -894,7 +899,7 @@ export default function(data: Data, context: Context) {
 
 ```ts
 // routes/interceptors.ts
-import type { Data, Context, Interceptors } from "@oxian/oxian-js/types";
+import type { Context, Data, Interceptors } from "@oxian/oxian-js/types";
 
 export async function beforeRun(data: Data, context: Context) {
   console.log(`Processing ${context.request.method} ${context.request.url}`);
@@ -1171,7 +1176,9 @@ export function GET(_, { dependencies }) {
 
 ## 🤖 Building MCP Servers
 
-Oxian makes it easy to build **Model Context Protocol (MCP) servers** using streamable HTTP transport. MCP enables AI assistants to connect to external data sources and tools.
+Oxian makes it easy to build **Model Context Protocol (MCP) servers** using
+streamable HTTP transport. MCP enables AI assistants to connect to external data
+sources and tools.
 
 ### Quick Example with Types
 
@@ -1179,23 +1186,23 @@ All MCP types are available from `@oxian/oxian-js/types`:
 
 ```ts
 // routes/mcp/dependencies.ts
-import type { 
-  MCPServerConfig, 
-  Tool, 
-  CallToolResult 
+import type {
+  CallToolResult,
+  MCPServerConfig,
+  Tool,
 } from "@oxian/oxian-js/types";
 
-export default function(): { mcpServer: MCPServerConfig } {
+export default function (): { mcpServer: MCPServerConfig } {
   const tools: Tool[] = [{
     name: "get_data",
     description: "Fetch data from the database",
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "SQL query" }
+        query: { type: "string", description: "SQL query" },
       },
-      required: ["query"]
-    }
+      required: ["query"],
+    },
   }];
 
   return {
@@ -1208,26 +1215,26 @@ export default function(): { mcpServer: MCPServerConfig } {
       prompts: [],
       toolHandlers: {
         get_data: async (args): Promise<CallToolResult> => ({
-          content: [{ 
-            type: "text", 
-            text: `Query result for: ${args.query}` 
-          }]
-        })
+          content: [{
+            type: "text",
+            text: `Query result for: ${args.query}`,
+          }],
+        }),
       },
       readResource: (params) => ({ contents: [] }),
-      getPrompt: (params) => ({ messages: [] })
-    }
+      getPrompt: (params) => ({ messages: [] }),
+    },
   };
 }
 ```
 
 ```ts
 // routes/mcp/index.ts
-import type { Data, Context } from "@oxian/oxian-js/types";
-import { 
-  handleMCPRequest, 
+import type { Context, Data } from "@oxian/oxian-js/types";
+import {
   handleMCPInfo,
-  type MCPServerConfig 
+  handleMCPRequest,
+  type MCPServerConfig,
 } from "@oxian/oxian-js/types";
 
 export async function POST(data: Data, context: Context) {
@@ -1256,7 +1263,8 @@ export async function POST(data, context) {
 }
 ```
 
-**Full example**: See [`routes/mcp/`](./routes/mcp/) for a complete weather MCP server with tools, resources, and resource templates.
+**Full example**: See [`routes/mcp/`](./routes/mcp/) for a complete weather MCP
+server with tools, resources, and resource templates.
 
 **Documentation**: [MCP Server Guide](./docs/mcp-server.md)
 
@@ -1264,7 +1272,8 @@ export async function POST(data, context) {
 
 Explore example routes included in this repo:
 
-- **MCP Server**: `routes/mcp/` - Full MCP server with weather tools and resource templates
+- **MCP Server**: `routes/mcp/` - Full MCP server with weather tools and
+  resource templates
 - Basic index route: `routes/index.ts`
 - Dynamic params: `routes/users/[id].ts`
 - SSE stream: `routes/sse.ts`
@@ -1273,7 +1282,7 @@ Explore example routes included in this repo:
   `routes/dep-compose/leaf/index.ts`
 - Middleware & interceptors: `routes/middleware.ts`, `routes/interceptors.ts`,
   `routes/users/middleware.ts`, `routes/order/a/interceptors.ts`
-- Catch-all docs: `routes/docs/[...slug].ts`
+- Catch-all docs: `routes/docs/[...path].ts`
 
 ## 🤝 Contributing
 
@@ -1298,6 +1307,7 @@ MIT License - see [LICENSE](./LICENSE) for details.
 
 **Built with ❤️ by the Oxian team**
 
-[Website](https://oxiandigital.com/) • [Documentation](https://github.com/AxionCompany/oxian-js) •
+[Website](https://oxiandigital.com/) •
+[Documentation](https://github.com/AxionCompany/oxian-js) •
 
 </div>

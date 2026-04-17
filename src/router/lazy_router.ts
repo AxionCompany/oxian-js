@@ -1,4 +1,18 @@
-import type { RouteRecord, RouteMatch, Router, ListDirFn, StatFn } from "./types.ts";
+import type {
+  ListDirFn,
+  RouteMatch,
+  Router,
+  RouteRecord,
+  StatFn,
+} from "./types.ts";
+import {
+  createRouteRecord,
+  isCatchAllSegmentToken,
+  isParamSegmentToken,
+  isRouteModuleFile,
+  parseRouteSegmentToken,
+  stripRouteModuleExtension,
+} from "./route_segments.ts";
 
 type DirEntries = { files: Set<string>; dirs: Set<string> };
 
@@ -37,23 +51,27 @@ async function listEntries(
   return { files, dirs };
 }
 
-function toSegments(pattern: string): RouteRecord["segments"] {
-  return pattern.split("/").filter(Boolean).map((seg) => {
-    if (seg === "*") return { type: "catchall" } as const;
-    if (seg.startsWith(":")) {
-      return { type: "param", name: seg.slice(1) } as const;
-    }
-    return { type: "static" } as const;
-  });
+function findFileMatch(
+  files: Set<string>,
+  predicate: (baseName: string) => boolean,
+): string | null {
+  for (const fileName of files) {
+    if (!isRouteModuleFile(fileName)) continue;
+    if (predicate(stripRouteModuleExtension(fileName))) return fileName;
+  }
+  return null;
 }
 
 function findFileBaseMatch(files: Set<string>, base: string): string | null {
-  const exts = [".ts", ".tsx", ".js", ".jsx"];
-  for (const ext of exts) {
-    const name = base + ext;
-    if (files.has(name)) return name;
-  }
-  return null;
+  return findFileMatch(files, (baseName) => baseName === base);
+}
+
+function findCatchAllFile(files: Set<string>): string | null {
+  return findFileMatch(files, isCatchAllSegmentToken);
+}
+
+function findParamFile(files: Set<string>): string | null {
+  return findFileMatch(files, isParamSegmentToken);
 }
 
 export function createLazyRouter(
@@ -64,15 +82,15 @@ export function createLazyRouter(
   async function matchPath(path: string): Promise<RouteMatch> {
     const parts = path.split("/").filter(Boolean);
     let curDir = routesRootUrl;
-    const params: Record<string, string> = {};
+    const params: Record<string, string | string[]> = {};
     let consumed = 0;
 
     const rootEntries = await listEntries(curDir, listDir, stat);
 
-    let catchAllUrl: URL | null = null;
+    let catchAllFile: string | null = null;
     {
-      const ca = findFileBaseMatch(rootEntries.files, "[...slug]");
-      if (ca) catchAllUrl = makeChildUrl(curDir, ca);
+      const ca = findCatchAllFile(rootEntries.files);
+      if (ca) catchAllFile = ca;
     }
 
     for (let i = 0; i < parts.length; i++) {
@@ -83,25 +101,38 @@ export function createLazyRouter(
         const directName = findFileBaseMatch(entries.files, seg);
         if (directName) {
           const fileUrl = makeChildUrl(curDir, directName);
+          const basePath = ensureTrailingSlash(routesRootUrl).pathname;
+          const curPath = ensureTrailingSlash(curDir).pathname;
+          const rel = curPath.startsWith(basePath)
+            ? curPath.slice(basePath.length)
+            : curPath;
+          const relParts = rel.split("/").filter(Boolean);
           return {
-            route: {
-              pattern: "/" + parts.join("/"),
-              segments: toSegments("/" + parts.join("/")),
-              fileUrl,
-            },
+            route: createRouteRecord([...relParts, seg], fileUrl),
             params,
           };
         }
-        const paramName = [...entries.files].find((f) =>
-          /^\[[^\.]+\]\.(tsx?|jsx?)$/.test(f)
-        );
+        const paramName = findParamFile(entries.files);
         if (paramName) {
-          const name = paramName.match(/^\[(.+)\]\./)?.[1] ?? "param";
-          params[name] = decodeURIComponent(seg);
-          const pattern = "/" + [...parts.slice(0, -1), ":" + name].join("/");
+          const parsed = parseRouteSegmentToken(
+            stripRouteModuleExtension(paramName),
+          );
+          if (parsed.type !== "param") {
+            throw new Error("Expected param route segment");
+          }
+          params[parsed.name] = decodeURIComponent(seg);
           const fileUrl = makeChildUrl(curDir, paramName);
+          const basePath = ensureTrailingSlash(routesRootUrl).pathname;
+          const curPath = ensureTrailingSlash(curDir).pathname;
+          const rel = curPath.startsWith(basePath)
+            ? curPath.slice(basePath.length)
+            : curPath;
+          const relParts = rel.split("/").filter(Boolean);
           return {
-            route: { pattern, segments: toSegments(pattern), fileUrl },
+            route: createRouteRecord([
+              ...relParts,
+              stripRouteModuleExtension(paramName),
+            ], fileUrl),
             params,
           };
         }
@@ -110,20 +141,23 @@ export function createLazyRouter(
       if (entries.dirs.has(seg)) {
         curDir = makeChildUrl(curDir, seg + "/");
         const dirEntries = await listEntries(curDir, listDir, stat);
-        const ca = findFileBaseMatch(dirEntries.files, "[...slug]");
-        if (ca) catchAllUrl = makeChildUrl(curDir, ca);
+        const ca = findCatchAllFile(dirEntries.files);
+        if (ca) catchAllFile = ca;
         consumed++;
         continue;
       }
 
-      const pdir = [...entries.dirs].find((d) => /^\[[^\.]+\]$/.test(d));
+      const pdir = [...entries.dirs].find(isParamSegmentToken);
       if (pdir) {
-        const name = pdir.slice(1, -1);
-        params[name] = decodeURIComponent(seg);
+        const parsed = parseRouteSegmentToken(pdir);
+        if (parsed.type !== "param") {
+          throw new Error("Expected param route segment");
+        }
+        params[parsed.name] = decodeURIComponent(seg);
         curDir = makeChildUrl(curDir, pdir + "/");
         const dirEntries = await listEntries(curDir, listDir, stat);
-        const ca = findFileBaseMatch(dirEntries.files, "[...slug]");
-        if (ca) catchAllUrl = makeChildUrl(curDir, ca);
+        const ca = findCatchAllFile(dirEntries.files);
+        if (ca) catchAllFile = ca;
         consumed++;
         continue;
       }
@@ -140,14 +174,15 @@ export function createLazyRouter(
       const rel = curPath.startsWith(basePath)
         ? curPath.slice(basePath.length)
         : curPath;
-      const pattern = "/" + rel.split("/").filter(Boolean).join("/") + "/";
       return {
-        route: { pattern, segments: toSegments(pattern), fileUrl },
+        route: createRouteRecord(rel.split("/").filter(Boolean), fileUrl, {
+          trailingSlash: true,
+        }),
         params,
       };
     }
 
-    if (catchAllUrl) {
+    if (catchAllFile) {
       const basePath = ensureTrailingSlash(routesRootUrl).pathname;
       const curPath = ensureTrailingSlash(curDir).pathname;
       const rel = curPath.startsWith(basePath)
@@ -155,10 +190,19 @@ export function createLazyRouter(
         : curPath;
       const relParts = rel.split("/").filter(Boolean);
       const depth = relParts.length;
-      params.slug = parts.slice(depth).join("/");
-      const pattern = "/" + relParts.join("/") + "/*";
+      const parsed = parseRouteSegmentToken(
+        stripRouteModuleExtension(catchAllFile),
+      );
+      if (parsed.type !== "catchall") {
+        throw new Error("Expected catch-all route segment");
+      }
+      params[parsed.name] = parts.slice(depth).map(decodeURIComponent);
+      const fileUrl = makeChildUrl(curDir, catchAllFile);
       return {
-        route: { pattern, segments: toSegments(pattern), fileUrl: catchAllUrl },
+        route: createRouteRecord([
+          ...relParts,
+          stripRouteModuleExtension(catchAllFile),
+        ], fileUrl),
         params,
       };
     }

@@ -127,21 +127,21 @@ Use `[...param]` to catch multiple path segments:
 ```
 routes/
 └── docs/
-    └── [...slug].ts  → /docs/* (any depth)
+    └── [...path].ts  → /docs/* (any depth)
 ```
 
 ```ts
-// routes/docs/[...slug].ts
-export function GET({ slug }) {
-  // slug is an array of path segments
-  // /docs/api/v1/users → slug = ["api", "v1", "users"]
+// routes/docs/[...path].ts
+export function GET({ path }) {
+  // path is an array of path segments
+  // /docs/api/v1/users → path = ["api", "v1", "users"]
 
   return {
-    page: slug.join("/"),
-    segments: slug,
-    breadcrumbs: slug.map((segment, index) => ({
+    page: path.join("/"),
+    segments: path,
+    breadcrumbs: path.map((segment, index) => ({
       name: segment,
-      path: `/docs/${slug.slice(0, index + 1).join("/")}`,
+      path: `/docs/${path.slice(0, index + 1).join("/")}`,
     })),
   };
 }
@@ -164,13 +164,13 @@ Use `[[...param]]` for optional catch-all (matches both `/docs` and
 `/docs/anything`):
 
 ```ts
-// routes/docs/[[...slug]].ts
-export function GET({ slug = [] }) {
-  if (slug.length === 0) {
+// routes/docs/[[...path]].ts
+export function GET({ path = [] }) {
+  if (path.length === 0) {
     return { page: "index", title: "Documentation Home" };
   }
 
-  return { page: slug.join("/"), segments: slug };
+  return { page: path.join("/"), segments: path };
 }
 ```
 
@@ -572,7 +572,7 @@ routes/
 ```
 routes/
 ├── docs/
-│   ├── [...slug].ts     # GET /docs/* (markdown pages)
+│   ├── [...path].ts     # GET /docs/* (markdown pages)
 │   └── search.ts        # GET /docs/search
 ├── api/
 │   └── [...path].ts     # GET /api/* (API docs)

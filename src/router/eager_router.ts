@@ -1,15 +1,15 @@
 import type {} from "@std/path";
-import type { RouteRecord, RouteMatch, Router, ListDirFn, StatFn } from "./types.ts";
-
-function toSegments(pattern: string): RouteRecord["segments"] {
-  return pattern.split("/").filter(Boolean).map((seg) => {
-    if (seg === "*") return { type: "catchall" } as const;
-    if (seg.startsWith(":")) {
-      return { type: "param", name: seg.slice(1) } as const;
-    }
-    return { type: "static" } as const;
-  });
-}
+import type {
+  ListDirFn,
+  RouteMatch,
+  Router,
+  RouteRecord,
+  StatFn,
+} from "./types.ts";
+import {
+  createRouteRecordFromRelativeFile,
+  isRouteModuleFile,
+} from "./route_segments.ts";
 
 function compareSpecificity(a: RouteRecord, b: RouteRecord): number {
   const score = (r: RouteRecord) =>
@@ -33,18 +33,6 @@ function makeChildUrl(parent: URL, name: string): URL {
   return new URL(name, baseObj);
 }
 
-function fileToPattern(relPath: string): string | null {
-  if (!/\.(tsx?|jsx?)$/.test(relPath)) return null;
-  let path = relPath.replace(/\.(tsx?|jsx?)$/, "");
-  path = path.replace(/\/index$/, "/");
-  if (!path.startsWith("/")) path = "/" + path;
-  path = path.replace(/\[(\.\.\.)?([\w-]+)\]/g, (_m, dots, name) => {
-    if (dots) return `*`;
-    return `:${name}`;
-  });
-  return path === "" ? "/" : path;
-}
-
 export async function buildEagerRouter(
   opts: { routesRootUrl: URL; listDir: ListDirFn; stat: StatFn },
 ): Promise<Router> {
@@ -58,7 +46,7 @@ export async function buildEagerRouter(
       try {
         const st = await stat(child);
         if (st.isFile) {
-          if (name.startsWith("_")) continue;
+          if (name.startsWith("_") || !isRouteModuleFile(name)) continue;
           files.push(prefix + "/" + name);
         } else files.push(...(await walk(child, prefix + "/" + name)));
       } catch {
@@ -81,12 +69,12 @@ export async function buildEagerRouter(
   for (const rel of relFiles) {
     const base = rel.split("/").pop()!;
     if (pipelineNames.has(base)) continue;
-    const pattern = fileToPattern(rel);
-    if (!pattern) continue;
 
     const baseObj = ensureTrailingSlash(routesRootUrl);
     const fileUrl = new URL(rel.startsWith("/") ? rel.slice(1) : rel, baseObj);
-    routes.push({ pattern, segments: toSegments(pattern), fileUrl });
+    const route = createRouteRecordFromRelativeFile(rel, fileUrl);
+    if (!route) continue;
+    routes.push(route);
   }
 
   routes.sort(compareSpecificity);
@@ -94,23 +82,22 @@ export async function buildEagerRouter(
   function match(path: string): RouteMatch {
     const parts = path.split("/").filter(Boolean);
     for (const r of routes) {
-      const params: Record<string, string> = {};
-      const rparts = r.pattern.split("/").filter(Boolean);
+      const params: Record<string, string | string[]> = {};
       let ok = true;
       let i = 0, j = 0;
-      while (i < rparts.length && j < parts.length) {
-        const rp = rparts[i];
+      while (i < r.segments.length && j < parts.length) {
+        const segment = r.segments[i];
         const p = parts[j];
-        if (rp === "*") {
-          params["slug"] = parts.slice(j).join("/");
+        if (segment.type === "catchall") {
+          params[segment.name] = parts.slice(j).map(decodeURIComponent);
           j = parts.length;
-          i = rparts.length;
+          i = r.segments.length;
           break;
-        } else if (rp.startsWith(":")) {
-          params[rp.slice(1)] = decodeURIComponent(p);
+        } else if (segment.type === "param") {
+          params[segment.name] = decodeURIComponent(p);
           i++;
           j++;
-        } else if (rp === p) {
+        } else if (segment.value === p) {
           i++;
           j++;
         } else {
@@ -118,7 +105,7 @@ export async function buildEagerRouter(
           break;
         }
       }
-      if (ok && i === rparts.length && j === parts.length) {
+      if (ok && i === r.segments.length && j === parts.length) {
         return { route: r, params };
       }
     }

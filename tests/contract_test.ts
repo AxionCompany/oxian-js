@@ -17,12 +17,13 @@ async function waitForReady(url: string, timeoutMs = 5000) {
 }
 
 async function startServer(port: number, extraArgs: string[] = []) {
+  const configUrl = new URL("./oxian.config.json", import.meta.url).href;
   const args = [
     "run",
     "-A",
     "cli.ts",
     `--port=${port}`,
-    "--config=oxian.config.json",
+    `--config=${configUrl}`,
     ...extraArgs,
   ];
   const proc = new Deno.Command("deno", {
@@ -91,15 +92,16 @@ Deno.test("streaming route", async () => {
   }
 });
 
-Deno.test("catch-all slug", async () => {
+Deno.test("catch-all path array", async () => {
   const proc = await startServer(8127);
   try {
     const res = await fetch("http://localhost:8127/docs/getting/started");
     const json = await res.json();
     if (
-      json.slug !== "docs/getting/started" && json.slug !== "getting/started"
+      !Array.isArray(json.path) || json.path.length !== 2 ||
+      json.path[0] !== "getting" || json.path[1] !== "started"
     ) {
-      throw new Error("unexpected slug");
+      throw new Error("unexpected path");
     }
   } finally {
     proc.kill();

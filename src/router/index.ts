@@ -5,7 +5,14 @@ import type { Resolver } from "../resolvers/index.ts";
 import type { ResolvedRouter } from "./types.ts";
 
 // Re-export types for public API
-export type { ResolvedRouter, RouteRecord, RouteMatch, Router } from "./types.ts";
+export type {
+  ResolvedRouter,
+  RouteMatch,
+  RouteParamValue,
+  Router,
+  RouteRecord,
+  RouteSegment,
+} from "./types.ts";
 
 export async function resolveRouter(
   { config }: { config: EffectiveConfig },
