@@ -137,7 +137,6 @@ export async function main() {
   const hypervisorDisabled = (hypervisorArg === false) ||
     (hypervisorArg === "false");
   const bypassHv = hypervisorDisabled || config.runtime?.hv?.enabled === false;
-  console.log("[cli] bypassHv", bypassHv);
   if (!bypassHv) {
     const { startHypervisor } = await import("../hypervisor/index.ts");
     const { OxianPlugin } = await import("../hypervisor_plugin/index.ts");
@@ -154,6 +153,7 @@ export async function main() {
       config = {
         ...config,
         runtime: { ...config.runtime, hotReload: true },
+        logging: { ...config.logging, verboseErrors: true },
       } as EffectiveConfig;
     }
     const plugin = new OxianPlugin();
@@ -172,6 +172,15 @@ export async function main() {
       ],
     }, plugin);
     Deno.exit(0);
+  }
+
+  // When --source points to a directory and routesDir wasn't explicitly set,
+  // the source IS the routes root — use "." to avoid looking for routes/routes/
+  if (sourceStr && !routesDir && !config.routing?.routesDir) {
+    config = {
+      ...config,
+      routing: { ...config.routing, routesDir: "." },
+    } as EffectiveConfig;
   }
 
   console.log("[cli] starting server", {

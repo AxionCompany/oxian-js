@@ -193,7 +193,9 @@ export async function executePipeline(
       err: (err as Error)?.message,
       stack: (err as Error)?.stack,
     });
-    const shaped = shapeError(err as unknown);
+    const shaped = shapeError(err as unknown, {
+      verboseErrors: config.logging?.verboseErrors,
+    });
     state.status = shaped.status;
     state.body = shaped.body;
     return { resultOrError: err, data, context };
@@ -228,6 +230,7 @@ export async function executePipeline(
       data as Record<string, unknown>,
       context,
       state,
+      { verboseErrors: config.logging?.verboseErrors },
     );
     resultOrError = error ?? result;
     if (PERF) {

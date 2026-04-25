@@ -10,7 +10,7 @@
 
 import type { EffectiveConfig } from "../config/index.ts";
 // Use console.* for OTEL log export (Deno only supports console, not Logs API)
-import { context, metrics, trace } from "npm:@opentelemetry/api@1";
+import { context, metrics, trace } from "opentelemetry";
 
 import {
   createResponseController,
@@ -20,6 +20,7 @@ import { mergeData, parseQuery, parseRequestBody } from "../utils/request.ts";
 import type { Context, Data } from "../core/index.ts";
 import { resolveRouter } from "../router/index.ts";
 import { executePipeline } from "../runtime/executor.ts";
+import { shapeError } from "../runtime/pipeline.ts";
 import type { Resolver } from "../resolvers/types.ts";
 
 // Minimal MIME type mapping for static serving
@@ -527,13 +528,16 @@ export async function startServer(
             }
           }
 
+          const shaped = shapeError(err, {
+            verboseErrors: config.logging?.verboseErrors,
+          });
           const headers = new Headers({
             "content-type": "application/json; charset=utf-8",
           });
           applyCorsAndDefaults(headers, config, req);
           return new Response(
-            JSON.stringify({ error: { message: "Internal Server Error" } }),
-            { status: 500, headers },
+            JSON.stringify(shaped.body),
+            { status: shaped.status, headers },
           );
         }
       }); // Close context.with()

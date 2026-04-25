@@ -42,21 +42,8 @@ export async function startHypervisor(
   const PERF = config.logging?.performance === true;
   const effectiveStore = store ?? new MemoryStore();
 
-  // Request queue stays local — in-memory for now, per-instance state
-  const requestQueues = new Map<
-    string,
-    Array<
-      {
-        req: Request;
-        resolve: (res: Response) => void;
-        reject: (err: unknown) => void;
-        enqueuedAt: number;
-        maxWaitMs: number;
-        done?: boolean;
-        timeoutId?: number;
-      }
-    >
-  >();
+  // Queue item shape stored in the store
+  type QueueItem = { req: Request; enqueuedAt: number };
 
   const { denoOptions, scriptArgs } = splitBaseArgs(baseArgs);
 
@@ -463,20 +450,17 @@ export async function startHypervisor(
   });
 
   async function flushQueue(service: string) {
-    const q = requestQueues.get(service);
-    if (!q || q.length === 0) return;
+    const items = await effectiveStore.drain<QueueItem>(`queue:${service}`);
+    if (items.length === 0) return;
     const svcTarget = await manager.getTarget(service);
     if (!svcTarget) return; // still not ready
-    const items = q.splice(0, q.length);
-    for (const item of items) {
-      const { req, resolve, reject, enqueuedAt, maxWaitMs } = item;
-      if (item.done) continue;
+    // Reset queue size counter after draining
+    await effectiveStore.set(`queue-size:${service}`, 0);
+    for (const { id, item: { req, enqueuedAt } } of items) {
       const now = Date.now();
-      const maxWait = maxWaitMs ?? (hv.queue?.maxWaitMs ?? 2_000);
+      const maxWait = hv.queue?.maxWaitMs ?? 2_000;
       if (now - enqueuedAt > maxWait) {
-        item.done = true;
-        if (item.timeoutId) clearTimeout(item.timeoutId as unknown as number);
-        resolve(
+        await effectiveStore.resolve<Response>(id,
           new Response(
             JSON.stringify({ error: { message: "Queue wait timeout" } }),
             {
@@ -494,11 +478,7 @@ export async function startHypervisor(
           try {
             transformedReq = await hv.onRequest({ req, service });
           } catch (_e) {
-            item.done = true;
-            if (item.timeoutId) {
-              clearTimeout(item.timeoutId as unknown as number);
-            }
-            resolve(
+            await effectiveStore.resolve<Response>(id,
               new Response(
                 JSON.stringify({
                   error: { message: "Request transformation failed" },
@@ -528,7 +508,7 @@ export async function startHypervisor(
         );
         headers.set("x-forwarded-path", orig.pathname);
         headers.set("x-forwarded-query", orig.search.replace(/^\?/, ""));
-        // Fix D: track inflight for queued requests to prevent premature idle shutdown
+        // Track inflight for queued requests to prevent premature idle shutdown
         manager.incrementServiceInflight(service);
         manager.markServiceActivity(service);
         const res = await fetch(target, {
@@ -536,12 +516,9 @@ export async function startHypervisor(
           headers,
           body: transformedReq.body,
           redirect: "manual",
-          // Enable streaming request body for large uploads
           duplex: "half",
         } as RequestInit);
-        item.done = true;
-        if (item.timeoutId) clearTimeout(item.timeoutId as unknown as number);
-        resolve(
+        await effectiveStore.resolve<Response>(id,
           new Response(res.body, {
             status: res.status,
             statusText: res.statusText,
@@ -553,9 +530,17 @@ export async function startHypervisor(
       } catch (e) {
         manager.decrementServiceInflight(service);
         manager.markServiceActivity(service);
-        item.done = true;
-        if (item.timeoutId) clearTimeout(item.timeoutId as unknown as number);
-        reject(e);
+        // Resolve with error response instead of rejecting —
+        // waitFor callers get a clean Response either way
+        await effectiveStore.resolve<Response>(id,
+          new Response(
+            JSON.stringify({ error: { message: (e as Error)?.message || "Proxy error" } }),
+            {
+              status: 502,
+              headers: { "content-type": "application/json; charset=utf-8" },
+            },
+          ),
+        );
       }
     }
   }
@@ -567,8 +552,9 @@ export async function startHypervisor(
     maxBodyBytes: number,
     maxWaitMs: number,
   ): Promise<Response> {
-    const q = requestQueues.get(service) ?? [];
-    if (q.length >= maxItems) {
+    // Capacity check via store counter
+    const size = await effectiveStore.get<number>(`queue-size:${service}`) ?? 0;
+    if (size >= maxItems) {
       return new Response(
         JSON.stringify({ error: { message: "Server busy" } }),
         {
@@ -577,6 +563,7 @@ export async function startHypervisor(
         },
       );
     }
+
     let body: ReadableStream<Uint8Array> | null = null;
     let cloned: Request;
     // Clone request with bounded body to avoid indefinite buffering
@@ -586,7 +573,6 @@ export async function startHypervisor(
         ReadableStream<Uint8Array> | null,
       ];
       body = b1;
-      // ensure service header is present on queued request
       const h = new Headers(req.headers);
       try {
         h.set("x-oxian-service", service);
@@ -636,44 +622,31 @@ export async function startHypervisor(
       }
     }
 
-    const resP = new Promise<Response>((resolve, reject) => {
-      const item = {
-        req: cloned,
-        resolve,
-        reject,
-        enqueuedAt: Date.now(),
-        maxWaitMs,
-      } as {
-        req: Request;
-        resolve: (res: Response) => void;
-        reject: (err: unknown) => void;
-        enqueuedAt: number;
-        maxWaitMs: number;
-        done?: boolean;
-        timeoutId?: number;
-      };
-      const to = setTimeout(() => {
-        if (item.done) return;
-        item.done = true;
-        resolve(
-          new Response(
-            JSON.stringify({ error: { message: "Queue wait timeout" } }),
-            {
-              status: 503,
-              headers: { "content-type": "application/json; charset=utf-8" },
-            },
-          ),
-        );
-      }, Math.max(0, maxWaitMs));
-      item.timeoutId = to as unknown as number;
-      q.push(item);
-      requestQueues.set(service, q);
+    // Enqueue via store and wait for response
+    const id = await effectiveStore.enqueue<QueueItem>(`queue:${service}`, {
+      req: cloned,
+      enqueuedAt: Date.now(),
     });
+    await effectiveStore.increment(`queue-size:${service}`);
 
-    // kick a readiness wait; when ready, flush
-    const waited = await manager.waitForServiceReady(service, maxWaitMs);
-    if (waited) await flushQueue(service);
-    return resP;
+    // Kick readiness wait; when ready, flush
+    manager.waitForServiceReady(service, maxWaitMs).then(async (waited) => {
+      if (waited) await flushQueue(service);
+    }).catch(() => { /* ignore */ });
+
+    // Block until flushQueue resolves this id, or timeout
+    try {
+      return await effectiveStore.waitFor<Response>(id, maxWaitMs);
+    } catch {
+      // waitFor timeout — return 503
+      return new Response(
+        JSON.stringify({ error: { message: "Queue wait timeout" } }),
+        {
+          status: 503,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        },
+      );
+    }
   }
 
   // Dev autoreload: watch for file changes and trigger blue/green restarts

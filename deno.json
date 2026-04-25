@@ -23,28 +23,14 @@
       "oxian-framework-spec.md"
     ]
   },
-  "unstable": [
-    "raw-imports",
-    "bare-node-builtins",
-    "detect-cjs",
-    "node-globals",
-    "sloppy-imports",
-    "unsafe-proto",
-    "webgpu",
-    "broadcast-channel",
-    "worker-options",
-    "cron",
-    "kv",
-    "net",
-    "otel"
-  ],
   "imports": {
     "oxian-js/": "./src/",
     "@oxian/oxian-js": "./cli.ts",
     "@oxian/oxian-js/mcp": "./src/utils/mcp.ts",
     "@std/path": "jsr:@std/path@1.1.1",
     "@std/cli/parse-args": "jsr:@std/cli@1.0.21/parse-args",
-    "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64"
+    "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64",
+    "opentelemetry": "npm:@opentelemetry/api@1"
   },
   "lock": false
 }

@@ -154,6 +154,7 @@ export type OxianConfig = {
     requestIdHeader?: string;
     deprecations?: boolean; // default true
     performance?: boolean; // enable perf timing logs
+    verboseErrors?: boolean; // expose error message+stack in responses; auto-set by `dev` command
     // Optional structured log event callback; invoked for server and hypervisor events
     onEvent?: (event: { level: "debug" | "info" | "warn" | "error"; time: string; source: string; service: string; payload: Record<string, unknown> }) => void;
     // Control console output; true by default
