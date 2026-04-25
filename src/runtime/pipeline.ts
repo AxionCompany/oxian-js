@@ -28,7 +28,10 @@ function toHttpResponse(result: unknown, state: ResponseState): void {
   state.body = result;
 }
 
-export function shapeError(err: unknown): { status: number; body: unknown } {
+export function shapeError(
+  err: unknown,
+  opts?: { verboseErrors?: boolean },
+): { status: number; body: unknown } {
   if (err && typeof err === "object" && "message" in err) {
     const anyErr = err as Record<string, unknown>;
     const statusCode = typeof anyErr.statusCode === "number"
@@ -63,7 +66,8 @@ export function shapeError(err: unknown): { status: number; body: unknown } {
     };
   }
   console.error("[unhandled] Error", err);
-  if (Deno.env.get("OXIAN_DEBUG") === "1") {
+  const verbose = opts?.verboseErrors || Deno.env.get("OXIAN_DEBUG") === "1";
+  if (verbose) {
     const e = err as Error;
     return {
       status: 500,
@@ -128,6 +132,7 @@ export async function runHandler(
   data: Record<string, unknown>,
   context: Context,
   state: ResponseState,
+  opts?: { verboseErrors?: boolean },
 ): Promise<{ result?: unknown; error?: unknown }> {
   const isStreaming = () =>
     state.body &&
@@ -196,7 +201,7 @@ export async function runHandler(
           state.streamClose?.();
         })
         .catch((err) => {
-          const shaped = shapeError(err);
+          const shaped = shapeError(err, opts);
           if (state.streamWrite) {
             state.streamWrite(
               typeof shaped.body === "string"
@@ -271,7 +276,7 @@ export async function runHandler(
     toHttpResponse(result, state);
     return { result };
   } catch (err) {
-    const shaped = shapeError(err);
+    const shaped = shapeError(err, opts);
     if (isStreaming()) {
       if (state.streamWrite) {
         state.streamWrite(

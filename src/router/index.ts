@@ -26,17 +26,12 @@ export async function resolveRouter(
   const isRemote = routesRootUrl.protocol !== "file:";
 
   if (discovery === "lazy") {
-    const router = await createLazyRouter({
+    const router = createLazyRouter({
       routesRootUrl,
       listDir: resolver.listDir,
       stat: resolver.stat,
     });
-    return {
-      router: router as unknown as ResolvedRouter["router"],
-      loaderManager: { getLoaders: () => [] },
-      isRemote,
-      routesRootUrl,
-    };
+    return { router, isRemote, routesRootUrl };
   }
 
   const router = await buildEagerRouter({
@@ -44,10 +39,5 @@ export async function resolveRouter(
     listDir: resolver.listDir,
     stat: resolver.stat,
   });
-  return {
-    router: router as unknown as ResolvedRouter["router"],
-    loaderManager: { getLoaders: () => [] },
-    isRemote,
-    routesRootUrl,
-  };
+  return { router, isRemote, routesRootUrl };
 }

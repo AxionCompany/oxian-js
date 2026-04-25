@@ -1,4 +1,4 @@
-import type { Context, Data } from "../src/core/types.ts";
+import type { Context, Data } from "oxian-js/types.ts";
 
 export async function GET(_data: Data, { response }: Context) {
   response.headers({ "content-type": "text/plain; charset=utf-8" });

@@ -46,7 +46,7 @@ Deno.test("eager router keeps named catch-all params as arrays", async () => {
     stat: fs.stat,
   });
 
-  const match = router.match("/docs/getting/started");
+  const match = await router.match("/docs/getting/started");
   assertExists(match);
   assertEquals(match.route.pattern, "/docs/*");
   assertEquals(match.params.path, ["getting", "started"]);
@@ -68,7 +68,7 @@ Deno.test("lazy router discovers named catch-all files without slug special-casi
     stat: fs.stat,
   });
 
-  const match = await router.__asyncMatch("/docs/getting/started");
+  const match = await router.match("/docs/getting/started");
   assertExists(match);
   assertEquals(match.route.pattern, "/docs/*");
   assertEquals(match.params.path, ["getting", "started"]);

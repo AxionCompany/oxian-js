@@ -76,10 +76,10 @@ function findParamFile(files: Set<string>): string | null {
 
 export function createLazyRouter(
   opts: { routesRootUrl: URL; listDir: ListDirFn; stat: StatFn },
-): Router & { __asyncMatch: (path: string) => Promise<RouteMatch> } {
+): Router {
   const { routesRootUrl, listDir, stat } = opts;
 
-  async function matchPath(path: string): Promise<RouteMatch> {
+  async function match(path: string): Promise<RouteMatch> {
     const parts = path.split("/").filter(Boolean);
     let curDir = routesRootUrl;
     const params: Record<string, string | string[]> = {};
@@ -212,9 +212,6 @@ export function createLazyRouter(
 
   return {
     routes: [],
-    match: (_path: string) => null,
-    __asyncMatch: matchPath,
-  } as unknown as Router & {
-    __asyncMatch: (path: string) => Promise<RouteMatch>;
+    match,
   };
 }

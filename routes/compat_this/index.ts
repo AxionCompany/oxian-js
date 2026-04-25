@@ -1,3 +1,1 @@
-export function GET(d, { response }) {
-  return (this && this.val) || "none";
-}
+export function GET(d,{response}){ return (this && this.val) || 'none'; }

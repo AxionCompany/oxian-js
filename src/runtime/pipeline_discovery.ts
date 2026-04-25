@@ -35,7 +35,7 @@ export async function discoverPipelineFiles(
     let shts: string | URL = "";
 
     if (typeof level === "string") {
-      depsjs = join(level, "dependencie.js");
+      depsjs = join(level, "dependencies.js");
       depsts = join(level, "dependencies.ts");
       mwjs = join(level, "middleware.js");
       mwts = join(level, "middleware.ts");
@@ -60,7 +60,7 @@ export async function discoverPipelineFiles(
         mwts = make("middleware.ts");
 
         icjs = make("interceptors.js");
-        icjs = make("interceptors.ts");
+        icts = make("interceptors.ts");
 
         if (opts?.allowShared) {
           shjs = make("shared.js");

@@ -41,13 +41,14 @@ export type RouteMatch =
 /**
  * Router interface for matching URLs to routes.
  *
- * Provides route table access and synchronous path matching.
+ * Both eager and lazy routers implement this interface.
+ * `match` is always async to support lazy on-demand filesystem discovery.
  */
 export type Router = {
-  /** All registered routes */
+  /** All registered routes (empty for lazy routers until matched) */
   routes: RouteRecord[];
   /** Match a URL path to a route */
-  match: (path: string) => RouteMatch;
+  match: (path: string) => Promise<RouteMatch>;
 };
 
 /**
@@ -67,32 +68,12 @@ export type StatFn = (url: URL) => Promise<{ isFile: boolean }>;
 /**
  * Resolved router with metadata about the routing system.
  *
- * Contains the router instance, loader manager, and information about
+ * Contains the router instance and information about
  * whether routes are loaded from remote sources.
  */
 export type ResolvedRouter = {
-  /** Router instance with routes and match function */
-  router: {
-    routes: Array<{ pattern: string }>;
-    match: (
-      path: string,
-    ) => {
-      route: { pattern: string; fileUrl: URL };
-      params: Record<string, RouteParamValue>;
-    } | null;
-  } & {
-    /** Optional async match for lazy routing */
-    __asyncMatch?: (
-      path: string,
-    ) => Promise<
-      {
-        route: { pattern: string; fileUrl: URL };
-        params: Record<string, RouteParamValue>;
-      } | null
-    >;
-  };
-  /** Loader manager for route modules */
-  loaderManager: { getLoaders: () => unknown[] };
+  /** Router instance */
+  router: Router;
   /** Whether routes are loaded from remote sources */
   isRemote: boolean;
   /** Root URL of the routes directory */

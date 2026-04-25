@@ -1,3 +1,5 @@
+import type { ServiceDefinition } from "../hypervisor/types.ts";
+
 /**
  * @fileoverview Type definitions for Oxian framework configuration.
  * 
@@ -87,42 +89,6 @@ export type OxianConfig = {
         staticIndex?: string; // e.g., "index.html"
         pathRewrite?: (path: string, basePath: string) => string;
       };
-      // Config-only multi-project support
-      projects?: Record<string, {
-        source?: string;
-        // Optional path or URL to a project-specific config file (e.g., oxian.config.ts|js|json)
-        config?: string;
-        // Optional GitHub token override for this project (enables per-worker tokens)
-        githubToken?: string;
-        routing?: { basePath?: string };
-        // Per-project web settings overlaying global hv.web
-        web?: {
-          devProxyTarget?: string;
-          staticDir?: string;
-          staticCacheControl?: string;
-        };
-        // Per-project materialization settings
-        materialize?: boolean | { mode?: "auto" | "always" | "never"; dir?: string; refresh?: boolean };
-        // Idle timeout: stop worker if no activity for this duration in ms
-        idleTtlMs?: number;
-        worker?: { kind?: "process" | "thread"; pool?: { min?: number; max?: number } };
-        strategy?: "round_robin" | "least_busy" | "sticky";
-        stickyHeader?: string;
-        timeouts?: { connectMs?: number; headersMs?: number; idleMs?: number; totalMs?: number };
-        health?: { path?: string; intervalMs?: number; timeoutMs?: number };
-        permissions?: {
-          read?: boolean | string[];
-          write?: boolean | string[];
-          import?: boolean | string[];
-          env?: boolean | string[];
-          net?: boolean | string[];
-          ffi?: boolean | string[];
-          run?: boolean | string[];
-          sys?: boolean | string[];
-        };
-        denoConfig?: string; // per-project override
-        dependencies?: { initial?: Record<string, unknown> };
-      }>;
       // Built-in minimal OTLP HTTP collector (http/protobuf or http/json); accepts and returns 202
       otelCollector?: {
         enabled?: boolean;
@@ -139,70 +105,16 @@ export type OxianConfig = {
         onRequest?: (input: {
           kind: "traces" | "metrics" | "logs";
           req: Request;
-          project?: string;
+          service?: string;
         }) => boolean | Promise<boolean>;
       };
       // Request transformation hook: called before proxying to worker
       onRequest?: (input: {
         req: Request;
-        project: string;
+        service: string;
       }) => Promise<Request> | Request;
-      // Single provider function (optional). When provided:
-      // - Called with { req } to choose a project and per-request/project overrides.
-      provider?: (
-        input: { req: Request }
-      ) => Promise<{
-        project: string;
-        source?: string;
-        config?: string;
-        env?: Record<string, string>;
-        githubToken?: string;
-        stripPathPrefix?: string;
-        permissions?: {
-          net?: boolean | string[];
-          read?: boolean | string[];
-          write?: boolean | string[];
-          env?: boolean | string[];
-          import?: boolean | string[];
-          ffi?: boolean | string[];
-          run?: boolean | string[];
-          sys?: boolean | string[];
-        };
-        materialize?: boolean | { mode?: "auto" | "always" | "never"; dir?: string; refresh?: boolean };
-      }> | {
-        project: string;
-        source?: string;
-        config?: string;
-        env?: Record<string, string>;
-        githubToken?: string;
-        stripPathPrefix?: string;
-        permissions?: {
-          net?: boolean | string[];
-          read?: boolean | string[];
-          write?: boolean | string[];
-          env?: boolean | string[];
-          import?: boolean | string[];
-          ffi?: boolean | string[];
-          run?: boolean | string[];
-          sys?: boolean | string[];
-        };
-        materialize?: boolean | { mode?: "auto" | "always" | "never"; dir?: string; refresh?: boolean };
-      };
-      // Declarative selection rules
-      select?: Array<
-        | { default: true; project: string }
-        | {
-          project: string;
-          when: {
-            pathPrefix?: string;
-            hostEquals?: string;
-            hostPrefix?: string;
-            hostSuffix?: string;
-            method?: string;
-            header?: Record<string, string | RegExp>;
-          };
-        }
-      >;
+      // Provider function: given a request, returns the service definition to route to.
+      provider?: (req: Request) => ServiceDefinition | Promise<ServiceDefinition>;
     };
   };
   // Permissions declaration (enforced by hypervisor or future runners)
@@ -242,8 +154,9 @@ export type OxianConfig = {
     requestIdHeader?: string;
     deprecations?: boolean; // default true
     performance?: boolean; // enable perf timing logs
+    verboseErrors?: boolean; // expose error message+stack in responses; auto-set by `dev` command
     // Optional structured log event callback; invoked for server and hypervisor events
-    onEvent?: (event: { level: "debug" | "info" | "warn" | "error"; time: string; source: string; project: string; payload: Record<string, unknown> }) => void;
+    onEvent?: (event: { level: "debug" | "info" | "warn" | "error"; time: string; source: string; service: string; payload: Record<string, unknown> }) => void;
     // Control console output; true by default
     console?: boolean;
     // Sampling for callbacks (0..1). Default 1 (no sampling)
@@ -267,8 +180,8 @@ export type OxianConfig = {
       // Optional user hooks for custom spans/metrics
       hooks?: {
         onInit?: (input: { tracer?: unknown; meter?: unknown }) => unknown | Promise<unknown>;
-        onRequestStart?: (input: { tracer?: unknown; meter?: unknown; span?: unknown; requestId: string; method: string; url: string; project: string; state?: unknown }) => void | Promise<void>;
-        onRequestEnd?: (input: { tracer?: unknown; meter?: unknown; span?: unknown; requestId: string; method: string; url: string; project: string; status: number; durationMs: number; state?: unknown }) => void | Promise<void>;
+        onRequestStart?: (input: { tracer?: unknown; meter?: unknown; span?: unknown; requestId: string; method: string; url: string; service: string; state?: unknown }) => void | Promise<void>;
+        onRequestEnd?: (input: { tracer?: unknown; meter?: unknown; span?: unknown; requestId: string; method: string; url: string; service: string; status: number; durationMs: number; state?: unknown }) => void | Promise<void>;
       };
     };
   };

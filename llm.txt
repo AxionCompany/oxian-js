@@ -349,15 +349,17 @@ This section describes the most relevant configuration keys. The full, authorita
       - devProxyTarget: When a request does not match API routes in dev, proxy to Vite.
       - staticDir: In prod, serve non-API requests from a static directory (e.g., `dist`).
       - staticCacheControl: Cache-control header for static assets.
-    - projects: Multi-project configuration with per-project routing basePath and overrides.
-      - Each project may set `idleTtlMs` (ms). When set, workers stop after being idle (no active requests/streams) for this duration. Default is disabled unless specified (provider → project → autoscale fallback).
+    - provider (TS config only): Dynamic service routing function.
+      - Type: (req: Request) => ServiceDefinition | Promise<ServiceDefinition>
+      - Returns a ServiceDefinition with: service (string, required), source?, config?, auth?, permissions?, materialize?, env?, isolated?, stripPathPrefix?, invalidateCacheAt?, idleTtlMs?, denoConfig?.
+      - When not configured, defaults to `() => ({ service: "default" })`.
     - otelProxy (TS config only): Minimal built-in OTLP HTTP proxy.
-      - enabled?: boolean; port?: number; pathPrefix?: string; upstream?: string; onRequest?: (input: { kind: "traces"|"metrics"|"logs"; req: Request; project?: string; contentType: string; headers: Record<string,string> }) => boolean | Promise<boolean>
+      - enabled?: boolean; port?: number; pathPrefix?: string; upstream?: string; onRequest?: (input: { kind: "traces"|"metrics"|"logs"; req: Request; service?: string; contentType: string; headers: Record<string,string> }) => boolean | Promise<boolean>
       - Note: `req` is a clone; reading it won't consume the forwarded body. Original body is streamed to upstream.
       - Workers default OTLP endpoint to this proxy when `logging.otel.enabled=true` and no endpoint provided.
-      - Hypervisor injects `x-oxian-project` in OTLP headers for tagging. If no `upstream` or onRequest=false, proxy responds 202 and drops.
+      - Hypervisor injects `x-oxian-service` in OTLP headers for tagging. If no `upstream` or onRequest=false, proxy responds 202 and drops.
     - onRequest (TS config only): Request transformation hook called before proxying to workers.
-      - Type: (input: { req: Request; project: string }) => Promise<Request> | Request
+      - Type: (input: { req: Request; service: string }) => Promise<Request> | Request
       - Allows modifying requests (headers, URL, body) before they reach workers.
       - Example: Add authentication tokens, custom headers, transform URLs, etc.
 
@@ -526,7 +528,7 @@ export default {
 Notes:
 - Prefer setting instrument units (e.g., "s", "ms", "By", "1") instead of encoding units in metric names.
 - Workers default to the built-in collector endpoint if `logging.otel.enabled=true` and no `endpoint` is set.
-- Hypervisor injects `x-oxian-project` into OTLP headers so the collector can tag payloads per project.
+- Hypervisor injects `x-oxian-service` into OTLP headers so the collector can tag payloads per service.
 
 Production Notes
 ----------------

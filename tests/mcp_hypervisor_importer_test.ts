@@ -46,12 +46,10 @@ Deno.test({
     runtime: {
       hv: {
         enabled: true,
-        projects: { default: {}, alpha: {}, beta: {} },
-        select: [
-          { when: { header: { 'x-mcp-project': 'alpha' } }, project: 'alpha' },
-          { when: { header: { 'x-mcp-project': 'beta' } }, project: 'beta' },
-          { default: true, project: 'default' }
-        ]
+        provider: (req) => {
+          const svc = req.headers.get('x-mcp-project') || 'default';
+          return { service: svc };
+        }
       }
     }
   }`;

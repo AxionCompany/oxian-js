@@ -368,7 +368,7 @@ Deno.test({
 
   // Our new log format includes errName
   const logPayload = {
-    project: "test-project",
+    service: "test-project",
     target: "http://127.0.0.1:19299/nothing",
     errName: caughtError!.name,
     err: caughtError!.message,

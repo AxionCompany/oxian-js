@@ -1,0 +1,1 @@
+export default { routing: { discovery: 'lazy' } }

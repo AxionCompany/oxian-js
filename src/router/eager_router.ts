@@ -1,4 +1,4 @@
-import type {} from "@std/path";
+
 import type {
   ListDirFn,
   RouteMatch,
@@ -79,7 +79,7 @@ export async function buildEagerRouter(
 
   routes.sort(compareSpecificity);
 
-  function match(path: string): RouteMatch {
+  function match(path: string): Promise<RouteMatch> {
     const parts = path.split("/").filter(Boolean);
     for (const r of routes) {
       const params: Record<string, string | string[]> = {};
@@ -106,10 +106,10 @@ export async function buildEagerRouter(
         }
       }
       if (ok && i === r.segments.length && j === parts.length) {
-        return { route: r, params };
+        return Promise.resolve({ route: r, params });
       }
     }
-    return null;
+    return Promise.resolve(null);
   }
 
   return { routes, match };

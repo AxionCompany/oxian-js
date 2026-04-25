@@ -41,7 +41,12 @@ export type { Resolver } from "./resolvers/types.ts";
 export type { ResponseState } from "./server/types.ts";
 
 // Hypervisor (for advanced users)
-export type { SelectedProject, WorkerHandle } from "./hypervisor/types.ts";
+export type {
+  HypervisorStore,
+  ServiceDefinition,
+  SpawnResult,
+  WorkerHandle,
+} from "./hypervisor/types.ts";
 
 // MCP (Model Context Protocol) - Full protocol types
 export type {
