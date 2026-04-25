@@ -1,11 +1,22 @@
 /**
  * @fileoverview Oxian hypervisor for multi-worker request routing.
- * 
+ *
  * This module provides hypervisor functionality for managing multiple worker
- * processes and routing requests based on project configuration.
- * 
+ * processes and routing requests based on a provider function.
+ *
  * @module hypervisor
  */
 
 export { startHypervisor } from "./lifecycle.ts";
-export type { SelectedProject, WorkerHandle } from "./types.ts";
+export { MemoryStore } from "./store.ts";
+export type {
+  HypervisorPlugin,
+  HypervisorStore,
+  MaterializeOpts,
+  PermissionSet,
+  PluginContext,
+  ServiceDefinition,
+  SpawnResult,
+  SpawnSpec,
+  WorkerHandle,
+} from "./types.ts";

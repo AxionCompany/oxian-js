@@ -1,6 +1,6 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.13.0",
+  "version": "0.15.0",
   "exports": {
     ".": "./cli.ts",
     "./types": "./src/types.ts",
@@ -40,13 +40,11 @@
   ],
   "imports": {
     "oxian-js/": "./src/",
-    "@oxian/oxian-js": "jsr:@oxian/oxian-js",
-    "@oxian/oxian-js/mcp": "jsr:@oxian/oxian-js/mcp",
+    "@oxian/oxian-js": "./cli.ts",
+    "@oxian/oxian-js/mcp": "./src/utils/mcp.ts",
     "@std/path": "jsr:@std/path@1.1.1",
     "@std/cli/parse-args": "jsr:@std/cli@1.0.21/parse-args",
-    "@std/jsonc/parse": "jsr:@std/jsonc@1.0.2/parse",
-    "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64",
-    "kv-toolbox/blob": "jsr:@kitsonk/kv-toolbox@0.30.0/blob"
+    "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64"
   },
   "lock": false
 }

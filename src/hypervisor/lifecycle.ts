@@ -1,10 +1,14 @@
 import type { EffectiveConfig } from "../config/index.ts";
-import denoJson from "../../deno.json" with { type: "json" };
 import { createResolver } from "../resolvers/index.ts";
-import type { SelectedProject, WorkerHandle } from "./types.ts";
+import type {
+  HypervisorPlugin,
+  HypervisorStore,
+  PluginContext,
+  ServiceDefinition,
+} from "./types.ts";
+import { MemoryStore } from "./store.ts";
 import { getLocalRootPath } from "../utils/root.ts";
 import { join } from "@std/path";
-import type { Resolver } from "../resolvers/types.ts";
 
 function splitBaseArgs(
   baseArgs: string[],
@@ -30,29 +34,15 @@ function splitBaseArgs(
 }
 export async function startHypervisor(
   { config, baseArgs }: { config: EffectiveConfig; baseArgs: string[] },
-  _resolver: Resolver,
+  plugin?: HypervisorPlugin,
+  store?: HypervisorStore,
 ) {
   const hv = config.runtime?.hv ?? {};
   const publicPort = config.server?.port ?? 8080;
   const PERF = config.logging?.performance === true;
+  const effectiveStore = store ?? new MemoryStore();
 
-  type HvSelectionRule = {
-    project: string;
-    default?: boolean;
-    when?: {
-      pathPrefix?: string;
-      hostEquals?: string;
-      hostPrefix?: string;
-      hostSuffix?: string;
-      method?: string;
-      header?: Record<string, string | RegExp>;
-    };
-  };
-
-  // Determine projects from config (simplest: single default)
-  const projects = hv.projects && Object.keys(hv.projects).length > 0
-    ? Object.keys(hv.projects)
-    : [];
+  // Request queue stays local — in-memory for now, per-instance state
   const requestQueues = new Map<
     string,
     Array<
@@ -67,31 +57,37 @@ export async function startHypervisor(
       }
     >
   >();
+
   const { denoOptions, scriptArgs } = splitBaseArgs(baseArgs);
+
+  // Initialize plugin if provided
+  if (plugin?.init) {
+    await plugin.init({
+      config,
+      resolver: createResolver(config.root, {}),
+      denoOptions,
+      scriptArgs,
+    });
+  }
 
   // Lifecycle manager centralizes worker pools and restarts
   const manager = createLifecycleManager({
     config,
-    onProjectReady: async (project) => {
+    plugin,
+    store: effectiveStore,
+    onServiceReady: async (service) => {
       try {
-        await flushQueue(project);
+        await flushQueue(service);
       } catch { /* ignore */ }
     },
   });
   manager.setBaseArgs(denoOptions, scriptArgs);
 
-  for (let idx = 0; idx < projects.length; idx++) {
-    const project = projects[idx];
-    manager.setProjectIndex(project, idx);
-    const worker = await manager.spawnWorker({ project }, idx);
-    manager.registerWorker(project, worker);
-  }
-
   const OTEL_OR_COLLECTOR = (config.logging?.otel?.enabled === true) ||
     (hv.otelCollector?.enabled === true) || (hv.otelProxy?.enabled === true);
   if (PERF) {
     console.log("[perf][hv] public listening", {
-      project: "default",
+      service: "default",
       port: publicPort,
     });
   }
@@ -117,16 +113,15 @@ export async function startHypervisor(
         : url.pathname;
       const kind = routes.get(trimmed);
       if (!kind) return new Response("Not found", { status: 404 });
-      const projectFromHeader = req.headers.get("x-oxian-project") || undefined;
+      const serviceFromHeader = req.headers.get("x-oxian-service") || undefined;
       let shouldForward = true;
       try {
         if (typeof onReq === "function") {
-          // Pass a clone so the callback can safely read the body without consuming the original
           const reqForHook = req.clone();
           shouldForward = await onReq({
             kind,
             req: reqForHook,
-            project: projectFromHeader,
+            service: serviceFromHeader,
           });
         }
       } catch { /* ignore user callback errors; default to forward */ }
@@ -136,8 +131,8 @@ export async function startHypervisor(
       const fwdUrl = upstream.replace(/\/$/, "") + trimmed;
       const fwdHeaders = new Headers(req.headers);
       try {
-        if (projectFromHeader) {
-          fwdHeaders.set("x-oxian-project", projectFromHeader);
+        if (serviceFromHeader) {
+          fwdHeaders.set("x-oxian-service", serviceFromHeader);
         }
       } catch { /* ignore */ }
       const fwdReq = new Request(fwdUrl, {
@@ -158,52 +153,32 @@ export async function startHypervisor(
   const server = Deno.serve({ port: publicPort }, async (req) => {
     const url = new URL(req.url);
 
-    // Provider-based selection first (used for per-project web config as well)
-    // Provider-based selection first
-    let selected: SelectedProject = { project: "default" };
+    // ── Forward mechanism: skip provider, route to local worker ────────
+    const forwardService = req.headers.get("x-oxian-forward");
+    if (forwardService) {
+      const fwdTarget = await manager.getTarget(forwardService);
+      if (!fwdTarget) {
+        return new Response(
+          JSON.stringify({ error: { message: "Forwarded service not found on this instance" } }),
+          { status: 502, headers: { "content-type": "application/json; charset=utf-8" } },
+        );
+      }
+      const pathname = url.pathname;
+      const target = `${fwdTarget}${pathname}${url.search}`;
+      return await fetch(target, {
+        method: req.method,
+        headers: req.headers,
+        body: req.body,
+        redirect: "manual",
+        duplex: "half",
+      } as RequestInit);
+    }
+
+    // Route via provider (defaults to "default" service when no provider is set)
+    let selected: ServiceDefinition = { service: "default" };
     try {
       if (typeof hv.provider === "function") {
-        const out = await hv.provider({ req });
-        if (out && typeof out.project === "string") {
-          selected = out;
-        }
-      } else if (hv.select && Array.isArray(hv.select)) {
-        const rules = hv.select as HvSelectionRule[];
-        for (const rule of rules) {
-          if (rule.default) {
-            selected = { project: rule.project };
-            continue;
-          }
-          const r = rule;
-          let ok = true;
-          if (
-            r.when?.pathPrefix && !url.pathname.startsWith(r.when.pathPrefix)
-          ) ok = false;
-          if (r.when?.method && req.method !== r.when.method) ok = false;
-          if (r.when?.hostEquals && url.hostname !== r.when.hostEquals) {
-            ok = false;
-          }
-          if (
-            r.when?.hostPrefix && !url.hostname.startsWith(r.when.hostPrefix)
-          ) ok = false;
-          if (r.when?.hostSuffix && !url.hostname.endsWith(r.when.hostSuffix)) {
-            ok = false;
-          }
-          if (r.when?.header) {
-            for (const [k, v] of Object.entries(r.when.header)) {
-              const hvVal = req.headers.get(k);
-              if (v instanceof RegExp) {
-                if (!hvVal || !(v as RegExp).test(hvVal)) ok = false;
-              } else {
-                if (hvVal !== (v as string)) ok = false;
-              }
-            }
-          }
-          if (ok) {
-            selected = { project: r.project };
-            break;
-          }
-        }
+        selected = await hv.provider(req);
       }
     } catch (e) {
       return new Response(
@@ -217,24 +192,42 @@ export async function startHypervisor(
       );
     }
 
-    // All requests are proxied to the selected worker; project-specific web handling occurs inside the worker server
-
-    let pool = manager.getPool(selected.project);
-    const queueCfg = hv.queue ?? {};
-    if (!pool) {
-      // On-demand spawn with captured overrides from provider (single call)
+    // ── Target short-circuit: proxy directly to pre-known target ──────
+    if (selected.target) {
+      const pathname = url.pathname;
+      const proxyUrl = `${selected.target}${pathname}${url.search}`;
       try {
-        const idx = manager.getProjectIndex(selected.project) ??
-          projects.length;
-        const worker = await manager.spawnWorker(selected, idx);
-        manager.registerWorker(selected.project, worker);
-        pool = manager.getPool(selected.project)!;
+        return await fetch(proxyUrl, {
+          method: req.method,
+          headers: req.headers,
+          body: req.body,
+          redirect: "manual",
+          duplex: "half",
+        } as RequestInit);
+      } catch (e) {
+        return new Response(
+          JSON.stringify({ error: { message: (e as Error)?.message || "Target unreachable" } }),
+          { status: 502, headers: { "content-type": "application/json; charset=utf-8" } },
+        );
+      }
+    }
+
+    // All requests are proxied to the selected worker
+
+    let serviceTarget = await manager.getTarget(selected.service);
+    const queueCfg = hv.queue ?? {};
+    if (!serviceTarget) {
+      // On-demand spawn
+      try {
+        const idx = manager.getServiceIndex(selected.service) ?? 0;
+        await manager.spawnWorker(selected, idx);
+        serviceTarget = await manager.getTarget(selected.service);
       } catch (_e) {
         // fallback to queue/wait logic
       }
       // Always enqueue request while waiting for worker readiness
       return await enqueueAndWait(
-        selected.project,
+        selected.service,
         req,
         queueCfg.maxItems ?? 100,
         queueCfg.maxBodyBytes ?? 1_048_576,
@@ -242,7 +235,7 @@ export async function startHypervisor(
       );
     }
 
-    if (!pool) {
+    if (!serviceTarget) {
       const body = JSON.stringify({
         error: { message: "No worker available" },
       });
@@ -253,20 +246,19 @@ export async function startHypervisor(
     }
 
     // If provider invalidation timestamp changed/newer, restart worker before proxying.
-    // This makes UI "Reload" effective immediately for already-running workers.
     try {
-      if (manager.shouldRestartForInvalidation(selected.project, selected)) {
-        await manager.restartProject(
-          selected.project,
+      if (await manager.shouldRestartForCacheInvalidation(selected.service, selected)) {
+        await manager.restartService(
+          selected.service,
           undefined,
           undefined,
           selected,
         );
-        pool = manager.getPool(selected.project);
+        serviceTarget = await manager.getTarget(selected.service);
       }
     } catch { /* ignore invalidation restart errors and continue */ }
 
-    if (!pool) {
+    if (!serviceTarget) {
       const body = JSON.stringify({
         error: { message: "No worker available" },
       });
@@ -277,16 +269,16 @@ export async function startHypervisor(
     }
 
     const pathname = url.pathname;
-    const target = `http://127.0.0.1:${pool.port}${pathname}${url.search}`;
+    const target = `${serviceTarget}${pathname}${url.search}`;
 
     // Apply request transformation hook if provided
     let transformedReq = req;
     if (typeof hv.onRequest === "function") {
       try {
-        transformedReq = await hv.onRequest({ req, project: selected.project });
+        transformedReq = await hv.onRequest({ req, service: selected.service });
       } catch (e) {
         console.error(`[hv] onRequest callback error`, {
-          project: selected.project,
+          service: selected.service,
           err: (e as Error)?.message,
         });
         return new Response(
@@ -352,19 +344,18 @@ export async function startHypervisor(
       const hdr = config.logging?.requestIdHeader ?? "x-request-id";
       if (!headers.has(hdr)) headers.set(hdr, crypto.randomUUID());
     }
-    // Always forward selected project to worker for logging/metrics
+    // Always forward selected service to worker for logging/metrics
     try {
-      headers.set("x-oxian-project", selected.project);
+      headers.set("x-oxian-service", selected.service);
     } catch { /* ignore */ }
 
     try {
       const p0 = performance.now();
       if (!PERF && OTEL_OR_COLLECTOR) {
         console.log(`[hv] proxy`, {
-          project: selected.project,
+          service: selected.service,
           method: transformedReq.method,
           url: url.toString(),
-          selected: selected.project,
           target,
         });
       }
@@ -372,8 +363,8 @@ export async function startHypervisor(
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), abortTimeoutMs);
       // Track inflight and activity for idle decisions. We consider request active until response body completes.
-      manager.incrementInflight(selected.project);
-      manager.markProjectActivity(selected.project);
+      manager.incrementServiceInflight(selected.service);
+      manager.markServiceActivity(selected.service);
       const res = await fetch(target, {
         method: transformedReq.method,
         headers,
@@ -386,7 +377,7 @@ export async function startHypervisor(
       clearTimeout(timer);
       if (PERF) {
         console.log("[perf][hv] proxy_res", {
-          project: selected.project,
+          service: selected.service,
           status: res.status,
           target,
           ms: Math.round(performance.now() - p0),
@@ -394,8 +385,8 @@ export async function startHypervisor(
       }
       const body = res.body;
       if (!body) {
-        manager.decrementInflight(selected.project);
-        manager.markProjectActivity(selected.project);
+        manager.decrementServiceInflight(selected.service);
+        manager.markServiceActivity(selected.service);
         return new Response(null, {
           status: res.status,
           statusText: res.statusText,
@@ -415,8 +406,8 @@ export async function startHypervisor(
         } catch {
           /* ignore */
         } finally {
-          manager.decrementInflight(selected.project);
-          manager.markProjectActivity(selected.project);
+          manager.decrementServiceInflight(selected.service);
+          manager.markServiceActivity(selected.service);
         }
       })();
       return new Response(proxied, {
@@ -427,13 +418,13 @@ export async function startHypervisor(
     } catch (e) {
       // Always log proxy errors regardless of OTEL config (Fix E)
       console.error(`[hv] proxy_err`, {
-        project: selected.project,
+        service: selected.service,
         target,
         errName: (e as Error)?.name,
         err: (e as Error)?.message,
       });
       // Fix C: always decrement inflight on proxy failure
-      manager.decrementInflight(selected.project);
+      manager.decrementServiceInflight(selected.service);
 
       // Fix A: distinguish timeout from connection errors
       const isTimeout = (e as Error)?.name === "AbortError" ||
@@ -452,7 +443,7 @@ export async function startHypervisor(
 
       // Connection error → worker is likely dead, restart + re-enqueue
       try {
-        await manager.restartProject(selected.project);
+        await manager.restartService(selected.service);
       } catch { /* ignore */ }
       // Fix B: use buffered body for retry instead of consumed req
       const retryReq = bufferedBody
@@ -462,7 +453,7 @@ export async function startHypervisor(
         })
         : req;
       return await enqueueAndWait(
-        selected.project,
+        selected.service,
         retryReq,
         queueCfg.maxItems ?? 100,
         queueCfg.maxBodyBytes ?? 1_048_576,
@@ -471,11 +462,11 @@ export async function startHypervisor(
     }
   });
 
-  async function flushQueue(project: string) {
-    const q = requestQueues.get(project);
+  async function flushQueue(service: string) {
+    const q = requestQueues.get(service);
     if (!q || q.length === 0) return;
-    const pool = manager.getPool(project);
-    if (!pool) return; // still not ready
+    const svcTarget = await manager.getTarget(service);
+    if (!svcTarget) return; // still not ready
     const items = q.splice(0, q.length);
     for (const item of items) {
       const { req, resolve, reject, enqueuedAt, maxWaitMs } = item;
@@ -501,7 +492,7 @@ export async function startHypervisor(
         let transformedReq = req;
         if (typeof hv.onRequest === "function") {
           try {
-            transformedReq = await hv.onRequest({ req, project });
+            transformedReq = await hv.onRequest({ req, service });
           } catch (_e) {
             item.done = true;
             if (item.timeoutId) {
@@ -525,7 +516,7 @@ export async function startHypervisor(
         }
         const url = new URL(transformedReq.url);
         const pathname = url.pathname;
-        const target = `http://localhost:${pool.port}${pathname}${url.search}`;
+        const target = `${svcTarget}${pathname}${url.search}`;
         // Build forwarded headers for queued requests as well
         const headers = new Headers(transformedReq.headers);
         const orig = new URL(req.url);
@@ -538,8 +529,8 @@ export async function startHypervisor(
         headers.set("x-forwarded-path", orig.pathname);
         headers.set("x-forwarded-query", orig.search.replace(/^\?/, ""));
         // Fix D: track inflight for queued requests to prevent premature idle shutdown
-        manager.incrementInflight(project);
-        manager.markProjectActivity(project);
+        manager.incrementServiceInflight(service);
+        manager.markServiceActivity(service);
         const res = await fetch(target, {
           method: transformedReq.method,
           headers,
@@ -557,11 +548,11 @@ export async function startHypervisor(
             headers: res.headers,
           }),
         );
-        manager.decrementInflight(project);
-        manager.markProjectActivity(project);
+        manager.decrementServiceInflight(service);
+        manager.markServiceActivity(service);
       } catch (e) {
-        manager.decrementInflight(project);
-        manager.markProjectActivity(project);
+        manager.decrementServiceInflight(service);
+        manager.markServiceActivity(service);
         item.done = true;
         if (item.timeoutId) clearTimeout(item.timeoutId as unknown as number);
         reject(e);
@@ -570,13 +561,13 @@ export async function startHypervisor(
   }
 
   async function enqueueAndWait(
-    project: string,
+    service: string,
     req: Request,
     maxItems: number,
     maxBodyBytes: number,
     maxWaitMs: number,
   ): Promise<Response> {
-    const q = requestQueues.get(project) ?? [];
+    const q = requestQueues.get(service) ?? [];
     if (q.length >= maxItems) {
       return new Response(
         JSON.stringify({ error: { message: "Server busy" } }),
@@ -595,16 +586,16 @@ export async function startHypervisor(
         ReadableStream<Uint8Array> | null,
       ];
       body = b1;
-      // ensure project header is present on queued request
+      // ensure service header is present on queued request
       const h = new Headers(req.headers);
       try {
-        h.set("x-oxian-project", project);
+        h.set("x-oxian-service", service);
       } catch { /* ignore */ }
       cloned = new Request(req, { body: b2 ?? undefined, headers: h });
     } catch {
       const h = new Headers(req.headers);
       try {
-        h.set("x-oxian-project", project);
+        h.set("x-oxian-service", service);
       } catch { /* ignore */ }
       cloned = new Request(req, { headers: h });
     }
@@ -639,7 +630,7 @@ export async function startHypervisor(
         }
         const h2 = new Headers(req.headers);
         try {
-          h2.set("x-oxian-project", project);
+          h2.set("x-oxian-service", service);
         } catch { /* ignore */ }
         cloned = new Request(req, { body: merged, headers: h2 });
       }
@@ -676,12 +667,12 @@ export async function startHypervisor(
       }, Math.max(0, maxWaitMs));
       item.timeoutId = to as unknown as number;
       q.push(item);
-      requestQueues.set(project, q);
+      requestQueues.set(service, q);
     });
 
     // kick a readiness wait; when ready, flush
-    const waited = await manager.waitForProjectReady(project, maxWaitMs);
-    if (waited) await flushQueue(project);
+    const waited = await manager.waitForServiceReady(service, maxWaitMs);
+    if (waited) await flushQueue(service);
     return resP;
   }
 
@@ -700,9 +691,9 @@ export async function startHypervisor(
           if (timer) clearTimeout(timer);
           timer = setTimeout(async () => {
             console.log(`[hv] change detected, restarting workers`);
-            const projectsToRestart = manager.listProjects();
-            for (const project of projectsToRestart) {
-              await manager.restartProject(project);
+            const servicesToRestart = manager.listServices();
+            for (const svc of servicesToRestart) {
+              await manager.restartService(svc);
             }
           }, 120) as unknown as number;
         }
@@ -719,37 +710,14 @@ export async function startHypervisor(
   try {
     manager.shutdown();
   } catch { /* ignore */ }
-  for (const { entry: p } of manager.getPoolsArray()) {
-    try {
-      p.proc.kill();
-    } catch (_e) { /* ignore kill error */ }
-    try {
-      await p.proc.status;
-    } catch (_e) { /* ignore status error */ }
+  // Stop all local workers
+  if (plugin) {
+    for (const [, handle] of manager.localHandles) {
+      try {
+        await plugin.stop(handle);
+      } catch { /* ignore */ }
+    }
   }
-}
-
-type PoolEntry = {
-  port: number;
-  proc: Deno.ChildProcess;
-  rr: () => WorkerHandle;
-};
-
-const ensureDir = (path: string) => {
-  try {
-    Deno.mkdirSync(path, { recursive: true });
-  } catch {
-    // ignore
-  }
-};
-
-function rrPicker<T>(arr: T[]) {
-  let i = 0;
-  return () => {
-    const v = arr[i % Math.max(arr.length, 1)];
-    i++;
-    return v;
-  };
 }
 
 function findAvailablePort(startPort: number, maxTries = 50): number {
@@ -766,42 +734,25 @@ function findAvailablePort(startPort: number, maxTries = 50): number {
   return startPort;
 }
 
-async function detectHostDenoConfig(
-  resolver: ReturnType<typeof createResolver>,
-): Promise<string | undefined> {
-  const candidates = ["deno.json", "deno.jsonc"];
-  for (const name of candidates) {
-    try {
-      const resolved = await resolver.resolve(name);
-      const { isFile } = await resolver.stat(resolved);
-      if (isFile) return resolved.toString();
-    } catch (_err) { /* no local deno config at this candidate */ }
-  }
-  return undefined;
-}
 
 export function createLifecycleManager(
   opts: {
     config: EffectiveConfig;
-    onProjectReady?: (project: string) => void | Promise<void>;
+    onServiceReady?: (service: string) => void | Promise<void>;
+    plugin?: HypervisorPlugin;
+    store: HypervisorStore;
   },
 ) {
-  const { config, onProjectReady } = opts;
+  const { config, onServiceReady, store } = opts;
   const hv = config.runtime?.hv ?? {};
   const basePort = hv.workerBasePort ?? 9101;
   const PERF = config.logging?.performance === true;
 
-  const pools = new Map<string, PoolEntry>();
-  const projectIndices = new Map<string, number>();
+  // ── Local-only state (not in store) ─────────────────────────────────
+  // Process handles can't be serialized — they stay local
+  const localHandles = new Map<string, unknown>();
+  const serviceIndices = new Map<string, number>();
   const readyWaiters = new Map<string, Array<() => void>>();
-  const restarting = new Set<string>();
-  const spawning = new Set<string>();
-  const projectLastLoad = new Map<string, number>();
-  const projectLastActive = new Map<string, number>();
-  const projectReady = new Map<string, boolean>();
-  const lastSpawnOptions = new Map<string, SelectedProject>();
-  const projectInflight = new Map<string, number>();
-  const intentionalStop = new Set<string>();
   let cachedDenoOptions: string[] = [];
   let cachedScriptArgs: string[] = [];
   let idleCheckTimer: number | undefined;
@@ -811,23 +762,23 @@ export function createLifecycleManager(
     cachedScriptArgs = [...scriptArgs];
   }
 
-  function notifyProjectReady(project: string) {
-    const arr = readyWaiters.get(project) ?? [];
+  function notifyServiceReady(service: string) {
+    const arr = readyWaiters.get(service) ?? [];
     for (const fn of arr) {
       try {
         fn();
       } catch { /* ignore */ }
     }
-    readyWaiters.set(project, []);
+    readyWaiters.set(service, []);
   }
 
-  async function waitForProjectReady(
-    project: string,
+  async function waitForServiceReady(
+    service: string,
     timeoutMs: number,
   ): Promise<boolean> {
-    if (projectReady.get(project) === true) return true;
+    if (await store.get<boolean>(`ready:${service}`) === true) return true;
     return await new Promise<boolean>((resolve) => {
-      const arr = readyWaiters.get(project) ?? [];
+      const arr = readyWaiters.get(service) ?? [];
       let done = false;
       const t = setTimeout(() => {
         if (!done) {
@@ -842,56 +793,50 @@ export function createLifecycleManager(
           resolve(true);
         }
       });
-      readyWaiters.set(project, arr);
+      readyWaiters.set(service, arr);
     });
   }
 
-  function registerWorker(project: string, handle: WorkerHandle) {
-    pools.set(project, {
-      port: handle.port,
-      proc: handle.proc,
-      rr: rrPicker([{ port: handle.port, proc: handle.proc }]),
-    });
+  async function getTarget(service: string): Promise<string | undefined> {
+    return await store.get<string>(`pool:${service}:target`);
   }
 
-  function getPool(project: string): PoolEntry | undefined {
-    return pools.get(project);
+  function listServices(): string[] {
+    return Array.from(localHandles.keys());
   }
 
-  function listProjects(): string[] {
-    return Array.from(pools.keys());
-  }
-
-  function setProjectIndex(project: string, idx: number) {
-    projectIndices.set(project, idx);
-  }
-  function getProjectIndex(project: string): number | undefined {
-    return projectIndices.get(project);
+  function getServiceIndex(service: string): number | undefined {
+    return serviceIndices.get(service);
   }
 
   const hvLogger = { info: console.log, error: console.error } as const;
-  function attachExitObserver(project: string, proc: Deno.ChildProcess) {
-    proc.status.then(async (_s) => {
-      const current = pools.get(project);
-      if (!current || current.proc !== proc) return; // already swapped
-      hvLogger.error(`[hv] worker exited`, { project, port: current.port });
-      // Mark project down and clear stale pool to avoid misrouting to reused ports
+
+  function attachExitObserver(service: string, handle: unknown) {
+    // Duck-type: if handle has .status, it's a ChildProcess
+    const proc = handle as { status?: Promise<unknown> };
+    if (!proc?.status) return;
+    proc.status.then(async () => {
+      const currentHandle = localHandles.get(service);
+      if (currentHandle !== handle) return; // already swapped
+      hvLogger.error(`[hv] worker exited`, { service });
+      // Mark service down
       try {
-        pools.delete(project);
+        localHandles.delete(service);
+        await store.delete(`pool:${service}:target`);
+        await store.set(`ready:${service}`, false);
       } catch { /* ignore */ }
-      projectReady.set(project, false);
-      if (intentionalStop.has(project)) {
-        // skip auto-restart when we intentionally stopped due to idle
+      const isIntentional = await store.get<boolean>(`intentionalStop:${service}`);
+      if (isIntentional) {
         try {
-          intentionalStop.delete(project);
+          await store.delete(`intentionalStop:${service}`);
         } catch { /* ignore */ }
         return;
       }
       try {
-        await restartProject(project);
+        await restartService(service);
       } catch (e) {
         hvLogger.error(`[hv] auto-heal restart failed`, {
-          project,
+          service,
           err: (e as Error)?.message,
         });
       }
@@ -899,599 +844,97 @@ export function createLifecycleManager(
   }
 
   async function spawnWorker(
-    selected: SelectedProject,
+    selected: ServiceDefinition,
     idx?: number,
     denoOptionsIn?: string[],
     scriptArgsIn?: string[],
-  ): Promise<WorkerHandle> {
-    const project = selected.project;
+  ): Promise<void> {
+    const svc = selected.service;
 
-    // Guard against concurrent spawns for the same project
-    if (spawning.has(project)) {
-      // Wait for the ongoing spawn to complete
-      await waitForProjectReady(project, hv.proxy?.timeoutMs ?? 300_000);
-      const pool = pools.get(project);
-      if (pool) {
-        return { port: pool.port, proc: pool.proc };
-      }
+    // Guard against concurrent spawns via store lock
+    const acquired = await store.acquire(`spawn:${svc}`, 300_000);
+    if (!acquired) {
+      // Another spawn in progress — wait for readiness
+      await waitForServiceReady(svc, hv.proxy?.timeoutMs ?? 300_000);
+      const target = await getTarget(svc);
+      if (target) return;
       throw new Error(
-        `Concurrent spawn detected but worker not available for project: ${project}`,
+        `Concurrent spawn detected but worker not available for service: ${svc}`,
       );
     }
 
-    spawning.add(project);
     try {
-      return await doSpawnWorker(selected, idx, denoOptionsIn, scriptArgsIn);
+      await doSpawnWorker(selected, idx, denoOptionsIn, scriptArgsIn);
     } finally {
-      spawning.delete(project);
+      await store.release(`spawn:${svc}`);
     }
   }
 
   async function doSpawnWorker(
-    selected: SelectedProject,
+    selected: ServiceDefinition,
     idx?: number,
     denoOptionsIn?: string[],
     scriptArgsIn?: string[],
-  ): Promise<WorkerHandle> {
-    const entryPoint = import.meta.resolve("../../cli.ts").toString();
-
+  ): Promise<void> {
     const denoOptions = denoOptionsIn ?? cachedDenoOptions;
     const scriptArgs = scriptArgsIn ?? cachedScriptArgs;
 
     const t0 = performance.now();
-    const port = await findAvailablePort(basePort + (idx ?? 0));
+    const port = findAvailablePort(basePort + (idx ?? 0));
+    const svc = selected.service;
+    const maxWaitMs = hv.proxy?.timeoutMs ?? 300_000;
 
-    // Merge provider-based spawn overrides if not already provided
-    const selectedMerged: SelectedProject = { ...selected };
-    // The provider is only invoked at request-routing time with { req } and its output
-    // is passed down to spawnWorker via 'selected'. Avoid calling provider here with { project }
-    // to keep the request as the single source of truth.
+    if (!opts.plugin) {
+      throw new Error("[hv] plugin is required");
+    }
 
-    const forceReload = denoOptions.some((arg) =>
-      arg === "--reload" || arg === "-r" || arg.startsWith("--reload=")
+    const pluginCtx: PluginContext = {
+      config,
+      resolver: createResolver(selected.source || config.root, {
+        tokenEnv: "GITHUB_TOKEN",
+        tokenValue: selected.auth?.github,
+      }),
+      denoOptions,
+      scriptArgs,
+    };
+
+    const result = await opts.plugin.spawn(
+      selected,
+      pluginCtx,
+      { port, idx: idx ?? 0 },
     );
 
-    const resolver = createResolver(selectedMerged.source || config.root, {
-      tokenEnv: "GITHUB_TOKEN",
-      tokenValue: selectedMerged.githubToken,
-      forceReload,
+    // Check readiness
+    const ready = await opts.plugin.checkReady(result.target, {
+      timeoutMs: maxWaitMs,
     });
 
-    const hostDenoCfg =
-      (denoOptions.find((a) => a.startsWith("--deno-config="))?.split(
-        "=",
-      )[1]) ||
-      hv.denoConfig ||
-      await detectHostDenoConfig(resolver);
-
-    if (Deno.env.get("OXIAN_DEBUG")) {
-      console.log("[hv] hostDenoCfg", hostDenoCfg);
-    }
-
-    const project = selectedMerged.project;
-    const denoArgs: string[] = ["run", ...denoOptions];
-
-    const projectCfg = (hv.projects &&
-      (hv.projects as Record<string, { denoConfig?: string }>)[project]) ||
-      {} as { denoConfig?: string };
-    const effectiveDenoCfg = projectCfg.denoConfig ?? hostDenoCfg;
-
-    if (Deno.env.get("OXIAN_DEBUG")) {
-      console.log("[hv] effectiveDenoCfg", effectiveDenoCfg);
-    }
-
-    if (!denoOptions.includes("--config") && effectiveDenoCfg) {
-      let maybeHostDenoConfig: {
-        imports?: Record<string, string>;
-        scopes?: Record<string, Record<string, string>>;
-      } = { imports: {}, scopes: {} };
-      try {
-        const resolved = await resolver.resolve(effectiveDenoCfg);
-        const loaded = await resolver.load(resolved, { encoding: "utf-8" });
-        const picked = JSON.parse(loaded as string);
-        if (picked && typeof picked === "object") {
-          maybeHostDenoConfig = picked as {
-            imports?: Record<string, string>;
-            scopes?: Record<string, Record<string, string>>;
-          };
-          if (Deno.env.get("OXIAN_DEBUG")) {
-            console.log("[hv] maybeHostDenoConfig", maybeHostDenoConfig);
-          }
-        }
-      } catch (e: unknown) {
-        hvLogger.error(`[hv] error loading host deno config`, {
-          error: (e as Error)?.message,
-        });
-      }
-      const hostImports = (maybeHostDenoConfig?.imports) ?? {};
-      const hostScopes = (maybeHostDenoConfig?.scopes) ?? {};
-      const mergedImports: Record<string, string> = {
-        ...(denoJson?.imports || {}),
-        ...hostImports,
-      };
-      const libSrcBase = new URL("../", import.meta.url);
-      if (mergedImports["oxian-js/"]) {
-        mergedImports["oxian-js/"] = libSrcBase.href;
-      }
-      for (const [specifier, url] of Object.entries(mergedImports)) {
-        const isUrl = url.split(":").length > 1;
-        if (!isUrl) {
-          mergedImports[specifier] = (await resolver.resolve(url)).toString();
-        }
-      }
-      if (Deno.env.get("OXIAN_DEBUG")) {
-        console.log("[hv] mergedImports", mergedImports);
-      }
-      const mergedImportMap = {
-        imports: mergedImports,
-        scopes: {
-          ...(((denoJson as unknown as {
-            scopes?: Record<string, Record<string, string>>;
-          })?.scopes) || {}),
-          ...hostScopes,
-        },
-      } as {
-        imports?: Record<string, string>;
-        scopes?: Record<string, Record<string, string>>;
-      };
-      const jsonStr = JSON.stringify(mergedImportMap);
-      const dataUrl = `data:application/json;base64,${btoa(jsonStr)}`;
-      denoArgs.push(`--import-map=${dataUrl}`);
-      // denoArgs.push(`--no-prompt`);
-
-      if (Deno.env.get("OXIAN_DEBUG")) {
-        console.log("[hv] import meta", import.meta.url);
-      }
-
-      // add deno unstable flags based on local deno.json
-      denoJson?.unstable?.forEach((flag) => {
-        denoArgs.push(`--unstable-${flag}`);
+    if (!ready) {
+      hvLogger.error(`[hv] worker not ready`, {
+        service: svc,
+        target: result.target,
+        waitedMs: maxWaitMs,
       });
-
-      // add deno permissions based on host deno.json, overridable with selected.permissions
-      if (config.permissions || selected.permissions) {
-        // add config.permissions - global permissions from global config
-        config.permissions &&
-          Object.entries(config.permissions).forEach(([key, value]) => {
-            if (value !== false) {
-              if (typeof value === "boolean" && value) {
-                denoArgs.push(`--allow-${key}`);
-              }
-              if (typeof value === "string") {
-                denoArgs.push(`--allow-${key}=${value}`);
-              }
-              if (typeof value === "object" && Array.isArray(value)) {
-                denoArgs.push(`--allow-${key}=${value.join(",")}`);
-              }
-            } else {
-              denoArgs.push(`--deny-${key}`);
-            }
-          });
-        // override with selected.permissions - project-specific permissions
-        selected.permissions &&
-          Object.entries(selected.permissions).forEach(([key, value]) => {
-            if (value !== false) {
-              if (typeof value === "boolean" && value) {
-                denoArgs.push(`--allow-${key}`);
-              }
-              if (typeof value === "string") {
-                denoArgs.push(`--allow-${key}=${value}`);
-              }
-              if (typeof value === "object" && Array.isArray(value)) {
-                denoArgs.push(`--allow-${key}=${value.join(",")}`);
-              }
-            } else {
-              denoArgs.push(`--deny-${key}`);
-            }
-          });
-      } else {
-        denoArgs.push(`-A`);
-      }
+      await store.set(`ready:${svc}`, false);
     } else {
-      denoArgs.push(`-A`);
-    }
-
-    // Decide whether to use --reload based on invalidateCacheAt vs last load
-    let shouldReload = false;
-    if (selectedMerged.invalidateCacheAt !== undefined) {
-      const last = projectLastLoad.get(project) ?? 0;
-      let invalidateAt = 0;
-      if (selectedMerged.invalidateCacheAt instanceof Date) {
-        invalidateAt = selectedMerged.invalidateCacheAt.getTime();
-      } else if (typeof selectedMerged.invalidateCacheAt === "number") {
-        invalidateAt = selectedMerged.invalidateCacheAt;
-      } else if (typeof selectedMerged.invalidateCacheAt === "string") {
-        const t = Date.parse(selectedMerged.invalidateCacheAt);
-        if (!Number.isNaN(t)) invalidateAt = t;
-      }
-      if (Deno.env.get("OXIAN_DEBUG")) {
-        console.log(
-          "[hv] invalidateAt",
-          invalidateAt,
-          "last",
-          last,
-          "shouldReload",
-          invalidateAt > last,
-        );
-      }
-      if (invalidateAt > last) shouldReload = true;
-    } else {
-      // use hotReload from config
-      shouldReload = config.runtime?.hotReload === true;
-    }
-    if (shouldReload) {
-      const reloadTargets: string[] = [];
-      try {
-        const rootResolved = await resolver.resolve("");
-        if (rootResolved) reloadTargets.push(rootResolved.toString());
-      } catch { /* ignore */ }
-      if (selectedMerged.config) reloadTargets.push(selectedMerged.config);
-      if (reloadTargets.length > 0) {
-        const normalized: string[] = [];
-        for (const t of reloadTargets) {
-          const isUrl = t.split(":").length > 1;
-          if (!isUrl) {
-            try {
-              normalized.push((await resolver.resolve(t)).toString());
-            } catch {
-              normalized.push(t);
-            }
-          } else normalized.push(t);
-        }
-        const value = normalized.join(",");
-        denoArgs.push(`--reload=${value}`);
-      }
-    }
-
-    const globalSource = Deno.args.find((a) => a.startsWith("--source="))
-      ?.split("=")[1];
-    const globalConfig = Deno.args.find((a) => a.startsWith("--config="))
-      ?.split("=")[1];
-    const projCfg = (hv.projects &&
-      (hv.projects as Record<string, { source?: string; config?: string }>)[
-        project
-      ]) || {} as { source?: string; config?: string };
-    const effectiveSource = selectedMerged.source ?? projCfg.source ??
-      globalSource;
-    const effectiveConfig = selectedMerged.config ?? projCfg.config ??
-      globalConfig;
-
-    // Determine project working directory early (needed for materialize step)
-
-    async function hashString(inputString: string) {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(inputString); // Encode the string to a Uint8Array
-
-      const hashBuffer = await crypto.subtle.digest("SHA-256", data); // Hash the data
-
-      // Convert ArrayBuffer to Array of bytes
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-
-      // Convert bytes to hex string
-      const hashHex = hashArray.map((byte) =>
-        byte.toString(16).padStart(2, "0")
-      ).join("");
-
-      return hashHex;
-    }
-
-    const projectHash = await hashString(project);
-
-    const projectDir = selectedMerged.isolated
-      ? `./.projects/${projectHash}`
-      : Deno.cwd();
-    if (selectedMerged.isolated) {
-      ensureDir(`${projectDir}`);
-    }
-
-    // Two-step flow: perform materialize (and prepare) in a separate CLI invocation, then spawn worker without allow-run
-    {
-      const hvMat = (config.runtime?.hv as { materialize?: unknown })
-        ?.materialize as boolean | {
-          mode?: string;
-          dir?: string;
-          refresh?: boolean;
-        } | undefined;
-      const projMat = (config.runtime?.hv?.projects as
-        | Record<
-          string,
-          {
-            materialize?: boolean | {
-              mode?: string;
-              dir?: string;
-              refresh?: boolean;
-            };
-          }
-        >
-        | undefined)?.[project]?.materialize;
-      const selMat = selectedMerged.materialize;
-      const mat = selMat ?? projMat ?? hvMat;
-      const shouldMaterialize = !!(mat &&
-        (typeof mat === "boolean"
-          ? mat
-          : (mat.mode === "always" || mat.mode === "auto")) &&
-        effectiveSource);
-      if (shouldMaterialize && effectiveSource) {
-        const m = typeof mat === "boolean"
-          ? { mode: "always" as const }
-          : (mat as { mode?: string; dir?: string; refresh?: boolean });
-        // const matDir = m.dir ? m.dir : (selectedMerged.isolated ? projectDir : projectDir);
-        // Materialize requires full permissions to download/write files
-        const matDenoArgs = denoArgs.filter((a) =>
-          !a.startsWith("--allow-") && !a.startsWith("--deny-") && a !== "-A"
-        );
-        matDenoArgs.push("-A");
-
-        const matArgs: string[] = [
-          ...matDenoArgs,
-          entryPoint,
-          "materialize",
-          `--source=${effectiveSource}`,
-          `--materialize-dir=.`,
-          // Also force materialize refresh when invalidateCacheAt requests reload.
-          ...(m.refresh || shouldReload ? ["--materialize-refresh"] : []),
-        ];
-
-        const matCmd = new Deno.Command(Deno.execPath(), {
-          args: matArgs,
-          stdin: "null",
-          stdout: "piped",
-          stderr: "inherit",
-          cwd: projectDir,
-          env: {
-            ...(selectedMerged.env || {}),
-            ...(selectedMerged.githubToken
-              ? { GITHUB_TOKEN: selectedMerged.githubToken }
-              : {}),
-          },
+      if (PERF) {
+        hvLogger.info("[perf][hv] worker ready", {
+          service: svc,
+          target: result.target,
+          ms: Math.round(performance.now() - t0),
         });
-        const out = await matCmd.output();
-        if (!out.success) {
-          throw new Error(
-            `[hv] materialize step failed for project ${project}`,
-          );
-        }
-        try {
-          const text = new TextDecoder().decode(out.stdout);
-          JSON.parse(text) as { ok?: boolean; rootDir?: string };
-        } catch { /* ignore parse errors */ }
-      }
-
-      // Second step: run prepare (prepare hooks)
-      // Prepare requires full permissions to run arbitrary hooks and read configs
-      const prepDenoArgs = denoArgs.filter((a) =>
-        !a.startsWith("--allow-") && !a.startsWith("--deny-") && a !== "-A"
-      );
-      prepDenoArgs.push("-A");
-
-      const prepArgs: string[] = [
-        ...prepDenoArgs,
-        entryPoint,
-        "prepare",
-      ];
-
-      const prepCmd = new Deno.Command(Deno.execPath(), {
-        args: prepArgs,
-        stdin: "null",
-        stdout: "inherit",
-        stderr: "inherit",
-        cwd: projectDir,
-        env: {
-          ...(selectedMerged.env || {}),
-          ...(selectedMerged.githubToken
-            ? { GITHUB_TOKEN: selectedMerged.githubToken }
-            : {}),
-        },
-      });
-      const prepOut = await prepCmd.output();
-      if (!prepOut.success) {
-        throw new Error(`[hv] prepare step failed for project ${project}`);
-      }
+      } else hvLogger.info(`[hv] worker ready`, { service: svc, target: result.target });
+      await store.set(`pool:${svc}:target`, result.target);
+      await store.set(`ready:${svc}`, true);
+      await store.set(`lastLoad:${svc}`, Date.now());
+      await store.set(`activity:${svc}`, Date.now());
+      localHandles.set(svc, result.handle);
+      notifyServiceReady(svc);
+      if (onServiceReady) await onServiceReady(svc);
     }
 
-    const finalScriptArgs = [
-      `--port=${port}`,
-      ...scriptArgs.filter((a) => !a.startsWith("--port=")),
-      ...Deno.args.filter((a) =>
-        !a.startsWith("--source=") && !a.startsWith("--config=") &&
-        !a.startsWith("--hypervisor=")
-      ),
-      ...(effectiveSource && !selectedMerged.materialize
-        ? [`--source=${effectiveSource}`]
-        : []),
-      ...(effectiveConfig ? [`--config=${effectiveConfig}`] : []),
-    ];
-
-    if (Deno.env.get("OXIAN_DEBUG")) {
-      console.log("[hv] finalScriptArgs", finalScriptArgs);
-    }
-
-    const spawnEnv: Record<string, string> | undefined = {
-      ...(selectedMerged.env || {}),
-      ...(selectedMerged.githubToken
-        ? { GITHUB_TOKEN: selectedMerged.githubToken }
-        : {}),
-    };
-    // Propagate OpenTelemetry env for auto-instrumentation when configured
-    try {
-      const otelCfg = config.logging?.otel ??
-        {} as {
-          enabled?: boolean;
-          serviceName?: string;
-          endpoint?: string;
-          protocol?: string;
-          headers?: Record<string, string>;
-          resourceAttributes?: Record<string, string>;
-          propagators?: string;
-          metricExportIntervalMs?: number;
-        };
-      if (otelCfg?.enabled || config.runtime?.hv?.otelProxy?.enabled) {
-        spawnEnv.OTEL_DENO = "true";
-        if (otelCfg.serviceName) {
-          spawnEnv.OTEL_SERVICE_NAME = otelCfg.serviceName;
-        }
-        // Default to built-in collector or proxy if no endpoint is provided
-        const builtInProxyPort = config.runtime?.hv?.otelProxy?.enabled
-          ? (config.runtime?.hv?.otelProxy?.port ?? 4318)
-          : undefined;
-
-        if (builtInProxyPort) {
-          spawnEnv.OTEL_EXPORTER_OTLP_ENDPOINT =
-            `http://127.0.0.1:${builtInProxyPort}`;
-        } else if (otelCfg.endpoint) {
-          spawnEnv.OTEL_EXPORTER_OTLP_ENDPOINT = otelCfg.endpoint;
-        }
-        if (otelCfg.protocol) {
-          spawnEnv.OTEL_EXPORTER_OTLP_PROTOCOL = otelCfg.protocol as string;
-        }
-
-        {
-          const headerPairs: string[] = [];
-          if (otelCfg.headers && Object.keys(otelCfg.headers).length) {
-            for (const [k, v] of Object.entries(otelCfg.headers)) {
-              headerPairs.push(`${k}=${v}`);
-            }
-          }
-          // Always attach project so the built-in collector can tag payloads
-          headerPairs.push(`x-oxian-project=${project}`);
-          spawnEnv.OTEL_EXPORTER_OTLP_HEADERS = headerPairs.join(",");
-        }
-        // Merge resource attributes with project
-        const baseAttrs: Record<string, string> = {
-          ...(otelCfg.resourceAttributes || {}),
-        };
-        baseAttrs["oxian.project"] = project;
-        const attrs = Object.entries(baseAttrs).map(([k, v]) => `${k}=${v}`)
-          .join(",");
-        if (attrs) spawnEnv.OTEL_RESOURCE_ATTRIBUTES = attrs;
-        if (otelCfg.propagators) {
-          spawnEnv.OTEL_PROPAGATORS = otelCfg.propagators;
-        }
-        if (typeof otelCfg.metricExportIntervalMs === "number") {
-          spawnEnv.OTEL_METRIC_EXPORT_INTERVAL = String(
-            otelCfg.metricExportIntervalMs,
-          );
-        }
-      }
-    } catch { /* ignore otel env config errors */ }
-    spawnEnv.DENO_AUTH_TOKENS = `${
-      spawnEnv.DENO_AUTH_TOKENS ? spawnEnv.DENO_AUTH_TOKENS + ";" : ""
-    }${
-      selectedMerged.githubToken
-        ? `${selectedMerged.githubToken}@raw.githubusercontent.com`
-        : ""
-    }`;
-
-    if (Deno.env.get("OXIAN_DEBUG")) {
-      console.log("[hv] globalSource", globalSource);
-      console.log("[hv] globalConfig", globalConfig);
-    }
-
-    if (selectedMerged.isolated) {
-      spawnEnv.DENO_DIR = `./.deno/DENO_DIR`;
-
-      denoArgs.splice(denoArgs.indexOf("-A"), 1);
-      const allowRead = denoArgs.find((a) =>
-        a.startsWith("--allow-read=")
-      )?.split("=")[1] ?? "";
-      const allowWrite = denoArgs.find((a) =>
-        a.startsWith("--allow-write=")
-      )?.split("=")[1] ?? "";
-      // add other allow-* arguments
-
-      // only read and write to projectDir
-      denoArgs.push(`--allow-read=${allowRead ? allowRead + `,./` : `./`}`);
-      denoArgs.push(
-        `--allow-write=${allowWrite ? allowWrite + "./" + `,./` : `./`}`,
-      );
-
-      // allow net, ffi, sys
-      denoArgs.push(`--allow-net`);
-      // allow ffi
-      denoArgs.push(`--allow-ffi`);
-      // allow sys
-      denoArgs.push(`--allow-sys`);
-      // allow import
-      denoArgs.push(`--allow-import`);
-      // allow env
-      denoArgs.push(`--allow-env`);
-      // allow run to specific applications dir, defaults to os's applications dir
-      denoArgs.push(`--allow-run`);
-      // allow hrtime
-      denoArgs.push(`--allow-hrtime`);
-    }
-
-    denoArgs.push(entryPoint);
-
-    if (Deno.env.get("OXIAN_DEBUG")) {
-      console.log("[hv] projectDir", projectDir);
-    }
-
-    if (Deno.env.get("OXIAN_DEBUG")) {
-      console.log("[hv] spawning worker final args", [
-        ...denoArgs,
-        ...finalScriptArgs,
-      ]);
-    }
-
-    const proc = new Deno.Command(Deno.execPath(), {
-      args: [...denoArgs, ...finalScriptArgs],
-      stdin: "null",
-      stdout: "inherit",
-      stderr: "inherit",
-      env: spawnEnv,
-      cwd: projectDir,
-    }).spawn();
-
-    // Readiness wait
-    {
-      const maxWaitMs = hv.proxy?.timeoutMs ?? 300_000;
-      const start = Date.now();
-      let ready = false;
-      while (Date.now() - start < maxWaitMs) {
-        try {
-          const r = await fetch(`http://127.0.0.1:${port}/_health`, {
-            method: "HEAD",
-            signal: AbortSignal.timeout(500),
-          });
-          if (r.ok || r.status >= 200) {
-            ready = true;
-            break;
-          }
-        } catch { /* ignore until ready */ }
-        await new Promise((r) => setTimeout(r, 100));
-      }
-      if (!ready) {
-        hvLogger.error(`[hv] worker not ready`, {
-          project,
-          port,
-          waitedMs: Date.now() - start,
-        });
-        projectReady.set(project, false);
-      } else {
-        if (PERF) {
-          hvLogger.info("[perf][hv] worker ready", {
-            project,
-            port,
-            ms: Math.round(performance.now() - t0),
-          });
-        } else hvLogger.info(`[hv] worker ready`, { project, port });
-        projectReady.set(project, true);
-        // mark last load time for reload decisions
-        projectLastLoad.set(project, Date.now());
-        // mark activity baseline
-        projectLastActive.set(project, Date.now());
-        // signal readiness to any waiters
-        notifyProjectReady(project);
-        if (onProjectReady) await onProjectReady(project);
-      }
-    }
-
-    // Persist last spawn options for consistent restarts
-    lastSpawnOptions.set(project, selectedMerged);
-
-    attachExitObserver(selected.project, proc);
-    return { port, proc };
+    await store.set(`config:${svc}`, selected);
+    attachExitObserver(svc, result.handle);
   }
 
   function toMs(v: string | number | Date | undefined): number | undefined {
@@ -1505,137 +948,108 @@ export function createLifecycleManager(
     return undefined;
   }
 
-  function shouldRestartForInvalidation(
-    project: string,
-    selected: SelectedProject,
-  ): boolean {
+  async function shouldRestartForCacheInvalidation(
+    service: string,
+    selected: ServiceDefinition,
+  ): Promise<boolean> {
     const selectedAt = toMs(selected.invalidateCacheAt);
     if (selectedAt === undefined) return false;
 
-    const lastSelected = lastSpawnOptions.get(project);
+    const lastSelected = await store.get<ServiceDefinition>(`config:${service}`);
     const lastSelectedAt = toMs(lastSelected?.invalidateCacheAt);
     if (lastSelectedAt !== undefined && lastSelectedAt === selectedAt) {
       return false;
     }
 
-    const lastLoad = projectLastLoad.get(project) ?? 0;
+    const lastLoad = (await store.get<number>(`lastLoad:${service}`)) ?? 0;
     return selectedAt > lastLoad || lastSelectedAt !== selectedAt;
   }
 
-  async function restartProject(
-    project: string,
+  async function restartService(
+    service: string,
     denoOptionsIn?: string[],
     scriptArgsIn?: string[],
-    basisIn?: SelectedProject,
+    basisIn?: ServiceDefinition,
   ) {
-    if (restarting.has(project)) return;
-    restarting.add(project);
+    const acquired = await store.acquire(`restart:${service}`, 300_000);
+    if (!acquired) return;
     try {
-      const idx = getProjectIndex(project) ?? 0;
-      const basis = basisIn ?? lastSpawnOptions.get(project) ??
-        { project } as SelectedProject;
-      const next = await spawnWorker(
+      const idx = getServiceIndex(service) ?? 0;
+      const lastOpts = await store.get<ServiceDefinition>(`config:${service}`);
+      const basis = basisIn ?? lastOpts ?? { service } as ServiceDefinition;
+      const oldHandle = localHandles.get(service);
+      await spawnWorker(
         basis,
         idx,
         denoOptionsIn ?? cachedDenoOptions,
         scriptArgsIn ?? cachedScriptArgs,
       );
-      const existing = pools.get(project);
-      if (!existing) {
-        pools.set(project, {
-          port: next.port,
-          proc: next.proc,
-          rr: rrPicker([{ port: next.port, proc: next.proc }]),
-        });
-        // Readiness will be notified by spawnWorker when health passes
-        return;
+      // Stop old worker after new one is ready (blue/green)
+      if (oldHandle && opts.plugin) {
+        try {
+          await opts.plugin.stop(oldHandle);
+        } catch { /* ignore */ }
+        console.log(`[hv] old worker terminated`, { service });
       }
-      const oldProc = existing.proc;
-      const oldPort = existing.port;
-      existing.port = next.port;
-      existing.proc = next.proc;
-      existing.rr = rrPicker([{ port: next.port, proc: next.proc }]);
-      pools.set(project, existing);
-      // Readiness will be notified by spawnWorker when health passes
-      try {
-        oldProc.kill();
-      } catch (_e) { /* ignore kill */ }
-      console.log(`[hv] old worker terminated`, { project, oldPort });
     } finally {
-      restarting.delete(project);
+      await store.release(`restart:${service}`);
     }
   }
 
-  async function ensureWorker(project: string): Promise<void> {
-    if (pools.get(project)) return;
-    await restartProject(project);
+  async function markServiceActivity(service: string) {
+    await store.set(`activity:${service}`, Date.now());
   }
 
-  function getPoolsArray(): Array<{ project: string; entry: PoolEntry }> {
-    return Array.from(pools.entries()).map(([project, entry]) => ({
-      project,
-      entry,
-    }));
+  async function incrementServiceInflight(service: string) {
+    await store.increment(`inflight:${service}`);
   }
 
-  function markProjectActivity(project: string) {
-    projectLastActive.set(project, Date.now());
+  async function decrementServiceInflight(service: string) {
+    await store.decrement(`inflight:${service}`);
   }
 
-  function incrementInflight(project: string) {
-    const current = projectInflight.get(project) ?? 0;
-    projectInflight.set(project, current + 1);
-  }
-
-  function decrementInflight(project: string) {
-    const current = projectInflight.get(project) ?? 0;
-    const next = current - 1;
-    projectInflight.set(project, next > 0 ? next : 0);
-  }
-
-  function getIdleTtlForProject(project: string): number | undefined {
-    const fromSpawn = lastSpawnOptions.get(project)?.idleTtlMs;
+  async function getIdleTtlForService(service: string): Promise<number | undefined> {
+    const lastOpts = await store.get<ServiceDefinition>(`config:${service}`);
+    const fromSpawn = lastOpts?.idleTtlMs;
     if (typeof fromSpawn === "number") return fromSpawn;
-    const hvProjects = (config.runtime?.hv?.projects ?? {}) as Record<
-      string,
-      { idleTtlMs?: number }
-    >;
-    const fromProj = hvProjects?.[project]?.idleTtlMs;
-    if (typeof fromProj === "number") return fromProj;
     const fromGlobal = config.runtime?.hv?.autoscale?.idleTtlMs;
     return typeof fromGlobal === "number" ? fromGlobal : undefined;
   }
 
   function startIdleChecker() {
     if (idleCheckTimer) return;
-    idleCheckTimer = setInterval(() => {
+    idleCheckTimer = setInterval(async () => {
       const now = Date.now();
-      for (const { project, entry } of getPoolsArray()) {
-        const inflight = projectInflight.get(project) ?? 0;
+      for (const service of listServices()) {
+        const inflight = (await store.get<number>(`inflight:${service}`)) ?? 0;
         if (inflight > 0) continue;
-        const ttl = getIdleTtlForProject(project);
+        const ttl = await getIdleTtlForService(service);
         if (ttl === undefined || ttl === 0) continue;
-        const lastActive = projectLastActive.get(project) ??
-          projectLastLoad.get(project) ?? 0;
+        const lastActive = (await store.get<number>(`activity:${service}`)) ??
+          (await store.get<number>(`lastLoad:${service}`)) ?? 0;
         if (lastActive === 0) continue;
         if (now - lastActive > ttl) {
           try {
+            const target = await getTarget(service);
             console.log(`[hv] idle timeout, stopping worker`, {
-              project,
-              port: entry.port,
+              service,
+              target,
               idleMs: now - lastActive,
               ttlMs: ttl,
             });
-            intentionalStop.add(project);
-            pools.delete(project);
-            projectReady.set(project, false);
-            const p = entry.proc;
-            try {
-              p.kill();
-            } catch { /* ignore */ }
+            await store.set(`intentionalStop:${service}`, true);
+            await store.delete(`pool:${service}:target`);
+            await store.set(`ready:${service}`, false);
+            const handle = localHandles.get(service);
+            if (handle && opts.plugin) {
+              try {
+                await opts.plugin.stop(handle);
+              } catch { /* ignore */ }
+            }
+            localHandles.delete(service);
           } catch (e) {
             console.error(`[hv] idle stop error`, {
-              project,
+              service,
               err: (e as Error)?.message,
             });
           }
@@ -1653,22 +1067,18 @@ export function createLifecycleManager(
 
   return {
     setBaseArgs,
-    notifyProjectReady,
-    waitForProjectReady,
+    notifyServiceReady,
+    waitForServiceReady,
     spawnWorker,
-    restartProject,
-    shouldRestartForInvalidation,
-    registerWorker,
-    getPool,
-    isProjectReady: (project: string) => projectReady.get(project) === true,
-    listProjects,
-    setProjectIndex,
-    getProjectIndex,
-    ensureWorker,
-    getPoolsArray,
-    markProjectActivity,
-    incrementInflight,
-    decrementInflight,
+    restartService,
+    shouldRestartForCacheInvalidation,
+    getTarget,
+    listServices,
+    getServiceIndex,
+    localHandles,
+    markServiceActivity,
+    incrementServiceInflight,
+    decrementServiceInflight,
     startIdleChecker,
     shutdown,
   } as const;

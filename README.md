@@ -649,57 +649,17 @@ returned.
 For more details and advanced options, see
 [Using Oxian with Vite](./docs/integrations-vite.md).
 
-### Per-project web configuration (multi-project)
+### Web configuration
 
-In multi-project setups, you can overlay per-project web behavior over the
-global `runtime.hv.web` settings. The hypervisor selects the project first (via
-`hv.provider` or `hv.select`), determines the effective API base path (project
-`routing.basePath` falling back to global), and for non-API requests applies the
-per-project web config:
+Set `web` at the configuration top level so workers read it directly. For
+backward compatibility, `runtime.hv.web` is still supported as a fallback.
+
+Available `web` options:
 
 - `devProxyTarget`: Proxy non-API paths to a dev server (e.g., Vite)
 - `staticDir`: Serve static files for non-API paths in production, with SPA
   `index.html` fallback
 - `staticCacheControl`: Optional cache-control header for static assets
-
-Example:
-
-```json
-{
-  "server": { "port": 8080 },
-  "basePath": "/api", // global default, can be overridden per project
-  "runtime": {
-    "hv": {
-      "web": { "staticDir": "dist" },
-      "projects": {
-        "appA": {
-          "routing": { "basePath": "/api" },
-          "web": { "devProxyTarget": "http://localhost:5173" }
-        },
-        "appB": {
-          "routing": { "basePath": "/b-api" },
-          "web": {
-            "staticDir": "apps/b/dist",
-            "staticCacheControl": "public, max-age=3600"
-          }
-        }
-      },
-      "select": [
-        { "project": "appA", "when": { "hostPrefix": "a." } },
-        { "project": "appB", "when": { "hostPrefix": "b." } },
-        { "default": true, "project": "appA" }
-      ]
-    }
-  }
-}
-```
-
-Behavior:
-
-- Requests matching a project’s API base path are proxied to that project’s
-  worker.
-- Other paths are handled by that project’s `web` config (dev proxy if set;
-  otherwise static serving if `staticDir` is set; otherwise 404).
 
 ### Request Transformation
 
@@ -711,11 +671,11 @@ Transform requests before they reach workers using the `onRequest` callback
 export default {
   runtime: {
     hv: {
-      onRequest: ({ req, project }) => {
+      onRequest: ({ req, service }) => {
         // Add custom headers, auth tokens, etc.
         const headers = new Headers(req.headers);
         headers.set("x-processed-by", "hypervisor");
-        headers.set("x-project", project);
+        headers.set("x-service", service);
         return new Request(req, { headers });
       },
     },
@@ -737,24 +697,24 @@ with no active requests/streams and no activity for a configured TTL. Long‑liv
 streams and SSE are respected: the worker remains active until the client closes
 the response body.
 
-- Configure per project via `runtime.hv.projects[<name>].idleTtlMs` or at spawn
-  time via provider/`SelectedProject.idleTtlMs`.
+- Configure per service via `ServiceDefinition.idleTtlMs` returned from the provider.
 - Default is no TTL (workers do not auto‑stop unless configured).
-- Precedence: provider → per‑project config → `runtime.hv.autoscale.idleTtlMs` →
+- Precedence: provider `idleTtlMs` → `runtime.hv.autoscale.idleTtlMs` →
   disabled when none provided.
 
 Example:
 
-```json
+```ts
 {
-  "runtime": {
-    "hv": {
-      "autoscale": { "idleTtlMs": 300000 },
-      "projects": {
-        "api": { "idleTtlMs": 120000 }
-      }
-    }
-  }
+  runtime: {
+    hv: {
+      autoscale: { idleTtlMs: 300000 },
+      provider: (req) => ({
+        service: "api",
+        idleTtlMs: 120000, // per-service override
+      }),
+    },
+  },
 }
 ```
 

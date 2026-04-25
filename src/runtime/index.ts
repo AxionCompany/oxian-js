@@ -9,6 +9,7 @@
 
 // Re-export types
 export type { LoadedModule, PipelineFiles } from "./types.ts";
+export type { PipelineInput, PipelineResult } from "./executor.ts";
 
 // Re-export functions
 export { clearModuleCache, loadRouteModule, getHandlerExport } from "./module_loader.ts";
@@ -17,4 +18,5 @@ export { runInterceptorsBefore, runInterceptorsAfter } from "./interceptors.ts";
 export { runMiddlewares } from "./middlewares.ts";
 export { runHandler, shapeError } from "./pipeline.ts";
 export { buildLocalChain, buildRemoteChain, discoverPipelineFiles } from "./pipeline_discovery.ts";
+export { executePipeline, clearPipelineCache } from "./executor.ts";
 

@@ -1,10 +1,9 @@
 /**
  * @fileoverview Core HTTP server implementation for the Oxian framework.
  *
- * This module provides the main server functionality, including request handling,
- * routing, middleware execution, dependency injection, and response processing.
- * It orchestrates the complete request lifecycle from incoming HTTP requests
- * to final responses.
+ * This module provides the main server functionality including request handling,
+ * routing, and response processing. Pipeline execution (dependency injection,
+ * middleware, interceptors, handler) is delegated to the runtime executor.
  *
  * @module server
  */
@@ -18,22 +17,9 @@ import {
   finalizeResponse,
 } from "../utils/response.ts";
 import { mergeData, parseQuery, parseRequestBody } from "../utils/request.ts";
-import type { Context, Data, Handler } from "../core/index.ts";
-import { getHandlerExport, loadRouteModule } from "../runtime/module_loader.ts";
-import { runHandler, shapeError } from "../runtime/pipeline.ts";
-import { composeDependencies } from "../runtime/dependencies.ts";
-import {
-  runInterceptorsAfter,
-  runInterceptorsBefore,
-} from "../runtime/interceptors.ts";
-import { runMiddlewares } from "../runtime/middlewares.ts";
+import type { Context, Data } from "../core/index.ts";
 import { resolveRouter } from "../router/index.ts";
-import type { RouteParamValue } from "../router/types.ts";
-import {
-  buildLocalChain,
-  buildRemoteChain,
-  discoverPipelineFiles,
-} from "../runtime/pipeline_discovery.ts";
+import { executePipeline } from "../runtime/executor.ts";
 import type { Resolver } from "../resolvers/types.ts";
 
 // Minimal MIME type mapping for static serving
@@ -153,9 +139,7 @@ function applyCorsAndDefaults(
  * Starts the Oxian HTTP server with the provided configuration.
  *
  * This function initializes and starts a complete HTTP server that handles routing,
- * middleware execution, dependency injection, interceptors, and request/response
- * processing. It supports both local and remote routing, CORS configuration,
- * security headers, and comprehensive logging.
+ * CORS, static serving, and delegates request processing to the pipeline executor.
  *
  * @param opts - Configuration options for the server
  * @param opts.config - The effective Oxian configuration object
@@ -186,16 +170,9 @@ export async function startServer(
     const meter = metrics.getMeter("oxian", "1");
     await config.logging?.otel?.hooks?.onInit?.({ tracer, meter });
   } catch { /* ignore user hook errors */ }
-  const perfEnd = performance.now();
   if (PERF) {
     console.log("[perf][server] resolvedRouter", {
-      ms: Math.round(perfEnd - perfStart),
-    });
-  }
-  const resolvedEnd = performance.now();
-  if (PERF) {
-    console.log("[perf][server] resolvedRouter", {
-      ms: Math.round(resolvedEnd - perfStart),
+      ms: Math.round(performance.now() - perfStart),
       isRemote: resolved.isRemote,
       routes: resolved.router?.routes?.length,
     });
@@ -233,8 +210,8 @@ export async function startServer(
               xfQuery ? `?${xfQuery}` : url.search
             }`
             : req.url;
-          // Prefer hypervisor-provided project header; fallback to config/runtime default
-          const projectFromHv = req.headers.get("x-oxian-project") || "default";
+          // Prefer hypervisor-provided service header; fallback to default
+          const serviceFromHv = req.headers.get("x-oxian-service") || "default";
           const basePath = config.basePath ?? "/";
           let path = url.pathname;
 
@@ -242,9 +219,7 @@ export async function startServer(
           if (req.method === "HEAD" && url.pathname === "/_health") {
             const headers = new Headers();
             applyCorsAndDefaults(headers, config, req);
-            const res = new Response(null, { status: 200, headers });
-            // minimal health response
-            return res;
+            return new Response(null, { status: 200, headers });
           }
 
           if (basePath && basePath !== "/") {
@@ -334,8 +309,7 @@ export async function startServer(
           if (req.method === "HEAD" && path === "/_health") {
             const headers = new Headers();
             applyCorsAndDefaults(headers, config, req);
-            const res = new Response(null, { status: 200, headers });
-            return res;
+            return new Response(null, { status: 200, headers });
           }
 
           // CORS preflight handling
@@ -345,23 +319,18 @@ export async function startServer(
             return new Response(null, { status: 204, headers });
           }
 
-          const lazyAsync = (resolved.router as unknown as {
-            __asyncMatch?: (p: string) => Promise<unknown>;
-          }).__asyncMatch as undefined | ((p: string) => Promise<unknown>);
-          const lazyPerfStart = performance.now();
-          const match = lazyAsync
-            ? await lazyAsync(path)
-            : resolved.router.match(path);
-          const lazyPerfEnd = performance.now();
+          // Route matching (unified async interface)
+          const matchStart = performance.now();
+          const match = await resolved.router.match(path);
           if (PERF) {
-            console.log("[perf][server] lazyMatch", {
-              ms: Math.round(lazyPerfEnd - lazyPerfStart),
+            console.log("[perf][server] routeMatch", {
+              ms: Math.round(performance.now() - matchStart),
             });
           }
+
+          // Parse request
           const { params: queryParams, record: queryRecord } = parseQuery(url);
-          // Preserve an untouched clone of the Request for consumers
           const rawClone = req.clone();
-          // Capture raw body bytes without consuming the preserved clone
           let rawBody: Uint8Array | undefined = undefined;
           try {
             const bodyClone = req.clone();
@@ -371,15 +340,16 @@ export async function startServer(
             /* Swallow errors reading raw body; continue with parsed body only */
           }
           const body = await parseRequestBody(req);
-          const pathParams = (match as unknown as {
-            params?: Record<string, RouteParamValue>;
-          })?.params ?? {};
-          let data: Data = mergeData(pathParams, queryRecord, body);
+          const pathParams = match?.params ?? {};
+          const data: Data = mergeData(pathParams, queryRecord, body);
 
+          // Create response controller and apply CORS/default headers
           const { controller, state } = createResponseController();
           applyCorsAndDefaults(state.headers, config, req);
 
-          let context: Context = {
+          const routePattern = match?.route?.pattern ?? path;
+
+          const ctx: Context = {
             requestId,
             request: {
               method: req.method,
@@ -395,9 +365,7 @@ export async function startServer(
             dependencies: { ...config?.runtime?.dependencies?.initial },
             response: controller,
             oxian: {
-              route:
-                (match as unknown as { route?: { pattern?: string } })?.route
-                  ?.pattern ?? path,
+              route: routePattern,
               startedAt,
             },
             // pass compatibility options for handler modes
@@ -408,64 +376,44 @@ export async function startServer(
 
           if (!match) {
             if (path === "/") {
-              // If no match found at "/", send a basic health check response
               controller.send({
                 ok: true,
                 message: "Oxian running",
-                routes: resolved.router.routes.map((r: { pattern: string }) =>
-                  r.pattern
-                ),
+                routes: resolved.router.routes.map((r) => r.pattern),
               });
-              const res = finalizeResponse(state);
-              return res;
+              return finalizeResponse(state);
             }
-            // If no match found at any path, send a 404 response
-            {
-              const headers = new Headers({
-                "content-type": "application/json; charset=utf-8",
-              });
-              applyCorsAndDefaults(headers, config, req);
-              return new Response(
-                JSON.stringify({ error: { message: "Not found" } }),
-                { status: 404, headers },
-              );
-            }
+            const headers = new Headers({
+              "content-type": "application/json; charset=utf-8",
+            });
+            applyCorsAndDefaults(headers, config, req);
+            return new Response(
+              JSON.stringify({ error: { message: "Not found" } }),
+              { status: 404, headers },
+            );
           }
 
-          // Enrich active span and automatically record per-request metrics and logs
+          // OTEL: enrich active span and record per-request metrics
           try {
             const activeSpan = trace.getActiveSpan();
             if (activeSpan) {
-              const routePattern =
-                (match as unknown as { route?: { pattern?: string } })?.route
-                  ?.pattern ?? path;
-              // Set span attributes using OpenTelemetry semantic conventions
               activeSpan.setAttributes({
                 "http.route": routePattern,
-                "oxian.project": projectFromHv,
+                "oxian.service": serviceFromHv,
               });
               activeSpan.updateName(`${req.method} ${routePattern}`);
 
-              // Auto-record start metrics with stable attributes (no request_id)
               const meter = metrics.getMeter("oxian", "1");
               const attrs = {
                 "http.route": routePattern,
                 "http.method": req.method,
-                "oxian.project": projectFromHv,
+                "oxian.service": serviceFromHv,
               } as Record<string, string | number>;
               try {
-                const activeCounter = meter.createUpDownCounter(
-                  "http.server.active_requests",
-                  { unit: "1" },
-                );
-                activeCounter.add(1, attrs);
-                const reqCounter = meter.createCounter("http.server.requests", {
-                  unit: "1",
-                });
-                reqCounter.add(1, attrs);
+                meter.createUpDownCounter("http.server.active_requests", { unit: "1" }).add(1, attrs);
+                meter.createCounter("http.server.requests", { unit: "1" }).add(1, attrs);
               } catch { /* avoid hard failure if meter not available */ }
 
-              // Call user start hook
               try {
                 const tracer = trace.getTracer("oxian", "1");
                 const meterHook = metrics.getMeter("oxian", "1");
@@ -476,243 +424,66 @@ export async function startServer(
                   requestId,
                   method: req.method,
                   url: req.url,
-                  project: projectFromHv,
+                  service: serviceFromHv,
                 });
               } catch (hookErr) {
                 if (Deno.env.get("OXIAN_DEBUG")) {
-                  console.log(
-                    "[server] OTEL user hook error",
-                    { error: hookErr },
-                  );
+                  console.log("[server] OTEL user hook error", { error: hookErr });
                 }
               }
-            } else {
-              // Log when span is not available for debugging
-              if (Deno.env.get("OXIAN_DEBUG")) {
-                console.log("[server] No active OTEL span found for request", {
-                  path,
-                });
-              }
+            } else if (Deno.env.get("OXIAN_DEBUG")) {
+              console.log("[server] No active OTEL span found for request", { path });
             }
           } catch (spanErr) {
-            // Log span errors in debug mode instead of silently ignoring
             if (Deno.env.get("OXIAN_DEBUG")) {
-              console.log(
-                "[server] OTEL span error",
-                { error: spanErr },
-              );
+              console.log("[server] OTEL span error", { error: spanErr });
             }
           }
 
-          // Unified pipeline discovery
-          let files;
-          const getFilesStart = performance.now();
-          if (resolved.isRemote && resolved.routesRootUrl) {
-            const chain = await buildRemoteChain(
-              resolver,
-              (match as unknown as { route: { fileUrl: URL } }).route.fileUrl,
-            );
-            files = await discoverPipelineFiles(chain, resolver, {
-              allowShared: config.compatibility?.allowShared,
-            });
-          } else {
-            const chain = await buildLocalChain(
-              resolver,
-              config.routing?.routesDir ?? "routes",
-              (match as unknown as { route: { fileUrl: URL } }).route.fileUrl,
-            );
-            files = await discoverPipelineFiles(chain, resolver, {
-              allowShared: config.compatibility?.allowShared,
-            });
-          }
-          const getFilesEnd = performance.now();
-          if (PERF) {
-            console.log("[perf][server] discoverPipelineFiles", {
-              ms: Math.round(getFilesEnd - getFilesStart),
-            });
-          }
-
-          try {
-            // Inject config-defined deps as the base
-            const baseDeps = {};
-            context.dependencies = baseDeps;
-            // Compose route dependencies on top
-            const composeStart = performance.now();
-            const composed = await composeDependencies(
-              files,
-              { baseDeps },
-              resolver,
-              { allowShared: config.compatibility?.allowShared },
-            );
-            const composeEnd = performance.now();
-            if (PERF) {
-              console.log("[perf][server] composeDependencies", {
-                ms: Math.round(composeEnd - composeStart),
-              });
-            }
-            context.dependencies = { ...baseDeps, ...composed };
-            {
-              // Run interceptors before the route handler
-              const runInterceptorsBeforeStart = performance.now();
-              const result = await runInterceptorsBefore(
-                files.interceptorFiles,
-                data,
-                context,
-                resolver,
-              );
-              data = result.data;
-              context = result.context as Context;
-              const runInterceptorsBeforeEnd = performance.now();
-              if (PERF) {
-                console.log("[perf][server] runInterceptorsBefore", {
-                  ms: Math.round(
-                    runInterceptorsBeforeEnd - runInterceptorsBeforeStart,
-                  ),
-                });
-              }
-            }
-            {
-              // Run middlewares before the route handler
-              const runMiddlewaresStart = performance.now();
-              const result = await runMiddlewares(
-                files.middlewareFiles,
-                data,
-                context,
-                resolver,
-                config,
-              );
-              data = result.data;
-              context = result.context as Context;
-              const runMiddlewaresEnd = performance.now();
-              if (PERF) {
-                console.log("[perf][server] runMiddlewares", {
-                  ms: Math.round(runMiddlewaresEnd - runMiddlewaresStart),
-                });
-              }
-            }
-          } catch (err) {
-            console.error("pipeline_error", {
-              err: (err as Error)?.message,
-              stack: (err as Error)?.stack,
-            });
-            const shaped = shapeError(err as unknown);
-            state.status = shaped.status;
-            state.body = shaped.body;
-            const res = finalizeResponse(state);
-            return res;
-          }
-
-          // Load the route module
-          const loadRouteModuleStart = performance.now();
-          const mod = await loadRouteModule(
-            (match as unknown as { route: { fileUrl: URL } }).route.fileUrl,
+          // Execute the pipeline (deps → interceptors → middleware → handler)
+          await executePipeline({
+            route: match.route,
+            data,
+            context: ctx,
+            state,
+            method: req.method,
+            config,
             resolver,
-          );
-          const loadRouteModuleEnd = performance.now();
-          if (PERF) {
-            console.log("[perf][server] loadRouteModule", {
-              ms: Math.round(loadRouteModuleEnd - loadRouteModuleStart),
-            });
-          }
-          let exportVal = getHandlerExport(mod, req.method);
-          // RFC 7231: HEAD must be handled like GET but with no response body
-          const isHead = req.method === "HEAD";
-          if (isHead && typeof exportVal !== "function") {
-            exportVal = getHandlerExport(mod, "GET");
-          }
-          let resultOrError: unknown = undefined;
-          if (typeof exportVal !== "function") {
-            state.status = 405;
-            state.body = { error: { message: "Method Not Allowed" } };
-            resultOrError = new Error("Method Not Allowed");
-          } else {
-            const runHandlerStart = performance.now();
-            const { result, error } = await runHandler(
-              exportVal as Handler,
-              data as Record<string, unknown>,
-              context,
-              state,
-            );
-            resultOrError = error ?? result;
-            const runHandlerEnd = performance.now();
-            if (PERF) {
-              console.log("[perf][server] runHandler", {
-                ms: Math.round(runHandlerEnd - runHandlerStart),
-              });
-            }
-          }
+            isRemote: resolved.isRemote,
+            routesRootUrl: resolved.routesRootUrl,
+          });
 
-          // Run after interceptors
-          const runInterceptorsAfterStart = performance.now();
-          await runInterceptorsAfter(
-            files.interceptorFiles,
-            resultOrError,
-            context,
-            resolver,
-          );
-          const runInterceptorsAfterEnd = performance.now();
-          if (PERF) {
-            console.log("[perf][server] runInterceptorsAfter", {
-              ms: Math.round(
-                runInterceptorsAfterEnd - runInterceptorsAfterStart,
-              ),
-            });
-          }
-
-          // For HEAD requests, strip the body (RFC 7231 §4.3.2)
-          if (isHead) {
-            state.body = null;
-          }
-
-          // Finalize the response
-          const finalizeResponseStart = performance.now();
+          // Finalize response
           const res = finalizeResponse(state);
-          const finalizeResponseEnd = performance.now();
           if (PERF) {
-            console.log("[perf][server] finalizeResponse", {
-              ms: Math.round(finalizeResponseEnd - finalizeResponseStart),
+            console.log("[perf][server] requestComplete", {
+              ms: Math.round(performance.now() - startedAt),
             });
           }
+
+          // OTEL: record end metrics
           try {
             const activeSpan = trace.getActiveSpan();
             if (activeSpan) {
-              // Add final attributes and event to span
               activeSpan.setAttributes({
                 "http.response.status_code": res.status,
-                "oxian.request.duration_ms": Math.round(
-                  performance.now() - startedAt,
-                ),
+                "oxian.request.duration_ms": Math.round(performance.now() - startedAt),
               });
 
-              // Auto-record end metrics
               const meter = metrics.getMeter("oxian", "1");
-              const routePattern =
-                (match as unknown as { route?: { pattern?: string } })?.route
-                  ?.pattern ?? path;
               const attrs = {
                 "http.route": routePattern,
                 "http.method": req.method,
                 "http.status_code": res.status,
-                "oxian.project": projectFromHv,
+                "oxian.service": serviceFromHv,
               } as Record<string, string | number>;
               try {
-                const activeCounter = meter.createUpDownCounter(
-                  "http.server.active_requests",
-                  { unit: "1" },
-                );
-                activeCounter.add(-1, attrs);
-                const latency = meter.createHistogram(
-                  "http.server.request.duration",
-                  { unit: "ms" },
-                );
-                latency.record(
-                  Math.round(performance.now() - startedAt),
-                  attrs,
-                );
+                meter.createUpDownCounter("http.server.active_requests", { unit: "1" }).add(-1, attrs);
+                meter.createHistogram("http.server.request.duration", { unit: "ms" })
+                  .record(Math.round(performance.now() - startedAt), attrs);
               } catch { /* ignore */ }
             }
 
-            // Call user end hook
             const tracer = trace.getTracer("oxian", "1");
             const meter = metrics.getMeter("oxian", "1");
             await config.logging?.otel?.hooks?.onRequestEnd?.({
@@ -722,7 +493,7 @@ export async function startServer(
               requestId,
               method: req.method,
               url: req.url,
-              project: projectFromHv,
+              service: serviceFromHv,
               status: res.status,
               durationMs: Math.round(performance.now() - startedAt),
             });
@@ -743,7 +514,7 @@ export async function startServer(
               activeSpan.setStatus({
                 code: 2,
                 message: (err as Error).message,
-              }); // code 2 = ERROR
+              });
               activeSpan.addEvent("request.error", {
                 "request.id": requestId,
                 "error.message": (err as Error).message,
@@ -752,9 +523,7 @@ export async function startServer(
             }
           } catch (spanErr) {
             if (Deno.env.get("OXIAN_DEBUG")) {
-              console.log("[server] OTEL error span update failed", {
-                error: spanErr,
-              });
+              console.log("[server] OTEL error span update failed", { error: spanErr });
             }
           }
 

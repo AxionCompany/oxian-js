@@ -145,71 +145,67 @@ Configure the hypervisor in `oxian.config.json`:
 }
 ```
 
-## Multi-Project Support
+## Multi-Service Support
 
-The hypervisor supports hosting multiple projects/applications with intelligent
-routing. You can use either declarative selection rules or a single provider
-function.
+The hypervisor supports hosting multiple services/applications with dynamic
+routing via a single **provider** function.
 
-### Project Configuration
+### Provider
 
-```json
-{
-  "runtime": {
-    "hv": {
-      "projects": {
-        "api": {
-          "routing": {
-            "basePath": "/api"
-          }
-        },
-        "admin": {
-          "routing": {
-            "basePath": "/admin"
-          }
-        },
-        "docs": {
-          "routing": {
-            "basePath": "/docs"
-          }
+The provider is a function (TypeScript config only) that receives a `Request`
+and returns a `ServiceDefinition` — everything the hypervisor needs to route
+and spawn a worker for that request.
+
+```ts
+// oxian.config.ts
+export default {
+  runtime: {
+    hv: {
+      provider: async (req) => {
+        const host = new URL(req.url).hostname;
+        if (host === "api.example.com") {
+          return {
+            service: "api",
+            source: "github:AcmeOrg/api?ref=main",
+            env: { FEATURE_FLAG: "1" },
+            auth: { GITHUB_TOKEN: Deno.env.get("GITHUB_TOKEN") || "" },
+            isolated: true,
+          };
         }
+        return { service: "default" };
       },
-      // Optional: provider (TypeScript config only)
-      // Called once per request with { req }; returns project and overrides
-      // Type: (input: { req: Request }) => Promise<{
-      //   project: string;
-      //   source?: string;            // file:// or github:...
-      //   config?: string;            // per-project config path/URL
-      //   env?: Record<string,string>;
-      //   githubToken?: string;
-      //   stripPathPrefix?: string;
-      //   isolated?: boolean;         // run worker in ./.projects/<project>
-      //   materialize?: boolean | { mode?: "auto"|"always"|"never"; dir?: string; refresh?: boolean };
-      // }> | { ... }
-      "provider": "ts-only",
-      // Or use declarative selection rules
-      "select": [
-        { "project": "api", "when": { "pathPrefix": "/api" } },
-        { "default": true, "project": "api" }
-      ]
-    }
-  }
-}
+    },
+  },
+};
 ```
+
+When no provider is configured, the hypervisor defaults to
+`() => ({ service: "default" })`.
+
+### ServiceDefinition
+
+The provider returns a `ServiceDefinition` with these fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `service` | `string` | **Required.** Unique service identifier |
+| `source` | `string` | Source URL (`file://`, `github:`, `https:`) |
+| `config` | `string` | Per-service config path/URL |
+| `auth` | `Record<string, string>` | Auth tokens (e.g., `{ GITHUB_TOKEN: "..." }`) |
+| `permissions` | `PermissionSet` | Deno permission overrides |
+| `materialize` | `boolean \| MaterializeOpts` | Download/extract remote source |
+| `env` | `Record<string, string>` | Environment variables for the worker |
+| `isolated` | `boolean` | Run in `./.services/<service>` with restricted permissions |
+| `stripPathPrefix` | `string` | Strip URL prefix before proxying |
+| `invalidateCacheAt` | `string \| number \| Date` | Force worker reload after this timestamp |
+| `idleTtlMs` | `number` | Idle timeout before stopping the worker |
+| `denoConfig` | `string` | Path to deno.json for the worker |
 
 ### Web Configuration (preferred top-level)
 
 Preferred: set `web` at the configuration top level (`config.web`) so workers
 (which actually serve static/dev proxy) read it directly. For backward
 compatibility, `runtime.hv.web` is still supported and used as a fallback.
-
-You can still configure per-project web behavior that overlays the global `web`.
-The hypervisor first selects the project based on provider/rules, then:
-
-1. Determines the effective API base path:
-   `hv.projects[project].routing.basePath` → global `basePath` → `/`.
-2. If the request path does not start with that base path, it applies the
-   selected project’s `web` config (merged with global `hv.web`).
 
 Available `web` options:
 
@@ -220,124 +216,59 @@ Available `web` options:
 - `staticCacheControl`: Optional cache-control header for static asset
   responses.
 
-Example:
+### Provider Examples
 
-```json
-{
-  "web": { "staticDir": "dist" },
-  "runtime": {
-    "hv": {
-      "projects": {
-        "appA": {
-          "routing": { "basePath": "/api" },
-          "web": { "devProxyTarget": "http://localhost:5173" }
-        },
-        "appB": {
-          "routing": { "basePath": "/b-api" },
-          "web": {
-            "staticDir": "apps/b/dist",
-            "staticCacheControl": "public, max-age=3600"
-          }
-        }
-      },
-      "select": [
-        { "project": "appA", "when": { "hostPrefix": "a." } },
-        { "project": "appB", "when": { "hostPrefix": "b." } },
-        { "default": true, "project": "appA" }
-      ]
-    }
-  }
-}
-```
-
-Behavior:
-
-- Requests matching a project’s API base path are proxied to that project’s
-  worker.
-- Other paths are handled by that project’s `web` config (dev proxy if set;
-  otherwise static serving if `staticDir` is set; otherwise 404).
-
-### Provider (Single Function)
-
-Define a single function (only in TS/JS config) to both select the project and
-provide per-worker overrides.
+**Path-based routing:**
 
 ```ts
-// oxian.config.ts
-export default ({}) => ({
-  runtime: {
-    hv: {
-      projects: { local: {}, github: {} },
-      provider: async ({ req }) => {
-        const host = new URL(req.url).hostname;
-        if (host === "0.0.0.0") {
-          return {
-            project: "github",
-            source: "github:AcmeOrg/api?ref=main",
-            env: { FEATURE_FLAG: "1" },
-            githubToken: Deno.env.get("GITHUB_TOKEN") || undefined,
-            isolated: true, // optional per-worker DENO_DIR, with restricted write and read permissions to the project directory
-          };
-        }
-        return { project: "local" };
-      },
-    },
-  },
-});
-```
-
-### Selection Rules
-
-Route requests to different projects based on various criteria:
-
-```json
-{
-  "select": [
-    {
-      "project": "api-v2",
-      "when": {
-        "pathPrefix": "/v2",
-        "method": "GET"
-      }
-    },
-    {
-      "project": "admin",
-      "when": {
-        "hostEquals": "admin.example.com"
-      }
-    },
-    {
-      "project": "docs",
-      "when": {
-        "hostPrefix": "docs."
-      }
-    },
-    {
-      "project": "special",
-      "when": {
-        "header": {
-          "x-api-version": "beta",
-          "authorization": "Bearer .*"
-        }
-      }
-    },
-    {
-      "project": "main",
-      "default": true
-    }
-  ]
+provider: (req) => {
+  const url = new URL(req.url);
+  if (url.pathname.startsWith("/api/v2")) {
+    return { service: "api-v2", stripPathPrefix: "/api/v2" };
+  }
+  if (url.pathname.startsWith("/admin")) {
+    return { service: "admin", stripPathPrefix: "/admin" };
+  }
+  return { service: "main" };
 }
 ```
 
-**Selection Criteria:**
+**Host-based routing:**
 
-- `pathPrefix` - Route based on URL path
-- `hostEquals` - Exact hostname match
-- `hostPrefix` - Hostname starts with
-- `hostSuffix` - Hostname ends with
-- `method` - HTTP method
-- `header` - Header values (string or RegExp)
-- `default` - Fallback project
+```ts
+provider: (req) => {
+  const host = new URL(req.url).hostname;
+  if (host.startsWith("admin.")) return { service: "admin" };
+  if (host.startsWith("docs.")) return { service: "docs" };
+  return { service: "main" };
+}
+```
+
+**Header-based routing:**
+
+```ts
+provider: (req) => {
+  const version = req.headers.get("x-api-version");
+  if (version === "beta") return { service: "api-beta" };
+  return { service: "api" };
+}
+```
+
+**Database-backed routing (multi-tenant):**
+
+```ts
+provider: async (req) => {
+  const tenantId = req.headers.get("x-tenant-id");
+  const tenant = await db.query("SELECT * FROM tenants WHERE id = ?", [tenantId]);
+  return {
+    service: `tenant-${tenantId}`,
+    source: tenant.sourceUrl,
+    config: tenant.configUrl,
+    isolated: true,
+    idleTtlMs: 300000,
+  };
+}
+```
 
 ## Load Balancing Strategies
 
@@ -430,8 +361,7 @@ Configure automatic scaling based on load:
 Workers can be stopped automatically when idle (no active requests/streams) for
 a configured duration. This saves resources during quiet periods.
 
-- Configure per project: `runtime.hv.projects[project].idleTtlMs` (ms)
-- Provider override at spawn: `SelectedProject.idleTtlMs`
+- Provider override at spawn: `ServiceDefinition.idleTtlMs`
 - Global fallback: `runtime.hv.autoscale.idleTtlMs`
 - Default: disabled (no idle stop unless configured)
 
@@ -448,16 +378,17 @@ Semantics:
 
 Example:
 
-```json
+```ts
 {
-  "runtime": {
-    "hv": {
-      "autoscale": { "idleTtlMs": 300000 },
-      "projects": {
-        "api": { "idleTtlMs": 120000 }
-      }
-    }
-  }
+  runtime: {
+    hv: {
+      autoscale: { idleTtlMs: 300000 },
+      provider: (req) => ({
+        service: "api",
+        idleTtlMs: 120000, // per-service override
+      }),
+    },
+  },
 }
 ```
 
@@ -538,7 +469,7 @@ curl http://localhost:9101/_health
 
 Oxian leverages Deno’s OpenTelemetry integration. Each incoming request creates
 a span; standard attributes are set automatically, and Oxian adds `http.route`
-and `oxian.project` when the route is known. Metrics are exported for request
+and `oxian.service` when the route is known. Metrics are exported for request
 duration, active requests, and body sizes. `console.*` output is exported as
 OTLP logs.
 
@@ -555,13 +486,13 @@ export default {
         port: 4318,
         pathPrefix: "/v1",
         upstream: Deno.env.get("OTEL_EXPORTER_OTLP_ENDPOINT"),
-        onRequest: async ({ req, project, kind, contentType }) => {
+        onRequest: async ({ req, service, kind, contentType }) => {
           // `req` is safe to read here; original body is streamed to upstream
           if ((contentType || "").includes("json")) {
             const text = await req.text();
             console.log("[otel] sample", { kind, size: text.length });
           }
-          return ["default", "billing"].includes(project || "default");
+          return ["default", "billing"].includes(service || "default");
         },
       },
     },
@@ -573,7 +504,7 @@ Notes:
 
 - When `logging.otel.enabled` is true and no `endpoint` is provided, workers
   default to the built-in proxy (`http://127.0.0.1:<port>`).
-- The hypervisor injects `x-oxian-project: <project>` into OTLP headers for tagging.
+- The hypervisor injects `x-oxian-service: <service>` into OTLP headers for tagging.
 - If `upstream` is not specified or `onRequest` returns false, the proxy responds 202 and drops the payload.
 - For custom spans/metrics per request, define `logging.otel.hooks` (see
   instrumentation.md). Hooks receive the active span and a meter instance.
@@ -593,16 +524,16 @@ Monitor key metrics:
 ### Startup Process
 
 1. **Hypervisor starts** on main port (8080)
-2. If project requires materialization:
+2. **First request arrives** — the provider returns a `ServiceDefinition`
+3. If the service requires materialization:
    - Run `materialize` once to download/extract remote source to the worker cwd
-     (isolated → `./.projects/<project>`)
+     (isolated → `./.services/<service>`)
    - Run `prepare` to execute `prepare` hooks defined in the materialized
      `oxian.config.*`
-3. **Workers spawn** on sequential ports (9101, 9102, ...) with `--source`
-   pointing to the materialized `file://` root (workers do not need
-   `--allow-run`)
-4. **Health checks** verify worker readiness
-5. **Load balancer** starts routing requests
+4. **Worker spawns** on a sequential port (9101, 9102, ...) with `--source`
+   pointing to the materialized `file://` root
+5. **Health checks** verify worker readiness
+6. **Load balancer** starts routing requests
 
 ### Worker Health
 
@@ -620,6 +551,98 @@ Workers are considered healthy when:
 4. **Shutdown workers** gracefully
 5. **Close** all connections
 
+## Custom Plugins
+
+The hypervisor delegates lifecycle actions to a **plugin**. The default
+`OxianPlugin` spawns local Deno subprocesses, but you can provide your own
+plugin for external platforms (Cloud Run, K8s, etc.).
+
+```ts
+import type { HypervisorPlugin, SpawnResult } from "oxian-js/hypervisor";
+
+class CloudRunPlugin implements HypervisorPlugin {
+  async spawn(service, ctx, opts): Promise<SpawnResult> {
+    // Deploy a Cloud Run service
+    const url = await deployToCloudRun(service);
+    return { target: url };
+  }
+
+  async stop(handle: unknown): Promise<void> {
+    // Tear down the Cloud Run service
+  }
+
+  async checkReady(target: string, opts): Promise<boolean> {
+    // Poll the Cloud Run URL for readiness
+    const r = await fetch(`${target}/_health`);
+    return r.ok;
+  }
+}
+```
+
+### Plugin Interface
+
+| Method | Description |
+|--------|-------------|
+| `spawn(service, ctx, opts)` | Spawn a worker, return `{ target, handle?, owner? }` |
+| `stop(handle)` | Stop a previously spawned worker |
+| `checkReady(target, opts)` | Check if a target URL is ready |
+| `transformProxyHeaders?(headers, req, service)` | Optional header transformation |
+
+### External Targets
+
+If the provider returns a `ServiceDefinition` with a `target` field, the
+hypervisor proxies directly to that URL without spawning:
+
+```ts
+provider: (req) => ({
+  service: "external-api",
+  target: "https://api.example.com",
+})
+```
+
+## Pluggable Store
+
+All hypervisor state (pool targets, locks, counters, activity timestamps)
+goes through a `HypervisorStore` interface. The default `MemoryStore` wraps
+in-memory Maps for zero-overhead single-instance use.
+
+For distributed multi-instance deployments, provide a custom store backed
+by Redis or similar:
+
+```ts
+import { startHypervisor, MemoryStore } from "oxian-js/hypervisor";
+import type { HypervisorStore } from "oxian-js/hypervisor";
+
+// Default — just works:
+await startHypervisor({ config, baseArgs }, plugin);
+
+// Custom store for distributed deployment:
+await startHypervisor({ config, baseArgs }, plugin, myRedisStore);
+```
+
+### Store Interface
+
+| Method | Description |
+|--------|-------------|
+| `get(key)` | Get a value by key |
+| `set(key, value, ttlMs?)` | Set a value with optional TTL |
+| `delete(key)` | Delete a key |
+| `increment(key)` | Atomic increment, returns new value |
+| `decrement(key)` | Atomic decrement (clamped to 0) |
+| `acquire(key, ttlMs)` | Acquire a distributed lock |
+| `release(key)` | Release a lock |
+| `enqueue(queue, item)` | Enqueue an item, returns correlation ID |
+| `drain(queue)` | Pop all pending items |
+| `waitFor(id, timeoutMs?)` | Block until resolved |
+| `resolve(id, value)` | Resolve a pending waitFor |
+
+### Cross-Instance Forwarding
+
+When running multiple hypervisor instances, requests can be forwarded
+between instances via the `x-oxian-forward` header. An instance receiving
+a request with this header skips the provider and routes directly to the
+named service if it's running locally.
+
 ## Request Transformation
 
 Transform requests before they reach workers using the `onRequest` callback
@@ -630,17 +653,17 @@ Transform requests before they reach workers using the `onRequest` callback
 export default {
   runtime: {
     hv: {
-      onRequest: ({ req, project }) => {
+      onRequest: ({ req, service }) => {
         // Modify requests before proxying to workers
         const headers = new Headers(req.headers);
 
         // Add custom headers
         headers.set("x-processed-by", "hypervisor");
-        headers.set("x-project", project);
+        headers.set("x-service", service);
         headers.set("x-timestamp", Date.now().toString());
 
         // Add authentication token from environment
-        const token = Deno.env.get(`${project.toUpperCase()}_API_TOKEN`);
+        const token = Deno.env.get(`${service.toUpperCase()}_API_TOKEN`);
         if (token) {
           headers.set("authorization", `Bearer ${token}`);
         }
@@ -657,9 +680,9 @@ export default {
 **Add Authentication Tokens:**
 
 ```ts
-onRequest: (({ req, project }) => {
+onRequest: (({ req, service }) => {
   const headers = new Headers(req.headers);
-  const token = Deno.env.get(`${project.toUpperCase()}_TOKEN`);
+  const token = Deno.env.get(`${service.toUpperCase()}_TOKEN`);
   if (token) headers.set("authorization", `Bearer ${token}`);
   return new Request(req, { headers });
 });
@@ -668,8 +691,8 @@ onRequest: (({ req, project }) => {
 **Request Auditing:**
 
 ```ts
-onRequest: (async ({ req, project }) => {
-  console.log(`[audit] ${project}: ${req.method} ${req.url}`);
+onRequest: (async ({ req, service }) => {
+  console.log(`[audit] ${service}: ${req.method} ${req.url}`);
   const headers = new Headers(req.headers);
   headers.set("x-audit-id", crypto.randomUUID());
   return new Request(req, { headers });
@@ -679,10 +702,10 @@ onRequest: (async ({ req, project }) => {
 **URL Transformation:**
 
 ```ts
-onRequest: (({ req, project }) => {
+onRequest: (({ req, service }) => {
   const url = new URL(req.url);
   url.searchParams.set("source", "hypervisor");
-  url.searchParams.set("project", project);
+  url.searchParams.set("service", service);
   return new Request(url, {
     method: req.method,
     headers: req.headers,
@@ -726,26 +749,15 @@ export function GET(_, { dependencies }) {
 
 ### Worker-Specific Configuration
 
-Different configs per worker:
+The provider can return different configurations per service:
 
-```json
-{
-  "runtime": {
-    "hv": {
-      "projects": {
-        "high-memory": {
-          "worker": {
-            "pool": { "max": 2 }
-          }
-        },
-        "cpu-intensive": {
-          "worker": {
-            "pool": { "max": 8 }
-          }
-        }
-      }
-    }
+```ts
+provider: (req) => {
+  const url = new URL(req.url);
+  if (url.pathname.startsWith("/heavy")) {
+    return { service: "high-memory", permissions: { read: true, write: "/tmp" } };
   }
+  return { service: "default" };
 }
 ```
 
@@ -926,30 +938,22 @@ curl -s http://localhost:9101/_health | jq
 
 ### Multi-Tenant SaaS
 
-```json
+```ts
 {
-  "runtime": {
-    "hv": {
-      "projects": {
-        "tenant-a": {
-          "routing": { "basePath": "/tenant-a" }
-        },
-        "tenant-b": {
-          "routing": { "basePath": "/tenant-b" }
+  runtime: {
+    hv: {
+      provider: (req) => {
+        const url = new URL(req.url);
+        if (url.pathname.startsWith("/tenant-a")) {
+          return { service: "tenant-a", stripPathPrefix: "/tenant-a" };
         }
+        if (url.pathname.startsWith("/tenant-b")) {
+          return { service: "tenant-b", stripPathPrefix: "/tenant-b" };
+        }
+        return { service: "default" };
       },
-      "select": [
-        {
-          "project": "tenant-a",
-          "when": { "pathPrefix": "/tenant-a" }
-        },
-        {
-          "project": "tenant-b",
-          "when": { "pathPrefix": "/tenant-b" }
-        }
-      ]
-    }
-  }
+    },
+  },
 }
 ```
 

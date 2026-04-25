@@ -4,9 +4,9 @@ Oxian embraces Deno's built-in OpenTelemetry integration for traces, metrics,
 and logs.
 
 - Traces: Spans are created automatically for Deno.serve requests. Oxian adds
-  http.route, oxian.project, and updates span names with the route.
+  http.route, oxian.service, and updates span names with the route.
 - Metrics: Request duration, active requests, and body sizes are exported
-  automatically with route/project/method/status attributes.
+  automatically with route/service/method/status attributes.
 - Logs: console.* output is exported as OTLP logs (note: attributes are serialized
   into the log body, not as structured OTLP attributes - use span events for structured data).
 - Request IDs: Oxian uses spanId as the requestId by default for automatic trace correlation.
@@ -44,19 +44,19 @@ export default {
         port: 4318,
         pathPrefix: "/v1",
         upstream: Deno.env.get("OTEL_EXPORTER_OTLP_ENDPOINT"), // e.g., http://collector:4318
-        onRequest: async ({ req, kind, project, contentType }) => {
+        onRequest: async ({ req, kind, service, contentType }) => {
           // Safe to read; this is a clone of the original request
           if ((contentType || "").includes("json")) {
             try {
               const json = await req.json();
-              console.log("[otel-proxy]", { kind, project, json: !!json });
+              console.log("[otel-proxy]", { kind, service, json: !!json });
             } catch (_) {
               const text = await req.text();
-              console.log("[otel-proxy]", { kind, project, size: text.length });
+              console.log("[otel-proxy]", { kind, service, size: text.length });
             }
           }
-          // drop exports for unknown projects; forward otherwise
-          return ["default", "billing"].includes(project || "default");
+          // drop exports for unknown services; forward otherwise
+          return ["default", "billing"].includes(service || "default");
         },
       },
     },
@@ -67,7 +67,7 @@ export default {
 Notes:
 
 - Workers default the OTLP endpoint to the proxy when `logging.otel.enabled=true` and no endpoint is set.
-- `x-oxian-project` is injected into exporter headers for project tagging.
+- `x-oxian-service` is injected into exporter headers for service tagging.
 - If `upstream` is not set or `onRequest` returns false, the proxy responds 202 and drops the payload (safe fail-open for exporters).
 
 ## Built-in OTLP Collector (Dev)
@@ -117,9 +117,9 @@ export default {
           counter.add(1);
         },
         onRequestStart: (
-          { tracer, meter, span, requestId, method, url, project },
+          { tracer, meter, span, requestId, method, url, service },
         ) => {
-          span?.setAttribute("app.req.meta", `${project}:${method}`);
+          span?.setAttribute("app.req.meta", `${service}:${method}`);
           const active = meter.createUpDownCounter(
             "http.server.active_requests",
             { unit: "1" },

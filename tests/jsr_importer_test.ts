@@ -1,12 +1,15 @@
 /// <reference lib="deno.ns" />
-import { importModule } from "../src/runtime/importer.ts";
-import type { Loader } from "../src/loader/types.ts";
+import { importModule } from "../src/resolvers/importer.ts";
 import { composeDependencies } from "../src/runtime/dependencies.ts";
 import { runInterceptorsBefore } from "../src/runtime/interceptors.ts";
 import { runMiddlewares } from "../src/runtime/middlewares.ts";
 import { createResponseController } from "../src/utils/response.ts";
-import type { Context, Data } from "../src/core/types.ts";
+import type { Context, Data } from "../src/core/index.ts";
+import { createResolver } from "../src/resolvers/index.ts";
 import { join, toFileUrl } from "@std/path";
+
+// deno-lint-ignore no-explicit-any
+const resolver = createResolver(undefined, {}) as any;
 
 Deno.test("importModule loads local module via graph", async () => {
   const dir = await Deno.makeTempDir();
@@ -17,11 +20,12 @@ Deno.test("importModule loads local module via graph", async () => {
   );
   const url = toFileUrl(filePath);
 
-  const mod = await importModule(url, []);
-  if (typeof (mod as any).default !== "function") {
+  // deno-lint-ignore no-explicit-any
+  const mod = await importModule(url) as any;
+  if (typeof mod.default !== "function") {
     throw new Error("default export not a function");
   }
-  const result = await (mod as any).default({});
+  const result = await mod.default({});
   if (result.val !== 42) throw new Error("unexpected result from module");
 });
 
@@ -33,11 +37,13 @@ Deno.test("composeDependencies loads local dependency via graph", async () => {
 
   const files = {
     dependencyFiles: [depUrl],
-    middlewareFiles: [],
-    interceptorFiles: [],
+    middlewareFiles: [] as URL[],
+    interceptorFiles: [] as URL[],
+    sharedFiles: [] as URL[],
   };
-  const deps = await composeDependencies(files, {}, []);
-  if ((deps as any).dep !== 5) throw new Error("local dependency not loaded");
+  // deno-lint-ignore no-explicit-any
+  const deps = await composeDependencies(files, {}, resolver) as any;
+  if (deps.dep !== 5) throw new Error("local dependency not loaded");
 });
 
 Deno.test("interceptors and middlewares load from local files via graph", async () => {
@@ -73,13 +79,14 @@ Deno.test("interceptors and middlewares load from local files via graph", async 
     response: controller,
     oxian: { route: "/", startedAt: performance.now() },
   };
-  const afterInt = await runInterceptorsBefore([intUrl], data, ctx, []);
+  const afterInt = await runInterceptorsBefore([intUrl], data, ctx, resolver);
   const afterMw = await runMiddlewares(
     [mwUrl],
     afterInt.data,
     afterInt.context,
-    [],
+    resolver,
   );
+  // deno-lint-ignore no-explicit-any
   if ((afterMw.data as any).k !== 11) {
     throw new Error("interceptors/middleware from local not applied");
   }
