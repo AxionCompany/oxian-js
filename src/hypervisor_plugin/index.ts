@@ -223,7 +223,7 @@ export class OxianPlugin implements HypervisorPlugin {
       denoArgs.push(`--import-map=${dataUrl}`);
 
       // Unstable flags from framework's deno.json
-      denoArgs.push(...buildUnstableFlags(denoJson?.unstable));
+      denoArgs.push(...buildUnstableFlags((denoJson as unknown as { unstable?: string[] })?.unstable));
 
       // Permissions
       denoArgs.push(
