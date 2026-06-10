@@ -32,5 +32,20 @@
     "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64",
     "opentelemetry": "npm:@opentelemetry/api@1"
   },
+  "unstable": [
+    "bare-node-builtins",
+    "detect-cjs",
+    "node-globals",
+    "sloppy-imports",
+    "unsafe-proto",
+    "webgpu",
+    "broadcast-channel",
+    "worker-options",
+    "cron",
+    "kv",
+    "net",
+    "otel",
+    "raw-imports"
+  ],
   "lock": false
 }
