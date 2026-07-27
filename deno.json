@@ -1,51 +1,57 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.15.1",
+  "version": "0.20.0-rc.1",
   "exports": {
-    ".": "./cli.ts",
-    "./types": "./src/types.ts",
-    "./mcp": "./src/utils/mcp.ts"
+    ".": "./src/mod.ts",
+    "./app": "./src/app/index.ts",
+    "./bin": "./cli.ts",
+    "./cli": "./src/cli/index.ts",
+    "./config": "./src/config/index.ts",
+    "./edge": "./src/edge/index.ts",
+    "./http": "./src/http/index.ts",
+    "./hypervisor": "./src/hypervisor/index.ts",
+    "./local": "./src/local/index.ts",
+    "./protocol": "./src/protocol/index.ts",
+    "./providers": "./src/providers/index.ts",
+    "./router": "./src/router/index.ts",
+    "./supervisor": "./src/supervisor/index.ts",
+    "./transport": "./src/transport/index.ts",
+    "./worker": "./src/worker/index.ts"
   },
   "publish": {
     "include": [
       "cli.ts",
-      "llm.txt",
       "src/**",
       "deno.json",
-      "docs/**",
       "README.md",
-      "LICENSE*",
-      "llm.txt"
+      "REPO.md",
+      "docs/README.md",
+      "docs/architecture.md",
+      "docs/getting-started.md",
+      "docs/getting-started/**",
+      "docs/application.md",
+      "docs/workers.md",
+      "docs/operations.md",
+      "docs/api-reference.md",
+      "docs/api/**",
+      "docs/migration-0.20.md",
+      "docs/worker-protocol-v1.md",
+      "LICENSE*"
     ],
     "exclude": [
-      "tests/**",
-      "routes/**",
-      "oxian-framework-spec.md"
+      "docs/v0.20-implementation-plan.md"
     ]
   },
   "imports": {
-    "oxian-js/": "./src/",
-    "@oxian/oxian-js": "./cli.ts",
-    "@oxian/oxian-js/mcp": "./src/utils/mcp.ts",
-    "@std/path": "jsr:@std/path@1.1.1",
-    "@std/cli/parse-args": "jsr:@std/cli@1.0.21/parse-args",
-    "@std/encoding/base64": "jsr:@std/encoding@1.0.5/base64",
-    "opentelemetry": "npm:@opentelemetry/api@1"
+    "@std/assert": "jsr:@std/assert@1",
+    "@std/path": "jsr:@std/path@1.1.1"
   },
-  "unstable": [
-    "bare-node-builtins",
-    "detect-cjs",
-    "node-globals",
-    "sloppy-imports",
-    "unsafe-proto",
-    "webgpu",
-    "broadcast-channel",
-    "worker-options",
-    "cron",
-    "kv",
-    "net",
-    "otel",
-    "raw-imports"
-  ],
+  "tasks": {
+    "check": "deno task check:architecture && deno task check:api-reference && deno fmt --check && deno lint && deno check src/mod.ts cli.ts",
+    "check:api-reference": "deno run --allow-read=. --allow-run=deno scripts/check_api_reference.ts",
+    "check:architecture": "deno run --allow-read=src,cli.ts scripts/check_architecture.ts",
+    "test": "deno test --cert=tests/fixtures/tls/test-ca.pem --allow-all",
+    "verify": "deno task check && deno task test"
+  },
   "lock": false
 }

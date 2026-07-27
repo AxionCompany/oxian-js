@@ -1,16 +1,28 @@
 name: Publish
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
 
 jobs:
   publish:
+    # A manual dispatch may select a branch or tag in the GitHub UI. Publishing
+    # is permitted only from the exact version tag validated below.
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+      - uses: denoland/setup-deno@v2
+      - name: Validate release tag
+        run: >-
+          deno run --allow-read=deno.json scripts/validate_publish_release.ts
+          "${{ github.ref_name }}" "${{ github.ref }}"
+      - name: Verify package
+        run: deno task verify
       - name: Publish package
-        run: npx jsr publish
+        run: deno publish

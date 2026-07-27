@@ -1,234 +1,288 @@
-/**
- * @fileoverview Type definitions for Oxian hypervisor system.
- *
- * @module hypervisor/types
- */
+import type { JsonObject, WorkerIdentity } from "../protocol/types.ts";
+import type {
+  AcceptanceCommit,
+  RegistrationAuthority,
+  RegistrationExchange,
+  SessionRegistry,
+  WorkDispatch,
+  WorkDispatchStatus,
+  WorkDispatchTarget,
+  WorkerDefinition,
+  WorkerRepository,
+} from "../supervisor/index.ts";
+import type { SessionFence } from "../supervisor/types.ts";
+import type { HypervisorConfig } from "./config.ts";
 
-import type { EffectiveConfig } from "../config/index.ts";
-import type { Resolver } from "../resolvers/types.ts";
+export type HypervisorWorkInputBody =
+  | Uint8Array
+  | ReadableStream<Uint8Array>;
 
-// ---------------------------------------------------------------------------
-// Domain types
-// ---------------------------------------------------------------------------
+export type HypervisorDispatchInput = Readonly<{
+  workload: string;
+  target?: WorkDispatchTarget;
+  metadata?: JsonObject;
+  body?: HypervisorWorkInputBody;
+  deadlineAtMs?: number;
+  signal?: AbortSignal;
+}>;
 
-/** Permission set for Deno worker processes. */
-export type PermissionSet = {
-  read?: boolean | string[];
-  write?: boolean | string[];
-  import?: boolean | string[];
-  env?: boolean | string[];
-  net?: boolean | string[];
-  run?: boolean | string[];
-  ffi?: boolean | string[];
-  sys?: boolean | string[];
-  all?: boolean;
-};
+export type HypervisorWorkHandle = Readonly<{
+  operationId: string;
+  streamId: string;
+  metadata: Promise<JsonObject>;
+  output: ReadableStream<Uint8Array>;
+  started: Promise<void>;
+  completed: Promise<WorkDispatch>;
+  cancel(reason?: string): Promise<WorkDispatch>;
+}>;
 
-/** Materialization options for remote sources. */
-export type MaterializeOpts = {
-  mode?: "auto" | "always" | "never";
-  dir?: string;
-  refresh?: boolean;
-};
+export type HypervisorScheduler = Readonly<{
+  schedule(callback: () => void, delayMs: number): unknown;
+  cancel(handle: unknown): void;
+}>;
 
-/**
- * Complete service definition — returned by the provider function.
- *
- * Contains everything the hypervisor needs to route a request and
- * spawn a worker: identity, spawn config, and lifecycle hints.
- */
-export interface ServiceDefinition {
-  /** Service identifier — used as cache key for running processes. */
-  service: string;
-  /** Pre-known target URL — proxy directly, skip spawn. */
-  target?: string;
-  /** Source URL or path for the service code. */
-  source?: string;
-  /** Configuration URL or path for the service. */
-  config?: string;
-  /** Source-specific auth tokens, keyed by scheme (e.g., `{ github: "ghp_xxx" }`). */
-  auth?: Record<string, string>;
-  /** Deno permission flags for the worker process. */
-  permissions?: PermissionSet;
-  /** Materialization options for remote sources. */
-  materialize?: boolean | MaterializeOpts;
-  /** Environment variables for the worker process. */
-  env?: Record<string, string>;
-  /** Run the service in an isolated directory sandbox. */
-  isolated?: boolean;
-  /** Path prefix to strip before proxying to the worker. */
-  stripPathPrefix?: string;
-  /** Timestamp — if newer than last spawn, triggers a worker restart. */
-  invalidateCacheAt?: string | number | Date;
-  /** Idle time-to-live — worker is stopped after this many ms without traffic. */
-  idleTtlMs?: number;
-  /** Path to deno.json config for the worker process. */
-  denoConfig?: string;
-}
+export type HypervisorReadyCommitContext = Readonly<{
+  fence: SessionFence;
+  definition: WorkerDefinition;
+  metadata: JsonObject;
+  signal: AbortSignal;
+}>;
 
-// ---------------------------------------------------------------------------
-// Worker handle
-// ---------------------------------------------------------------------------
+export type HypervisorHeartbeatCommitContext = Readonly<{
+  fence: SessionFence;
+  definition: WorkerDefinition;
+  sequence: number;
+  inflight: number;
+  availableCapacity: number;
+  metadata: JsonObject;
+  signal: AbortSignal;
+}>;
+
+export type HypervisorDisconnectPhase =
+  | "authenticated"
+  | "connected"
+  | "ready"
+  | "draining"
+  | "drained"
+  | "expired";
 
 /**
- * Handle for managing a worker process.
+ * Trusted, Hypervisor-authored reason for ending one fenced connection.
  *
- * Tracks the worker's port and process handle for lifecycle management.
+ * Peer-provided WebSocket close text is never promoted into this field.
  */
-export type WorkerHandle = {
+export type HypervisorDisconnectReason =
+  | "authentication_rejected"
+  | "connection_failed"
+  | "drain_failed"
+  | "drain_timeout"
+  | "handshake_timeout"
+  | "lease_expired"
+  | "peer_closed"
+  | "protocol_rejected"
+  | "ready_timeout"
+  | "rotation"
+  | "session_replaced"
+  | "shutdown"
+  | "shutdown_timeout"
+  | "stale_session"
+  | "work_stream_failed";
+
+/**
+ * Untrusted close details reported by the remote WebSocket peer.
+ *
+ * Consumers may retain these for diagnostics, but must not use `reason` for
+ * lifecycle decisions, authorization, or durable state transitions.
+ */
+export type HypervisorPeerClose = Readonly<{
+  code: number;
+  reason: string;
+  wasClean: boolean;
+}>;
+
+export type HypervisorDisconnectEvent = Readonly<{
+  fence: SessionFence;
+  definition: WorkerDefinition;
+  phase: HypervisorDisconnectPhase;
+  reason: HypervisorDisconnectReason;
+  peerClose?: HypervisorPeerClose;
+  disconnectedAtMs: number;
+}>;
+
+/**
+ * Durable-consumer seam for worker presence and opaque workload status.
+ *
+ * Ready and heartbeat commits are fail-closed gates. Implementations must use
+ * the complete fence as an idempotent compare-and-set key. Durable state must
+ * also retain a monotonic per-fence disconnect tombstone or high-watermark:
+ * because AbortSignal is advisory, a late Ready commit must never resurrect a
+ * fence after its disconnect was observed.
+ *
+ * Commit hooks execute inside that connection's ordered frame loop. They must
+ * not await `dispatch()`, `drain()`, or another operation whose completion
+ * requires frames from the same worker. Follow-on orchestration belongs on a
+ * separate queue.
+ *
+ * `onDisconnect` is an exactly-once, nonblocking observer. It must enqueue any
+ * durable work and return immediately; observer completion never owns socket
+ * cleanup or Hypervisor shutdown.
+ */
+export type HypervisorSessionLifecycle = Readonly<{
+  commitReady(
+    context: HypervisorReadyCommitContext,
+  ): void | Promise<void>;
+  commitHeartbeat(
+    context: HypervisorHeartbeatCommitContext,
+  ): void | Promise<void>;
+  onDisconnect(event: HypervisorDisconnectEvent): void;
+}>;
+
+/**
+ * Read-only worker state required to admit a WebSocket session.
+ *
+ * Provisioning and attempt mutation remain orchestration concerns and are not
+ * required by the Hypervisor data plane.
+ */
+export type WorkerAdmissionRepository = Pick<
+  WorkerRepository,
+  "getDefinition" | "assertCurrent"
+>;
+
+/**
+ * Registration exchange required to admit a WebSocket session.
+ *
+ * Issuing registrations and revoking attempts remain Control-plane concerns
+ * and are deliberately absent from the Hypervisor data-plane seam.
+ */
+export type WorkerAdmissionAuthority = Pick<RegistrationAuthority, "exchange">;
+
+export type HypervisorOptions = Readonly<{
+  authority: WorkerAdmissionAuthority;
+  repository: WorkerAdmissionRepository;
+  persistAcceptance(
+    commit: AcceptanceCommit,
+  ): Promise<void>;
+  createBootstrap?(
+    input: Readonly<{
+      identity: WorkerIdentity;
+      definition: WorkerDefinition;
+      exchange: RegistrationExchange;
+      signal: AbortSignal;
+    }>,
+  ): JsonObject | Promise<JsonObject>;
+  /**
+   * Purely validates workload-owned Ready metadata before routing begins.
+   *
+   * This hook must have no durable or externally visible side effects. Its
+   * AbortSignal is advisory and an older validation Promise may settle after
+   * replacement; only the Hypervisor's later durable lifecycle gate followed
+   * by fenced `markReady` publishes routable readiness.
+   */
+  validateReady?(
+    input: Readonly<{
+      identity: WorkerIdentity;
+      definition: WorkerDefinition;
+      exchange: RegistrationExchange;
+      sessionGeneration: number;
+      connectionId: string;
+      metadata: JsonObject;
+      signal: AbortSignal;
+    }>,
+  ): void | Promise<void>;
+  sessionLifecycle?: HypervisorSessionLifecycle;
+  config?: Partial<HypervisorConfig>;
+  sessions?: SessionRegistry;
+  fallback?: (
+    request: Request,
+  ) => Response | Promise<Response>;
+  clock?: () => number;
+  scheduler?: HypervisorScheduler;
+  createConnectionId?: () => string;
+}>;
+
+export type HypervisorListenOptions = Readonly<{
+  hostname?: string;
+  port?: number;
+  signal?: AbortSignal;
+}>;
+
+export type HypervisorListener = Readonly<{
+  hostname: string;
   port: number;
-  proc: Deno.ChildProcess;
-};
+  url: URL;
+  finished: Promise<void>;
+  shutdown(): Promise<void>;
+}>;
 
-// ---------------------------------------------------------------------------
-// Spawn result
-// ---------------------------------------------------------------------------
+export type HypervisorSnapshot = Readonly<{
+  acceptingConnections: boolean;
+  connections: number;
+  unauthenticatedConnections: number;
+  authenticatedConnections: number;
+  handshakeOperations: number;
+  readyOperations: number;
+  sessions: number;
+  pendingAcceptanceCommits: number;
+  pendingAcceptanceCommitsByWorker: readonly Readonly<{
+    workerId: string;
+    count: number;
+  }>[];
+  work: Readonly<Record<WorkDispatchStatus, number>>;
+}>;
 
-/**
- * Result of a plugin spawn operation.
- *
- * Contains the target URL to proxy to, an opaque handle for stopping
- * the worker, and an optional owner ID for distributed coordination.
- */
-export interface SpawnResult {
-  /** URL to proxy requests to (e.g. "http://127.0.0.1:9101"). */
-  target: string;
-  /** Opaque handle — passed back to plugin.stop(). Only meaningful to the plugin instance that created it. */
-  handle?: unknown;
-  /** Instance ID that owns this spawn (for distributed coordination). */
-  owner?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Spawn spec (internal to plugins)
-// ---------------------------------------------------------------------------
-
-/**
- * Describes how to spawn a worker process.
- *
- * This is an internal data object used by plugins — not part of the
- * public HypervisorPlugin interface. Plugins use it internally to
- * build the arguments for `Deno.Command`.
- */
-export interface SpawnSpec {
-  /** Absolute path to the executable (typically `Deno.execPath()`). */
-  execPath: string;
-  /** Full argument list (deno args + script args). */
-  args: string[];
-  /** Environment variables for the child process. */
-  env: Record<string, string>;
-  /** Working directory for the child process. */
-  cwd: string;
-}
-
-// ---------------------------------------------------------------------------
-// Plugin interface — makes the hypervisor application-agnostic
-// ---------------------------------------------------------------------------
-
-/**
- * Context passed to every plugin method.
- *
- * Contains the resolved config, resolver, and CLI arguments that the
- * hypervisor was started with.
- */
-export interface PluginContext {
-  config: EffectiveConfig;
-  resolver: Resolver;
-  denoOptions: string[];
-  scriptArgs: string[];
-}
-
-/**
- * Plugin interface that makes the hypervisor application-agnostic.
- *
- * The hypervisor handles generic concerns (proxy, queue, idle lifecycle)
- * while the plugin provides lifecycle primitives: spawn, stop, and
- * readiness checking.
- *
- * The default implementation (`OxianPlugin`) spawns local Deno
- * subprocesses, but custom plugins can target external platforms
- * (Cloud Run, K8s, etc.).
- */
-export interface HypervisorPlugin {
-  /** One-time setup before any workers spawn. */
-  init?(ctx: PluginContext): Promise<void>;
-
+export type Hypervisor = Readonly<{
+  fetch(request: Request): Response | Promise<Response>;
+  listen(options?: HypervisorListenOptions): HypervisorListener;
+  dispatch(input: HypervisorDispatchInput): Promise<HypervisorWorkHandle>;
   /**
-   * Spawn a service worker and return its target URL.
+   * Gracefully drains one ready worker connection, then closes it so the
+   * WorkerClient reconnects with its resume credential.
    *
-   * This is the core plugin method — it determines *how* a worker
-   * is created and where it lives. The returned `SpawnResult` tells
-   * the hypervisor where to proxy traffic and provides an opaque
-   * handle for later stop/restart.
+   * This is a maintenance/rotation primitive, not a terminal worker stop.
+   * It is a no-op when the worker has no active ready session.
    */
-  spawn(
-    service: ServiceDefinition,
-    ctx: PluginContext,
-    opts: { port: number; idx: number },
-  ): Promise<SpawnResult>;
-
+  drain(workerId: string, reason?: string): Promise<void>;
   /**
-   * Stop a previously spawned worker.
+   * Gracefully drains one ready worker connection, sends the protocol
+   * `Shutdown` frame, and closes it. A conforming WorkerClient settles
+   * `run()` with `reason: "shutdown"` instead of reconnecting.
    *
-   * Receives the opaque handle from `SpawnResult.handle`.
+   * This does not revoke durable worker authority or stop provider compute;
+   * those remain application/provider orchestration concerns. An in-flight
+   * maintenance drain is upgraded to terminal shutdown. The call is a no-op
+   * when the worker has no active session.
    */
-  stop(handle: unknown): Promise<void>;
-
+  shutdownWorker(workerId: string, reason?: string): Promise<void>;
   /**
-   * Check if a target is ready to accept traffic.
+   * Gracefully terminates only the exact current session named by `fence`.
    *
-   * Called after spawn to verify readiness.
+   * This is a no-op after that session has been replaced. Use it for
+   * attempt-scoped orchestration so cleanup for an old attempt can never stop
+   * a newer connection that reuses the same logical worker ID.
    */
-  checkReady(
-    target: string,
-    opts: { timeoutMs: number },
-  ): Promise<boolean>;
+  shutdownSession(fence: SessionFence, reason?: string): Promise<void>;
+  shutdown(reason?: string): Promise<void>;
+  snapshot(): HypervisorSnapshot;
+  readonly config: HypervisorConfig;
+  readonly sessions: SessionRegistry;
+}>;
 
-  /**
-   * Transform headers before proxying a request to a worker.
-   *
-   * Optional — called on every proxied request.
-   */
-  transformProxyHeaders?(
-    headers: Headers,
-    req: Request,
-    service: string,
-  ): void;
-}
+export type HypervisorErrorCode =
+  | "authentication_failed"
+  | "connection_lost"
+  | "handshake_timeout"
+  | "indeterminate"
+  | "invalid_state"
+  | "worker_unavailable"
+  | "reschedulable"
+  | "shutting_down"
+  | "work_failed";
 
-// ---------------------------------------------------------------------------
-// Store interface — pluggable state for distributed hypervisor
-// ---------------------------------------------------------------------------
-
-/**
- * Pluggable state store for hypervisor coordination.
- *
- * All hypervisor shared state (pools, locks, queues, counters) goes
- * through this interface. The default `MemoryStore` wraps in-memory
- * Maps for zero-overhead single-instance use. Custom implementations
- * (e.g. Redis) enable distributed multi-instance deployments.
- */
-export interface HypervisorStore {
-  // ── Key-value ───────────────────────────────────────────────────────
-  get<T>(key: string): Promise<T | undefined>;
-  set<T>(key: string, value: T, ttlMs?: number): Promise<void>;
-  delete(key: string): Promise<void>;
-
-  // ── Counters ────────────────────────────────────────────────────────
-  increment(key: string): Promise<number>;
-  decrement(key: string): Promise<number>;
-
-  // ── Distributed locks ───────────────────────────────────────────────
-  acquire(key: string, ttlMs: number): Promise<boolean>;
-  release(key: string): Promise<void>;
-
-  // ── Request-response queue ──────────────────────────────────────────
-  /** Enqueue an item and return a correlation ID. */
-  enqueue<T>(queue: string, item: T): Promise<string>;
-  /** Drain all pending items from a queue. */
-  drain<T>(queue: string): Promise<Array<{ id: string; item: T }>>;
-  /** Block until a correlated response is available. */
-  waitFor<T>(id: string, timeoutMs?: number): Promise<T>;
-  /** Resolve a pending waitFor with a value. */
-  resolve<T>(id: string, value: T): Promise<void>;
-}
+export type HypervisorError =
+  & Error
+  & Readonly<{
+    name: "HypervisorError";
+    code: HypervisorErrorCode;
+    identity?: WorkerIdentity;
+    operationId?: string;
+  }>;

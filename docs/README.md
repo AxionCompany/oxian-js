@@ -1,80 +1,34 @@
-# 📚 Oxian Documentation
+# Oxian 0.20 documentation
 
-Welcome to the Oxian-js documentation. This guide will help you master every
-aspect of building enterprise-grade APIs with Oxian.
+Oxian serves Fetch-native HTTP applications through workers connected by
+outbound WebSocket. The local runtime composes ingress and a worker for
+development; the same application can later execute in a separate process or on
+another machine.
 
-## 🚀 Getting Started
+## Start here
 
-- [**Getting Started**](./getting-started.md) - Installation, first project, and
-  quick setup
+Follow the [progressive getting-started guide](getting-started.md) to build one
+application from its first route through streaming, remote workers,
+multi-provider operation, and production failure semantics.
 
-### Init command
+Application authors can stop after Part 1. Worker operators and platform
+maintainers can continue without changing the application built there.
 
-Initialize configuration and helper files with interactive prompts:
+## Concepts and operations
 
-```bash
-deno -A jsr:@oxian/oxian-js init
-```
+- [Application](application.md): routing, middleware, state, streaming, and
+  edges.
+- [Workers](workers.md): worker clients, manifests, lifecycle, and protocol
+  rules.
+- [Architecture](architecture.md): component responsibilities, boundaries, and
+  request path.
+- [Operations](operations.md): launch, drain, observe, and release safely.
 
-Creates or updates:
+## Reference
 
-- `oxian.config.json` (prompts for port, routesDir, logging level)
-- `deno.json` (with `dev`, `start`, `routes` tasks)
-- `llm.txt`
+- [API reference](api-reference.md): every public subpath, value, exported type,
+  option contract, lifecycle, and failure behavior.
+- [Migration to 0.20](migration-0.20.md): concrete migration facts.
+- [Worker protocol v1](worker-protocol-v1.md): normative WSS wire contract.
 
-For existing files, choose per-file: [a]ppend (merge for JSON, append for text),
-[o]verwrite, or [c]ancel.
-
-## 🏗️ Core Concepts
-
-- [**Routing**](./routing.md) - File-based routing, dynamic routes, catch-all
-  patterns
-- [**Handlers**](./handlers.md) - Handler signatures, data/context, response
-  patterns
-- [**Dependency Injection**](./dependency-injection.md) - File-based DI,
-  composition, patterns
-- [**Middleware**](./middleware.md) - Request/response processing,
-  authentication
-- [**Interceptors**](./interceptors.md) - Before/after hooks, cross-cutting
-  concerns
-
-## 🌊 Advanced Features
-
-- [**Streaming & SSE**](./streaming-and-sse.md) - Real-time data, streaming
-  responses
-- [**MCP Servers**](./mcp-server.md) - Build Model Context Protocol servers with streamable HTTP
-- [**Hypervisor**](./hypervisor.md) - Multi-process scaling, load balancing
-- [**Loaders**](./loaders.md) - Local and remote execution, GitHub integration
-- [**Error Handling**](./error-handling.md) - Error patterns, HTTP errors,
-  global handling
-
-## ⚙️ Configuration & Deployment
-
-- [**Configuration**](./configuration.md) - Config files, environment variables
-- [**CLI**](./cli.md) - Command line interface, development tools
-- [**Deployment**](./deployment.md) - Production deployment, Docker, scaling
-
-## 📖 Reference & Best Practices
-
-- [**API Reference**](./api-reference.md) - Complete TypeScript API
-  documentation
-- [**Best Practices**](./best-practices.md) - Patterns, performance, security
-
-## 🎯 Examples
-
-- [**Example Projects**](../examples/) - Complete example applications
-
----
-
-## Quick Links
-
-- 🏠 [Main README](../README.md)
-- 📦 [JSR Package](https://jsr.io/@oxian/oxian-js)
-- 🐛 [Issues & Bugs](https://github.com/oxian-org/oxian-js/issues)
-- 💬 [Discussions](https://github.com/oxian-org/oxian-js/discussions)
-- 🆘 [Support](https://discord.gg/oxian)
-
----
-
-_Need help? Check our [troubleshooting guide](./troubleshooting.md) or join our
-[Discord community](https://discord.gg/oxian)._
+Use `deno task verify` before publishing or releasing a package change.
