@@ -12,7 +12,7 @@ workload receives immutable metadata, a `ReadableStream<Uint8Array>` input, an
 `AbortSignal`, and `sendMetadata` for its one response metadata frame.
 
 ```ts
-import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.1/worker";
+import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.2/worker";
 
 const worker = createWorkerClient({
   url: "ws://127.0.0.1:8000/_oxian/workers/connect",
@@ -52,7 +52,7 @@ the connection. It receives the already validated gateway `url`, the exact
 cancellation and the connection deadline.
 
 ```ts
-import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.20.0-rc.1/transport";
+import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.20.0-rc.2/transport";
 
 const createWebSocket: WorkerWebSocketFactory = async (
   { url, protocol, signal },
@@ -115,7 +115,7 @@ lost-Welcome replay rather than generating a new one.
 Start it with:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.1/bin worker --manifest oxian.worker.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.2/bin worker --manifest oxian.worker.ts
 ```
 
 The manifest uses the application's route and factory configuration. It does not

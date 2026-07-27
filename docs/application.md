@@ -33,7 +33,7 @@ calls `next()` at most once.
 
 ```ts
 // routes/_middleware.ts
-import type { RouteMiddleware } from "jsr:@oxian/oxian-js@0.20.0-rc.1/router";
+import type { RouteMiddleware } from "jsr:@oxian/oxian-js@0.20.0-rc.2/router";
 
 export const middleware: RouteMiddleware = async (
   _request,
@@ -55,7 +55,7 @@ module has exactly one default export and returns the frozen application made by
 import {
   createApplication,
   defineApplicationFactory,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.1/app";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.2/app";
 
 export default defineApplicationFactory(async ({ router, basePath, signal }) =>
   await createApplication({
@@ -92,7 +92,7 @@ export function GET(): Response {
 For server-sent events, wait for each write and close when work is done:
 
 ```ts
-import { createServerSentEvents } from "jsr:@oxian/oxian-js@0.20.0-rc.1/app";
+import { createServerSentEvents } from "jsr:@oxian/oxian-js@0.20.0-rc.2/app";
 
 export async function GET(_request: Request, context: { signal: AbortSignal }) {
   const events = createServerSentEvents({ signal: context.signal });
@@ -111,7 +111,7 @@ Compose code-defined adapters around a Fetch handler when policy needs a
 function:
 
 ```ts
-import { createCorsAdapter } from "jsr:@oxian/oxian-js@0.20.0-rc.1/edge";
+import { createCorsAdapter } from "jsr:@oxian/oxian-js@0.20.0-rc.2/edge";
 
 const withCors = createCorsAdapter({ origins: ["https://example.com"] });
 const fetch = withCors((request) => new Response(request.url));

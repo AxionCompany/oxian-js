@@ -12,7 +12,7 @@ import {
   createSessionRegistry,
   createWorkDispatcher,
   createWorkerDefinition,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.1/supervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.2/supervisor";
 ```
 
 The reference implementations are process-local. `WorkerRepository` and

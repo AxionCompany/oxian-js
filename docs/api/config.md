@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.1/config`
+# `jsr:@oxian/oxian-js@0.20.0-rc.2/config`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   DEFAULT_OXIAN_CONFIG,
   defineConfig,
   loadConfig,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.1/config";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.2/config";
 ```
 
 Worker manifests, credentials, provider launch specifications, secrets, logging
@@ -53,7 +53,7 @@ function defineConfig(input: OxianConfigInput): OxianConfig;
 objects and arrays are new and recursively frozen.
 
 ```ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.1/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.2/config";
 
 export default defineConfig({
   application: {
@@ -375,7 +375,7 @@ The module must have exactly one runtime export:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.1/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.2/config";
 
 export default defineConfig({
   application: { routesRoot: "./routes" },
@@ -386,7 +386,7 @@ The named form is equivalent:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.1/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.2/config";
 
 export const config = defineConfig({
   application: { routesRoot: "./routes" },

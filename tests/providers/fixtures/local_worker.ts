@@ -18,7 +18,7 @@ await Deno.writeTextFile(
     cwd: Deno.cwd(),
     env: expectedArgument,
     ignoresSigterm,
-    inheritedPath: Deno.env.get("PATH") ?? null,
+    inheritedSentinel: Deno.env.get("OXIAN_PROVIDER_TEST_INHERITED") ?? null,
   }),
 );
 

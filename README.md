@@ -5,8 +5,8 @@ outbound WebSocket workers. An HTTP gateway sends work to authenticated workers
 over `oxian.worker.v1`; workers never need to expose an HTTP listener.
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.1/bin init
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.1/bin dev
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.2/bin init
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.2/bin dev
 ```
 
 `init` creates `oxian.config.ts` and `routes/index.ts`. `dev` starts a local
@@ -42,13 +42,13 @@ The package root is side-effect free. Import one explicit subpath when it makes
 the boundary clearer:
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.20.0-rc.1/app";
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.1/config";
-import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.1/worker";
+import { createApplication } from "jsr:@oxian/oxian-js@0.20.0-rc.2/app";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.2/config";
+import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.2/worker";
 ```
 
-The executable is `jsr:@oxian/oxian-js@0.20.0-rc.1/bin`; the embeddable CLI API
-is `jsr:@oxian/oxian-js@0.20.0-rc.1/cli`.
+The executable is `jsr:@oxian/oxian-js@0.20.0-rc.2/bin`; the embeddable CLI API
+is `jsr:@oxian/oxian-js@0.20.0-rc.2/cli`.
 
 ## Verification
 

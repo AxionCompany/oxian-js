@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.1/hypervisor`
+# `jsr:@oxian/oxian-js@0.20.0-rc.2/hypervisor`
 
 [Back to the API reference](../api-reference.md)
 
@@ -12,7 +12,7 @@ import {
   createHypervisor,
   createHypervisorConfig,
   DEFAULT_HYPERVISOR_CONFIG,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.1/hypervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.2/hypervisor";
 ```
 
 The Hypervisor owns only sessions connected to this JavaScript process. It is
@@ -339,8 +339,8 @@ starts no worker connection. The returned object is frozen.
 import {
   createHttpGateway,
   type HttpDispatch,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.1/http";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.1/hypervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.2/http";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.2/hypervisor";
 
 // The HTTP gateway and Hypervisor are circular by design. Keep their seam
 // explicitly typed, then bind it after construction and before serving.

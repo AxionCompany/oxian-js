@@ -26,8 +26,8 @@ Start the migration with a clean local project and move one route tree at a
 time:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.1/bin init --root ./new-service
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.1/bin check --config ./new-service/oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.2/bin init --root ./new-service
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.2/bin check --config ./new-service/oxian.config.ts
 ```
 
 Then move the gateway and worker deployment to the

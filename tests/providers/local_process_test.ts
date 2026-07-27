@@ -106,6 +106,7 @@ Deno.test({
 Deno.test({
   name: "local process provider passes explicit args, env, and cwd",
   permissions: {
+    env: ["OXIAN_PROVIDER_TEST_INHERITED"],
     read: true,
     run: true,
     write: true,
@@ -116,6 +117,10 @@ Deno.test({
     });
     const markerPath = `${directory}/marker.json`;
     const expectedArgument = "expected-argument";
+    Deno.env.set(
+      "OXIAN_PROVIDER_TEST_INHERITED",
+      "must-not-reach-the-child",
+    );
     const provider = createLocalProcessProvider({
       createResourceId: () => "explicit-launch-child",
       defaultGracePeriodMs: 500,
@@ -130,7 +135,7 @@ Deno.test({
         command: Deno.execPath(),
         args: [
           "run",
-          `--allow-env=OXIAN_PROVIDER_TEST_MARKER,OXIAN_PROVIDER_TEST_ARGUMENT,OXIAN_PROVIDER_TEST_IGNORE_SIGTERM,PATH`,
+          `--allow-env=OXIAN_PROVIDER_TEST_MARKER,OXIAN_PROVIDER_TEST_ARGUMENT,OXIAN_PROVIDER_TEST_IGNORE_SIGTERM,OXIAN_PROVIDER_TEST_INHERITED`,
           `--allow-write=${directory}`,
           fixtureUrl.toString(),
           expectedArgument,
@@ -162,10 +167,11 @@ Deno.test({
         cwd: await Deno.realPath(directory),
         env: expectedArgument,
         ignoresSigterm: false,
-        inheritedPath: null,
+        inheritedSentinel: null,
       });
       assertEquals((await provider.inspect(resource)).state, "present");
     } finally {
+      Deno.env.delete("OXIAN_PROVIDER_TEST_INHERITED");
       await provider.terminate(resource, {
         gracePeriodMs: 500,
       });
@@ -336,7 +342,7 @@ Deno.test({
         command: Deno.execPath(),
         args: [
           "run",
-          `--allow-env=OXIAN_PROVIDER_TEST_MARKER,OXIAN_PROVIDER_TEST_ARGUMENT,OXIAN_PROVIDER_TEST_IGNORE_SIGTERM,PATH`,
+          `--allow-env=OXIAN_PROVIDER_TEST_MARKER,OXIAN_PROVIDER_TEST_ARGUMENT,OXIAN_PROVIDER_TEST_IGNORE_SIGTERM,OXIAN_PROVIDER_TEST_INHERITED`,
           `--allow-write=${directory}`,
           fixtureUrl.toString(),
           "force-test",
