@@ -10,7 +10,7 @@ Oxian publishes two related subpaths:
   owns `SIGINT`/`SIGTERM`, and assigns `Deno.exitCode`.
 
 ```ts
-import { parseCliArgs, runCli } from "jsr:@oxian/oxian-js@0.20.0-rc.2/cli";
+import { parseCliArgs, runCli } from "jsr:@oxian/oxian-js@0.20.0-rc.3/cli";
 ```
 
 ## Exports
@@ -27,7 +27,7 @@ import { parseCliArgs, runCli } from "jsr:@oxian/oxian-js@0.20.0-rc.2/cli";
 ### `CLI_COMMANDS` and `CliCommand`
 
 ```ts
-import type { CLI_COMMANDS } from "jsr:@oxian/oxian-js@0.20.0-rc.2/cli";
+import type { CLI_COMMANDS } from "jsr:@oxian/oxian-js@0.20.0-rc.3/cli";
 
 type CliCommandsTuple = typeof CLI_COMMANDS;
 // readonly [
@@ -302,8 +302,8 @@ Run the executable entrypoint with the Deno permissions required by the chosen
 command:
 
 ```sh
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.2/bin --help
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.2/bin start
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin --help
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin start
 ```
 
 At module evaluation, `/bin` calls:

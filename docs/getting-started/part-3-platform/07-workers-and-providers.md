@@ -54,17 +54,17 @@ distributed production control plane.
 
 ```ts
 // platform/workers.ts
-import { HTTP_WORKLOAD } from "jsr:@oxian/oxian-js@0.20.0-rc.2/http";
+import { HTTP_WORKLOAD } from "jsr:@oxian/oxian-js@0.20.0-rc.3/http";
 import {
   createCloudRunJobsProvider,
   createExternallyAttachedProvider,
   createLocalProcessProvider,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.2/providers";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.3/providers";
 import {
   createInMemoryRegistrationAuthority,
   createInMemoryWorkerRepository,
   createWorkerDefinition,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.2/supervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.3/supervisor";
 
 export const repository = createInMemoryWorkerRepository();
 export const authority = createInMemoryRegistrationAuthority();
@@ -133,7 +133,7 @@ eventual WSS session.
 
 ```ts
 // platform/attempts.ts
-import type { WorkerIdentity } from "jsr:@oxian/oxian-js@0.20.0-rc.2/protocol";
+import type { WorkerIdentity } from "jsr:@oxian/oxian-js@0.20.0-rc.3/protocol";
 import { authority, repository } from "./workers.ts";
 
 export async function beginAttempt(workerId: string): Promise<WorkerIdentity> {
@@ -209,7 +209,7 @@ const resource = await localProcesses.provision({
     args: [
       "run",
       "-A",
-      "jsr:@oxian/oxian-js@0.20.0-rc.2/bin",
+      "jsr:@oxian/oxian-js@0.20.0-rc.3/bin",
       "worker",
       "--manifest",
       "oxian.worker.ts",
@@ -271,7 +271,7 @@ initial handshake ID, WSS URL, and capability. The worker can then start with
 the same CLI used by any other provider:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.2/bin worker --manifest oxian.worker.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin worker --manifest oxian.worker.ts
 ```
 
 Google sign-in, device approval, secure credential storage, and distribution of
@@ -355,8 +355,8 @@ delivery to `ProviderResource`.
 First, verify the application and manifest:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.2/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.2/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin routes --config oxian.config.ts
 ```
 
 After starting the Hypervisor and the desired workers, compare provider presence

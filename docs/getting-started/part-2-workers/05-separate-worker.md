@@ -38,13 +38,13 @@ Create `gateway.ts` in the Logwash project root:
 import {
   createHttpGateway,
   HTTP_WORKLOAD,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.2/http";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.2/hypervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.3/http";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.3/hypervisor";
 import {
   createInMemoryRegistrationAuthority,
   createInMemoryWorkerRepository,
   createWorkerDefinition,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.2/supervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.3/supervisor";
 
 const WORKER_ID = "logwash-http";
 const CAPACITY = 2;
@@ -157,14 +157,14 @@ Create `worker.ts` beside it:
 ```ts
 import {
   createConfiguredApplication,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.2/app";
-import { loadConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.2/config";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.3/app";
+import { loadConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.3/config";
 import {
   createHttpWorkload,
   HTTP_WORKLOAD,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.2/http";
-import type { WorkerIdentity } from "jsr:@oxian/oxian-js@0.20.0-rc.2/protocol";
-import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.2/worker";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.3/http";
+import type { WorkerIdentity } from "jsr:@oxian/oxian-js@0.20.0-rc.3/protocol";
+import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.3/worker";
 
 type LocalProvisioning = Readonly<{
   gatewayUrl: string;

@@ -839,7 +839,12 @@ function parseExecution(
   if (name !== expectedName) {
     throw new TypeError("Cloud Run returned a different execution");
   }
-  if (body.job !== undefined && body.job !== jobName) {
+  const jobId = jobName.slice(jobName.lastIndexOf("/") + 1);
+  if (
+    body.job !== undefined &&
+    body.job !== jobName &&
+    body.job !== jobId
+  ) {
     throw new TypeError("Cloud Run execution named a different Job");
   }
   if (

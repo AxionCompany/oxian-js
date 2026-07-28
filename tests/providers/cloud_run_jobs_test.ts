@@ -110,6 +110,46 @@ async function provision(
   });
 }
 
+function realShapedExecution(
+  overrides: Readonly<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  return {
+    name: EXECUTION,
+    uid: "01f5f5f8-282f-4de1-8452-3f455011e734",
+    generation: "1",
+    labels: {
+      "run.googleapis.com/job": JOB,
+    },
+    createTime: "2026-07-28T00:00:00.000000Z",
+    startTime: "2026-07-28T00:00:01.000000Z",
+    updateTime: "2026-07-28T00:00:01.000000Z",
+    launchStage: "GA",
+    job: JOB,
+    parallelism: 1,
+    taskCount: 1,
+    template: {
+      containers: [{
+        image: "us-docker.pkg.dev/cloudrun/container/hello",
+      }],
+      maxRetries: 3,
+      timeout: "3600s",
+      serviceAccount: "worker@example.iam.gserviceaccount.com",
+    },
+    reconciling: false,
+    conditions: [{
+      type: "Started",
+      state: "CONDITION_SUCCEEDED",
+      lastTransitionTime: "2026-07-28T00:00:01.000000Z",
+    }],
+    observedGeneration: "1",
+    runningCount: 1,
+    logUri: "https://console.cloud.google.com/logs/viewer",
+    satisfiesPzs: true,
+    etag: '"real-shaped-etag"',
+    ...overrides,
+  };
+}
+
 Deno.test("Cloud Run Jobs provision sends the exact authenticated run request and persists only safe attributes", async () => {
   const fake = createFakeFetch((call) => {
     assertEquals(call.url, RUN_URL);
@@ -484,6 +524,97 @@ Deno.test("Cloud Run Jobs inspection maps pending, running, succeeded, failed, a
   assertEquals((await provider.inspect(resource)).state, "absent");
 });
 
+Deno.test("Cloud Run Jobs inspection accepts real execution responses with short and canonical Job names", async () => {
+  let responseJob = JOB;
+  const fake = createFakeFetch((call) => {
+    if (call.url === RUN_URL && call.method === "POST") {
+      return jsonResponse({
+        name: OPERATION,
+        metadata: { name: EXECUTION },
+      });
+    }
+    if (call.url === OPERATION_URL && call.method === "GET") {
+      return jsonResponse({
+        name: OPERATION,
+        metadata: { name: EXECUTION },
+      });
+    }
+    if (call.url === EXECUTION_URL && call.method === "GET") {
+      return jsonResponse(realShapedExecution({ job: responseJob }));
+    }
+    throw new Error(`Unexpected request: ${call.method} ${call.url}`);
+  });
+  const provider = createCloudRunJobsProvider({
+    project: PROJECT,
+    location: LOCATION,
+    getAccessToken: () => "token",
+    fetcher: fake.fetcher,
+    now: () => 234,
+  });
+  const resource = await provision(provider);
+
+  const inspection = await provider.inspect(resource);
+
+  assertEquals(inspection.state, "present");
+  assertEquals(inspection.observedAtMs, 234);
+  assertEquals(inspection.details.phase, "active");
+  assertEquals(inspection.details.runningCount, 1);
+
+  responseJob = `projects/${PROJECT}/locations/${LOCATION}/jobs/${JOB}`;
+  assertEquals((await provider.inspect(resource)).state, "present");
+});
+
+Deno.test("Cloud Run Jobs inspection rejects execution responses naming any other Job", async () => {
+  let responseJob: unknown = "another-job";
+  const fake = createFakeFetch((call) => {
+    if (call.url === RUN_URL && call.method === "POST") {
+      return jsonResponse({
+        name: OPERATION,
+        metadata: { name: EXECUTION },
+      });
+    }
+    if (call.url === OPERATION_URL && call.method === "GET") {
+      return jsonResponse({
+        name: OPERATION,
+        metadata: { name: EXECUTION },
+      });
+    }
+    if (call.url === EXECUTION_URL && call.method === "GET") {
+      return jsonResponse(realShapedExecution({ job: responseJob }));
+    }
+    throw new Error(`Unexpected request: ${call.method} ${call.url}`);
+  });
+  const provider = createCloudRunJobsProvider({
+    project: PROJECT,
+    location: LOCATION,
+    getAccessToken: () => "token",
+    fetcher: fake.fetcher,
+  });
+  const resource = await provision(provider);
+
+  for (
+    const invalidJob of [
+      "another-job",
+      `projects/${PROJECT}/locations/${LOCATION}/jobs/another-job`,
+      `locations/${LOCATION}/jobs/${JOB}`,
+      "",
+      42,
+      null,
+    ]
+  ) {
+    responseJob = invalidJob;
+    const error = await assertRejects(
+      () => provider.inspect(resource),
+      Error,
+    );
+    assertProviderErrorCode(error, "inspection_failed");
+    assertEquals(
+      (error as Error & { cause?: unknown }).cause instanceof TypeError,
+      true,
+    );
+  }
+});
+
 Deno.test("Cloud Run Jobs termination is confirmed, idempotent, and cancels exactly once", async () => {
   let cancelled = false;
   let cancelCalls = 0;
@@ -544,6 +675,71 @@ Deno.test("Cloud Run Jobs termination is confirmed, idempotent, and cancels exac
     CANCEL_OPERATION,
   );
   assertEquals(repeated.outcome, "already_absent");
+  assertEquals(cancelCalls, 1);
+});
+
+Deno.test("Cloud Run Jobs termination accepts real execution responses with their short Job ID", async () => {
+  let executionReads = 0;
+  let cancelCalls = 0;
+  const fake = createFakeFetch((call) => {
+    if (call.url === RUN_URL && call.method === "POST") {
+      return jsonResponse({
+        name: OPERATION,
+        metadata: { name: EXECUTION },
+      });
+    }
+    if (call.url === OPERATION_URL && call.method === "GET") {
+      return jsonResponse({
+        name: OPERATION,
+        metadata: { name: EXECUTION },
+      });
+    }
+    if (call.url === EXECUTION_URL && call.method === "GET") {
+      executionReads++;
+      return jsonResponse(
+        executionReads === 1 ? realShapedExecution() : realShapedExecution({
+          runningCount: undefined,
+          cancelledCount: 1,
+          completionTime: "2026-07-28T00:00:02.000000Z",
+          conditions: [{
+            type: "Completed",
+            state: "CONDITION_FAILED",
+            reason: "Cancelled",
+            message: "Execution cancelled.",
+            lastTransitionTime: "2026-07-28T00:00:02.000000Z",
+          }],
+        }),
+      );
+    }
+    if (call.url === CANCEL_URL && call.method === "POST") {
+      cancelCalls++;
+      assertEquals(call.body, "{}");
+      return jsonResponse({
+        name: CANCEL_OPERATION,
+        metadata: { name: EXECUTION },
+      });
+    }
+    throw new Error(`Unexpected request: ${call.method} ${call.url}`);
+  });
+  const provider = createCloudRunJobsProvider({
+    project: PROJECT,
+    location: LOCATION,
+    getAccessToken: () => "token",
+    fetcher: fake.fetcher,
+    now: () => 567,
+  });
+  const resource = await provision(provider);
+
+  const termination = await provider.terminate(resource);
+
+  assertEquals(termination.outcome, "terminated");
+  assertEquals(termination.observedAtMs, 567);
+  assertEquals(termination.details.phase, "cancelled");
+  assertEquals(
+    termination.details.cancellationOperation,
+    CANCEL_OPERATION,
+  );
+  assertEquals(executionReads, 2);
   assertEquals(cancelCalls, 1);
 });
 
