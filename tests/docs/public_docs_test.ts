@@ -3,6 +3,7 @@ import * as app from "@oxian/oxian-js/app";
 import * as config from "@oxian/oxian-js/config";
 import * as edge from "@oxian/oxian-js/edge";
 import * as http from "@oxian/oxian-js/http";
+import * as host from "@oxian/oxian-js/host";
 import * as hypervisor from "@oxian/oxian-js/hypervisor";
 import * as router from "@oxian/oxian-js/router";
 import * as worker from "@oxian/oxian-js/worker";
@@ -25,6 +26,7 @@ const API_REFERENCE_MODULES = Object.freeze([
   "../../docs/api/config.md",
   "../../docs/api/edge.md",
   "../../docs/api/http.md",
+  "../../docs/api/host.md",
   "../../docs/api/hypervisor.md",
   "../../docs/api/local.md",
   "../../docs/api/protocol.md",
@@ -93,6 +95,7 @@ Deno.test("public documentation imports published symbols", () => {
   assert(typeof config.defineConfig === "function");
   assert(typeof edge.createCorsAdapter === "function");
   assert(typeof http.createHttpGateway === "function");
+  assert(typeof host.createWorkerHost === "function");
   assert(typeof hypervisor.createHypervisor === "function");
   assert(typeof router.createFileRouter === "function");
   assert(typeof worker.createWorkerClient === "function");

@@ -1,18 +1,68 @@
 # Workers
 
-Workers connect outbound to the Hypervisor at a `ws:` loopback or `wss:` gateway
-URL and offer `oxian.worker.v1`. A worker receives work only after its
+Workers can attach directly to an embeddable `WorkerHost` or connect outbound to
+a Hypervisor over `ws:` loopback or `wss:`. Both paths expose the same workload
+handler, metadata, byte-stream, cancellation, capacity, targeting, acceptance,
+and drain semantics.
+
+## Embedded in-process worker
+
+Use the in-process host when a library or application owns both dispatch and
+execution. It avoids socket and wire-protocol overhead while preserving the
+worker lifecycle boundary.
+
+```ts
+import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.4/host";
+
+const host = createWorkerHost({
+  persistAcceptance: () => Promise.resolve(),
+});
+
+const engine = host.attachInProcessWorker({
+  workerId: "copilotz-engine",
+  capacity: 4,
+  workloads: {
+    "agent.turn.v1": async ({ input, signal, sendMetadata }) => {
+      signal.throwIfAborted();
+      await sendMetadata({ channel: "audio" });
+      return { body: input };
+    },
+  },
+});
+
+const turn = await host.dispatch({
+  workload: "agent.turn.v1",
+  body: microphoneStream,
+});
+await turn.output.pipeTo(speakerStream);
+await turn.completed;
+
+await engine.drain();
+await host.shutdown();
+```
+
+Direct attachment schedules handlers on the same JavaScript event loop. It is
+lighter than loopback WSS but does not isolate CPU, memory, crashes, or security
+boundaries. The handler must cooperate with `AbortSignal`; JavaScript events
+cannot forcibly interrupt an arbitrary promise. Live Web Streams are used for
+the operation data plane instead of `EventTarget` payload events, preserving
+backpressure and stream cancellation across runtimes that implement standard Web
+APIs.
+
+## Remote worker client
+
+A remote worker offers `oxian.worker.v1`. It receives work only after its
 credential is exchanged, its resume credential is persisted, and it sends
 `ready`.
 
-## Direct worker client
+### Direct worker client
 
 `createWorkerClient` accepts workload functions keyed by workload name. A
 workload receives immutable metadata, a `ReadableStream<Uint8Array>` input, an
 `AbortSignal`, and `sendMetadata` for its one response metadata frame.
 
 ```ts
-import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.3/worker";
+import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.4/worker";
 
 const worker = createWorkerClient({
   url: "ws://127.0.0.1:8000/_oxian/workers/connect",
@@ -44,7 +94,7 @@ with an atomic `persistResumeCredential` function. Persist the credential,
 replacement handshake ID, and expiry together. `ephemeral` deliberately loses
 resume state at process exit.
 
-## Authenticated socket factory
+### Authenticated socket factory
 
 `createWebSocket` lets a worker obtain provider authentication before Oxian owns
 the connection. It receives the already validated gateway `url`, the exact
@@ -52,7 +102,7 @@ the connection. It receives the already validated gateway `url`, the exact
 cancellation and the connection deadline.
 
 ```ts
-import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.20.0-rc.3/transport";
+import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.20.0-rc.4/transport";
 
 const createWebSocket: WorkerWebSocketFactory = async (
   { url, protocol, signal },
@@ -69,7 +119,7 @@ authentication and socket construction. Oxian owns the deadline, waits for
 `open`, verifies the negotiated subprotocol, and closes the socket after it is
 returned; the factory must not retain lifecycle ownership of that socket.
 
-## HTTP worker manifest
+### HTTP worker manifest
 
 The CLI `worker` command runs an HTTP application as an outbound worker. Its
 manifest is a strict module with one `default` or `manifest` export.
@@ -115,13 +165,13 @@ lost-Welcome replay rather than generating a new one.
 Start it with:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin worker --manifest oxian.worker.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin worker --manifest oxian.worker.ts
 ```
 
 The manifest uses the application's route and factory configuration. It does not
 describe an HTTP target for the worker.
 
-## Lifecycle
+### Remote lifecycle
 
 1. Worker sends `hello` with identity, workload names, capacity, and a
    registration or resume capability.

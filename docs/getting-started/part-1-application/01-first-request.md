@@ -26,7 +26,7 @@ Create the Logwash project:
 ```bash
 mkdir logwash
 cd logwash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin init
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin init
 ```
 
 `init` creates this small project:
@@ -75,7 +75,7 @@ There are no framework-specific request or response objects here. `Request`,
 Start the development server:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin dev
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin dev
 ```
 
 Leave that terminal running. It should report:
@@ -112,9 +112,10 @@ Oxian returns `404 Not Found`.
 configured local address. The filename `index.ts` represents `/`, and its named
 `GET` export handles `GET /`.
 
-Locally, the HTTP entrypoint and one worker run together. The request still
-travels through the same outbound WebSocket worker boundary used by a separated
-worker, but you do not need to configure that boundary yet.
+Locally, the HTTP entrypoint and one worker run together. The request crosses
+the same workload, stream, capacity, cancellation, and acceptance boundaries as
+a separated worker, but direct in-process delivery avoids the loopback socket.
+You do not need to configure the WSS boundary yet.
 
 Route files are loaded when the process starts. After changing one, stop `dev`
 with `Ctrl-C` and start it again.

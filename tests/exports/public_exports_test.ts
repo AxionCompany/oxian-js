@@ -5,6 +5,7 @@ import * as cli from "@oxian/oxian-js/cli";
 import * as config from "@oxian/oxian-js/config";
 import * as edge from "@oxian/oxian-js/edge";
 import * as http from "@oxian/oxian-js/http";
+import * as host from "@oxian/oxian-js/host";
 import * as hypervisor from "@oxian/oxian-js/hypervisor";
 import * as local from "@oxian/oxian-js/local";
 import * as protocol from "@oxian/oxian-js/protocol";
@@ -27,6 +28,7 @@ Deno.test("package root is the side-effect-free aggregate library surface", () =
   assertEquals(root.defineConfig, config.defineConfig);
   assertEquals(root.createCorsAdapter, edge.createCorsAdapter);
   assertEquals(root.createHttpGateway, http.createHttpGateway);
+  assertEquals(root.createWorkerHost, host.createWorkerHost);
   assertEquals(root.createHypervisor, hypervisor.createHypervisor);
   assertEquals(root.createLocalRuntime, local.createLocalRuntime);
   assertEquals(root.WORKER_PROTOCOL, protocol.WORKER_PROTOCOL);

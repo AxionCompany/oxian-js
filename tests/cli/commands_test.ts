@@ -40,6 +40,7 @@ Deno.test("init writes the minimal v0.20 project and never overwrites implicitly
     const config = await Deno.readTextFile(configPath);
     const route = await Deno.readTextFile(routePath);
     assert(config.includes('routesRoot: "./routes"'));
+    assert(config.includes('workerTransport: "in-process"'));
     assert(config.includes('basePath: "/"'));
     assert(config.includes("port: 8000"));
     assert(route.includes("export function GET"));

@@ -43,6 +43,14 @@ export type HttpListenerConfig = Readonly<{
 }>;
 
 /**
+ * The local worker path used by `createLocalRuntime()`.
+ *
+ * In-process delivery is the lightweight default. Worker WebSocket preserves
+ * the full loopback protocol topology for transport integration testing.
+ */
+export type LocalWorkerTransport = "in-process" | "worker-websocket";
+
+/**
  * Data-only subset of the CORS adapter options. Predicate functions are
  * intentionally application code, not configuration data.
  */
@@ -116,12 +124,14 @@ export type EdgeConfig = Readonly<{
 
 export type GatewayConfigInput = Readonly<{
   listener?: HttpListenerConfigInput;
+  workerTransport?: LocalWorkerTransport;
   hypervisor?: Partial<HypervisorConfig>;
   edge?: EdgeConfigInput;
 }>;
 
 export type GatewayConfig = Readonly<{
   listener: HttpListenerConfig;
+  workerTransport: LocalWorkerTransport;
   hypervisor: HypervisorConfig;
   edge?: EdgeConfig;
 }>;

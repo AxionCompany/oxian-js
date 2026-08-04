@@ -1,40 +1,26 @@
 import type { JsonObject, WorkerIdentity } from "../protocol/types.ts";
 import type {
+  WorkerHostDispatchInput,
+  WorkerHostInputBody,
+  WorkerHostWorkHandle,
+} from "../host/types.ts";
+import type {
   AcceptanceCommit,
   RegistrationAuthority,
   RegistrationExchange,
   SessionRegistry,
-  WorkDispatch,
   WorkDispatchStatus,
-  WorkDispatchTarget,
   WorkerDefinition,
   WorkerRepository,
 } from "../supervisor/index.ts";
 import type { SessionFence } from "../supervisor/types.ts";
 import type { HypervisorConfig } from "./config.ts";
 
-export type HypervisorWorkInputBody =
-  | Uint8Array
-  | ReadableStream<Uint8Array>;
+export type HypervisorWorkInputBody = WorkerHostInputBody;
 
-export type HypervisorDispatchInput = Readonly<{
-  workload: string;
-  target?: WorkDispatchTarget;
-  metadata?: JsonObject;
-  body?: HypervisorWorkInputBody;
-  deadlineAtMs?: number;
-  signal?: AbortSignal;
-}>;
+export type HypervisorDispatchInput = WorkerHostDispatchInput;
 
-export type HypervisorWorkHandle = Readonly<{
-  operationId: string;
-  streamId: string;
-  metadata: Promise<JsonObject>;
-  output: ReadableStream<Uint8Array>;
-  started: Promise<void>;
-  completed: Promise<WorkDispatch>;
-  cancel(reason?: string): Promise<WorkDispatch>;
-}>;
+export type HypervisorWorkHandle = WorkerHostWorkHandle;
 
 export type HypervisorScheduler = Readonly<{
   schedule(callback: () => void, delayMs: number): unknown;

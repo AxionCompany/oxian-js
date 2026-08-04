@@ -10,6 +10,11 @@ application or operational integration.
   `(request, context, next)` function.
 - Configuration is one strict `oxian.config.ts` module. It exports only
   `default` or `config` and contains application and gateway settings.
+- Local `dev` and `start` attach the HTTP workload in process by default. Set
+  `gateway.workerTransport: "worker-websocket"` when a local run must test the
+  complete loopback wire protocol.
+- Embedded applications can import `/host`, call `createWorkerHost`, and attach
+  workload handlers without creating a Hypervisor or listener.
 - A worker attaches outbound through `oxian.worker.v1`. Remove worker target
   URLs, worker HTTP listeners, and readiness polling from deployment wiring.
 - HTTP is carried as the `oxian.http.v1` workload. Preserve repeated headers and
@@ -26,11 +31,12 @@ Start the migration with a clean local project and move one route tree at a
 time:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin init --root ./new-service
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin check --config ./new-service/oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin init --root ./new-service
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin check --config ./new-service/oxian.config.ts
 ```
 
-Then move the gateway and worker deployment to the
-[worker manifest](workers.md#http-worker-manifest) or direct worker-client
-boundary. Review the [protocol](worker-protocol-v1.md) before implementing a
-non-HTTP workload.
+Then choose an
+[embedded in-process worker](workers.md#embedded-in-process-worker), a
+[worker manifest](workers.md#http-worker-manifest), or the direct remote
+worker-client boundary. Review the [protocol](worker-protocol-v1.md) before
+implementing a non-HTTP remote workload.

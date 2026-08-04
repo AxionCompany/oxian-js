@@ -36,7 +36,9 @@ The code remains Fetch-native throughout: handlers receive `Request`, return
   — stream results while respecting backpressure and disconnects.
 
 If you only author Oxian applications, Part 1 is the complete starting path. The
-local runtime already exercises the real gateway-to-worker transport.
+local runtime already exercises the workload, capacity, streaming, cancellation,
+and acceptance boundaries through its in-process host. Part 2 moves that
+boundary onto WSS.
 
 ### Part 2 — Move execution elsewhere
 

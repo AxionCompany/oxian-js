@@ -1,7 +1,7 @@
 import type {
-  HypervisorDispatchInput,
-  HypervisorWorkHandle,
-} from "../hypervisor/types.ts";
+  WorkerHostDispatchInput,
+  WorkerHostWorkHandle,
+} from "../host/types.ts";
 import type { JsonObject } from "../protocol/types.ts";
 
 export const HTTP_REQUEST_METADATA_SCHEMA = "oxian.http.request.v1" as const;
@@ -32,8 +32,8 @@ export type HttpResponseMetadata =
   }>;
 
 export type HttpDispatch = (
-  input: HypervisorDispatchInput,
-) => Promise<HypervisorWorkHandle>;
+  input: WorkerHostDispatchInput,
+) => Promise<WorkerHostWorkHandle>;
 
 export type HttpGatewayDeadline = (
   request: Request,

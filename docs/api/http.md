@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.3/http`
+# `jsr:@oxian/oxian-js@0.20.0-rc.4/http`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   createHttpGateway,
   createHttpWorkload,
   HTTP_WORKLOAD,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.3/http";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.4/http";
 ```
 
 ## Export summary
@@ -30,7 +30,7 @@ import {
 | `encodeHttpResponseMetadata`    | Convert a native `Response` into validated response metadata. |
 | `decodeHttpResponseMetadata`    | Strictly validate response metadata.                          |
 | `rechunkHttpBody`               | Bound a byte stream to v1 data-frame payload chunks.          |
-| `createHttpGateway`             | Adapt HTTP ingress to `Hypervisor.dispatch`.                  |
+| `createHttpGateway`             | Adapt HTTP ingress to a host-compatible dispatch function.    |
 | `createHttpWorkload`            | Adapt a worker operation to a Fetch handler.                  |
 
 ### Types
@@ -41,7 +41,7 @@ import {
 | `HttpRequestMetadata`  | Strict `oxian.http.request.v1` metadata.        |
 | `HttpResponseMetadata` | Strict `oxian.http.response.v1` metadata.       |
 | `HttpMetadataLimits`   | Shape of `HTTP_METADATA_LIMITS`.                |
-| `HttpDispatch`         | Hypervisor-compatible dispatch function.        |
+| `HttpDispatch`         | Worker-host-compatible dispatch function.       |
 | `HttpGatewayDeadline`  | Per-request absolute deadline callback.         |
 | `HttpGatewayOptions`   | HTTP gateway construction options.              |
 | `HttpGateway`          | Fetch-compatible asynchronous gateway function. |
@@ -218,8 +218,8 @@ cancels the source.
 
 ```ts
 type HttpDispatch = (
-  input: HypervisorDispatchInput,
-) => Promise<HypervisorWorkHandle>;
+  input: WorkerHostDispatchInput,
+) => Promise<WorkerHostWorkHandle>;
 
 type HttpGatewayDeadline = (
   request: Request,

@@ -1,6 +1,6 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.20.0-rc.3",
+  "version": "0.20.0-rc.4",
   "exports": {
     ".": "./src/mod.ts",
     "./app": "./src/app/index.ts",
@@ -9,6 +9,7 @@
     "./config": "./src/config/index.ts",
     "./edge": "./src/edge/index.ts",
     "./http": "./src/http/index.ts",
+    "./host": "./src/host/index.ts",
     "./hypervisor": "./src/hypervisor/index.ts",
     "./local": "./src/local/index.ts",
     "./protocol": "./src/protocol/index.ts",

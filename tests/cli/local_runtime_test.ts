@@ -57,6 +57,7 @@ Deno.test({
       application: { routesRoot },
       gateway: {
         listener: { hostname: "127.0.0.1", port: 0 },
+        workerTransport: "worker-websocket",
         hypervisor: {
           heartbeatIntervalMs: 20,
           leaseTimeoutMs: 500,
@@ -77,6 +78,10 @@ Deno.test({
       const firstStart = lifecycle.start();
       assertStrictEquals(lifecycle.start(), firstStart);
       const running = await firstStart;
+      assertEquals(running.workerTransport, "worker-websocket");
+      if (running.workerTransport !== "worker-websocket") {
+        throw new Error("expected the worker WebSocket topology");
+      }
       assertEquals(running.workerUrl.protocol, "ws:");
       assertEquals(running.workerUrl.hostname, "127.0.0.1");
       assertEquals(running.application.basePath, "/");
@@ -102,6 +107,62 @@ Deno.test({
       await lifecycle.finished;
       assertEquals(lifecycle.snapshot().state, "stopped");
       await assertRejects(() => lifecycle.start());
+    } finally {
+      await lifecycle.stop("test_cleanup").catch(() => undefined);
+      await Deno.remove(root, { recursive: true });
+    }
+  },
+});
+
+Deno.test({
+  name: "local runtime uses the in-process worker host by default",
+  permissions: {
+    net: ["127.0.0.1"],
+    read: true,
+    write: true,
+  },
+  async fn() {
+    const root = await Deno.makeTempDir();
+    const routesRoot = join(root, "routes");
+    await Deno.mkdir(routesRoot);
+    await Deno.writeTextFile(
+      join(routesRoot, "index.ts"),
+      `export function GET(): Response {
+  return Response.json({ transport: "in-process" });
+}
+`,
+    );
+    const config = defineConfig({
+      application: { routesRoot },
+      gateway: {
+        listener: { hostname: "127.0.0.1", port: 0 },
+      },
+    });
+    const lifecycle = createLocalRuntime({ config });
+
+    try {
+      const running = await lifecycle.start();
+      assertEquals(running.workerTransport, "in-process");
+      if (running.workerTransport !== "in-process") {
+        throw new Error("expected the in-process worker topology");
+      }
+      assertEquals(running.workerUrl, undefined);
+      assertEquals(running.worker, undefined);
+      assertEquals(running.inProcessWorker.snapshot().state, "ready");
+      assertEquals(
+        running.host.sessions.get(running.identity.workerId)?.phase,
+        "ready",
+      );
+      assertEquals(
+        running.hypervisor.sessions.get(running.identity.workerId),
+        undefined,
+      );
+
+      const response = await fetch(new URL("/", running.listenerUrl));
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), { transport: "in-process" });
+      assertEquals(lifecycle.snapshot().workerTransport, "in-process");
+      assertEquals(lifecycle.snapshot().workerUrl, undefined);
     } finally {
       await lifecycle.stop("test_cleanup").catch(() => undefined);
       await Deno.remove(root, { recursive: true });

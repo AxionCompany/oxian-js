@@ -4,8 +4,9 @@
 
 The local subpath contains two compositions:
 
-- `createLocalRuntime` runs an application, Hypervisor, and outbound worker in
-  one process for `oxian start` and `oxian dev`.
+- `createLocalRuntime` runs an application, HTTP listener, and local worker in
+  one process for `oxian start` and `oxian dev`. Direct in-process delivery is
+  the default; an outbound loopback WebSocket remains available explicitly.
 - `createManifestWorkerRuntime` runs an application as a standalone outbound
   WebSocket worker described by a strict local manifest.
 
@@ -17,7 +18,7 @@ import {
   createLocalRuntime,
   createManifestWorkerRuntime,
   loadWorkerManifest,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.3/local";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.4/local";
 ```
 
 Constructing either runtime is side-effect free. `start()` owns imports,
@@ -58,24 +59,39 @@ type LocalRuntimeOptions = Readonly<{
   }>;
   workerId?: string; // default: "oxian-local-http"
   capacity?: number; // default: 1
+  workerTransport?: LocalWorkerTransport;
 }>;
 
 type LocalRuntimeSnapshot = Readonly<{
   state: LocalRuntimeState;
   listenerUrl?: string;
   workerUrl?: string;
+  workerTransport?: LocalWorkerTransport;
   identity?: WorkerIdentity;
 }>;
 
-type LocalRuntimeRunning = Readonly<{
+type LocalRuntimeRunningBase = Readonly<{
   listenerUrl: URL;
-  workerUrl: URL;
   identity: WorkerIdentity;
   router: FileRouter<unknown>;
   application: Application<unknown>;
   hypervisor: Hypervisor;
-  worker: WorkerClient;
 }>;
+
+type LocalRuntimeRunning =
+  & LocalRuntimeRunningBase
+  & (
+    | Readonly<{
+      workerTransport: "in-process";
+      host: WorkerHost;
+      inProcessWorker: InProcessWorker;
+    }>
+    | Readonly<{
+      workerTransport: "worker-websocket";
+      workerUrl: URL;
+      worker: WorkerClient;
+    }>
+  );
 
 type LocalRuntime = Readonly<{
   start(): Promise<LocalRuntimeRunning>;
@@ -85,10 +101,11 @@ type LocalRuntime = Readonly<{
 }>;
 ```
 
-`listener.hostname` and `listener.port` override the corresponding configuration
-for this run. Port `0` requests an ephemeral operating-system port; valid ports
-are integers from 0 through 65,535. `workerId` is validated as a supervisor
-identifier and `capacity` as a positive safe integer during startup.
+`listener.hostname`, `listener.port`, and `workerTransport` override the
+corresponding configuration for this run. Port `0` requests an ephemeral
+operating-system port; valid ports are integers from 0 through 65,535.
+`workerId` is validated as a supervisor identifier and `capacity` as a positive
+safe integer during startup.
 
 ### `createLocalRuntime`
 
@@ -100,24 +117,36 @@ On `start()`, the runtime:
 
 1. compiles the configured router and creates the configured application;
 2. wraps it as the built-in HTTP workload;
-3. creates one in-memory worker repository and registration authority;
-4. creates a Hypervisor whose acceptance hook resolves immediately;
-5. binds its HTTP/WebSocket listener;
-6. connects one ephemeral-credential worker back to that listener; and
-7. resolves only after the worker is ready.
+3. creates a Hypervisor and binds its HTTP/WebSocket listener;
+4. for `"in-process"`, creates a `WorkerHost`, directly attaches the HTTP
+   workload, and routes the HTTP gateway to that host; or
+5. for `"worker-websocket"`, creates an in-memory authority and repository,
+   connects an ephemeral-credential worker back to the Hypervisor, and waits for
+   protocol readiness.
 
-This is an honest WebSocket topology, useful for local execution and end-to-end
-testing, but its repository, credential authority, and acceptance decision are
-not durable. Production durability remains an application concern.
+The default `"in-process"` path avoids loopback serialization, protocol frames,
+socket buffers, authentication, heartbeats over the wire, and reconnect work. It
+still uses the supervisor's fenced sessions, capacity reservations, exact
+targeting, and offer → claim → acceptance → start boundary. It is the preferred
+composition when Oxian is embedded in another application or when `dev` and
+`start` do not need transport integration coverage.
+
+`"worker-websocket"` preserves the honest loopback protocol topology. Use it for
+end-to-end transport tests or when local behavior must reproduce a separated
+worker process. Its repository, credential authority, and acceptance decision
+are process-local and not durable. Production durability remains an application
+concern in both modes.
 
 `mode: "dev"` enables a configured development proxy. Both modes apply
-configured CORS and static-file edges. `workerUrl` is derived from the actual
-bound listener and the Hypervisor worker path, using `ws:` for HTTP and `wss:`
-for HTTPS.
+configured CORS and static-file edges. `workerUrl` and `worker` exist only in
+the `"worker-websocket"` result. That URL is derived from the actual bound
+listener and Hypervisor worker path, using `ws:` for HTTP and `wss:` for HTTPS.
+The `"in-process"` result instead exposes `host` and `inProcessWorker` for
+embedding and process-local inspection.
 
 Repeated `start()` calls return the same promise. `stop(reason)` is idempotent,
-may preempt an in-progress startup, shuts down the Hypervisor, listener, worker,
-and application, and prevents restart. Its default reason is
+may preempt an in-progress startup, shuts down the host or worker, Hypervisor,
+listener, and application, and prevents restart. Its default reason is
 `"local_runtime_stopped"`. `finished` resolves after an orderly stop and rejects
 on a runtime failure. An unexpected worker result creates an error named
 `LocalRuntimeWorkerError`. `snapshot()` is a frozen point-in-time value; URLs

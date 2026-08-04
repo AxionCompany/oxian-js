@@ -199,7 +199,7 @@ a committed environment file.
 Run:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin \
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin \
   worker --manifest ./oxian.worker.ts
 ```
 
@@ -262,7 +262,7 @@ for this case:
 ```ts
 import type {
   WorkerWebSocketFactory,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.3/transport";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.4/transport";
 
 const createWebSocket: WorkerWebSocketFactory = async (
   { url, protocol, signal },

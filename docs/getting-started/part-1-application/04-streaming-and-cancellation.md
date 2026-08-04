@@ -19,7 +19,7 @@ request `AbortSignal` and stream cancellation stop the pipeline on disconnect.
 Stop `dev` with `Ctrl-C`. Create `routes/redactions/stream.ts`:
 
 ```ts
-import type { RouteContext } from "jsr:@oxian/oxian-js@0.20.0-rc.3/router";
+import type { RouteContext } from "jsr:@oxian/oxian-js@0.20.0-rc.4/router";
 import { asProfile, type LogwashState } from "../../logwash.ts";
 
 type Context = RouteContext<LogwashState>;
@@ -189,9 +189,9 @@ The new static route is `POST /redactions/stream`. It wins over the dynamic
 Check and start the project:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin check
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin routes
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin dev
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin check
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin routes
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin dev
 ```
 
 The route table now includes:
@@ -275,8 +275,9 @@ The request body arrived as a `ReadableStream<Uint8Array>`. A decoder and line
 splitter transformed it without collecting the whole upload. The output stream's
 `pull()` reads one non-empty input record and emits one output record, then
 returns. When the downstream reader slows, pulls slow, and that pressure
-propagates through the HTTP workload and Oxian's credit-controlled WebSocket
-transport.
+propagates through the HTTP workload and Oxian's backpressured worker streams.
+The local in-process host passes Web Streams directly; a separated worker maps
+the same demand onto protocol byte credit.
 
 `context.signal` combines request cancellation with application shutdown.
 Passing it into the input pipeline interrupts pending reads. If the response

@@ -1,12 +1,13 @@
 ---
 name: oxian-js
 kind: lib
-summary: Fetch-native Deno HTTP applications carried to workers over outbound WSS.
+summary: Fetch-native applications carried to in-process or outbound WSS workers.
 depends_on:
 tags:
   - deno
   - http
   - workers
+  - streams
   - websocket
 entrypoints:
   - src/mod.ts
@@ -18,22 +19,24 @@ status: active
 ## Purpose
 
 Oxian 0.20 provides a file router, a Fetch-native application runtime, an HTTP
-workload, a Hypervisor gateway, and outbound worker clients. It is a library;
-application policy, durable worker state, provider implementation, and secrets
-remain at their owning boundaries.
+workload, an embeddable WorkerHost, a Hypervisor gateway, and outbound worker
+clients. It is a library; application policy, durable worker state, provider
+implementation, and secrets remain at their owning boundaries.
 
 ## Public entrypoints
 
 - `src/mod.ts` aggregates the side-effect-free library surface.
 - `cli.ts` owns process exit and signal handling for the `bin` export.
-- `src/app`, `src/config`, `src/http`, `src/hypervisor`, `src/worker`, and the
-  remaining explicit subpath indexes define the package surface.
+- `src/app`, `src/config`, `src/http`, `src/host`, `src/hypervisor`,
+  `src/worker`, and the remaining explicit subpath indexes define the package
+  surface.
 
 ## Repository map
 
 - `src/app/`: application lifecycle, middleware, SSE, and application factories.
 - `src/router/`: immutable filesystem route compilation.
 - `src/http/`: HTTP metadata, body streaming, gateway, and worker workload.
+- `src/host/`: transport-neutral dispatch types and direct in-process workers.
 - `src/hypervisor/`, `src/supervisor/`, `src/providers/`: gateway orchestration,
   process-local worker authority, and compute contracts.
 - `src/worker/`, `src/transport/`, `src/protocol/`: outbound client, WebSocket

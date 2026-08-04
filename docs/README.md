@@ -1,9 +1,9 @@
 # Oxian 0.20 documentation
 
-Oxian serves Fetch-native HTTP applications through workers connected by
-outbound WebSocket. The local runtime composes ingress and a worker for
-development; the same application can later execute in a separate process or on
-another machine.
+Oxian serves Fetch-native HTTP applications through in-process or outbound
+WebSocket workers. The local runtime composes ingress and a lightweight embedded
+worker for development; the same application can later execute in a separate
+process or on another machine.
 
 ## Start here
 
@@ -18,8 +18,8 @@ maintainers can continue without changing the application built there.
 
 - [Application](application.md): routing, middleware, state, streaming, and
   edges.
-- [Workers](workers.md): worker clients, manifests, lifecycle, and protocol
-  rules.
+- [Workers](workers.md): embedded hosts, remote clients, manifests, lifecycle,
+  and protocol rules.
 - [Architecture](architecture.md): component responsibilities, boundaries, and
   request path.
 - [Operations](operations.md): launch, drain, observe, and release safely.

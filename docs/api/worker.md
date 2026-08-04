@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.3/worker`
+# `jsr:@oxian/oxian-js@0.20.0-rc.4/worker`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ cooperates with drain and shutdown.
 import {
   createBoundedExponentialBackoff,
   createWorkerClient,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.3/worker";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.4/worker";
 ```
 
 Construction is side-effect free. Network ownership begins only when

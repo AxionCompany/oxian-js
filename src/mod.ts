@@ -9,6 +9,7 @@ export * from "./app/index.ts";
 export * from "./config/index.ts";
 export * from "./edge/index.ts";
 export * from "./http/index.ts";
+export * from "./host/index.ts";
 export * from "./hypervisor/index.ts";
 export * from "./local/index.ts";
 export * from "./protocol/index.ts";

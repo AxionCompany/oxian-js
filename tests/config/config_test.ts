@@ -41,6 +41,7 @@ Deno.test("v0.20 config exposes immutable, implemented-only defaults", () => {
     hostname: "127.0.0.1",
     port: 8_000,
   });
+  assertEquals(config.gateway.workerTransport, "in-process");
   assertEquals(
     config.gateway.hypervisor.workerPath,
     "/_oxian/workers/connect",
@@ -75,6 +76,7 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     },
     gateway: {
       listener: { hostname: "localhost", port: 9_090 },
+      workerTransport: "worker-websocket",
       hypervisor: {
         workerPath: "/workers/connect",
         heartbeatIntervalMs: 2_000,
@@ -115,6 +117,7 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     hostname: "localhost",
     port: 9_090,
   });
+  assertEquals(config.gateway.workerTransport, "worker-websocket");
   assertEquals(config.gateway.hypervisor.workerPath, "/workers/connect");
   assertEquals(config.gateway.hypervisor.heartbeatIntervalMs, 2_000);
   assertEquals(config.gateway.edge?.cors, {
@@ -199,6 +202,16 @@ Deno.test("v0.20 config rejects unknown keys at every owned boundary", () => {
         },
       }),
     'config.gateway.edge.devProxy contains unknown key "headers"',
+  );
+});
+
+Deno.test("v0.20 config rejects unknown local worker transports", () => {
+  assertTypeErrorMessage(
+    () =>
+      defineUnknown({
+        gateway: { workerTransport: "events" },
+      }),
+    'config.gateway.workerTransport must be "in-process" or "worker-websocket"',
   );
 });
 

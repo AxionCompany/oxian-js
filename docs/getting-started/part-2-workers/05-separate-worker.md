@@ -1,8 +1,9 @@
 # Chapter 5: Separate the worker
 
-Logwash currently looks like one server. The `dev` and `start` commands actually
-compose an HTTP gateway, a Hypervisor, and an outbound HTTP worker in one
-process. That is a useful default, but it hides the boundary we want to deploy.
+Logwash currently looks like one server. The `dev` and `start` commands compose
+an HTTP gateway, a Hypervisor listener, and an in-process HTTP worker host. That
+lightweight default keeps the worker contract visible, but it hides the network
+boundary we now want to deploy.
 
 ## The pain
 
@@ -38,13 +39,13 @@ Create `gateway.ts` in the Logwash project root:
 import {
   createHttpGateway,
   HTTP_WORKLOAD,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.3/http";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.3/hypervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.4/http";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.4/hypervisor";
 import {
   createInMemoryRegistrationAuthority,
   createInMemoryWorkerRepository,
   createWorkerDefinition,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.3/supervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.4/supervisor";
 
 const WORKER_ID = "logwash-http";
 const CAPACITY = 2;
@@ -157,14 +158,14 @@ Create `worker.ts` beside it:
 ```ts
 import {
   createConfiguredApplication,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.3/app";
-import { loadConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.3/config";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.4/app";
+import { loadConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.4/config";
 import {
   createHttpWorkload,
   HTTP_WORKLOAD,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.3/http";
-import type { WorkerIdentity } from "jsr:@oxian/oxian-js@0.20.0-rc.3/protocol";
-import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.3/worker";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.4/http";
+import type { WorkerIdentity } from "jsr:@oxian/oxian-js@0.20.0-rc.4/protocol";
+import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.4/worker";
 
 type LocalProvisioning = Readonly<{
   gatewayUrl: string;

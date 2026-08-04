@@ -1,17 +1,18 @@
 # Oxian 0.20
 
-Oxian is a Fetch-native Deno framework for file-routed HTTP applications and
-outbound WebSocket workers. An HTTP gateway sends work to authenticated workers
-over `oxian.worker.v1`; workers never need to expose an HTTP listener.
+Oxian is a Fetch-native framework for file-routed HTTP applications and worker
+workloads. Work can run directly in the embedding JavaScript process or on
+authenticated outbound WebSocket workers over `oxian.worker.v1`; workers never
+need to expose an HTTP listener.
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin init
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.3/bin dev
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin init
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin dev
 ```
 
 `init` creates `oxian.config.ts` and `routes/index.ts`. `dev` starts a local
-HTTP gateway and its local HTTP worker in one process. Visit
-`http://127.0.0.1:8000/`.
+HTTP gateway and its HTTP workload in one process using the lightweight
+in-process worker host by default. Visit `http://127.0.0.1:8000/`.
 
 ```ts
 // routes/users/[id].ts
@@ -29,7 +30,7 @@ Applications use native `Request`, `Response`, `ReadableStream`, and
 
 - [Progressive getting-started guide](docs/getting-started.md)
 - [Application model](docs/application.md)
-- [Workers and the WSS boundary](docs/workers.md)
+- [Workers, embedding, and the WSS boundary](docs/workers.md)
 - [Operations](docs/operations.md)
 - [Architecture](docs/architecture.md)
 - [API reference](docs/api-reference.md)
@@ -42,13 +43,14 @@ The package root is side-effect free. Import one explicit subpath when it makes
 the boundary clearer:
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.20.0-rc.3/app";
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.3/config";
-import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.3/worker";
+import { createApplication } from "jsr:@oxian/oxian-js@0.20.0-rc.4/app";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.4/config";
+import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.4/host";
+import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.4/worker";
 ```
 
-The executable is `jsr:@oxian/oxian-js@0.20.0-rc.3/bin`; the embeddable CLI API
-is `jsr:@oxian/oxian-js@0.20.0-rc.3/cli`.
+The executable is `jsr:@oxian/oxian-js@0.20.0-rc.4/bin`; the embeddable CLI API
+is `jsr:@oxian/oxian-js@0.20.0-rc.4/cli`.
 
 ## Verification
 

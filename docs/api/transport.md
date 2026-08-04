@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.3/transport`
+# `jsr:@oxian/oxian-js@0.20.0-rc.4/transport`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ encoding, protocol order, bounded receive and send admission, native
 import {
   connectWorkerWebSocket,
   createWebSocketTransport,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.3/transport";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.4/transport";
 ```
 
 ## Export summary

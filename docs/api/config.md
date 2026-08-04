@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.3/config`
+# `jsr:@oxian/oxian-js@0.20.0-rc.4/config`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   DEFAULT_OXIAN_CONFIG,
   defineConfig,
   loadConfig,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.3/config";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.4/config";
 ```
 
 Worker manifests, credentials, provider launch specifications, secrets, logging
@@ -41,7 +41,7 @@ configuration.
 | `StaticConfigInput`       | `StaticConfig`       |
 | `DevProxyConfigInput`     | `DevProxyConfig`     |
 
-`LoadConfigSource` is the remaining exported type.
+`LocalWorkerTransport` and `LoadConfigSource` are the remaining exported types.
 
 ## `defineConfig`
 
@@ -53,7 +53,7 @@ function defineConfig(input: OxianConfigInput): OxianConfig;
 objects and arrays are new and recursively frozen.
 
 ```ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.3/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.4/config";
 
 export default defineConfig({
   application: {
@@ -167,16 +167,29 @@ permits ephemeral binding.
 ```ts
 type GatewayConfigInput = Readonly<{
   listener?: HttpListenerConfigInput;
+  workerTransport?: LocalWorkerTransport;
   hypervisor?: Partial<HypervisorConfig>;
   edge?: EdgeConfigInput;
 }>;
 
 type GatewayConfig = Readonly<{
   listener: HttpListenerConfig;
+  workerTransport: LocalWorkerTransport;
   hypervisor: HypervisorConfig;
   edge?: EdgeConfig;
 }>;
 ```
+
+```ts
+type LocalWorkerTransport = "in-process" | "worker-websocket";
+```
+
+`workerTransport` controls the local worker created by `oxian dev`,
+`oxian start`, and `createLocalRuntime`. It defaults to `"in-process"`, which
+attaches the HTTP workload directly to an embeddable `WorkerHost` without a
+loopback socket. `"worker-websocket"` preserves the previous outbound loopback
+worker topology for wire-protocol integration testing. This setting does not
+change separately deployed manifest workers, which continue to use WSS.
 
 `HypervisorConfig` is defined by the `/hypervisor` subpath. The input accepts a
 partial value, fills every omitted field from the Hypervisor defaults, and
@@ -322,6 +335,7 @@ The constant is deeply frozen. Its application, listener, and edge defaults are:
       hostname: "127.0.0.1",
       port: 8_000,
     },
+    workerTransport: "in-process",
     // `hypervisor` contains every default listed below.
     // `edge` is absent.
   },
@@ -375,7 +389,7 @@ The module must have exactly one runtime export:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.3/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.4/config";
 
 export default defineConfig({
   application: { routesRoot: "./routes" },
@@ -386,7 +400,7 @@ The named form is equivalent:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.3/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.4/config";
 
 export const config = defineConfig({
   application: { routesRoot: "./routes" },

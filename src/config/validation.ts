@@ -27,7 +27,12 @@ const URI_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z\d+.-]*:/;
 
 const TOP_LEVEL_KEYS = new Set(["application", "gateway"]);
 const APPLICATION_KEYS = new Set(["routesRoot", "basePath", "factory"]);
-const GATEWAY_KEYS = new Set(["listener", "hypervisor", "edge"]);
+const GATEWAY_KEYS = new Set([
+  "listener",
+  "workerTransport",
+  "hypervisor",
+  "edge",
+]);
 const LISTENER_KEYS = new Set(["hostname", "port"]);
 const HYPERVISOR_KEYS = new Set(
   Object.keys(DEFAULT_HYPERVISOR_CONFIG),
@@ -60,6 +65,16 @@ type PlainRecord = Record<string, unknown>;
 type NormalizationContext = Readonly<{
   baseDirectory?: string;
 }>;
+
+function normalizeWorkerTransport(
+  value: unknown,
+): "in-process" | "worker-websocket" {
+  if (value === undefined || value === "in-process") return "in-process";
+  if (value === "worker-websocket") return value;
+  throw new TypeError(
+    'config.gateway.workerTransport must be "in-process" or "worker-websocket"',
+  );
+}
 
 function describe(value: unknown): string {
   if (value === null) return "null";
@@ -661,6 +676,7 @@ export function normalizeConfig(
         hostname: normalizeHostname(listener.hostname),
         port: normalizePort(listener.port),
       }),
+      workerTransport: normalizeWorkerTransport(gateway.workerTransport),
       hypervisor: createHypervisorConfig(hypervisor),
       ...(edge === undefined ? {} : { edge }),
     }),
