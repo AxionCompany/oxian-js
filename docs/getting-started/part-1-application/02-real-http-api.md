@@ -24,7 +24,7 @@ mkdir -p routes/redactions
 Create `routes/redactions/[profile].ts`:
 
 ```ts
-import type { RouteContext } from "jsr:@oxian/oxian-js@0.20.0-rc.5/router";
+import type { RouteContext } from "jsr:@oxian/oxian-js@0.20.0-rc.6/router";
 
 function redactEmail(message: string): string {
   return message.replace(
@@ -123,7 +123,7 @@ routes/
 Validate the configuration and every route module without starting the listener:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.5/bin check
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin check
 ```
 
 You should see:
@@ -135,7 +135,7 @@ configuration, application entry, and 2 routes are valid
 Inspect the compiled route table:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.5/bin routes
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin routes
 ```
 
 It includes these patterns:
@@ -148,7 +148,7 @@ GET,POST                 /redactions/:profile
 Start Logwash again:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.5/bin dev
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin dev
 ```
 
 ## Verify it

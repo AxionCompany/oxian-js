@@ -5,8 +5,8 @@
 Run a route and configuration check before starting a worker or gateway:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.5/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.5/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin routes --config oxian.config.ts
 deno task verify
 ```
 
@@ -21,8 +21,8 @@ commit that records the no-replay boundary. Compose `createHttpGateway` as its
 HTTP fallback.
 
 ```ts
-import { createHttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.5/http";
-import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.5/adapters/deno";
+import { createHttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.6/http";
+import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
 
 const hypervisor = createDenoHypervisor({
   authority,

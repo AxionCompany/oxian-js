@@ -567,10 +567,13 @@ Deno.test({
           const session = harness.hypervisor.sessions.get(
             harness.identity.workerId,
           );
+          const worker = harness.worker.snapshot();
           return session?.phase === "ready" &&
-            session.connectionId !== firstConnectionId;
+            session.connectionId !== firstConnectionId &&
+            worker.state === "ready" &&
+            worker.connectionId === session.connectionId;
         },
-        "worker did not reconnect after proactive age drain",
+        "worker and Hypervisor did not converge on a ready replacement session",
       );
 
       assertEquals(workerRunSettled, false);

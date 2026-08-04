@@ -62,10 +62,10 @@ remote Hypervisor keeps its protocol and isolation boundary.
 Use explicit subpaths for capabilities:
 
 ```ts
-import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.5";
-import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.5/adapters/deno";
-import { createFileRouter } from "jsr:@oxian/oxian-js@0.20.0-rc.5/router";
-import { createLocalProcessProvider } from "jsr:@oxian/oxian-js@0.20.0-rc.5/providers";
+import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.6";
+import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
+import { createFileRouter } from "jsr:@oxian/oxian-js@0.20.0-rc.6/router";
+import { createLocalProcessProvider } from "jsr:@oxian/oxian-js@0.20.0-rc.6/providers";
 ```
 
 The root deliberately excludes `createFileRouter`, `createLocalRuntime`,

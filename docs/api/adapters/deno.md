@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.5/adapters/deno`
+# `jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno`
 
 [Back to the API reference](../../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   createDenoHypervisorFetch,
   type DenoHypervisor,
   type DenoHypervisorOptions,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.5/adapters/deno";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
 ```
 
 ## Export summary
@@ -50,8 +50,8 @@ then closes every listener created by that composition.
 Use `createDenoHypervisorFetch` when another Deno server owns binding or TLS:
 
 ```ts
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.5/hypervisor";
-import { createDenoHypervisorFetch } from "jsr:@oxian/oxian-js@0.20.0-rc.5/adapters/deno";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/hypervisor";
+import { createDenoHypervisorFetch } from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
 
 const hypervisor = createHypervisor({
   authority,

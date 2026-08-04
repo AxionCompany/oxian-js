@@ -1,6 +1,6 @@
 # API reference
 
-This reference covers the public API of `@oxian/oxian-js` version `0.20.0-rc.5`.
+This reference covers the public API of `@oxian/oxian-js` version `0.20.0-rc.6`.
 Start with the [getting-started guide](getting-started.md) when learning Oxian;
 use these pages when composing a runtime, implementing a platform boundary, or
 checking an exact contract.
@@ -15,18 +15,18 @@ import {
   createHypervisor,
   createWorkerClient,
   createWorkerHost,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.5";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.6";
 ```
 
 Explicit subpaths make ownership clearer and keep the executable boundary out of
 application code:
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.20.0-rc.5/app";
-import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.5/host";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.5/hypervisor";
-import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.5/adapters/deno";
-import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.5/worker";
+import { createApplication } from "jsr:@oxian/oxian-js@0.20.0-rc.6/app";
+import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.6/host";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/hypervisor";
+import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
+import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.6/worker";
 ```
 
 The root excludes filesystem discovery, static files, local processes, local

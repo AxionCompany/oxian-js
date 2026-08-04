@@ -66,9 +66,9 @@ commit to an application-owned durable store before resolving.
 
 ```ts
 // platform/hypervisor.ts
-import { createHttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.5/http";
-import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.5/adapters/deno";
-import type { AcceptanceCommit } from "jsr:@oxian/oxian-js@0.20.0-rc.5/supervisor";
+import { createHttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.6/http";
+import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
+import type { AcceptanceCommit } from "jsr:@oxian/oxian-js@0.20.0-rc.6/supervisor";
 import { authority, repository } from "./durable_control.ts";
 
 // This factory belongs to Logwash. It is not an Oxian export.
@@ -140,7 +140,7 @@ ID at the application edge:
 
 ```ts
 // platform/idempotent_gateway.ts
-import type { HttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.5/http";
+import type { HttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.6/http";
 
 export function createIdempotentGateway(
   gateway: HttpGateway,
@@ -351,8 +351,8 @@ request or response around Oxian.
 Start with static and route checks:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.5/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.5/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin routes --config oxian.config.ts
 deno check \
   application.ts \
   logwash.ts \

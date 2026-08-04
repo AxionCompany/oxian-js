@@ -8,9 +8,9 @@ Deno.test("publish contract permits only the exact package version tag", () => {
     ref: "refs/tags/v0.20.0",
   });
   validatePublishRelease({
-    version: "0.20.0-rc.5",
-    refName: "v0.20.0-rc.5",
-    ref: "refs/tags/v0.20.0-rc.5",
+    version: "0.20.0-rc.6",
+    refName: "v0.20.0-rc.6",
+    ref: "refs/tags/v0.20.0-rc.6",
   });
 
   assertThrows(

@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.5/transport`
+# `jsr:@oxian/oxian-js@0.20.0-rc.6/transport`
 
 [Back to the API reference](../api-reference.md)
 
@@ -14,7 +14,7 @@ import {
   createWebSocketTransport,
   createWebSocketWireConnection,
   type WorkerWireConnection,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.5/transport";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.6/transport";
 ```
 
 ## Export summary
