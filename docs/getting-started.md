@@ -1,421 +1,77 @@
-# 🚀 Getting Started with Oxian
+# Getting started with Oxian
 
-This guide will help you create your first Oxian API in minutes and understand
-the core concepts.
+This guide takes one Fetch application from a local route to workers running on
+other computers. Each chapter adds complexity only after the application has a
+reason to need it.
+
+You will build **Logwash**, a small service that redacts secrets from text. It
+starts as one HTTP handler, grows streaming and lifecycle behavior, then moves
+unchanged behind separately operated workers.
+
+## How this guide works
+
+Every chapter follows the same rhythm:
+
+1. **The pain** — the limitation in the application as it exists so far.
+2. **The solution** — the smallest Oxian capability that removes it.
+3. **Verify it** — an exact command and an observable result.
+4. **What happened** — the relevant boundary, without unrelated internals.
+5. **What this unlocks** — what the application can do now.
+6. **What's next** — the next limitation that earns another concept.
+
+The code remains Fetch-native throughout: handlers receive `Request`, return
+`Response`, stream with `ReadableStream`, and stop work with `AbortSignal`.
+
+## The path
+
+### Part 1 — Build the application
+
+- [Chapter 1: Your first request](getting-started/part-1-application/01-first-request.md)
+  — scaffold Logwash and serve one Fetch response.
+- [Chapter 2: A real HTTP API](getting-started/part-1-application/02-real-http-api.md)
+  — add methods, dynamic routes, request bodies, and route checks.
+- [Chapter 3: Lifecycle and middleware](getting-started/part-1-application/03-lifecycle-and-middleware.md)
+  — add shared policy, worker-local state, setup, and disposal.
+- [Chapter 4: Streaming and cancellation](getting-started/part-1-application/04-streaming-and-cancellation.md)
+  — stream results while respecting backpressure and disconnects.
+
+If you only author Oxian applications, Part 1 is the complete starting path. The
+local runtime already exercises the workload, capacity, streaming, cancellation,
+and acceptance boundaries through its in-process host. Part 2 moves that
+boundary onto WSS.
+
+### Part 2 — Move execution elsewhere
+
+- [Chapter 5: Separate the worker](getting-started/part-2-workers/05-separate-worker.md)
+  — run ingress and execution in different local processes.
+- [Chapter 6: Run it on another machine](getting-started/part-2-workers/06-another-machine.md)
+  — use WSS, durable credentials, and outbound-only connectivity.
+
+Part 2 is for developers deploying workers or building a local worker client.
+The Logwash application does not change when its execution moves.
+
+### Part 3 — Operate the platform
+
+- [Chapter 7: Workers and providers](getting-started/part-3-platform/07-workers-and-providers.md)
+  — add capacity and manage compute without coupling it to transport.
+- [Chapter 8: Failures and production](getting-started/part-3-platform/08-failures-and-production.md)
+  — design around acceptance, no replay, draining, and secure operation.
+
+Part 3 is for platform maintainers integrating Oxian into a control plane.
+Application-owned durability and provider-owned infrastructure remain explicit
+boundaries.
 
 ## Prerequisites
 
-- [Deno](https://deno.land) 1.40 or later
-- Basic knowledge of TypeScript/JavaScript
-- Familiarity with REST APIs
+- Deno 2
+- `curl` or another HTTP client
+- a terminal that can keep `deno task` or `deno run` processes open
 
-## Installation & First Run
+No database, container runtime, or cloud account is needed for Part 1.
 
-Oxian requires no installation - run it directly from JSR:
+Commands and imports pin the package version documented by this checkout. That
+keeps local `deno.json` links and pre-release testing on 0.20 instead of
+silently resolving an older published release.
 
-```bash
-# Create a new directory for your API
-mkdir my-oxian-api && cd my-oxian-api
-
-# Run Oxian (it will start with default settings)
-deno run -A jsr:@oxian/oxian-js
-```
-
-This starts Oxian on `http://localhost:8080` with an empty routes directory.
-
-## Your First Route
-
-Let's create your first API endpoint:
-
-### 1. Create the routes directory
-
-```bash
-mkdir routes
-```
-
-### 2. Create your first route
-
-Create `routes/index.ts`:
-
-```ts
-export function GET() {
-  return {
-    message: "Hello from Oxian!",
-    timestamp: new Date().toISOString(),
-  };
-}
-
-export function POST({ name }) {
-  if (!name) {
-    throw {
-      message: "Name is required",
-      statusCode: 400,
-    };
-  }
-
-  return {
-    greeting: `Hello, ${name}!`,
-    received: new Date().toISOString(),
-  };
-}
-```
-
-### 3. Start your server
-
-```bash
-deno run -A jsr:@oxian/oxian-js
-```
-
-You should see:
-
-```
-[cli] starting server { port: 8080, source: undefined }
-```
-
-### 4. Test your API
-
-Open another terminal and test your endpoints:
-
-```bash
-# Test GET endpoint
-curl http://localhost:8080
-# Response: {"message":"Hello from Oxian!","timestamp":"2024-01-20T10:30:00.000Z"}
-
-# Test POST endpoint
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"name":"World"}' http://localhost:8080
-# Response: {"greeting":"Hello, World!","received":"2024-01-20T10:30:00.000Z"}
-
-# Test error handling
-curl -X POST -H "Content-Type: application/json" \
-  -d '{}' http://localhost:8080
-# Response: {"error":{"message":"Name is required"}}
-```
-
-🎉 **Congratulations!** You've just created your first Oxian API!
-
-## Development Mode
-
-For development, use the `dev` command for hot reloading:
-
-```bash
-deno run -A jsr:@oxian/oxian-js dev
-```
-
-Now when you modify files, the server automatically reloads:
-
-1. Edit `routes/index.ts` and change the message
-2. Save the file
-3. Test the endpoint again - changes are live immediately!
-
-## Understanding the Basics
-
-### File-Based Routing
-
-Oxian uses file-based routing similar to Next.js:
-
-```
-routes/
-├── index.ts          → GET,POST /
-├── users.ts          → GET,POST /users
-├── users/
-│   ├── [id].ts       → GET,POST /users/:id
-│   └── settings.ts   → GET /users/settings
-└── health.ts         → GET /health
-```
-
-### HTTP Method Exports
-
-Each route file exports functions named after HTTP methods:
-
-```ts
-// routes/users.ts
-export function GET() {
-  return { users: [] };
-}
-
-export function POST({ name, email }) {
-  // Create user logic
-  return { id: 1, name, email };
-}
-
-export function PUT({ id, ...updates }) {
-  // Update user logic
-  return { id, ...updates };
-}
-
-export function DELETE({ id }) {
-  // Delete user logic
-  return { deleted: true, id };
-}
-```
-
-### Handler Parameters
-
-Every handler receives two parameters:
-
-```ts
-export function GET(
-  data, // Merged request data (path params + query + body)
-  context, // Request context and utilities
-) {
-  const { id } = data; // Path parameters
-  const { requestId, response } = context; // Request context
-
-  return { user: { id } };
-}
-```
-
-## Next Steps
-
-Now that you have a basic API running, explore these core concepts:
-
-### 1. Dynamic Routes
-
-Create `routes/users/[id].ts`:
-
-```ts
-export function GET({ id }) {
-  return {
-    user: {
-      id,
-      name: `User ${id}`,
-      email: `user${id}@example.com`,
-    },
-  };
-}
-```
-
-Test: `curl http://localhost:8080/users/123`
-
-### 2. Query Parameters
-
-Create `routes/search.ts`:
-
-```ts
-export function GET({ q, limit = 10 }) {
-  return {
-    query: q,
-    limit: parseInt(limit),
-    results: [`Result for "${q}"`],
-  };
-}
-```
-
-Test: `curl "http://localhost:8080/search?q=hello&limit=5"`
-
-### 3. Request Body Handling
-
-Create `routes/echo.ts`:
-
-```ts
-export function POST(data, { request }) {
-  return {
-    received: data,
-    method: request.method,
-    headers: Object.fromEntries(request.headers.entries()),
-  };
-}
-```
-
-Test:
-`curl -X POST -H "Content-Type: application/json" -d '{"test":"data"}' http://localhost:8080/echo`
-
-### 4. Response Control
-
-Create `routes/custom.ts`:
-
-```ts
-export function GET(_, { response }) {
-  response.status(201);
-  response.headers({
-    "x-custom": "header",
-    "cache-control": "no-cache",
-  });
-
-  return { created: true };
-}
-```
-
-### 5. Error Handling
-
-Create `routes/error-demo.ts`:
-
-```ts
-export function GET({ type }) {
-  switch (type) {
-    case "400":
-      throw {
-        message: "Bad request demo",
-        statusCode: 400,
-      };
-    case "404":
-      throw {
-        message: "Not found demo",
-        statusCode: 404,
-        statusText: "Not Found",
-      };
-    case "500":
-      throw new Error("Internal server error demo");
-    default:
-      return { error: "Use ?type=400|404|500 to test errors" };
-  }
-}
-```
-
-Test different error types:
-
-- `curl http://localhost:8080/error-demo?type=400`
-- `curl http://localhost:8080/error-demo?type=404`
-- `curl http://localhost:8080/error-demo?type=500`
-
-## Project Structure
-
-Here's a typical Oxian project structure:
-
-```
-my-oxian-api/
-├── oxian.config.json          # Configuration
-├── routes/                    # API routes
-│   ├── dependencies.ts        # Global dependencies
-│   ├── middleware.ts          # Global middleware
-│   ├── interceptors.ts        # Global interceptors
-│   ├── index.ts              # Root route
-│   ├── health.ts             # Health check
-│   └── api/                  # API namespace
-│       ├── dependencies.ts    # API-specific dependencies
-│       ├── middleware.ts      # API-specific middleware
-│       ├── users/
-│       │   ├── index.ts       # GET,POST /api/users
-│       │   └── [id].ts        # GET,PUT,DELETE /api/users/:id
-│       └── posts/
-│           ├── index.ts
-│           └── [id]/
-│               ├── index.ts
-│               └── comments.ts
-├── types/                     # Shared TypeScript types
-│   └── api.ts
-└── README.md
-```
-
-## Configuration
-
-Create `oxian.config.json` for customization:
-
-```json
-{
-  "server": {
-    "port": 3000
-  },
-  "routing": {
-    "routesDir": "routes",
-    "trailingSlash": "preserve"
-  },
-  "runtime": {
-    "hotReload": true
-  },
-  "security": {
-    "cors": {
-      "allowedOrigins": ["http://localhost:3000"],
-      "allowedHeaders": ["authorization", "content-type"]
-    }
-  },
-  "logging": {
-    "level": "info"
-  }
-}
-```
-
-Restart your server to apply changes:
-
-```bash
-deno run -A jsr:@oxian/oxian-js --port=3000
-```
-
-## Development Tips
-
-### 1. Use TypeScript
-
-Oxian is TypeScript-first. Import types for better DX:
-
-```ts
-import type { Context, Data } from "jsr:@oxian/oxian-js/types";
-
-export function GET(data: Data, context: Context) {
-  // Full TypeScript support with autocomplete
-  return { requestId: context.requestId };
-}
-```
-
-### 2. Check Routes
-
-List all discovered routes:
-
-```bash
-deno run -A jsr:@oxian/oxian-js routes
-```
-
-### 3. Enable Debug Logging
-
-```bash
-OXIAN_LOG_LEVEL=debug deno run -A jsr:@oxian/oxian-js dev
-```
-
-### 4. Hot Reload Patterns
-
-Oxian watches these file types for changes:
-
-- `*.ts`, `*.js` - Route handlers
-- `dependencies.ts` - Dependency injection
-- `middleware.ts` - Middleware
-- `interceptors.ts` - Interceptors
-- `oxian.config.json` - Configuration
-
-## What's Next?
-
-Now that you understand the basics, dive deeper:
-
-1. **[Routing](./routing.md)** - Master dynamic routes, catch-all patterns
-2. **[Dependency Injection](./dependency-injection.md)** - Share services
-   between routes
-3. **[Middleware](./middleware.md)** - Add authentication, logging, validation
-4. **[Streaming & SSE](./streaming-and-sse.md)** - Build real-time features
-5. **[Deployment](./deployment.md)** - Deploy to production
-
-## Common Issues
-
-### Permission Denied
-
-Make sure to use `-A` flag for all permissions:
-
-```bash
-deno run -A jsr:@oxian/oxian-js
-```
-
-### Port Already in Use
-
-Use a different port:
-
-```bash
-deno run -A jsr:@oxian/oxian-js --port=3000
-```
-
-### Module Not Found
-
-Clear Deno cache:
-
-```bash
-deno cache --reload jsr:@oxian/oxian-js
-```
-
-## Getting Help
-
-- 📚 [Full Documentation](./README.md)
-- 🐛 [Report Issues](https://github.com/oxian-org/oxian-js/issues)
-- 💬 [Join Discord](https://discord.gg/oxian)
-- 🤔 [Ask Questions](https://github.com/oxian-org/oxian-js/discussions)
-
----
-
-Ready to build amazing APIs? Continue with our [routing guide](./routing.md) to
-learn about dynamic routes and advanced patterns! 🚀
+Start with
+[Chapter 1: Your first request](getting-started/part-1-application/01-first-request.md).

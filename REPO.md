@@ -1,40 +1,62 @@
 ---
 name: oxian-js
 kind: lib
-summary: File-based Deno server framework handling routing, dependencies, middleware, interceptors, static serving, and SSE/streaming.
+summary: Fetch-native applications carried to in-process or outbound WSS workers.
 depends_on:
 tags:
-  - server
-  - routing
-  - runtime
-  - sse
+  - deno
+  - runtime-neutral
+  - adapters
+  - http
+  - workers
+  - streams
+  - websocket
 entrypoints:
-  - src/server/server.ts
-  - src/runtime/index.ts
-  - src/router/index.ts
-  - src/config/schema.ts
+  - src/mod.ts
+  - src/adapters/deno/index.ts
+  - cli.ts
+  - docs/README.md
 status: active
 ---
 
 ## Purpose
 
-Shared HTTP/runtime framework used by clients to expose APIs through file-based routes and dependency composition.
+Oxian 0.20 provides a file router, a Fetch-native application runtime, an HTTP
+workload, an embeddable WorkerHost, a Hypervisor gateway, and outbound worker
+clients. It is a library; application policy, durable worker state, provider
+implementation, and secrets remain at their owning boundaries.
 
-## Read These First
+## Public entrypoints
 
-- `src/server/server.ts`
-- `src/runtime/index.ts`
-- `src/router/index.ts`
-- `src/config/schema.ts`
+- `src/mod.ts` exposes only the side-effect-free runtime-neutral core.
+- `src/adapters/deno/` owns Deno WebSocket upgrade and listener behavior.
+- `cli.ts` owns process exit and signal handling for the `bin` export.
+- `src/app`, `src/config`, `src/http`, `src/host`, `src/hypervisor`,
+  `src/worker`, and the remaining explicit subpath indexes define the package
+  surface.
 
-## Common Task Locations
+## Repository map
 
-- Request lifecycle and static serving: `src/server/`
-- Pipeline execution and compatibility modes: `src/runtime/`
-- Route matching: `src/router/`
-- Core types and response helpers: `src/core/`, `src/utils/`
+- `src/app/`: application lifecycle, middleware, SSE, and application factories.
+- `src/router/`: immutable filesystem route compilation.
+- `src/http/`: HTTP metadata, body streaming, gateway, and worker workload.
+- `src/host/`: transport-neutral dispatch types and direct in-process workers.
+- `src/hypervisor/`, `src/supervisor/`, `src/providers/`: portable gateway
+  orchestration, process-local worker authority, and compute contracts; local
+  process provisioning remains an explicit capability.
+- `src/worker/`, `src/transport/`, `src/protocol/`: outbound client, WebSocket
+  transport, and versioned wire contract.
+- `src/local/`, `src/edge/`: local composition and HTTP edge adapters.
+- `docs/`: public 0.20 documentation. `v0.20-implementation-plan.md` is an
+  internal implementation ledger and is not published.
 
-## Warnings
+Oxian deliberately owns only the sessions connected to one Hypervisor process.
+Durable cross-replica routing is application infrastructure; Sandbox keeps its
+PostgreSQL relay at that downstream boundary instead of exposing an unused
+generic ownership abstraction from this package.
 
-- Clients often pin older Oxian versions, so local repo changes may not affect a client until its dependency is updated.
-- Base-path, CORS, and SSE behavior are framework-level concerns and can have broad client impact.
+## Verify
+
+```bash
+deno task verify
+```

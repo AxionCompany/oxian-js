@@ -1,0 +1,11 @@
+{
+  "name": "@oxian/oxian-js-workspace",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.15"
+  },
+  "scripts": {
+    "check:node": "node scripts/check_node_portability.mjs"
+  }
+}

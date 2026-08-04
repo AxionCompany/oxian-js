@@ -1,839 +1,134 @@
-# 📖 API Reference - Complete TypeScript Reference
+# API reference
 
-This comprehensive reference covers all types, interfaces, and APIs available in
-Oxian. Use this as your go-to reference for TypeScript development with Oxian.
+This reference covers the public API of `@oxian/oxian-js` version `0.20.0-rc.6`.
+Start with the [getting-started guide](getting-started.md) when learning Oxian;
+use these pages when composing a runtime, implementing a platform boundary, or
+checking an exact contract.
 
-## Core Types
+## Imports
 
-### Data
+The package root is the side-effect-free, runtime-neutral execution core:
 
-The `Data` type represents merged request data from path parameters, query
-parameters, and request body.
-
-```typescript
-export type Data = Record<string, unknown>;
+```ts
+import {
+  createApplication,
+  createHypervisor,
+  createWorkerClient,
+  createWorkerHost,
+} from "jsr:@oxian/oxian-js@0.20.0-rc.6";
 ```
 
-**Example Usage:**
+Explicit subpaths make ownership clearer and keep the executable boundary out of
+application code:
 
-```typescript
-export function GET({ id, limit, name }: Data) {
-  // id from path params: /users/:id
-  // limit from query: ?limit=10
-  // name from body: {"name": "John"}
-}
+```ts
+import { createApplication } from "jsr:@oxian/oxian-js@0.20.0-rc.6/app";
+import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.6/host";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/hypervisor";
+import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
+import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.6/worker";
 ```
 
-### Context
+The root excludes filesystem discovery, static files, local processes, local
+runtime composition, server adapters, `/cli`, and `/bin`. Import those explicit
+subpaths only when the target runtime provides the required capability.
 
-The `Context` object provides request details and response utilities.
+## Application modules
 
-```typescript
-export type Context = {
-  requestId: string;
-  request: RequestDetails;
-  dependencies: Record<string, unknown>;
-  response: ResponseController;
-  oxian: OxianInternals;
-  [key: string]: unknown; // Allow middleware to add properties
-};
+| Subpath                    | Use it to                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| [`/app`](api/app.md)       | Create a Fetch-native application, compose middleware, load an application factory, and produce server-sent events. |
+| [`/config`](api/config.md) | Define, validate, and load the data-only Oxian configuration.                                                       |
+| [`/router`](api/router.md) | Compile a filesystem route tree once and match requests in memory.                                                  |
+| [`/edge`](api/edge.md)     | Add CORS, static-file, and development-proxy adapters around a Fetch handler.                                       |
+
+## Execution and transport modules
+
+| Subpath                            | Use it to                                                                                                              |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [`/http`](api/http.md)             | Encode HTTP metadata and bodies, create the gateway, or run an HTTP workload inside a worker.                          |
+| [`/host`](api/host.md)             | Embed process-local workers with direct streams and the same capacity, acceptance, cancellation, and drain semantics.  |
+| [`/hypervisor`](api/hypervisor.md) | Prepare authenticated worker admission, dispatch work, drain, and inspect process-local state without owning a server. |
+| [`/worker`](api/worker.md)         | Maintain an outbound worker connection, rotate credentials, heartbeat, reconnect, and execute workloads.               |
+| [`/transport`](api/transport.md)   | Open the worker WebSocket transport or provide a custom socket factory.                                                |
+| [`/protocol`](api/protocol.md)     | Build, validate, and interpret `oxian.worker.v1` control and binary frames.                                            |
+
+## Platform and local-runtime modules
+
+| Subpath                                  | Use it to                                                                                                                                                 |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`/adapters/deno`](api/adapters/deno.md) | Add Deno WebSocket upgrade and optional `Deno.serve` listener ownership around the portable Hypervisor core.                                              |
+| [`/supervisor`](api/supervisor.md)       | Model worker identity, issue registration attempts, fence sessions, store records, and dispatch against ready sessions.                                   |
+| [`/providers`](api/providers.md)         | Provision, inspect, and terminate compute without coupling compute presence to transport readiness.                                                       |
+| [`/local`](api/local.md)                 | Compose the development runtime, run manifest-defined workers, and store local credentials.                                                               |
+| [`/cli`](api/cli.md)                     | Parse or execute the six Oxian commands without terminating the host process. The same page documents the [`/bin`](api/cli.md#executable-bin) entrypoint. |
+
+## Shared conventions
+
+### Fetch-native boundaries
+
+Application and edge APIs use native `Request`, `Response`, `Headers`,
+`ReadableStream`, and `AbortSignal`. Oxian does not introduce parallel HTTP
+request or response classes.
+
+### Factories and lifecycle
+
+Public stateful APIs are factory functions rather than classes. Creation
+configures an object; methods such as `start()`, `stop()`, `drain()`, and
+`dispose()` own explicit transitions where the returned contract exposes them.
+Callers should await lifecycle promises and must not infer readiness merely from
+the presence of provider compute.
+
+### Read-only contracts
+
+Configuration, protocol frames, descriptors, snapshots, and most option bags are
+typed as `Readonly`. Treat returned snapshots as observations, not mutable
+control surfaces.
+
+### Cancellation and deadlines
+
+I/O APIs accept `AbortSignal` or deadline options at the boundary that owns the
+operation. Cancellation stops local work; it does not weaken the post-acceptance
+no-replay rule.
+
+### Errors and protocol violations
+
+Programmer input and invalid configuration normally fail by throwing. Runtime
+protocol faults use the typed violation and close-code contracts documented by
+[`/protocol`](api/protocol.md). Lifecycle methods that return promises surface
+terminal failures through rejection or their documented result types.
+
+## Process and durability boundary
+
+One `WorkerHost` owns only its attached in-process sessions, and one Hypervisor
+owns only the WebSocket sessions attached to that process. Supervisor
+repositories may persist worker control records, but Oxian does not provide a
+distributed socket-owner directory or a durable cross-replica work relay.
+Applications that require durable acceptance, result persistence, or
+cross-replica forwarding own those policies outside the package.
+
+See [runtime boundaries and adapters](runtime-adapters.md) for the supported
+runtime matrix and the `WorkerWireConnection` seam.
+
+The remote worker sends `work.accepted` before workload execution; an in-process
+host performs the equivalent claim directly. Once the owning host persists
+acceptance and crosses the start boundary, Oxian does not replay that operation
+after an indeterminate failure. See the
+[normative worker protocol](worker-protocol-v1.md) for the complete state
+machine.
+
+## CLI summary
+
+```text
+oxian init [--root PATH] [--force]
+oxian dev [--config FILE] [--hostname HOST] [--port PORT]
+oxian start [--config FILE] [--hostname HOST] [--port PORT]
+oxian worker [--manifest FILE]
+oxian routes [--config FILE]
+oxian check [--config FILE]
 ```
 
-### RequestDetails
-
-```typescript
-type RequestDetails = {
-  method: string;
-  url: string;
-  headers: Headers;
-  pathParams: Record<string, string>;
-  queryParams: URLSearchParams;
-  query: Record<string, string | string[]>;
-  body: unknown;
-  rawBody?: Uint8Array;
-  raw: Request;
-};
-```
-
-**Properties:**
-
-- `method` - HTTP method (GET, POST, etc.)
-- `url` - Full request URL
-- `headers` - Request headers
-- `pathParams` - Path parameters as object
-- `queryParams` - Raw URLSearchParams
-- `query` - Parsed query parameters
-- `body` - Parsed request body
-- `raw` - Original Deno Request object
-
-### ResponseController
-
-```typescript
-export type ResponseController = {
-  send: (body: unknown, init?: ResponseInit) => void;
-  stream: (
-    initOrChunk?: StreamInit | Uint8Array | string,
-  ) => StreamWriter | void;
-  sse: (init?: SSEInit) => SSEController;
-  status: (code: number) => void;
-  headers: (headers: Record<string, string>) => void;
-  statusText: (text: string) => void;
-};
-```
-
-#### ResponseInit
-
-```typescript
-type ResponseInit = Partial<{
-  status: number;
-  headers: Record<string, string>;
-  statusText: string;
-}>;
-```
-
-#### StreamInit
-
-```typescript
-type StreamInit = Partial<{
-  status: number;
-  headers: Record<string, string>;
-  statusText: string;
-}>;
-```
-
-#### StreamWriter
-
-```typescript
-type StreamWriter = ((chunk: Uint8Array | string) => void) & {
-  close?: () => void;
-  done?: Promise<void>;
-};
-```
-
-#### SSEInit
-
-```typescript
-type SSEInit = Partial<{
-  status: number;
-  headers: Record<string, string>;
-  retry?: number;
-  keepOpen?: boolean;
-}>;
-```
-
-#### SSEController
-
-```typescript
-type SSEController = {
-  send: (data: unknown, opts?: SSEEventOptions) => void;
-  comment: (text: string) => void;
-  close: () => void;
-  done: Promise<void>;
-};
-```
-
-#### SSEEventOptions
-
-```typescript
-type SSEEventOptions = {
-  event?: string;
-  id?: string;
-  retry?: number;
-};
-```
-
-### OxianInternals
-
-```typescript
-type OxianInternals = {
-  route: string;
-  startedAt: number;
-  [key: string]: unknown; // Allow extensions
-};
-```
-
-## Handler Types
-
-### Handler
-
-```typescript
-export type Handler = (
-  data: Data,
-  context: Context,
-) => Promise<unknown | void> | unknown | void;
-```
-
-**Return Types:**
-
-- `object | array` - JSON response (200)
-- `string` - Text response (200)
-- `Uint8Array` - Binary response (200)
-- `Response` - Full control over response
-- `void | undefined` - Empty response (200)
-
-**Example:**
-
-```typescript
-export const GET: Handler = async ({ id }, { dependencies }) => {
-  const { userService } = dependencies;
-  return await userService.findById(id);
-};
-```
-
-### Middleware
-
-```typescript
-export type Middleware = (
-  data: Data,
-  context: Context,
-) => MiddlewareResult;
-
-export type MiddlewareResult =
-  | {
-    data?: Data;
-    context?: Partial<Context>;
-  }
-  | void
-  | Promise<
-    {
-      data?: Data;
-      context?: Partial<Context>;
-    } | void
-  >;
-```
-
-**Example:**
-
-```typescript
-export default function middleware(
-  data: Data,
-  context: Context,
-): MiddlewareResult {
-  return {
-    data: { ...data, timestamp: Date.now() },
-    context: { user: getCurrentUser() },
-  };
-}
-```
-
-### Interceptors
-
-```typescript
-export type Interceptors = {
-  beforeRun?: (data: Data, context: Context) => MiddlewareResult;
-  afterRun?: (
-    resultOrError: unknown,
-    context: Context,
-  ) => unknown | void | Promise<unknown | void>;
-};
-```
-
-**Example:**
-
-```typescript
-export async function beforeRun(data: Data, context: Context) {
-  // Setup logic
-  context.oxian.startedAt = performance.now();
-}
-
-export async function afterRun(resultOrError: unknown, context: Context) {
-  // Cleanup logic
-  const duration = performance.now() - context.oxian.startedAt;
-  console.log(`Request took ${duration}ms`);
-}
-```
-
-## Error Types
-
-### OxianHttpError
-
-```typescript
-export class OxianHttpError extends Error {
-  code?: string;
-  statusCode: number;
-  statusText?: string;
-  details?: unknown;
-
-  constructor(
-    message: string,
-    opts?: {
-      code?: string;
-      statusCode?: number;
-      statusText?: string;
-      details?: unknown;
-    },
-  );
-}
-```
-
-**Example:**
-
-```typescript
-import { OxianHttpError } from "jsr:@oxian/oxian-js/types";
-
-throw new OxianHttpError("User not found", {
-  statusCode: 404,
-  code: "USER_NOT_FOUND",
-  details: { userId: id },
-});
-```
-
-### Error Objects
-
-You can also throw plain objects for simpler error handling:
-
-```typescript
-type ErrorObject = {
-  message: string;
-  statusCode?: number;
-  statusText?: string;
-  code?: string;
-  details?: unknown;
-  headers?: Record<string, string>;
-};
-```
-
-**Example:**
-
-```typescript
-throw {
-  message: "Validation failed",
-  statusCode: 400,
-  code: "VALIDATION_ERROR",
-  details: { errors: ["Email is required"] },
-};
-```
-
-## Configuration Types
-
-### OxianConfig
-
-```typescript
-export type OxianConfig = {
-  root?: string;
-  basePath?: string;
-  server?: ServerConfig;
-  routing?: RoutingConfig;
-  runtime?: RuntimeConfig;
-  security?: SecurityConfig;
-  logging?: LoggingConfig;
-  loaders?: LoadersConfig;
-};
-```
-
-### ServerConfig
-
-```typescript
-type ServerConfig = {
-  port?: number;
-  hostname?: string;
-  tls?: {
-    certFile: string;
-    keyFile: string;
-  };
-};
-```
-
-### RoutingConfig
-
-```typescript
-type RoutingConfig = {
-  routesDir?: string;
-  trailingSlash?: "always" | "never" | "preserve";
-  discovery?: "eager" | "lazy";
-  caseSensitive?: boolean;
-  basePath?: string;
-};
-```
-
-### RuntimeConfig
-
-```typescript
-type RuntimeConfig = {
-  hotReload?: boolean;
-  watchGlobs?: string[];
-  dependencies?: DependenciesConfig;
-  hv?: HypervisorConfig;
-};
-```
-
-### DependenciesConfig
-
-```typescript
-type DependenciesConfig = {
-  initial?: Record<string, unknown>;
-  bootstrapModule?: string;
-  merge?: "shallow" | "deep" | "replace";
-  readonly?: string[];
-};
-```
-
-### HypervisorConfig
-
-```typescript
-type HypervisorConfig = {
-  enabled?: boolean;
-  workers?: number | "auto";
-  strategy?: "round_robin" | "least_busy" | "sticky";
-  stickyHeader?: string;
-  workerBasePort?: number;
-  proxy?: ProxyConfig;
-  health?: HealthConfig;
-  autoscale?: AutoscaleConfig;
-  denoConfig?: string;
-  timeouts?: TimeoutsConfig;
-  projects?: Record<string, ProjectConfig>;
-  select?: SelectionRule[];
-};
-```
-
-### ProxyConfig
-
-```typescript
-type ProxyConfig = {
-  timeoutMs?: number;
-  passRequestId?: boolean;
-};
-```
-
-### HealthConfig
-
-```typescript
-type HealthConfig = {
-  path?: string;
-  intervalMs?: number;
-  timeoutMs?: number;
-};
-```
-
-### AutoscaleConfig
-
-```typescript
-type AutoscaleConfig = {
-  enabled?: boolean;
-  min?: number;
-  max?: number;
-  targetInflightPerWorker?: number;
-  maxAvgLatencyMs?: number;
-  scaleUpCooldownMs?: number;
-  scaleDownCooldownMs?: number;
-  idleTtlMs?: number;
-};
-```
-
-### SecurityConfig
-
-```typescript
-type SecurityConfig = {
-  cors?: CORSConfig;
-  defaultHeaders?: Record<string, string>;
-  scrubHeaders?: string[];
-};
-```
-
-### CORSConfig
-
-```typescript
-type CORSConfig = {
-  allowedOrigins?: string[];
-  allowedHeaders?: string[];
-  allowedMethods?: string[];
-  allowCredentials?: boolean;
-  maxAge?: number;
-};
-```
-
-### LoggingConfig
-
-```typescript
-type LoggingConfig = {
-  level?: "debug" | "info" | "warn" | "error";
-  requestIdHeader?: string;
-  structured?: boolean;
-  format?: "json" | "pretty";
-  requests?: boolean;
-};
-```
-
-### LoadersConfig
-
-```typescript
-type LoadersConfig = {
-  local?: LocalLoaderConfig;
-  github?: GitHubLoaderConfig;
-  http?: HTTPLoaderConfig;
-};
-```
-
-### LocalLoaderConfig
-
-```typescript
-type LocalLoaderConfig = {
-  enabled?: boolean;
-};
-```
-
-### GitHubLoaderConfig
-
-```typescript
-type GitHubLoaderConfig = {
-  enabled?: boolean;
-  tokenEnv?: string;
-  cacheTtlSec?: number;
-};
-```
-
-### HTTPLoaderConfig
-
-```typescript
-type HTTPLoaderConfig = {
-  enabled?: boolean;
-  timeout?: number;
-  retries?: number;
-  headers?: Record<string, string>;
-};
-```
-
-## Loader Types
-
-### Loader Interface
-
-```typescript
-export interface Loader {
-  scheme: string;
-  canHandle: (url: URL) => boolean;
-  load: (url: URL) => Promise<LoadResult>;
-  listDir?: (url: URL) => Promise<string[]>;
-  stat?: (url: URL) => Promise<StatResult>;
-  cacheKey?: (url: URL) => string;
-}
-```
-
-### LoadResult
-
-```typescript
-type LoadResult = {
-  content: string;
-  mediaType: LoaderMediaType;
-};
-```
-
-### LoaderMediaType
-
-```typescript
-export type LoaderMediaType = "ts" | "js" | "tsx" | "jsx" | "json";
-```
-
-### StatResult
-
-```typescript
-type StatResult = {
-  isFile: boolean;
-  mtime?: number;
-};
-```
-
-## Utility Types
-
-### EffectiveConfig
-
-The resolved configuration after merging defaults, files, and environment
-variables.
-
-```typescript
-export type EffectiveConfig = Required<OxianConfig> & {
-  // All optional properties become required with defaults
-};
-```
-
-### Route
-
-```typescript
-type Route = {
-  pattern: string;
-  methods: string[];
-  filePath: string;
-  dynamic: boolean;
-  catchAll: boolean;
-};
-```
-
-## Helper Functions
-
-### createTypedHandler
-
-Create type-safe handlers with validation:
-
-```typescript
-export function createTypedHandler<TData, TResponse>(
-  handler: (data: TData, context: Context) => Promise<TResponse> | TResponse,
-  validator?: (data: unknown) => TData,
-): Handler {
-  return async (data: Data, context: Context): Promise<TResponse> => {
-    const validatedData = validator ? validator(data) : data as TData;
-    return await handler(validatedData, context);
-  };
-}
-```
-
-**Example:**
-
-```typescript
-interface CreateUserData {
-  name: string;
-  email: string;
-}
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-}
-
-const createUserHandler = createTypedHandler<CreateUserData, User>(
-  async (data, { dependencies }) => {
-    const { userService } = dependencies;
-    return await userService.create(data);
-  },
-  (data) => {
-    // Validation logic
-    if (!data.name || !data.email) {
-      throw new Error("Name and email required");
-    }
-    return data as CreateUserData;
-  },
-);
-
-export const POST = createUserHandler;
-```
-
-## Environment Variables
-
-### Standard Environment Variables
-
-Oxian recognizes these environment variables:
-
-```typescript
-// Server configuration
-process.env.PORT; // Server port
-process.env.HOST; // Server hostname
-
-// Runtime configuration
-process.env.NODE_ENV; // Environment (development/production/test)
-process.env.OXIAN_HOT_RELOAD; // Enable hot reload (true/false)
-process.env.OXIAN_LOG_LEVEL; // Log level (debug/info/warn/error)
-
-// Loaders
-process.env.GITHUB_TOKEN; // GitHub API token
-process.env.OXIAN_SOURCE; // Default source location
-
-// Security
-process.env.JWT_SECRET; // JWT signing secret
-process.env.CORS_ORIGINS; // Allowed CORS origins (comma-separated)
-
-// Database
-process.env.DATABASE_URL; // Database connection string
-process.env.REDIS_URL; // Redis connection string
-
-// Monitoring
-process.env.SENTRY_DSN; // Sentry error tracking
-process.env.DATADOG_API_KEY; // DataDog monitoring
-```
-
-## CLI Types
-
-### CLI Arguments
-
-```typescript
-type CLIArgs = {
-  config?: string; // Configuration file path
-  source?: string; // Source location
-  port?: number; // Server port
-  hostname?: string; // Server hostname
-  hypervisor?: boolean; // Enable hypervisor
-  "deno-config"?: string; // Deno configuration file
-  help?: boolean; // Show help
-  debug?: boolean; // Enable debug mode
-};
-```
-
-### CLI Commands
-
-```typescript
-type CLICommand = "start" | "dev" | "routes" | "help";
-```
-
-## Extension Points
-
-### Custom Middleware
-
-```typescript
-export interface MiddlewareFactory {
-  create(config: any): Middleware;
-}
-```
-
-### Custom Loaders
-
-```typescript
-export interface LoaderFactory {
-  create(config: any): Loader;
-}
-```
-
-### Custom Error Handlers
-
-```typescript
-export interface ErrorHandler {
-  handle(error: unknown, context: Context): unknown;
-}
-```
-
-## Examples
-
-### Complete Handler with Types
-
-```typescript
-import type { Context, Data, Handler } from "jsr:@oxian/oxian-js/types";
-
-interface UserQuery {
-  id: string;
-  include?: string[];
-}
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  posts?: Post[];
-}
-
-interface UserService {
-  findById(id: string, include?: string[]): Promise<User | null>;
-}
-
-interface Dependencies {
-  userService: UserService;
-}
-
-export const GET: Handler = async (data: Data, context: Context) => {
-  const { id, include } = data as UserQuery;
-  const { userService } = context.dependencies as Dependencies;
-
-  if (!id) {
-    throw {
-      message: "User ID is required",
-      statusCode: 400,
-      code: "MISSING_USER_ID",
-    };
-  }
-
-  const user = await userService.findById(id, include);
-  if (!user) {
-    throw {
-      message: "User not found",
-      statusCode: 404,
-      code: "USER_NOT_FOUND",
-      details: { userId: id },
-    };
-  }
-
-  return user;
-};
-```
-
-### Typed Middleware
-
-```typescript
-import type { Context, Data, Middleware } from "jsr:@oxian/oxian-js/types";
-
-interface AuthenticatedContext extends Context {
-  user: {
-    id: string;
-    email: string;
-    roles: string[];
-  };
-}
-
-const authMiddleware: Middleware = async (data: Data, context: Context) => {
-  const token = context.request.headers.get("authorization")?.replace(
-    "Bearer ",
-    "",
-  );
-
-  if (!token) {
-    throw {
-      message: "Authentication required",
-      statusCode: 401,
-      code: "AUTHENTICATION_REQUIRED",
-    };
-  }
-
-  const user = await verifyToken(token);
-  if (!user) {
-    throw {
-      message: "Invalid token",
-      statusCode: 401,
-      code: "INVALID_TOKEN",
-    };
-  }
-
-  return {
-    context: { user },
-  };
-};
-
-export default authMiddleware;
-```
-
-### Typed Dependencies
-
-```typescript
-// types/dependencies.ts
-export interface AppDependencies {
-  database: Database;
-  cache: CacheService;
-  logger: Logger;
-  userService: UserService;
-  emailService: EmailService;
-}
-
-// routes/dependencies.ts
-import type { AppDependencies } from "../types/dependencies.ts";
-
-export default async function (): Promise<AppDependencies> {
-  const database = await createDatabase();
-  const cache = createCacheService();
-  const logger = createLogger();
-
-  return {
-    database,
-    cache,
-    logger,
-    userService: createUserService(database, cache),
-    emailService: createEmailService(),
-  };
-}
-
-// routes/users.ts
-import type { Handler } from "jsr:@oxian/oxian-js/types";
-import type { AppDependencies } from "../types/dependencies.ts";
-
-export const GET: Handler = async (data, context) => {
-  const { userService } = context.dependencies as AppDependencies;
-  return await userService.findAll();
-};
-```
-
----
-
-This API reference provides complete type information for building robust,
-type-safe applications with Oxian. Use TypeScript's autocomplete and type
-checking to catch errors early and improve development experience.
-
-**Next Steps:**
-
-- [Getting Started](./getting-started.md) - Build your first API
-- [Best Practices](./best-practices.md) - Production patterns
-- [Examples Repository](https://github.com/oxian-org/examples) - Real-world
-  examples
+`runCli(args)` returns an exit code and never calls `Deno.exit()`. The
+executable entrypoint assigns `Deno.exitCode` and owns `SIGINT` and `SIGTERM`.
+See the [CLI API](api/cli.md) for parsing, dependency injection, command
+behavior, and exit-code semantics.

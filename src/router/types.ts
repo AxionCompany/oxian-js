@@ -1,81 +1,111 @@
 /**
- * @fileoverview Type definitions for the Oxian router system.
- *
- * This module contains types for route matching, route records, and router
- * interfaces used by both eager and lazy routing strategies.
- *
- * @module router/types
+ * The deliberately small, Fetch-native Oxian router contract.
+ * Route modules and middleware modules are loaded once when the router is
+ * created; request matching is synchronous and performs no I/O.
  */
 
-/**
- * Represents a single route in the routing table.
- *
- * A route record contains the URL pattern, parsed segments for matching,
- * and the file URL of the route handler module.
- */
-export type RouteParamValue = string | string[];
+export const HTTP_METHODS: readonly [
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+  "OPTIONS",
+] = Object.freeze(
+  [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "HEAD",
+    "OPTIONS",
+  ] as const,
+);
+
+export type HttpMethod = (typeof HTTP_METHODS)[number];
+
+export type RouteParamValue = string | readonly string[];
+
+export type RouteParams = Readonly<
+  Record<string, RouteParamValue>
+>;
+
+export type StaticRouteSegment = Readonly<{
+  type: "static";
+  value: string;
+}>;
+
+export type ParamRouteSegment = Readonly<{
+  type: "param";
+  name: string;
+}>;
+
+export type CatchallRouteSegment = Readonly<{
+  type: "catchall";
+  name: string;
+}>;
 
 export type RouteSegment =
-  | { type: "static"; value: string }
-  | { type: "param"; name: string }
-  | { type: "catchall"; name: string };
+  | StaticRouteSegment
+  | ParamRouteSegment
+  | CatchallRouteSegment;
 
-export type RouteRecord = {
-  /** URL pattern with parameters (e.g., "/users/:id") */
+export type RouteContext<State = unknown> = Readonly<{
+  params: RouteParams;
+  route: CompiledRoute<State>;
+  signal: AbortSignal;
+  state: State;
+}>;
+
+export type RouteHandler<State = unknown> = (
+  request: Request,
+  context: RouteContext<State>,
+) => Response | Promise<Response>;
+
+export type RouteMiddleware<State = unknown> = (
+  request: Request,
+  context: RouteContext<State>,
+  next: () => Promise<Response>,
+) => Response | Promise<Response>;
+
+export type RouteMethods<State = unknown> = Readonly<
+  Partial<Record<HttpMethod, RouteHandler<State>>>
+>;
+
+export type CompiledRoute<State = unknown> = Readonly<{
+  /** Canonical URL pattern, such as `/users/:id` or `/assets/*path`. */
   pattern: string;
-  /** Parsed segments for efficient matching */
-  segments: RouteSegment[];
-  /** File URL of the route handler module */
-  fileUrl: URL;
-};
+  /** Absolute module URL represented as an immutable string. */
+  fileUrl: string;
+  segments: readonly RouteSegment[];
+  methods: RouteMethods<State>;
+}>;
 
-/**
- * Result of matching a URL path against routes.
- *
- * Returns the matched route and extracted parameters, or null if no match.
- */
-export type RouteMatch =
-  | { route: RouteRecord; params: Record<string, RouteParamValue> }
-  | null;
+export type CompiledMiddleware<State = unknown> = Readonly<{
+  /** Absolute module URL represented as an immutable string. */
+  fileUrl: string;
+  middleware: RouteMiddleware<State>;
+}>;
 
-/**
- * Router interface for matching URLs to routes.
- *
- * Both eager and lazy routers implement this interface.
- * `match` is always async to support lazy on-demand filesystem discovery.
- */
-export type Router = {
-  /** All registered routes (empty for lazy routers until matched) */
-  routes: RouteRecord[];
-  /** Match a URL path to a route */
-  match: (path: string) => Promise<RouteMatch>;
-};
+export type RouteMatch<State = unknown> = Readonly<{
+  route: CompiledRoute<State>;
+  params: RouteParams;
+  /** Middleware modules ordered from the routes root to the route's directory. */
+  middlewares: readonly CompiledMiddleware<State>[];
+}>;
 
-/**
- * Function signature for listing directory contents.
- *
- * Used by router to discover route files in the filesystem.
- */
-export type ListDirFn = (dir: URL) => Promise<string[]>;
+export type FileRouter<State = unknown> = Readonly<{
+  /** Absolute, trailing-slash-terminated URL of the routes root. */
+  root: string;
+  /** Immutable startup snapshot of all compiled routes. */
+  routes: readonly CompiledRoute<State>[];
+  /** Pure, synchronous route lookup. */
+  match: (pathname: string) => RouteMatch<State> | null;
+}>;
 
-/**
- * Function signature for checking if a URL is a file.
- *
- * Used by router to distinguish files from directories.
- */
-export type StatFn = (url: URL) => Promise<{ isFile: boolean }>;
-
-/**
- * Resolved router with metadata about the routing system.
- *
- * Contains the router instance and information about
- * whether routes are loaded from remote sources.
- */
-export type ResolvedRouter = {
-  /** Router instance */
-  router: Router;
-  /** Whether routes are loaded from remote sources */
-  isRemote: boolean;
-  /** Root URL of the routes directory */
-  routesRootUrl?: URL;
-};
+export type CreateFileRouterOptions = Readonly<{
+  /** A filesystem path or a `file:` URL. */
+  root: string | URL;
+}>;
