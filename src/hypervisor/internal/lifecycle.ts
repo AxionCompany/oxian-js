@@ -77,6 +77,7 @@ export function createConnectionLifecycleController(
         { identity: record.hello?.identity },
       ));
       cancelConnectionTimer(options.scheduler, record, "handshakeTimer");
+      cancelConnectionTimer(options.scheduler, record, "attachmentTimer");
       cancelConnectionTimer(options.scheduler, record, "readyTimer");
       cancelConnectionTimer(options.scheduler, record, "drainTimer");
       cancelConnectionTimer(options.scheduler, record, "ageTimer");
@@ -166,11 +167,11 @@ export function createConnectionLifecycleController(
     record.disconnectReason ??= disconnectReason;
     const transport = record.transport;
     if (
-      record.socket.readyState === WebSocket.CONNECTING ||
-      record.socket.readyState === WebSocket.OPEN
+      record.connection?.state === "connecting" ||
+      record.connection?.state === "open"
     ) {
       try {
-        record.socket.close(code, wireReason);
+        record.connection.close(code, wireReason);
       } catch {
         // The cleanup path below remains authoritative.
       }
@@ -189,7 +190,7 @@ export function createConnectionLifecycleController(
   ) => {
     if (
       record.transport !== undefined &&
-      record.socket.readyState === WebSocket.OPEN
+      record.connection?.state === "open"
     ) {
       const frame: ControlFrame = {
         protocol: WORKER_PROTOCOL,

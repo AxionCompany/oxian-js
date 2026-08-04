@@ -18,11 +18,16 @@ jobs:
         with:
           ref: ${{ github.ref }}
       - uses: denoland/setup-deno@v2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
       - name: Validate release tag
         run: >-
           deno run --allow-read=deno.json scripts/validate_publish_release.ts
           "${{ github.ref_name }}" "${{ github.ref }}"
       - name: Verify package
         run: deno task verify
+      - name: Verify portable Node surface
+        run: npm run check:node
       - name: Publish package
         run: deno publish

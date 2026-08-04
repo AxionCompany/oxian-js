@@ -25,6 +25,7 @@ export function cancelConnectionTimer(
   scheduler: HypervisorScheduler,
   record: ConnectionRecord,
   field:
+    | "attachmentTimer"
     | "handshakeTimer"
     | "readyTimer"
     | "drainTimer"
@@ -119,7 +120,7 @@ export function ensureOpen(record: ConnectionRecord): void {
   if (
     record.phase === "closed" ||
     record.abort.signal.aborted ||
-    record.socket.readyState !== WebSocket.OPEN
+    record.connection?.state !== "open"
   ) {
     throw createHypervisorError(
       "connection_lost",

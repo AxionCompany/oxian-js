@@ -5,7 +5,11 @@ import {
   WORKER_PROTOCOL,
 } from "../../protocol/index.ts";
 import type { SessionRegistry } from "../../supervisor/index.ts";
-import { createWebSocketTransport } from "../../transport/index.ts";
+import {
+  createWebSocketTransport,
+  expectWorkerWireConnection,
+  type WorkerWireConnection,
+} from "../../transport/index.ts";
 import type { HypervisorConfig } from "../config.ts";
 import type {
   Hypervisor,
@@ -18,6 +22,7 @@ import type { CloseRecord, ConnectionRecord } from "./model.ts";
 import {
   assertCurrentFrame,
   authenticationCode,
+  cancelConnectionTimer,
   copyPeerClose,
   createHypervisorError,
   ensureOpen,
@@ -27,7 +32,7 @@ import {
   websocketRequestError,
 } from "./primitives.ts";
 
-export function createConnectionEndpoint(
+export function createConnectionAdmission(
   options: Readonly<{
     config: HypervisorConfig;
     clock: () => number;
@@ -36,7 +41,9 @@ export function createConnectionEndpoint(
     directory: ConnectionDirectory;
     admission: AdmissionController;
     isAcceptingConnections(): boolean;
-    fallback?: Hypervisor["fetch"];
+    fallback?: (
+      request: Request,
+    ) => Response | Promise<Response>;
     armLeaseSweep(): void;
     welcome(record: ConnectionRecord, frame: HelloFrame): Promise<void>;
     ready(record: ConnectionRecord, frame: ReadyFrame): Promise<void>;
@@ -59,13 +66,16 @@ export function createConnectionEndpoint(
     ): Promise<void>;
     cleanupConnection(record: ConnectionRecord): Promise<void>;
   }>,
-): Hypervisor["fetch"] {
-  const runConnection = async (record: ConnectionRecord): Promise<void> => {
+): Hypervisor["prepare"] {
+  const runConnection = async (
+    record: ConnectionRecord,
+    negotiatedProtocol: string | undefined,
+  ): Promise<void> => {
     try {
       record.transport = await createWebSocketTransport({
-        socket: record.socket,
+        socket: record.connection!,
         role: "hypervisor",
-        negotiatedProtocol: WORKER_PROTOCOL,
+        negotiatedProtocol,
         signal: record.abort.signal,
         maxInboundMessages: options.config.maxInboundMessages,
         maxInboundBytes: options.config.maxInboundBytes,
@@ -193,8 +203,11 @@ export function createConnectionEndpoint(
   return (request) => {
     const url = new URL(request.url);
     if (url.pathname !== options.config.workerPath) {
-      return options.fallback?.(request) ??
-        new Response("Not Found", { status: 404 });
+      return Object.freeze({
+        kind: "response" as const,
+        response: options.fallback?.(request) ??
+          new Response("Not Found", { status: 404 }),
+      });
     }
     const admissionSnapshot = options.admission.snapshot();
     const response = websocketRequestError(
@@ -205,19 +218,15 @@ export function createConnectionEndpoint(
       admissionSnapshot.unauthenticatedConnections,
       admissionSnapshot.handshakeOperations,
     );
-    if (response !== undefined) return response;
-
-    let upgraded: ReturnType<typeof Deno.upgradeWebSocket>;
-    try {
-      upgraded = Deno.upgradeWebSocket(request, {
-        protocol: WORKER_PROTOCOL,
+    if (response !== undefined) {
+      return Object.freeze({
+        kind: "response" as const,
+        response,
       });
-    } catch {
-      return new Response("Invalid WebSocket upgrade", { status: 400 });
     }
+
     const record: ConnectionRecord = {
-      socket: upgraded.socket,
-      phase: "unauthenticated",
+      phase: "pending",
       connectedAtMs: options.clock(),
       acceptingWork: false,
       openedStreams: 0,
@@ -231,7 +240,65 @@ export function createConnectionEndpoint(
     options.directory.add(record);
     options.admission.admit(record);
     options.armLeaseSweep();
-    void runConnection(record);
-    return upgraded.response;
+    let state: "pending" | "attached" | "cancelled" = "pending";
+
+    const cancel = (_reason = "upgrade_failed"): void => {
+      if (state !== "pending") return;
+      state = "cancelled";
+      record.disconnectReason = "connection_failed";
+      cancelConnectionTimer(options.scheduler, record, "attachmentTimer");
+      void options.cleanupConnection(record).catch(() => undefined);
+    };
+
+    const attach = (
+      value: WorkerWireConnection,
+      negotiatedProtocol?: string,
+    ): void => {
+      const connection = expectWorkerWireConnection(value);
+      if (state !== "pending") {
+        try {
+          connection.close(4400, "admission_expired");
+        } catch {
+          // The adapter still owns its rejected native connection.
+        }
+        throw new TypeError("Hypervisor admission is no longer attachable");
+      }
+      const selectedProtocol = connection.protocol || negotiatedProtocol;
+      if (
+        selectedProtocol !== WORKER_PROTOCOL ||
+        (connection.protocol !== "" && negotiatedProtocol !== undefined &&
+          connection.protocol !== negotiatedProtocol)
+      ) {
+        try {
+          connection.close(4400, "unsupported_protocol");
+        } catch {
+          // Releasing admission remains authoritative.
+        }
+        cancel("unsupported_protocol");
+        throw new TypeError(
+          `worker connection must negotiate ${WORKER_PROTOCOL}`,
+        );
+      }
+      state = "attached";
+      cancelConnectionTimer(options.scheduler, record, "attachmentTimer");
+      record.connection = connection;
+      record.phase = "unauthenticated";
+      void runConnection(record, selectedProtocol);
+    };
+
+    record.attachmentTimer = options.scheduler.schedule(() => {
+      if (state !== "pending") return;
+      state = "cancelled";
+      record.attachmentTimer = undefined;
+      record.disconnectReason = "handshake_timeout";
+      void options.cleanupConnection(record).catch(() => undefined);
+    }, options.config.handshakeTimeoutMs);
+
+    return Object.freeze({
+      kind: "upgrade" as const,
+      protocol: WORKER_PROTOCOL,
+      attach,
+      cancel,
+    });
   };
 }

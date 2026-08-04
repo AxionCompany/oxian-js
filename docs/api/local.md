@@ -18,7 +18,7 @@ import {
   createLocalRuntime,
   createManifestWorkerRuntime,
   loadWorkerManifest,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.4/local";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.5/local";
 ```
 
 Constructing either runtime is side-effect free. `start()` owns imports,

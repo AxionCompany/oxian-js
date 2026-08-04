@@ -5,7 +5,7 @@ import { createHttpWorkload } from "../http/workload.ts";
 import { HTTP_WORKLOAD, type HttpDispatch } from "../http/types.ts";
 import { createWorkerHost } from "../host/host.ts";
 import type { InProcessWorker, WorkerHost } from "../host/types.ts";
-import { createHypervisor } from "../hypervisor/hypervisor.ts";
+import { createDenoHypervisor } from "../adapters/deno/server.ts";
 import type { Hypervisor, HypervisorListener } from "../hypervisor/types.ts";
 import type { WorkerCredential, WorkerIdentity } from "../protocol/types.ts";
 import {
@@ -251,7 +251,7 @@ export function createLocalRuntime(
           options.config.gateway.edge,
           mode,
         );
-        const hypervisor = createHypervisor({
+        const hypervisor = createDenoHypervisor({
           authority,
           repository,
           persistAcceptance: () => Promise.resolve(),

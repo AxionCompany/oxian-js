@@ -36,10 +36,10 @@ production Control boundary.
 
 ## 1. Publish the gateway over HTTPS and WSS
 
-The Hypervisor is a Fetch handler. In production, normally place the Chapter 5
-gateway behind an HTTPS reverse proxy that supports WebSocket upgrades. Keep the
-internal listener on loopback, and publish both normal HTTPS requests and
-`/_oxian/workers/connect` through the same TLS origin.
+The Chapter 5 Deno adapter exposes a Fetch handler. In production, normally
+place that gateway behind an HTTPS reverse proxy that supports WebSocket
+upgrades. Keep the internal listener on loopback, and publish both normal HTTPS
+requests and `/_oxian/workers/connect` through the same TLS origin.
 
 You can also terminate TLS directly in Deno. Replace `hypervisor.listen(...)` in
 `gateway.ts` with:
@@ -75,7 +75,7 @@ commit from Chapter 5 are not production components. Replace them with durable,
 application-owned functions:
 
 ```ts
-const hypervisor = createHypervisor({
+const hypervisor = createDenoHypervisor({
   authority: {
     exchange: (input) => control.exchangeWorkerCredential(input),
   },
@@ -199,7 +199,7 @@ a committed environment file.
 Run:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin \
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.5/bin \
   worker --manifest ./oxian.worker.ts
 ```
 
@@ -262,7 +262,7 @@ for this case:
 ```ts
 import type {
   WorkerWebSocketFactory,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.4/transport";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.5/transport";
 
 const createWebSocket: WorkerWebSocketFactory = async (
   { url, protocol, signal },

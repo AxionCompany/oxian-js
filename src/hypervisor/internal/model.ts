@@ -10,23 +10,24 @@ import type {
   WorkerDefinition,
 } from "../../supervisor/index.ts";
 import type { WebSocketTransport } from "../../transport/index.ts";
+import type { WorkerWireConnection } from "../../transport/types.ts";
 import type {
   HypervisorDisconnectPhase,
   HypervisorDisconnectReason,
-  HypervisorListener,
   HypervisorPeerClose,
   HypervisorWorkHandle,
   HypervisorWorkInputBody,
 } from "../types.ts";
 
 export type ConnectionPhase =
+  | "pending"
   | "unauthenticated"
   | "authenticated"
   | "ready"
   | "closed";
 
 export type ConnectionRecord = {
-  socket: WebSocket;
+  connection?: WorkerWireConnection;
   transport?: WebSocketTransport;
   phase: ConnectionPhase;
   connectedAtMs: number;
@@ -45,6 +46,7 @@ export type ConnectionRecord = {
   handshakeExternalOperations: number;
   readyExternalOperations: number;
   handshakeTimer?: unknown;
+  attachmentTimer?: unknown;
   readyTimer?: unknown;
   drainTimer?: unknown;
   drainMode?: "rotate" | "shutdown";
@@ -91,11 +93,6 @@ export type PendingWork = {
   deadlineTimer?: unknown;
   cancellationTimer?: unknown;
   handle?: HypervisorWorkHandle;
-};
-
-export type ListenerRecord = {
-  listener: HypervisorListener;
-  close(): Promise<void>;
 };
 
 export type PendingOpenInput = Readonly<{

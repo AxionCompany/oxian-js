@@ -39,13 +39,13 @@ Create `gateway.ts` in the Logwash project root:
 import {
   createHttpGateway,
   HTTP_WORKLOAD,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.4/http";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.4/hypervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.5/http";
+import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.5/adapters/deno";
 import {
   createInMemoryRegistrationAuthority,
   createInMemoryWorkerRepository,
   createWorkerDefinition,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.4/supervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.5/supervisor";
 
 const WORKER_ID = "logwash-http";
 const CAPACITY = 2;
@@ -63,7 +63,7 @@ const authority = createInMemoryRegistrationAuthority();
 const registration = await authority.issueRegistration(identity);
 
 const hypervisorRef: {
-  current?: ReturnType<typeof createHypervisor>;
+  current?: ReturnType<typeof createDenoHypervisor>;
 } = {};
 const httpGateway = createHttpGateway({
   dispatch(input) {
@@ -75,7 +75,7 @@ const httpGateway = createHttpGateway({
   },
 });
 
-const hypervisor = createHypervisor({
+const hypervisor = createDenoHypervisor({
   authority,
   repository,
   // This resolves the no-replay gate but is not durable. Chapter 6 replaces
@@ -158,14 +158,14 @@ Create `worker.ts` beside it:
 ```ts
 import {
   createConfiguredApplication,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.4/app";
-import { loadConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.4/config";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.5/app";
+import { loadConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.5/config";
 import {
   createHttpWorkload,
   HTTP_WORKLOAD,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.4/http";
-import type { WorkerIdentity } from "jsr:@oxian/oxian-js@0.20.0-rc.4/protocol";
-import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.4/worker";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.5/http";
+import type { WorkerIdentity } from "jsr:@oxian/oxian-js@0.20.0-rc.5/protocol";
+import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.5/worker";
 
 type LocalProvisioning = Readonly<{
   gatewayUrl: string;

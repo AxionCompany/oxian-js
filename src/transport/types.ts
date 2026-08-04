@@ -35,8 +35,54 @@ export type WebSocketTransportMessage =
     wireBytes: number;
   }>;
 
+/** Runtime-neutral lifecycle state for one worker wire connection. */
+export type WorkerWireConnectionState =
+  | "connecting"
+  | "open"
+  | "closing"
+  | "closed";
+
+export type WorkerWireMessageData =
+  | string
+  | ArrayBuffer
+  | ArrayBufferView
+  | Blob;
+
+export type WorkerWireClose = Readonly<{
+  code: number;
+  reason: string;
+  wasClean: boolean;
+}>;
+
+export type WorkerWireObserver = Readonly<{
+  open?(): void;
+  message?(data: WorkerWireMessageData): void;
+  close?(event: WorkerWireClose): void;
+  error?(error?: unknown): void;
+}>;
+
+/**
+ * Callback-based connection contract shared by runtime server adapters.
+ *
+ * It deliberately does not extend EventTarget: some server runtimes deliver
+ * WebSocket events through server/object-level callbacks instead of per-socket
+ * DOM events.
+ */
+export type WorkerWireConnection = Readonly<{
+  readonly protocol: string;
+  readonly state: WorkerWireConnectionState;
+  readonly bufferedAmount: number;
+  send(data: string | Uint8Array): void;
+  close(code?: number, reason?: string): void;
+  subscribe(observer: WorkerWireObserver): () => void;
+}>;
+
 export type WebSocketTransportOptions = Readonly<{
-  socket: WebSocket;
+  /**
+   * Native client WebSockets remain accepted for compatibility. Server
+   * adapters should pass an explicit WorkerWireConnection.
+   */
+  socket: WebSocket | WorkerWireConnection;
   role: ProtocolRole;
   /**
    * Server adapters may supply the exact protocol they selected when their

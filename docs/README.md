@@ -23,6 +23,8 @@ maintainers can continue without changing the application built there.
 - [Architecture](architecture.md): component responsibilities, boundaries, and
   request path.
 - [Operations](operations.md): launch, drain, observe, and release safely.
+- [Runtime boundaries and adapters](runtime-adapters.md): portable exports,
+  server ownership, and the current runtime support matrix.
 
 ## Reference
 

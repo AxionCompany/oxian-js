@@ -1,12 +1,14 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import {
-  createHypervisor,
-  type Hypervisor,
-  type HypervisorDisconnectEvent,
-  type HypervisorHeartbeatCommitContext,
-  type HypervisorListener,
-  type HypervisorReadyCommitContext,
-  type HypervisorSessionLifecycle,
+  createDenoHypervisor,
+  type DenoHypervisor,
+} from "../../src/adapters/deno/index.ts";
+import type {
+  HypervisorDisconnectEvent,
+  HypervisorHeartbeatCommitContext,
+  HypervisorListener,
+  HypervisorReadyCommitContext,
+  HypervisorSessionLifecycle,
 } from "../../src/hypervisor/index.ts";
 import {
   createHeartbeatFrame,
@@ -51,7 +53,7 @@ type LifecycleWorker = Readonly<{
 }>;
 
 type LifecycleHarness = Readonly<{
-  hypervisor: Hypervisor;
+  hypervisor: DenoHypervisor;
   listener: HypervisorListener;
   definition: WorkerDefinition;
   identity: WorkerIdentity;
@@ -147,7 +149,7 @@ async function createLifecycleHarness(
   const registration = await registrationAuthority.issueRegistration(identity);
   const authority = options.wrapAuthority?.(registrationAuthority) ??
     registrationAuthority;
-  const hypervisor = createHypervisor({
+  const hypervisor = createDenoHypervisor({
     authority,
     repository,
     persistAcceptance: () => Promise.resolve(),

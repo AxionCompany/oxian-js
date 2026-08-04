@@ -1,0 +1,72 @@
+import assert from "node:assert/strict";
+import * as oxian from "../src/mod.ts";
+
+for (
+  const name of [
+    "createApplication",
+    "createHttpWorkload",
+    "createHypervisor",
+    "createWorkerHost",
+    "createWorkerClient",
+  ]
+) {
+  assert.equal(typeof oxian[name], "function", `${name} must be portable`);
+}
+for (
+  const name of [
+    "createDenoHypervisor",
+    "createFileRouter",
+    "createLocalProcessProvider",
+    "createLocalRuntime",
+  ]
+) {
+  assert.equal(name in oxian, false, `${name} must not leak from the root`);
+}
+
+const host = oxian.createWorkerHost({
+  persistAcceptance: () => Promise.resolve(),
+});
+host.attachInProcessWorker({
+  workerId: "node-portability-worker",
+  workloads: {
+    echo: ({ input }) => ({ body: input }),
+  },
+});
+const operation = await host.dispatch({
+  workload: "echo",
+  body: new Uint8Array([1, 2, 3]),
+});
+assert.deepEqual(
+  new Uint8Array(await new Response(operation.output).arrayBuffer()),
+  new Uint8Array([1, 2, 3]),
+);
+await operation.completed;
+await host.shutdown("node_portability_complete");
+
+let receivedBody = "";
+const workload = oxian.createHttpWorkload({
+  async fetch(request) {
+    receivedBody = await request.text();
+    return new Response("ok");
+  },
+});
+const request = new Request("https://example.test/echo", {
+  method: "POST",
+  body: "request-body",
+});
+await workload({
+  streamId: "00000000-0000-4000-8000-000000000001",
+  workload: oxian.HTTP_WORKLOAD,
+  metadata: oxian.encodeHttpRequestMetadata(request, "node-portability"),
+  input: new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("request-body"));
+      controller.close();
+    },
+  }),
+  signal: new AbortController().signal,
+  sendMetadata: () => Promise.resolve(),
+});
+assert.equal(receivedBody, "request-body");
+
+console.log("Node portability check passed");

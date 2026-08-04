@@ -1,13 +1,13 @@
 # API reference
 
-This reference covers the public API of `@oxian/oxian-js` version `0.20.0-rc.4`.
+This reference covers the public API of `@oxian/oxian-js` version `0.20.0-rc.5`.
 Start with the [getting-started guide](getting-started.md) when learning Oxian;
 use these pages when composing a runtime, implementing a platform boundary, or
 checking an exact contract.
 
 ## Imports
 
-The package root is a side-effect-free aggregate of every library module:
+The package root is the side-effect-free, runtime-neutral execution core:
 
 ```ts
 import {
@@ -15,22 +15,23 @@ import {
   createHypervisor,
   createWorkerClient,
   createWorkerHost,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.4";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.5";
 ```
 
 Explicit subpaths make ownership clearer and keep the executable boundary out of
 application code:
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.20.0-rc.4/app";
-import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.4/host";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.4/hypervisor";
-import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.4/worker";
+import { createApplication } from "jsr:@oxian/oxian-js@0.20.0-rc.5/app";
+import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.5/host";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.5/hypervisor";
+import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.5/adapters/deno";
+import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.5/worker";
 ```
 
-The aggregate root excludes `/cli` and `/bin`. Import `/cli` to embed the
-command parser and runner. Execute `/bin` when Oxian should own process exit and
-signal handling.
+The root excludes filesystem discovery, static files, local processes, local
+runtime composition, server adapters, `/cli`, and `/bin`. Import those explicit
+subpaths only when the target runtime provides the required capability.
 
 ## Application modules
 
@@ -43,23 +44,24 @@ signal handling.
 
 ## Execution and transport modules
 
-| Subpath                            | Use it to                                                                                                             |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| [`/http`](api/http.md)             | Encode HTTP metadata and bodies, create the gateway, or run an HTTP workload inside a worker.                         |
-| [`/host`](api/host.md)             | Embed process-local workers with direct streams and the same capacity, acceptance, cancellation, and drain semantics. |
-| [`/hypervisor`](api/hypervisor.md) | Accept authenticated worker WebSockets, dispatch work, listen for HTTP, drain, and inspect process-local state.       |
-| [`/worker`](api/worker.md)         | Maintain an outbound worker connection, rotate credentials, heartbeat, reconnect, and execute workloads.              |
-| [`/transport`](api/transport.md)   | Open the worker WebSocket transport or provide a custom socket factory.                                               |
-| [`/protocol`](api/protocol.md)     | Build, validate, and interpret `oxian.worker.v1` control and binary frames.                                           |
+| Subpath                            | Use it to                                                                                                              |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [`/http`](api/http.md)             | Encode HTTP metadata and bodies, create the gateway, or run an HTTP workload inside a worker.                          |
+| [`/host`](api/host.md)             | Embed process-local workers with direct streams and the same capacity, acceptance, cancellation, and drain semantics.  |
+| [`/hypervisor`](api/hypervisor.md) | Prepare authenticated worker admission, dispatch work, drain, and inspect process-local state without owning a server. |
+| [`/worker`](api/worker.md)         | Maintain an outbound worker connection, rotate credentials, heartbeat, reconnect, and execute workloads.               |
+| [`/transport`](api/transport.md)   | Open the worker WebSocket transport or provide a custom socket factory.                                                |
+| [`/protocol`](api/protocol.md)     | Build, validate, and interpret `oxian.worker.v1` control and binary frames.                                            |
 
 ## Platform and local-runtime modules
 
-| Subpath                            | Use it to                                                                                                                                                 |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`/supervisor`](api/supervisor.md) | Model worker identity, issue registration attempts, fence sessions, store records, and dispatch against ready sessions.                                   |
-| [`/providers`](api/providers.md)   | Provision, inspect, and terminate compute without coupling compute presence to transport readiness.                                                       |
-| [`/local`](api/local.md)           | Compose the development runtime, run manifest-defined workers, and store local credentials.                                                               |
-| [`/cli`](api/cli.md)               | Parse or execute the six Oxian commands without terminating the host process. The same page documents the [`/bin`](api/cli.md#executable-bin) entrypoint. |
+| Subpath                                  | Use it to                                                                                                                                                 |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`/adapters/deno`](api/adapters/deno.md) | Add Deno WebSocket upgrade and optional `Deno.serve` listener ownership around the portable Hypervisor core.                                              |
+| [`/supervisor`](api/supervisor.md)       | Model worker identity, issue registration attempts, fence sessions, store records, and dispatch against ready sessions.                                   |
+| [`/providers`](api/providers.md)         | Provision, inspect, and terminate compute without coupling compute presence to transport readiness.                                                       |
+| [`/local`](api/local.md)                 | Compose the development runtime, run manifest-defined workers, and store local credentials.                                                               |
+| [`/cli`](api/cli.md)                     | Parse or execute the six Oxian commands without terminating the host process. The same page documents the [`/bin`](api/cli.md#executable-bin) entrypoint. |
 
 ## Shared conventions
 
@@ -104,6 +106,9 @@ repositories may persist worker control records, but Oxian does not provide a
 distributed socket-owner directory or a durable cross-replica work relay.
 Applications that require durable acceptance, result persistence, or
 cross-replica forwarding own those policies outside the package.
+
+See [runtime boundaries and adapters](runtime-adapters.md) for the supported
+runtime matrix and the `WorkerWireConnection` seam.
 
 The remote worker sends `work.accepted` before workload execution; an in-process
 host performs the equivalent claim directly. Once the owning host persists

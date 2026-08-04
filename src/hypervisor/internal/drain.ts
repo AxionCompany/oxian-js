@@ -40,7 +40,7 @@ export function createDrainController(
       record.drainMode === "shutdown" &&
       record.transport !== undefined &&
       record.connectionId !== undefined &&
-      record.socket.readyState === WebSocket.OPEN
+      record.connection?.state === "open"
     ) {
       record.disconnectReason ??= "shutdown";
       try {

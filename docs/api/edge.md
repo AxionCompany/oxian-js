@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.4/edge`
+# `jsr:@oxian/oxian-js@0.20.0-rc.5/edge`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   createCorsAdapter,
   createDevProxyAdapter,
   createStaticAdapter,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.4/edge";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.5/edge";
 ```
 
 ## Export summary
@@ -59,7 +59,7 @@ import {
   createCorsAdapter,
   createStaticAdapter,
   type FetchHandler,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.4/edge";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.5/edge";
 
 const application: FetchHandler = (request) =>
   new Response(`application: ${new URL(request.url).pathname}`);
@@ -165,7 +165,7 @@ CORS grants. Preflight responses merge `Origin`,
 `Vary` as applicable.
 
 ```ts
-import { createCorsAdapter } from "jsr:@oxian/oxian-js@0.20.0-rc.4/edge";
+import { createCorsAdapter } from "jsr:@oxian/oxian-js@0.20.0-rc.5/edge";
 
 const withCors = createCorsAdapter({
   origins: async (origin, request) =>
@@ -256,7 +256,7 @@ configured root, missing files, and unsafe filesystem targets are treated as
 inside-prefix misses.
 
 ```ts
-import { createStaticAdapter } from "jsr:@oxian/oxian-js@0.20.0-rc.4/edge";
+import { createStaticAdapter } from "jsr:@oxian/oxian-js@0.20.0-rc.5/edge";
 
 const withAssets = createStaticAdapter({
   root: new URL("../public/", import.meta.url),
@@ -366,7 +366,7 @@ The adapter:
 - removes response hop-by-hop and connection-specific headers.
 
 ```ts
-import { createDevProxyAdapter } from "jsr:@oxian/oxian-js@0.20.0-rc.4/edge";
+import { createDevProxyAdapter } from "jsr:@oxian/oxian-js@0.20.0-rc.5/edge";
 
 const withVite = createDevProxyAdapter({
   upstream: "http://127.0.0.1:5173",

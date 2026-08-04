@@ -1,10 +1,10 @@
 import { assertEquals } from "@std/assert";
+import { createDenoHypervisor } from "../../src/adapters/deno/index.ts";
 import {
   createHttpGateway,
   createHttpWorkload,
   HTTP_WORKLOAD,
 } from "../../src/http/index.ts";
-import { createHypervisor } from "../../src/hypervisor/index.ts";
 import {
   createInMemoryRegistrationAuthority,
   createInMemoryWorkerRepository,
@@ -105,7 +105,7 @@ Deno.test({
       .attempt.identity;
     const authority = createInMemoryRegistrationAuthority();
     const registration = await authority.issueRegistration(identity);
-    const hypervisor = createHypervisor({
+    const hypervisor = createDenoHypervisor({
       authority,
       repository,
       persistAcceptance: () => Promise.resolve(),

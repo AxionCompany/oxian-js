@@ -1,9 +1,11 @@
 import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import {
-  createHypervisor,
-  type Hypervisor,
-  type HypervisorConfig,
-  type HypervisorListener,
+  createDenoHypervisor,
+  type DenoHypervisor,
+} from "../../src/adapters/deno/index.ts";
+import type {
+  HypervisorConfig,
+  HypervisorListener,
 } from "../../src/hypervisor/index.ts";
 import {
   parseControlFrame,
@@ -39,7 +41,7 @@ type Deferred<T> = Readonly<{
 }>;
 
 type TestHarness = Readonly<{
-  hypervisor: Hypervisor;
+  hypervisor: DenoHypervisor;
   listener: HypervisorListener;
   worker: WorkerClient;
   workerRun: Promise<WorkerClientResult>;
@@ -204,7 +206,7 @@ async function startHarness(
     .identity;
   const authority = createInMemoryRegistrationAuthority();
   const registration = await authority.issueRegistration(identity);
-  const hypervisor = createHypervisor({
+  const hypervisor = createDenoHypervisor({
     authority,
     repository,
     persistAcceptance: input.persistAcceptance ??
@@ -893,7 +895,7 @@ Deno.test({
     const authority = createInMemoryRegistrationAuthority();
     const registrationA = await authority.issueRegistration(identityA);
     const registrationB = await authority.issueRegistration(identityB);
-    const hypervisor = createHypervisor({
+    const hypervisor = createDenoHypervisor({
       authority,
       repository,
       persistAcceptance: () => Promise.resolve(),

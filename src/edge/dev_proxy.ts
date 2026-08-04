@@ -138,10 +138,12 @@ function proxyRequest(
     headers.set("x-forwarded-host", original);
   }
   const method = request.method.toUpperCase();
+  const body = method === "GET" || method === "HEAD" ? null : request.body;
   return new Request(target, {
     method: request.method,
     headers,
-    body: method === "GET" || method === "HEAD" ? null : request.body,
+    body,
+    ...(body === null ? {} : { duplex: "half" as const }),
     signal: request.signal,
     redirect: "manual",
   });

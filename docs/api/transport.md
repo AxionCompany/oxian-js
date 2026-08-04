@@ -1,27 +1,34 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.4/transport`
+# `jsr:@oxian/oxian-js@0.20.0-rc.5/transport`
 
 [Back to the API reference](../api-reference.md)
 
 The `/transport` subpath opens outbound worker sockets and wraps one negotiated
-WebSocket in the strict `oxian.worker.v1` protocol. The wrapper owns frame
-encoding, protocol order, bounded receive and send admission, native
-`bufferedAmount` backpressure, and connection closure.
+wire connection in the strict `oxian.worker.v1` protocol. The wrapper owns frame
+encoding, protocol order, bounded receive and send admission, `bufferedAmount`
+backpressure, and connection closure. Runtime server adapters can provide a
+callback-native connection without implementing DOM events.
 
 ```ts
 import {
   connectWorkerWebSocket,
   createWebSocketTransport,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.4/transport";
+  createWebSocketWireConnection,
+  type WorkerWireConnection,
+} from "jsr:@oxian/oxian-js@0.20.0-rc.5/transport";
 ```
 
 ## Export summary
 
 ### Values
 
-| Export                     | Purpose                                            |
-| -------------------------- | -------------------------------------------------- |
-| `connectWorkerWebSocket`   | Open and verify an outbound worker WebSocket.      |
-| `createWebSocketTransport` | Apply framing, ordering, queues, and backpressure. |
+| Export                          | Purpose                                                  |
+| ------------------------------- | -------------------------------------------------------- |
+| `connectWorkerWebSocket`        | Open and verify an outbound worker WebSocket.            |
+| `createWebSocketWireConnection` | Adapt a standards-compatible WebSocket to the wire seam. |
+| `isWorkerWireConnection`        | Test whether a value structurally implements the seam.   |
+| `expectWorkerWireConnection`    | Validate a wire connection or throw `TypeError`.         |
+| `toWorkerWireConnection`        | Preserve a wire connection or adapt a native WebSocket.  |
+| `createWebSocketTransport`      | Apply framing, ordering, queues, and backpressure.       |
 
 ### Types
 
@@ -31,11 +38,84 @@ import {
 | `TransportCloseOptions`         | Public close code, reason, and timeout.                   |
 | `WebSocketTransportClose`       | Final observed or synthesized close details.              |
 | `WebSocketTransportMessage`     | Validated inbound control or data message.                |
+| `WorkerWireConnectionState`     | Runtime-neutral connecting/open/closing/closed state.     |
+| `WorkerWireMessageData`         | Text or binary value delivered by a wire adapter.         |
+| `WorkerWireClose`               | Runtime-neutral close code, reason, and cleanliness.      |
+| `WorkerWireObserver`            | Optional callbacks for one connection subscription.       |
+| `WorkerWireConnection`          | Callback-based server/runtime connection boundary.        |
 | `WebSocketTransportOptions`     | Socket, role, queue, backpressure, and protocol settings. |
 | `WebSocketTransport`            | Ordered transport API.                                    |
 | `WorkerWebSocketFactoryContext` | Validated provider socket-construction input.             |
 | `WorkerWebSocketFactory`        | Provider-owned authenticated socket factory.              |
 | `ConnectWorkerWebSocketOptions` | Outbound endpoint and connection settings.                |
+
+## Runtime-neutral wire connection
+
+```ts
+type WorkerWireConnectionState =
+  | "connecting"
+  | "open"
+  | "closing"
+  | "closed";
+
+type WorkerWireMessageData =
+  | string
+  | ArrayBuffer
+  | ArrayBufferView
+  | Blob;
+
+type WorkerWireClose = Readonly<{
+  code: number;
+  reason: string;
+  wasClean: boolean;
+}>;
+
+type WorkerWireObserver = Readonly<{
+  open?(): void;
+  message?(data: WorkerWireMessageData): void;
+  close?(event: WorkerWireClose): void;
+  error?(error?: unknown): void;
+}>;
+
+type WorkerWireConnection = Readonly<{
+  readonly protocol: string;
+  readonly state: WorkerWireConnectionState;
+  readonly bufferedAmount: number;
+  send(data: string | Uint8Array): void;
+  close(code?: number, reason?: string): void;
+  subscribe(observer: WorkerWireObserver): () => void;
+}>;
+```
+
+The connection deliberately does not extend `EventTarget`. A runtime adapter can
+bridge DOM WebSockets, server-level callbacks, WebSocket pairs, or a
+library-specific upgrade object by exposing current state, send pressure, and
+one callback subscription. `subscribe()` returns an idempotent unsubscriber;
+callbacks may be delivered synchronously, so an adapter should expose its
+current state accurately before and after subscription.
+
+The helper functions are:
+
+```ts
+function createWebSocketWireConnection(
+  socket: WebSocket,
+): WorkerWireConnection;
+
+function isWorkerWireConnection(
+  value: unknown,
+): value is WorkerWireConnection;
+
+function expectWorkerWireConnection(value: unknown): WorkerWireConnection;
+
+function toWorkerWireConnection(
+  value: WebSocket | WorkerWireConnection,
+): WorkerWireConnection;
+```
+
+`createWebSocketWireConnection` configures binary delivery as `ArrayBuffer` and
+translates native open, message, close, and error events. The structural helpers
+let server adapters validate their bridge while preserving native client
+WebSocket compatibility.
 
 ## Outbound worker connection
 
@@ -155,7 +235,7 @@ inbound work frame arrived after local abort and must not reach workload code.
 
 ```ts
 type WebSocketTransportOptions = Readonly<{
-  socket: WebSocket;
+  socket: WebSocket | WorkerWireConnection;
   role: ProtocolRole;
   negotiatedProtocol?: string;
   signal?: AbortSignal;
@@ -191,7 +271,7 @@ fit one maximum configured data payload plus the 28-byte binary header.
 admission stricter than the v1 hard limits.
 
 Most WebSocket clients expose the negotiated value as `socket.protocol`. Server
-adapters whose upgraded socket does not expose it may pass `negotiatedProtocol`.
+adapters whose wire connection does not expose it may pass `negotiatedProtocol`.
 If both values exist, they must agree exactly.
 
 ## `createWebSocketTransport`
@@ -202,10 +282,11 @@ function createWebSocketTransport(
 ): Promise<WebSocketTransport>;
 ```
 
-The function accepts an open socket or waits for a connecting socket to open. It
-rejects closed sockets, an already-aborted signal, invalid options, or any
-subprotocol other than `oxian.worker.v1`. It sets binary delivery to
-`arraybuffer` and returns a frozen transport.
+The function accepts an open native WebSocket or `WorkerWireConnection`, or
+waits for a connecting one to open. It rejects closed connections, an
+already-aborted signal, invalid options, or any subprotocol other than
+`oxian.worker.v1`. Native WebSockets are adapted with binary delivery set to
+`arraybuffer`; the returned transport is frozen.
 
 ```ts
 const socket = await connectWorkerWebSocket({

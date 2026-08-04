@@ -1,8 +1,9 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.20.0-rc.4",
+  "version": "0.20.0-rc.5",
   "exports": {
     ".": "./src/mod.ts",
+    "./adapters/deno": "./src/adapters/deno/index.ts",
     "./app": "./src/app/index.ts",
     "./bin": "./cli.ts",
     "./cli": "./src/cli/index.ts",
@@ -33,6 +34,7 @@
       "docs/application.md",
       "docs/workers.md",
       "docs/operations.md",
+      "docs/runtime-adapters.md",
       "docs/api-reference.md",
       "docs/api/**",
       "docs/migration-0.20.md",
@@ -48,11 +50,13 @@
     "@std/path": "jsr:@std/path@1.1.1"
   },
   "tasks": {
-    "check": "deno task check:architecture && deno task check:api-reference && deno fmt --check && deno lint && deno check src/mod.ts cli.ts",
+    "check": "deno task check:portability && deno task check:architecture && deno task check:api-reference && deno fmt --check && deno lint && deno check src/mod.ts cli.ts",
     "check:api-reference": "deno run --allow-read=. --allow-run=deno scripts/check_api_reference.ts",
     "check:architecture": "deno run --allow-read=src,cli.ts scripts/check_architecture.ts",
+    "check:portability": "deno run --allow-read=src scripts/check_portability.ts",
+    "check:publish": "deno publish --dry-run --allow-dirty",
     "test": "deno test --cert=tests/fixtures/tls/test-ca.pem --allow-all",
-    "verify": "deno task check && deno task test"
+    "verify": "deno task check && deno task test && deno task check:publish"
   },
   "lock": false
 }

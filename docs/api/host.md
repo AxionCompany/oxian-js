@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.4/host`
+# `jsr:@oxian/oxian-js@0.20.0-rc.5/host`
 
 [Back to the API reference](../api-reference.md)
 
@@ -7,7 +7,7 @@ boundary. It routes work to handlers attached in the same JavaScript process
 without a WebSocket, wire frames, credentials, or a Hypervisor listener.
 
 ```ts
-import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.4/host";
+import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.5/host";
 
 const host = createWorkerHost({
   persistAcceptance: async (commit) => {

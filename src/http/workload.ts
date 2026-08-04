@@ -32,7 +32,9 @@ export function createHttpWorkload(
       request = new Request(metadata.url, {
         method: metadata.method,
         headers: createHeaders(metadata.headers),
-        ...(input === undefined ? {} : { body: input }),
+        ...(input === undefined
+          ? {}
+          : { body: input, duplex: "half" as const }),
         signal: context.signal,
       });
     } catch (error) {

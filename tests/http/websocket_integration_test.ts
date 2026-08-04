@@ -1,5 +1,9 @@
 import { assertEquals } from "@std/assert";
 import {
+  createDenoHypervisor,
+  type DenoHypervisor,
+} from "../../src/adapters/deno/index.ts";
+import {
   createApplication,
   createServerSentEvents,
 } from "../../src/app/index.ts";
@@ -8,11 +12,7 @@ import {
   createHttpWorkload,
   HTTP_WORKLOAD,
 } from "../../src/http/index.ts";
-import {
-  createHypervisor,
-  type Hypervisor,
-  type HypervisorListener,
-} from "../../src/hypervisor/index.ts";
+import type { HypervisorListener } from "../../src/hypervisor/index.ts";
 import { WORKER_PROTOCOL_LIMITS } from "../../src/protocol/limits.ts";
 import type {
   CompiledRoute,
@@ -34,7 +34,7 @@ import { createDeferred, streamOf } from "./test_utils.ts";
 const TEST_TIMEOUT_MS = 5_000;
 
 type HttpWebSocketHarness = Readonly<{
-  hypervisor: Hypervisor;
+  hypervisor: DenoHypervisor;
   listener: HypervisorListener;
   worker: WorkerClient;
   workerRun: Promise<WorkerClientResult>;
@@ -99,7 +99,7 @@ async function startHarness(
     .identity;
   const authority = createInMemoryRegistrationAuthority();
   const registration = await authority.issueRegistration(identity);
-  const hypervisor = createHypervisor({
+  const hypervisor = createDenoHypervisor({
     authority,
     repository,
     persistAcceptance: () => Promise.resolve(),

@@ -19,7 +19,10 @@ import type {
   WebSocketTransportClose,
   WebSocketTransportMessage,
   WebSocketTransportOptions,
+  WorkerWireClose,
+  WorkerWireMessageData,
 } from "./types.ts";
+import { toWorkerWireConnection } from "./wire.ts";
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_CLOSE_TIMEOUT_MS = 5_000;
@@ -103,6 +106,25 @@ function closeSocket(socket: WebSocket, code: number, reason: string): void {
       } catch {
         // The close/error event remains authoritative.
       }
+    }
+  }
+}
+
+function closeWire(
+  connection: ReturnType<typeof toWorkerWireConnection>,
+  code: number,
+  reason: string,
+): void {
+  if (connection.state !== "connecting" && connection.state !== "open") {
+    return;
+  }
+  try {
+    connection.close(code, reason);
+  } catch {
+    try {
+      connection.close();
+    } catch {
+      // The close/error callback remains authoritative.
     }
   }
 }
@@ -385,7 +407,7 @@ async function eventBinaryData(data: unknown): Promise<Uint8Array> {
 export async function createWebSocketTransport(
   options: WebSocketTransportOptions,
 ): Promise<WebSocketTransport> {
-  const socket = options.socket;
+  const connection = toWorkerWireConnection(options.socket);
   const maxInboundMessages = expectPositiveInteger(
     options.maxInboundMessages,
     "maxInboundMessages",
@@ -445,56 +467,67 @@ export async function createWebSocketTransport(
     throw options.signal.reason ?? createAbortError("Transport aborted");
   }
 
-  if (socket.readyState === WebSocket.CONNECTING) {
+  if (connection.state === "connecting") {
     await new Promise<void>((resolve, reject) => {
-      const open = (): void => {
+      let settled = false;
+      let unsubscribe: (() => void) | undefined;
+      const cleanup = (): void => {
+        unsubscribe?.();
+        unsubscribe = undefined;
+        options.signal?.removeEventListener("abort", abort);
+      };
+      const succeed = (): void => {
+        if (settled) return;
+        settled = true;
         cleanup();
         resolve();
       };
-      const close = (event: CloseEvent): void => {
+      const fail = (reason: unknown): void => {
+        if (settled) return;
+        settled = true;
         cleanup();
-        reject(
+        reject(reason);
+      };
+      const open = (): void => succeed();
+      const close = (event: WorkerWireClose): void => {
+        fail(
           new TypeError(
             `WebSocket closed before opening (${event.code}: ${event.reason})`,
           ),
         );
       };
       const error = (): void => {
-        cleanup();
-        reject(new TypeError("WebSocket failed before opening"));
+        fail(new TypeError("WebSocket failed before opening"));
       };
       const abort = (): void => {
-        cleanup();
-        closeSocket(socket, NORMAL_CLOSE_CODE, "transport_aborted");
-        reject(options.signal?.reason ?? createAbortError("Transport aborted"));
+        closeWire(connection, NORMAL_CLOSE_CODE, "transport_aborted");
+        fail(options.signal?.reason ?? createAbortError("Transport aborted"));
       };
-      const cleanup = (): void => {
-        socket.removeEventListener("open", open);
-        socket.removeEventListener("close", close);
-        socket.removeEventListener("error", error);
-        options.signal?.removeEventListener("abort", abort);
-      };
-      socket.addEventListener("open", open, { once: true });
-      socket.addEventListener("close", close, { once: true });
-      socket.addEventListener("error", error, { once: true });
       options.signal?.addEventListener("abort", abort, { once: true });
+      const subscription = connection.subscribe({ open, close, error });
+      if (settled) subscription();
+      else unsubscribe = subscription;
+
+      if (connection.state === "open") succeed();
+      else if (connection.state !== "connecting") {
+        fail(new TypeError("WebSocket closed before opening"));
+      } else if (options.signal?.aborted) abort();
     });
   }
-  if (socket.readyState !== WebSocket.OPEN) {
+  if (connection.state !== "open") {
     throw new TypeError("WebSocket must be open");
   }
-  const negotiatedProtocol = socket.protocol || options.negotiatedProtocol;
+  const negotiatedProtocol = connection.protocol || options.negotiatedProtocol;
   if (
     negotiatedProtocol !== WORKER_PROTOCOL ||
-    (socket.protocol !== "" && options.negotiatedProtocol !== undefined &&
-      socket.protocol !== options.negotiatedProtocol)
+    (connection.protocol !== "" && options.negotiatedProtocol !== undefined &&
+      connection.protocol !== options.negotiatedProtocol)
   ) {
-    closeSocket(socket, PROTOCOL_CLOSE_CODE, "unsupported_protocol");
+    closeWire(connection, PROTOCOL_CLOSE_CODE, "unsupported_protocol");
     throw new TypeError(
       `WebSocket did not negotiate exact subprotocol ${WORKER_PROTOCOL}`,
     );
   }
-  socket.binaryType = "arraybuffer";
 
   const queue = createBoundedAsyncQueue<WebSocketTransportMessage>({
     maxItems: maxInboundMessages,
@@ -513,6 +546,7 @@ export async function createWebSocketTransport(
   let resolveClosed:
     | ((close: WebSocketTransportClose) => void)
     | undefined;
+  let unsubscribeConnection = (): void => undefined;
   const closed = new Promise<WebSocketTransportClose>((resolve) => {
     resolveClosed = resolve;
   });
@@ -525,9 +559,7 @@ export async function createWebSocketTransport(
     if (terminal) return;
     terminal = true;
     options.signal?.removeEventListener("abort", abortTransport);
-    socket.removeEventListener("message", receive);
-    socket.removeEventListener("close", socketClosed);
-    socket.removeEventListener("error", socketErrored);
+    unsubscribeConnection();
     queue.close(error, { discard: discardInbound });
     resolveClosed?.(close);
     resolveClosed = undefined;
@@ -538,7 +570,7 @@ export async function createWebSocketTransport(
     const code = isProtocolViolation(error)
       ? error.code
       : "invalid_binary_frame";
-    if (socket.readyState === WebSocket.OPEN) {
+    if (connection.state === "open") {
       try {
         const frame = createProtocolErrorFrame({
           ...(validator.snapshot().connectionId === undefined
@@ -548,12 +580,12 @@ export async function createWebSocketTransport(
           message: `Worker protocol violation: ${code}`,
         });
         validator.acceptControl("sent", frame);
-        socket.send(encodeControlFrame(frame));
+        connection.send(encodeControlFrame(frame));
       } catch {
         // The close frame still reports the stable machine-readable reason.
       }
     }
-    closeSocket(socket, PROTOCOL_CLOSE_CODE, code);
+    closeWire(connection, PROTOCOL_CLOSE_CODE, code);
     finish(
       { code: PROTOCOL_CLOSE_CODE, reason: code, wasClean: false },
       error,
@@ -563,7 +595,7 @@ export async function createWebSocketTransport(
 
   const failTransport = (error: unknown): void => {
     if (terminal) return;
-    closeSocket(socket, INTERNAL_ERROR_CLOSE_CODE, "transport_failed");
+    closeWire(connection, INTERNAL_ERROR_CLOSE_CODE, "transport_failed");
     finish(
       {
         code: INTERNAL_ERROR_CLOSE_CODE,
@@ -576,22 +608,22 @@ export async function createWebSocketTransport(
   };
 
   const processMessage = async (
-    event: MessageEvent,
+    data: WorkerWireMessageData,
     wireBytes: number,
   ): Promise<void> => {
     if (terminal) return;
     try {
       let message: WebSocketTransportMessage;
-      if (typeof event.data === "string") {
+      if (typeof data === "string") {
         const acceptance = validator.acceptControl(
           "received",
-          parseControlFrame(event.data),
+          parseControlFrame(data),
         );
         message = { kind: "control", acceptance, wireBytes };
       } else {
         const acceptance = validator.acceptBinary(
           "received",
-          decodeBinaryFrame(await eventBinaryData(event.data)),
+          decodeBinaryFrame(await eventBinaryData(data)),
         );
         message = { kind: "data", acceptance, wireBytes };
       }
@@ -608,9 +640,9 @@ export async function createWebSocketTransport(
     }
   };
 
-  function receive(event: MessageEvent): void {
+  function receive(data: WorkerWireMessageData): void {
     if (terminal) return;
-    const wireBytes = eventWireBytes(event.data);
+    const wireBytes = eventWireBytes(data);
     if (wireBytes < 1) {
       failProtocol(new TypeError("WebSocket message must not be empty"));
       return;
@@ -629,20 +661,19 @@ export async function createWebSocketTransport(
       return;
     }
     inboundTail = inboundTail.then(
-      () => processMessage(event, wireBytes),
-      () => processMessage(event, wireBytes),
+      () => processMessage(data, wireBytes),
+      () => processMessage(data, wireBytes),
     );
   }
 
-  function socketClosed(event: CloseEvent): void {
+  function connectionClosed(event: WorkerWireClose): void {
     if (terminal || socketClosePending) return;
     socketClosePending = true;
     // Message events are serialized through `inboundTail` because Blob
     // decoding can be asynchronous. A peer may send a terminal control frame
     // and immediately close the socket; preserve every message event observed
     // before Close instead of closing the queue ahead of its decode task.
-    socket.removeEventListener("message", receive);
-    socket.removeEventListener("error", socketErrored);
+    unsubscribeConnection();
     const close = {
       code: event.code,
       reason: event.reason,
@@ -651,7 +682,7 @@ export async function createWebSocketTransport(
     void inboundTail.then(() => finish(close));
   }
 
-  function socketErrored(): void {
+  function connectionErrored(): void {
     failTransport(new TypeError("WebSocket transport failed"));
   }
 
@@ -659,7 +690,7 @@ export async function createWebSocketTransport(
     const error = options.signal?.reason ?? createAbortError(
       "Transport aborted",
     );
-    closeSocket(socket, NORMAL_CLOSE_CODE, "transport_aborted");
+    closeWire(connection, NORMAL_CLOSE_CODE, "transport_aborted");
     finish(
       { code: NORMAL_CLOSE_CODE, reason: "transport_aborted", wasClean: true },
       error,
@@ -667,9 +698,11 @@ export async function createWebSocketTransport(
     );
   }
 
-  socket.addEventListener("message", receive);
-  socket.addEventListener("close", socketClosed);
-  socket.addEventListener("error", socketErrored);
+  unsubscribeConnection = connection.subscribe({
+    message: receive,
+    close: connectionClosed,
+    error: connectionErrored,
+  });
   options.signal?.addEventListener("abort", abortTransport, { once: true });
 
   const waitForWritable = async (
@@ -678,7 +711,7 @@ export async function createWebSocketTransport(
   ): Promise<void> => {
     let throttled = false;
     while (true) {
-      if (terminal || socket.readyState !== WebSocket.OPEN) {
+      if (terminal || connection.state !== "open") {
         throw new TypeError("WebSocket transport is closed");
       }
       if (signal?.aborted) {
@@ -696,7 +729,7 @@ export async function createWebSocketTransport(
       const threshold = throttled
         ? Math.min(bufferedAmountLowWaterBytes, roomThreshold)
         : roomThreshold;
-      if (socket.bufferedAmount <= threshold) return;
+      if (connection.bufferedAmount <= threshold) return;
       throttled = true;
       await waitForDelay(bufferedAmountPollMs, signal ?? options.signal);
     }
@@ -752,7 +785,7 @@ export async function createWebSocketTransport(
       );
       const acceptance = validator.acceptControl("sent", validatedFrame);
       try {
-        socket.send(encoded);
+        connection.send(encoded);
       } catch (error) {
         failTransport(error);
         throw error;
@@ -789,7 +822,7 @@ export async function createWebSocketTransport(
       await waitForWritable(encoded.byteLength, sendOptions.signal);
       const acceptance = validator.acceptBinary("sent", validatedFrame);
       try {
-        socket.send(encoded);
+        connection.send(encoded);
       } catch (error) {
         failTransport(error);
         throw error;
@@ -830,7 +863,7 @@ export async function createWebSocketTransport(
       "timeoutMs",
       DEFAULT_CLOSE_TIMEOUT_MS,
     );
-    closeSocket(socket, code, reason);
+    closeWire(connection, code, reason);
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
         finish({ code, reason, wasClean: false });

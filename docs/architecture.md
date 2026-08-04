@@ -12,13 +12,15 @@ embedded application -----------+---- dispatch contract
                     +----------------+----------------+
                     |                                 |
                     v                                 v
-             WorkerHost                         Hypervisor
-             in-process                         remote/process
+             WorkerHost                    Hypervisor core
+             in-process                    remote/session
                     |                                 |
-             direct Web Streams             oxian.worker.v1 / WSS
+             direct Web Streams          WorkerWireConnection
+                    |                                 |
+                    |                       runtime server adapter
                     |                                 |
                     v                                 v
-             attached workload                 WorkerClient workload
+             attached workload       oxian.worker.v1 / WSS -> WorkerClient
                     +---------------+-----------------+
                                     |
                     SessionRegistry + WorkDispatcher
@@ -49,8 +51,12 @@ WebSocket sessions.
   bodies.
 - `host` owns embedded in-process workers, direct stream delivery, capacity,
   durable-start ordering, cancellation, drain, and process-local snapshots.
-- `hypervisor` is a Fetch handler plus optional listener. It authenticates WSS
-  workers, dispatches work, drains sessions, and reports snapshots.
+- `hypervisor` prepares HTTP/WebSocket admission without owning a native
+  handshake or listener. It authenticates attached workers, dispatches work,
+  drains sessions, and reports snapshots.
+- runtime server adapters perform native WebSocket upgrades and attach a small
+  callback-based `WorkerWireConnection`; `/adapters/deno` also owns optional
+  `Deno.serve` listeners.
 - `supervisor` defines worker identity, activation, registration exchange,
   session fencing, and repository seams.
 - `providers` create, inspect, and terminate compute. They do not carry work.
@@ -93,6 +99,11 @@ turn-taking, processor overrides, and modality policy in the workload layer. An
 in-process worker is not a thread: CPU-heavy work still blocks its JavaScript
 event loop unless the embedding application adds a worker-thread or process
 boundary.
+
+The package root follows only runtime-neutral imports. Filesystem route
+discovery, static files, local processes, CLI lifecycle, and server binding are
+explicit capabilities rather than implicit core dependencies. See
+[runtime boundaries and adapters](runtime-adapters.md).
 
 The full wire rules, including data ordering and crossed termination, are
 normative in [worker protocol v1](worker-protocol-v1.md).

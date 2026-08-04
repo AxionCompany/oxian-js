@@ -1,20 +1,7 @@
 /**
- * Oxian 0.20 public API.
+ * Portable Oxian 0.20 package root.
  *
- * The package root is deliberately side-effect free. Applications may import
- * this aggregate surface or use the explicit subpath exports for tighter
- * boundaries.
+ * Runtime capabilities are available only through explicit subpaths so merely
+ * importing Oxian never loads filesystem, process, listener, or Deno APIs.
  */
-export * from "./app/index.ts";
-export * from "./config/index.ts";
-export * from "./edge/index.ts";
-export * from "./http/index.ts";
-export * from "./host/index.ts";
-export * from "./hypervisor/index.ts";
-export * from "./local/index.ts";
-export * from "./protocol/index.ts";
-export * from "./providers/index.ts";
-export * from "./router/index.ts";
-export * from "./supervisor/index.ts";
-export * from "./transport/index.ts";
-export * from "./worker/index.ts";
+export * from "./core.ts";

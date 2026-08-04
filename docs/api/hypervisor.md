@@ -1,18 +1,19 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.4/hypervisor`
+# `jsr:@oxian/oxian-js@0.20.0-rc.5/hypervisor`
 
 [Back to the API reference](../api-reference.md)
 
-The `/hypervisor` subpath creates the process-local Oxian gateway. It admits
-authenticated outbound worker WebSockets, publishes fenced ready sessions,
-dispatches multiplexed work, commits the no-replay boundary, and drains or shuts
-down connections.
+The `/hypervisor` subpath creates the process-local Oxian protocol and session
+core. It prepares authenticated outbound-worker admission, publishes fenced
+ready sessions, dispatches multiplexed work, commits the no-replay boundary, and
+drains or shuts down attached connections. Runtime adapters own native WebSocket
+upgrades and listeners.
 
 ```ts
 import {
   createHypervisor,
   createHypervisorConfig,
   DEFAULT_HYPERVISOR_CONFIG,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.4/hypervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.5/hypervisor";
 ```
 
 The Hypervisor owns only sessions connected to this JavaScript process. It is
@@ -48,8 +49,9 @@ operation-result store.
 | `WorkerAdmissionRepository`        | Read-only repository projection used by admission.        |
 | `WorkerAdmissionAuthority`         | Registration exchange projection used by admission.       |
 | `HypervisorOptions`                | Gateway dependencies, lifecycle hooks, and overrides.     |
-| `HypervisorListenOptions`          | Optional built-in listener settings.                      |
-| `HypervisorListener`               | One built-in Deno listener handle.                        |
+| `HypervisorRequestDecision`        | Normal response or one-shot connection admission.         |
+| `HypervisorListenOptions`          | Shared settings used by listener-capable adapters.        |
+| `HypervisorListener`               | Shared listener lifecycle handle used by adapters.        |
 | `HypervisorSnapshot`               | Process-local connection and work counters.               |
 | `Hypervisor`                       | Gateway API.                                              |
 | `HypervisorErrorCode`              | Stable operation-level error classification.              |
@@ -339,8 +341,8 @@ starts no worker connection. The returned object is frozen.
 import {
   createHttpGateway,
   type HttpDispatch,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.4/http";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.4/hypervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.5/http";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.5/hypervisor";
 
 // The HTTP gateway and Hypervisor are circular by design. Keep their seam
 // explicitly typed, then bind it after construction and before serving.
@@ -366,8 +368,7 @@ implements all three methods.
 
 ```ts
 type Hypervisor = Readonly<{
-  fetch(request: Request): Response | Promise<Response>;
-  listen(options?: HypervisorListenOptions): HypervisorListener;
+  prepare(request: Request): HypervisorRequestDecision;
   dispatch(input: HypervisorDispatchInput): Promise<HypervisorWorkHandle>;
   drain(workerId: string, reason?: string): Promise<void>;
   shutdownWorker(workerId: string, reason?: string): Promise<void>;
@@ -379,11 +380,28 @@ type Hypervisor = Readonly<{
 }>;
 ```
 
-### `fetch`
+### `prepare`
 
-`fetch` is the composable gateway handler. Only the exact configured
-`workerPath` is treated as worker admission; every other request goes to
-`fallback` or receives `404`.
+`prepare` is the runtime-neutral server seam. Only the exact configured
+`workerPath` is treated as worker admission; every other request produces a
+response decision from `fallback` or `404`.
+
+```ts
+type HypervisorRequestDecision =
+  | Readonly<{
+    kind: "response";
+    response: Response | Promise<Response>;
+  }>
+  | Readonly<{
+    kind: "upgrade";
+    protocol: string;
+    attach(
+      connection: WorkerWireConnection,
+      negotiatedProtocol?: string,
+    ): void;
+    cancel(reason?: string): void;
+  }>;
+```
 
 Worker admission requires:
 
@@ -393,11 +411,14 @@ Worker admission requires:
 - the exact `oxian.worker.v1` subprotocol header; and
 - available total and unauthenticated admission capacity.
 
-Failures return `400`, `405`, `426`, or `503` as appropriate before a socket is
-created. After upgrade, protocol and authentication failures are reported with a
-bounded `protocol_error` when possible and a stable 4xxx close reason.
+Failures produce `405`, `426`, or `503` responses before a socket is created. An
+accepted decision reserves admission capacity before the runtime handshake. The
+server adapter must call exactly one of `attach()` or `cancel()`; an unconsumed
+decision expires on the handshake deadline. After attachment, protocol and
+authentication failures are reported with a bounded `protocol_error` when
+possible and a stable 4xxx close reason.
 
-### `listen`
+### Server ownership
 
 ```ts
 type HypervisorListenOptions = Readonly<{
@@ -415,17 +436,14 @@ type HypervisorListener = Readonly<{
 }>;
 ```
 
-`listen()` starts `Deno.serve` with `fetch`. Hostname defaults to `127.0.0.1`
-and port to `0`, allowing the operating system to choose one. The returned
-hostname, port, and HTTP URL are the actual bound address.
+These listener contracts are implemented by listener-capable runtime adapters;
+they are not methods on the portable `Hypervisor`.
 
-`shutdown()` on the listener is idempotent. The optional signal shuts down only
-that listener. Its `finished` promise retains any listener failure for the
-caller. Calling `hypervisor.listen()` after Hypervisor shutdown begins throws a
-`HypervisorError` with `code: "shutting_down"`.
-
-For TLS termination or an existing server, pass `hypervisor.fetch` to the owning
-server instead of using the built-in listener.
+For Deno, `createDenoHypervisor` from [`/adapters/deno`](adapters/deno.md)
+returns the core plus `fetch()` and `listen()` conveniences.
+`createDenoHypervisorFetch` adapts an existing core to an application-owned
+`Deno.serve`, including TLS termination. Other runtimes adapt `prepare()` to
+their native upgrade model and attach a `WorkerWireConnection`.
 
 ## Dispatch
 

@@ -15,6 +15,11 @@ application or operational integration.
   complete loopback wire protocol.
 - Embedded applications can import `/host`, call `createWorkerHost`, and attach
   workload handlers without creating a Hypervisor or listener.
+- The package root now contains only the runtime-neutral execution core. Import
+  filesystem, process, CLI, and server capabilities from explicit subpaths.
+- `createHypervisor` is the portable protocol/session core and exposes
+  `prepare(request)` for server adapters. Existing Deno gateways should import
+  `createDenoHypervisor` from `/adapters/deno` to retain `fetch` and `listen`.
 - A worker attaches outbound through `oxian.worker.v1`. Remove worker target
   URLs, worker HTTP listeners, and readiness polling from deployment wiring.
 - HTTP is carried as the `oxian.http.v1` workload. Preserve repeated headers and
@@ -31,8 +36,8 @@ Start the migration with a clean local project and move one route tree at a
 time:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin init --root ./new-service
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin check --config ./new-service/oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.5/bin init --root ./new-service
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.5/bin check --config ./new-service/oxian.config.ts
 ```
 
 Then choose an

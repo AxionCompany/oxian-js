@@ -6,21 +6,17 @@ import {
 } from "../supervisor/index.ts";
 import { createHypervisorConfig } from "./config.ts";
 import { createAdmissionController } from "./internal/admission.ts";
-import { createConnectionEndpoint } from "./internal/connection.ts";
+import { createConnectionAdmission } from "./internal/connection.ts";
 import { createConnectionDirectory } from "./internal/directory.ts";
 import { createDispatch } from "./internal/dispatch.ts";
 import { createDrainController } from "./internal/drain.ts";
 import { createConnectionLifecycleController } from "./internal/lifecycle.ts";
-import { createListenerFactory } from "./internal/listener.ts";
 import { createSessionProtocolController } from "./internal/session.ts";
 import {
   createWorkStreamController,
   type WorkStreamController,
 } from "./internal/work-stream.ts";
-import type {
-  AcceptanceAdmissionState,
-  ListenerRecord,
-} from "./internal/model.ts";
+import type { AcceptanceAdmissionState } from "./internal/model.ts";
 import {
   createDefaultScheduler,
   NORMAL_CLOSE_CODE,
@@ -77,7 +73,6 @@ export function createHypervisor(
   const directory = createConnectionDirectory(createConnectionId);
   const records = directory.records;
   const admission = createAdmissionController(config);
-  const listeners = new Set<ListenerRecord>();
   let acceptingConnections = true;
   let shuttingDown: Promise<void> | undefined;
   const acceptanceAdmission: AcceptanceAdmissionState = {
@@ -146,7 +141,7 @@ export function createHypervisor(
   const ready = sessionProtocol.ready;
   const handleReadyFrame = sessionProtocol.handleFrame;
 
-  const fetch = createConnectionEndpoint({
+  const prepare = createConnectionAdmission({
     config,
     clock,
     scheduler,
@@ -165,11 +160,6 @@ export function createHypervisor(
     cleanupConnection,
   });
 
-  const listen = createListenerFactory({
-    isAcceptingConnections: () => acceptingConnections,
-    fetch,
-    listeners,
-  });
   const dispatch = createDispatch({
     dispatcher,
     directory,
@@ -231,7 +221,7 @@ export function createHypervisor(
           if (
             record.transport !== undefined &&
             record.connectionId !== undefined &&
-            record.socket.readyState === WebSocket.OPEN
+            record.connection?.state === "open"
           ) {
             await record.transport.sendControl({
               protocol: WORKER_PROTOCOL,
@@ -248,7 +238,6 @@ export function createHypervisor(
           );
         }),
       );
-      await Promise.allSettled([...listeners].map((entry) => entry.close()));
       lifecycle.stopLeaseSweep();
     })();
     return shuttingDown;
@@ -289,8 +278,7 @@ export function createHypervisor(
   };
 
   return Object.freeze({
-    fetch,
-    listen,
+    prepare,
     dispatch,
     drain,
     shutdownWorker,

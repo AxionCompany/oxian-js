@@ -66,9 +66,9 @@ commit to an application-owned durable store before resolving.
 
 ```ts
 // platform/hypervisor.ts
-import { createHttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.4/http";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.4/hypervisor";
-import type { AcceptanceCommit } from "jsr:@oxian/oxian-js@0.20.0-rc.4/supervisor";
+import { createHttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.5/http";
+import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.5/adapters/deno";
+import type { AcceptanceCommit } from "jsr:@oxian/oxian-js@0.20.0-rc.5/supervisor";
 import { authority, repository } from "./durable_control.ts";
 
 // This factory belongs to Logwash. It is not an Oxian export.
@@ -82,7 +82,7 @@ async function persistAcceptance(
   await operations.commitAccepted(commit);
 }
 
-const hypervisor = createHypervisor({
+const hypervisor = createDenoHypervisor({
   authority,
   repository,
   persistAcceptance,
@@ -140,7 +140,7 @@ ID at the application edge:
 
 ```ts
 // platform/idempotent_gateway.ts
-import type { HttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.4/http";
+import type { HttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.5/http";
 
 export function createIdempotentGateway(
   gateway: HttpGateway,
@@ -284,9 +284,9 @@ serverAbort.abort("service_shutdown");
 await server.finished;
 ```
 
-If the server was created by `hypervisor.listen()`, Hypervisor shutdown owns
-those listeners. If it was composed into an application-owned `Deno.serve()`,
-the application owns that server's signal and completion.
+If the server was created by the Deno adapter's `hypervisor.listen()`, adapter
+shutdown owns those listeners. If it was composed into an application-owned
+`Deno.serve()`, the application owns that server's signal and completion.
 
 ### Require WSS and enforce limits
 
@@ -325,7 +325,7 @@ streams, connection counts, buffered bytes, inbound queues, and concurrent
 acceptance commits:
 
 ```ts
-const hypervisor = createHypervisor({
+const hypervisor = createDenoHypervisor({
   authority,
   repository,
   persistAcceptance,
@@ -351,8 +351,8 @@ request or response around Oxian.
 Start with static and route checks:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.4/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.5/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.5/bin routes --config oxian.config.ts
 deno check \
   application.ts \
   logwash.ts \

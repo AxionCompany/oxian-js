@@ -8,6 +8,9 @@ import { createBoundedAsyncQueue } from "../../src/transport/queue.ts";
 import {
   connectWorkerWebSocket,
   createWebSocketTransport,
+  type WorkerWireClose,
+  type WorkerWireConnection,
+  type WorkerWireObserver,
 } from "../../src/transport/index.ts";
 import {
   nextControl,
@@ -28,6 +31,110 @@ const HELLO = createHelloFrame({
   },
   workloads: ["echo"],
   capacity: 1,
+});
+
+function createCallbackWireConnection(): Readonly<{
+  connection: WorkerWireConnection;
+  sent: readonly (string | Uint8Array)[];
+  close(event?: Partial<WorkerWireClose>): void;
+}> {
+  const observers = new Set<WorkerWireObserver>();
+  const sent: (string | Uint8Array)[] = [];
+  let state: WorkerWireConnection["state"] = "open";
+  const connection: WorkerWireConnection = Object.freeze({
+    protocol: WORKER_PROTOCOL,
+    get state() {
+      return state;
+    },
+    bufferedAmount: 0,
+    send(data) {
+      sent.push(data);
+    },
+    close(code = 1000, reason = "") {
+      if (state === "closed") return;
+      state = "closed";
+      for (const observer of observers) {
+        observer.close?.({ code, reason, wasClean: true });
+      }
+    },
+    subscribe(observer) {
+      observers.add(observer);
+      return () => observers.delete(observer);
+    },
+  });
+  return Object.freeze({
+    connection,
+    sent,
+    close(event = {}) {
+      if (state === "closed") return;
+      state = "closed";
+      for (const observer of observers) {
+        observer.close?.({
+          code: event.code ?? 1000,
+          reason: event.reason ?? "",
+          wasClean: event.wasClean ?? true,
+        });
+      }
+    },
+  });
+}
+
+Deno.test("transport accepts a callback-based runtime wire connection", async () => {
+  const wire = createCallbackWireConnection();
+  const transport = await createWebSocketTransport({
+    socket: wire.connection,
+    role: "worker",
+  });
+  await transport.sendControl(HELLO);
+  assertEquals(wire.sent.length, 1);
+  wire.close({ code: 1000, reason: "peer_complete" });
+  assertEquals(await transport.closed, {
+    code: 1000,
+    reason: "peer_complete",
+    wasClean: true,
+  });
+});
+
+Deno.test("transport safely handles synchronous wire open subscription", async () => {
+  const observers = new Set<WorkerWireObserver>();
+  let state: WorkerWireConnection["state"] = "connecting";
+  const connection: WorkerWireConnection = Object.freeze({
+    protocol: WORKER_PROTOCOL,
+    get state() {
+      return state;
+    },
+    bufferedAmount: 0,
+    send() {},
+    close(code = 1000, reason = "") {
+      if (state === "closed") return;
+      state = "closed";
+      for (const observer of observers) {
+        observer.close?.({ code, reason, wasClean: true });
+      }
+    },
+    subscribe(observer) {
+      observers.add(observer);
+      if (state === "connecting") {
+        state = "open";
+        observer.open?.();
+      }
+      let subscribed = true;
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        observers.delete(observer);
+      };
+    },
+  });
+
+  const transport = await createWebSocketTransport({
+    socket: connection,
+    role: "worker",
+  });
+  assertEquals(observers.size, 1);
+  connection.close(1000, "test_complete");
+  await transport.closed;
+  assertEquals(observers.size, 0);
 });
 
 type FakeSocket = Readonly<{

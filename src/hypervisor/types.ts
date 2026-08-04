@@ -14,6 +14,7 @@ import type {
   WorkerRepository,
 } from "../supervisor/index.ts";
 import type { SessionFence } from "../supervisor/types.ts";
+import type { WorkerWireConnection } from "../transport/types.ts";
 import type { HypervisorConfig } from "./config.ts";
 
 export type HypervisorWorkInputBody = WorkerHostInputBody;
@@ -216,9 +217,33 @@ export type HypervisorSnapshot = Readonly<{
   work: Readonly<Record<WorkDispatchStatus, number>>;
 }>;
 
+export type HypervisorRequestDecision =
+  | Readonly<{
+    kind: "response";
+    response: Response | Promise<Response>;
+  }>
+  | Readonly<{
+    kind: "upgrade";
+    protocol: string;
+    /**
+     * Attaches the runtime-upgraded server connection exactly once.
+     * `negotiatedProtocol` is required only when the native connection cannot
+     * expose the selected subprotocol itself.
+     */
+    attach(
+      connection: WorkerWireConnection,
+      negotiatedProtocol?: string,
+    ): void;
+    /** Releases the reserved admission slot when a runtime upgrade fails. */
+    cancel(reason?: string): void;
+  }>;
+
 export type Hypervisor = Readonly<{
-  fetch(request: Request): Response | Promise<Response>;
-  listen(options?: HypervisorListenOptions): HypervisorListener;
+  /**
+   * Produces a runtime-neutral HTTP response or one-shot WebSocket upgrade
+   * admission. A server adapter owns the native handshake and listener.
+   */
+  prepare(request: Request): HypervisorRequestDecision;
   dispatch(input: HypervisorDispatchInput): Promise<HypervisorWorkHandle>;
   /**
    * Gracefully drains one ready worker connection, then closes it so the

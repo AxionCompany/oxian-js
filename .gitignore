@@ -28,6 +28,5 @@ dist/
 build/
 
 # Project specific
-deno/
+/deno/
 .services/
-

@@ -9,6 +9,47 @@ import {
   createInMemoryWorkerRepository,
 } from "../../src/supervisor/index.ts";
 
+Deno.test("portable Hypervisor prepares responses and cancellable upgrade admissions", async () => {
+  const authority = createInMemoryRegistrationAuthority();
+  const repository = createInMemoryWorkerRepository();
+  const hypervisor = createHypervisor({
+    authority,
+    repository,
+    persistAcceptance: () => Promise.resolve(),
+    fallback: () => new Response("fallback", { status: 202 }),
+  });
+
+  const fallback = hypervisor.prepare(
+    new Request("https://example.test/not-a-worker"),
+  );
+  if (fallback.kind !== "response") {
+    throw new Error("expected a normal HTTP response decision");
+  }
+  const response = await fallback.response;
+  assertEquals(response.status, 202);
+  assertEquals(await response.text(), "fallback");
+
+  const admission = hypervisor.prepare(
+    new Request(
+      "https://example.test/_oxian/workers/connect",
+      {
+        headers: {
+          upgrade: "websocket",
+          "sec-websocket-protocol": "oxian.worker.v1",
+        },
+      },
+    ),
+  );
+  if (admission.kind !== "upgrade") {
+    throw new Error("expected a WebSocket upgrade decision");
+  }
+  assertEquals(admission.protocol, "oxian.worker.v1");
+  assertEquals(hypervisor.snapshot().connections, 1);
+  admission.cancel("test_upgrade_failure");
+  assertEquals(hypervisor.snapshot().connections, 0);
+  await hypervisor.shutdown();
+});
+
 Deno.test("Hypervisor admission accepts exchange-only authority and read-only repository projections", () => {
   const authority = createInMemoryRegistrationAuthority();
   const repository = createInMemoryWorkerRepository();

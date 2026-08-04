@@ -1,6 +1,8 @@
 import { assert, assertEquals } from "@std/assert";
+import * as denoAdapter from "@oxian/oxian-js/adapters/deno";
 import * as app from "@oxian/oxian-js/app";
 import * as config from "@oxian/oxian-js/config";
+import * as core from "../../src/core.ts";
 import * as edge from "@oxian/oxian-js/edge";
 import * as http from "@oxian/oxian-js/http";
 import * as host from "@oxian/oxian-js/host";
@@ -21,6 +23,7 @@ const GETTING_STARTED_CHAPTERS = Object.freeze([
 ]);
 
 const API_REFERENCE_MODULES = Object.freeze([
+  "../../docs/api/adapters/deno.md",
   "../../docs/api/app.md",
   "../../docs/api/cli.md",
   "../../docs/api/config.md",
@@ -46,6 +49,7 @@ const PUBLIC_DOCUMENTS = Object.freeze([
   "../../docs/application.md",
   "../../docs/workers.md",
   "../../docs/operations.md",
+  "../../docs/runtime-adapters.md",
   "../../docs/api-reference.md",
   ...API_REFERENCE_MODULES,
   "../../docs/migration-0.20.md",
@@ -89,10 +93,12 @@ function markdownHeadingAnchors(content: string): ReadonlySet<string> {
 }
 
 Deno.test("public documentation imports published symbols", () => {
+  assert(typeof denoAdapter.createDenoHypervisor === "function");
   assert(typeof app.createApplication === "function");
   assert(typeof app.createServerSentEvents === "function");
   assert(typeof app.defineApplicationFactory === "function");
   assert(typeof config.defineConfig === "function");
+  assert(typeof core.createWorkerHost === "function");
   assert(typeof edge.createCorsAdapter === "function");
   assert(typeof http.createHttpGateway === "function");
   assert(typeof host.createWorkerHost === "function");
@@ -178,7 +184,7 @@ Deno.test("public documentation uses published subpaths and valid local links", 
 
     for (
       const match of document.content.matchAll(
-        /jsr:@oxian\/oxian-js(?:@([^/\s"'`)]+))?(?:\/([a-z][a-z-]*))?/g,
+        /jsr:@oxian\/oxian-js(?:@([^/\s"'`)]+))?(?:\/([a-z][a-z\d-]*(?:\/[a-z][a-z\d-]*)*))?/g,
       )
     ) {
       assertEquals(
