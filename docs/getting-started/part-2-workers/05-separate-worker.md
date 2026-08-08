@@ -1,7 +1,7 @@
 # Chapter 5: Separate the worker
 
 Logwash currently looks like one server. The `dev` and `start` commands compose
-an HTTP gateway, a Hypervisor listener, and an in-process HTTP worker host. That
+an HTTP gateway, a Hypervisor listener, and an in-process HTTP Worker. That
 lightweight default keeps the worker contract visible, but it hides the network
 boundary we now want to deploy.
 
@@ -39,13 +39,17 @@ Create `gateway.ts` in the Logwash project root:
 import {
   createHttpGateway,
   HTTP_WORKLOAD,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/http";
-import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7/http";
+import { serve } from "jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno";
+import {
+  createHypervisor,
+  type Hypervisor,
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7/hypervisor";
 import {
   createInMemoryRegistrationAuthority,
   createInMemoryWorkerRepository,
   createWorkerDefinition,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/supervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7/supervisor";
 
 const WORKER_ID = "logwash-http";
 const CAPACITY = 2;
@@ -63,7 +67,7 @@ const authority = createInMemoryRegistrationAuthority();
 const registration = await authority.issueRegistration(identity);
 
 const hypervisorRef: {
-  current?: ReturnType<typeof createDenoHypervisor>;
+  current?: Hypervisor;
 } = {};
 const httpGateway = createHttpGateway({
   dispatch(input) {
@@ -75,9 +79,8 @@ const httpGateway = createHttpGateway({
   },
 });
 
-const hypervisor = createDenoHypervisor({
-  authority,
-  repository,
+const hypervisor = createHypervisor({
+  admission: { type: "registered", authority, repository },
   // This resolves the no-replay gate but is not durable. Chapter 6 replaces
   // it at the application boundary.
   persistAcceptance: async (commit) => {
@@ -87,7 +90,8 @@ const hypervisor = createDenoHypervisor({
 });
 hypervisorRef.current = hypervisor;
 
-const listener = hypervisor.listen({
+const listener = serve({
+  hypervisor,
   hostname: "127.0.0.1",
   port: 8000,
 });
@@ -131,6 +135,7 @@ const monitor = setInterval(() => {
 
 const stop = () => {
   void hypervisor.shutdown("process_signal");
+  void listener.shutdown();
 };
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   Deno.addSignalListener(signal, stop);
@@ -144,6 +149,7 @@ try {
     Deno.removeSignalListener(signal, stop);
   }
   await hypervisor.shutdown("gateway_stopped");
+  await listener.shutdown();
 }
 ```
 
@@ -158,14 +164,14 @@ Create `worker.ts` beside it:
 ```ts
 import {
   createConfiguredApplication,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/app";
-import { loadConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.6/config";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7/app";
+import { loadConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.7/config";
 import {
   createHttpWorkload,
   HTTP_WORKLOAD,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/http";
-import type { WorkerIdentity } from "jsr:@oxian/oxian-js@0.20.0-rc.6/protocol";
-import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.6/worker";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7/http";
+import type { WorkerIdentity } from "jsr:@oxian/oxian-js@0.20.0-rc.7/protocol";
+import { createWorker } from "jsr:@oxian/oxian-js@0.20.0-rc.7/worker";
 
 type LocalProvisioning = Readonly<{
   gatewayUrl: string;
@@ -197,9 +203,12 @@ const httpWorkload = createHttpWorkload({
   fetch: application.fetch,
 });
 
-const worker = createWorkerClient({
-  url: provisioning.gatewayUrl,
-  allowInsecureLoopback: true,
+const worker = createWorker({
+  transport: {
+    type: "websocket",
+    url: provisioning.gatewayUrl,
+    allowInsecureLoopback: true,
+  },
   identity: provisioning.identity,
   credential: provisioning.credential,
   handshakeId: provisioning.handshakeId,

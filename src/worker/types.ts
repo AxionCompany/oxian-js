@@ -5,6 +5,7 @@ import type {
   WorkerIdentity,
 } from "../protocol/index.ts";
 import type { WorkerWebSocketFactory } from "../transport/types.ts";
+import type { Hypervisor } from "../hypervisor/types.ts";
 
 /**
  * Stream chunks are bounded to one v1 data payload (1 MiB). A direct
@@ -88,7 +89,7 @@ export type WorkerReconnectDelay = (
   context: WorkerReconnectContext,
 ) => number | null | Promise<number | null>;
 
-export type WorkerClientState =
+export type WorkerState =
   | "idle"
   | "connecting"
   | "handshaking"
@@ -98,10 +99,12 @@ export type WorkerClientState =
   | "reconnecting"
   | "stopped";
 
-export type WorkerClientSnapshot = Readonly<{
-  state: WorkerClientState;
-  credentialKind: WorkerCredential["kind"];
-  handshakeId: string;
+export type WorkerSnapshot = Readonly<{
+  state: WorkerState;
+  transport: WorkerTransport["type"];
+  identity?: WorkerIdentity;
+  credentialKind?: WorkerCredential["kind"];
+  handshakeId?: string;
   resumeExpiresAtMs?: number;
   connectionId?: string;
   activeStreams: number;
@@ -114,7 +117,7 @@ export type WorkerClientSnapshot = Readonly<{
   reconnectAttempt: number;
 }>;
 
-export type WorkerClientResult =
+export type WorkerResult =
   | Readonly<{
     reason: "shutdown" | "stopped";
   }>
@@ -127,7 +130,7 @@ export type WorkerClientResult =
     error: unknown;
   }>;
 
-export type WorkerTransportOptions = Readonly<{
+export type WorkerWebSocketLimits = Readonly<{
   maxInboundMessages?: number;
   maxInboundBytes?: number;
   maxPendingSendMessages?: number;
@@ -143,74 +146,90 @@ export type WorkerResumeCredentialPersister = (
   context: Readonly<{ signal: AbortSignal }>,
 ) => void | Promise<void>;
 
-type WorkerClientBaseOptions = Readonly<{
-  url: string | URL;
-  identity: WorkerIdentity;
-  credential: WorkerCredential;
-  /**
-   * Supply the ID stored with a resume credential. A fresh ID is generated
-   * when omitted.
-   */
-  handshakeId?: string;
-  /**
-   * Required for locally checking a stored resume credential's expiry.
-   */
-  resumeExpiresAtMs?: number;
+type WorkerBaseOptions = Readonly<{
   workloads: Readonly<Record<string, WorkerWorkHandler>>;
   capacity?: number;
   signal?: AbortSignal;
-  allowInsecureLoopback?: boolean;
-  connectTimeoutMs?: number;
-  /**
-   * Provider-owned socket construction, for example to attach a short-lived
-   * Cloud identity header. Oxian still validates the URL, deadline, and exact
-   * worker subprotocol around this factory.
-   */
-  createWebSocket?: WorkerWebSocketFactory;
-  /**
-   * Bounds Hello-to-Welcome authentication and credential persistence.
-   */
-  handshakeTimeoutMs?: number;
-  /**
-   * Bounds workload initialization after Welcome and the subsequent wait for
-   * the Hypervisor's durable Ready acknowledgement.
-   *
-   * This is deliberately independent from `handshakeTimeoutMs`: restoring a
-   * workspace or preparing a runtime may be substantially slower than
-   * authenticating the connection.
-   */
-  readyTimeoutMs?: number;
-  resumeExpirySkewMs?: number;
-  inputBufferBytes?: number;
-  reconnectDelay?: WorkerReconnectDelay | false;
-  maxReconnectDelayMs?: number;
-  transport?: WorkerTransportOptions;
-  createHandshakeId?: () => string;
-  now?: () => number;
-  /**
-   * Applies workload-owned bootstrap after persistence and before Ready.
-   * Reconnect attempts invoke this hook sequentially, never concurrently.
-   * Implementations must make repeated bootstrap application idempotent. The
-   * signal is advisory: timeout, socket loss, or stop cannot cancel a Promise.
-   */
   beforeReady?: (
     context: WorkerBeforeReadyContext,
   ) => JsonObject | void | Promise<JsonObject | void>;
-  /**
-   * Creates bounded workload-owned status for every heartbeat. Calls are
-   * single-flight across ticks and connection attempts. A callback failure or
-   * invalid JSON result fails the current session. The signal is
-   * session-specific and advisory; a reconnect waits for an unresolved prior
-   * callback so callbacks never overlap.
-   */
-  createHeartbeatMetadata?: (
-    context: WorkerHeartbeatContext,
-  ) => JsonObject | void | Promise<JsonObject | void>;
   onStateChange?: (
-    snapshot: WorkerClientSnapshot,
+    snapshot: WorkerSnapshot,
   ) => void | Promise<void>;
-  onReenrollmentRequired?: (error: unknown) => void | Promise<void>;
 }>;
+
+export type InProcessWorkerTransport = Readonly<{
+  type: "in-process";
+  hypervisor: Hypervisor;
+}>;
+
+export type WebSocketWorkerTransport = Readonly<{
+  type: "websocket";
+  url: string | URL;
+  allowInsecureLoopback?: boolean;
+  connectTimeoutMs?: number;
+  /** Provider-owned socket construction for transport-level authentication. */
+  socket?: WorkerWebSocketFactory;
+  limits?: WorkerWebSocketLimits;
+}>;
+
+export type WorkerTransport =
+  | InProcessWorkerTransport
+  | WebSocketWorkerTransport;
+
+export type InProcessWorkerOptions =
+  & WorkerBaseOptions
+  & Readonly<{
+    id: string;
+    transport: InProcessWorkerTransport;
+    identity?: never;
+    credential?: never;
+    createHeartbeatMetadata?: never;
+  }>;
+
+type WebSocketWorkerBaseOptions =
+  & WorkerBaseOptions
+  & Readonly<{
+    transport: WebSocketWorkerTransport;
+    identity: WorkerIdentity;
+    credential: WorkerCredential;
+    /**
+     * Supply the ID stored with a resume credential. A fresh ID is generated
+     * when omitted.
+     */
+    handshakeId?: string;
+    /**
+     * Required for locally checking a stored resume credential's expiry.
+     */
+    resumeExpiresAtMs?: number;
+    /**
+     * Bounds Hello-to-Welcome authentication and credential persistence.
+     */
+    handshakeTimeoutMs?: number;
+    /**
+     * Bounds workload initialization after Welcome and the subsequent wait for
+     * the Hypervisor's durable Ready acknowledgement.
+     *
+     * This is deliberately independent from `handshakeTimeoutMs`: restoring a
+     * workspace or preparing a runtime may be substantially slower than
+     * authenticating the connection.
+     */
+    readyTimeoutMs?: number;
+    resumeExpirySkewMs?: number;
+    inputBufferBytes?: number;
+    /**
+     * Creates bounded workload-owned status for every remote heartbeat. Calls are
+     * single-flight across ticks and reconnect attempts.
+     */
+    createHeartbeatMetadata?: (
+      context: WorkerHeartbeatContext,
+    ) => JsonObject | void | Promise<JsonObject | void>;
+    reconnectDelay?: WorkerReconnectDelay | false;
+    maxReconnectDelayMs?: number;
+    createHandshakeId?: () => string;
+    now?: () => number;
+    onReenrollmentRequired?: (error: unknown) => void | Promise<void>;
+  }>;
 
 export type WorkerCredentialPersistence =
   | Readonly<{
@@ -239,18 +258,20 @@ export type WorkerCredentialPersistence =
     persistResumeCredential?: never;
   }>;
 
-export type WorkerClientOptions =
-  & WorkerClientBaseOptions
+export type WebSocketWorkerOptions =
+  & WebSocketWorkerBaseOptions
   & WorkerCredentialPersistence;
 
-export type WorkerClient = Readonly<{
-  run(): Promise<WorkerClientResult>;
-  whenReady(): Promise<WorkerClientSnapshot>;
+export type WorkerOptions = InProcessWorkerOptions | WebSocketWorkerOptions;
+
+export type Worker = Readonly<{
+  run(): Promise<WorkerResult>;
+  whenReady(): Promise<WorkerSnapshot>;
   stop(reason?: string): Promise<void>;
-  snapshot(): WorkerClientSnapshot;
+  snapshot(): WorkerSnapshot;
 }>;
 
-export type WorkerClientErrorCode =
+export type WorkerErrorCode =
   | "connection_lost"
   | "credential_expired"
   | "credential_rejected"
@@ -261,10 +282,10 @@ export type WorkerClientErrorCode =
   | "reconnect_exhausted"
   | "worker_stopped";
 
-export type WorkerClientError =
+export type WorkerError =
   & Error
   & Readonly<{
-    code: WorkerClientErrorCode;
-    workerClientError: true;
+    code: WorkerErrorCode;
+    workerError: true;
     cause?: unknown;
   }>;

@@ -1,8 +1,5 @@
 import { assertEquals } from "@std/assert";
-import {
-  createDenoHypervisor,
-  type DenoHypervisor,
-} from "../../src/adapters/deno/index.ts";
+import { serve } from "../../src/adapters/deno/index.ts";
 import {
   createApplication,
   createServerSentEvents,
@@ -12,7 +9,11 @@ import {
   createHttpWorkload,
   HTTP_WORKLOAD,
 } from "../../src/http/index.ts";
-import type { HypervisorListener } from "../../src/hypervisor/index.ts";
+import {
+  createHypervisor,
+  type Hypervisor,
+  type HypervisorListener,
+} from "../../src/hypervisor/index.ts";
 import { WORKER_PROTOCOL_LIMITS } from "../../src/protocol/limits.ts";
 import type {
   CompiledRoute,
@@ -25,19 +26,19 @@ import {
   createWorkerDefinition,
 } from "../../src/supervisor/index.ts";
 import {
-  createWorkerClient,
-  type WorkerClient,
-  type WorkerClientResult,
+  createWorker,
+  type Worker,
+  type WorkerResult,
 } from "../../src/worker/index.ts";
 import { createDeferred, streamOf } from "./test_utils.ts";
 
 const TEST_TIMEOUT_MS = 5_000;
 
 type HttpWebSocketHarness = Readonly<{
-  hypervisor: DenoHypervisor;
+  hypervisor: Hypervisor;
   listener: HypervisorListener;
-  worker: WorkerClient;
-  workerRun: Promise<WorkerClientResult>;
+  worker: Worker;
+  workerRun: Promise<WorkerResult>;
   close(): Promise<void>;
 }>;
 
@@ -99,9 +100,8 @@ async function startHarness(
     .identity;
   const authority = createInMemoryRegistrationAuthority();
   const registration = await authority.issueRegistration(identity);
-  const hypervisor = createDenoHypervisor({
-    authority,
-    repository,
+  const hypervisor = createHypervisor({
+    admission: { type: "registered", authority, repository },
     persistAcceptance: () => Promise.resolve(),
     config: {
       heartbeatIntervalMs: 20,
@@ -113,20 +113,24 @@ async function startHarness(
       proactiveDrainMarginMs: 1_000,
     },
   });
-  const listener = hypervisor.listen({
+  const listener = serve({
+    hypervisor,
     hostname: "127.0.0.1",
     port: 0,
   });
-  const worker = createWorkerClient({
-    url: workerUrl(listener, hypervisor.config.workerPath),
+  const worker = createWorker({
+    transport: {
+      type: "websocket",
+      url: workerUrl(listener, hypervisor.config.workerPath),
+      allowInsecureLoopback: true,
+      connectTimeoutMs: 1_000,
+    },
     identity,
     credential: registration.credential,
     credentialPersistence: "ephemeral",
     workloads: { [HTTP_WORKLOAD]: workload },
     capacity: 1,
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
-    connectTimeoutMs: 1_000,
     handshakeTimeoutMs: 1_000,
   });
   const workerRun = worker.run();

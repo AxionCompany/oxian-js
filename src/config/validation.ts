@@ -68,11 +68,11 @@ type NormalizationContext = Readonly<{
 
 function normalizeWorkerTransport(
   value: unknown,
-): "in-process" | "worker-websocket" {
+): "in-process" | "websocket" {
   if (value === undefined || value === "in-process") return "in-process";
-  if (value === "worker-websocket") return value;
+  if (value === "websocket") return value;
   throw new TypeError(
-    'config.gateway.workerTransport must be "in-process" or "worker-websocket"',
+    'config.gateway.workerTransport must be "in-process" or "websocket"',
   );
 }
 

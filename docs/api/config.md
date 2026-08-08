@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.6/config`
+# `jsr:@oxian/oxian-js@0.20.0-rc.7/config`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   DEFAULT_OXIAN_CONFIG,
   defineConfig,
   loadConfig,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/config";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7/config";
 ```
 
 Worker manifests, credentials, provider launch specifications, secrets, logging
@@ -53,7 +53,7 @@ function defineConfig(input: OxianConfigInput): OxianConfig;
 objects and arrays are new and recursively frozen.
 
 ```ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.6/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.7/config";
 
 export default defineConfig({
   application: {
@@ -181,15 +181,15 @@ type GatewayConfig = Readonly<{
 ```
 
 ```ts
-type LocalWorkerTransport = "in-process" | "worker-websocket";
+type LocalWorkerTransport = "in-process" | "websocket";
 ```
 
 `workerTransport` controls the local worker created by `oxian dev`,
 `oxian start`, and `createLocalRuntime`. It defaults to `"in-process"`, which
-attaches the HTTP workload directly to an embeddable `WorkerHost` without a
-loopback socket. `"worker-websocket"` preserves the previous outbound loopback
-worker topology for wire-protocol integration testing. This setting does not
-change separately deployed manifest workers, which continue to use WSS.
+binds the HTTP Worker directly to its Hypervisor without a loopback socket.
+`"websocket"` preserves the outbound loopback worker topology for wire-protocol
+integration testing. This setting does not change separately deployed manifest
+workers, which continue to use WSS.
 
 `HypervisorConfig` is defined by the `/hypervisor` subpath. The input accepts a
 partial value, fills every omitted field from the Hypervisor defaults, and
@@ -389,7 +389,7 @@ The module must have exactly one runtime export:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.6/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.7/config";
 
 export default defineConfig({
   application: { routesRoot: "./routes" },
@@ -400,7 +400,7 @@ The named form is equivalent:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.6/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.7/config";
 
 export const config = defineConfig({
   application: { routesRoot: "./routes" },

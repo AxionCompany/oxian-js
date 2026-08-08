@@ -6,8 +6,7 @@ for (
     "createApplication",
     "createHttpWorkload",
     "createHypervisor",
-    "createWorkerHost",
-    "createWorkerClient",
+    "createWorker",
   ]
 ) {
   assert.equal(typeof oxian[name], "function", `${name} must be portable`);
@@ -15,6 +14,8 @@ for (
 for (
   const name of [
     "createDenoHypervisor",
+    "createWorkerHost",
+    "createWorkerClient",
     "createFileRouter",
     "createLocalProcessProvider",
     "createLocalRuntime",
@@ -23,16 +24,19 @@ for (
   assert.equal(name in oxian, false, `${name} must not leak from the root`);
 }
 
-const host = oxian.createWorkerHost({
+const hypervisor = oxian.createHypervisor({
   persistAcceptance: () => Promise.resolve(),
 });
-host.attachInProcessWorker({
-  workerId: "node-portability-worker",
+const worker = oxian.createWorker({
+  id: "node-portability-worker",
+  transport: { type: "in-process", hypervisor },
   workloads: {
     echo: ({ input }) => ({ body: input }),
   },
 });
-const operation = await host.dispatch({
+const running = worker.run();
+await worker.whenReady();
+const operation = await hypervisor.dispatch({
   workload: "echo",
   body: new Uint8Array([1, 2, 3]),
 });
@@ -41,7 +45,9 @@ assert.deepEqual(
   new Uint8Array([1, 2, 3]),
 );
 await operation.completed;
-await host.shutdown("node_portability_complete");
+await worker.stop("node_portability_complete");
+await running;
+await hypervisor.shutdown("node_portability_complete");
 
 let receivedBody = "";
 const workload = oxian.createHttpWorkload({

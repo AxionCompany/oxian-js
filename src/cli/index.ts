@@ -26,8 +26,8 @@ Usage:
 
 Commands:
   init     Write a minimal oxian.config.ts and routes/index.ts
-  dev      Run the local HTTP gateway and worker host with dev edges
-  start    Run the local HTTP gateway and worker host
+  dev      Run the local Hypervisor and Worker with dev edges
+  start    Run the local Hypervisor and Worker
   worker   Attach a manifest-defined HTTP worker to a WebSocket gateway
   routes   Compile and print the immutable route table
   check    Strictly validate config, application entry, and all routes

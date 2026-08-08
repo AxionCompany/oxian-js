@@ -60,6 +60,8 @@ export type SessionFence = Readonly<{
 export type WorkerSession = Readonly<{
   identity: WorkerIdentity;
   connectionId: string;
+  /** Remote sessions use heartbeat leases; direct bindings end explicitly. */
+  liveness: "heartbeat" | "binding";
   /**
    * Authority-issued monotonic fence within this worker attempt.
    */

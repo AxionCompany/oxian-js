@@ -48,7 +48,7 @@ export type HttpListenerConfig = Readonly<{
  * In-process delivery is the lightweight default. Worker WebSocket preserves
  * the full loopback protocol topology for transport integration testing.
  */
-export type LocalWorkerTransport = "in-process" | "worker-websocket";
+export type LocalWorkerTransport = "in-process" | "websocket";
 
 /**
  * Data-only subset of the CORS adapter options. Predicate functions are

@@ -1,6 +1,6 @@
 # API reference
 
-This reference covers the public API of `@oxian/oxian-js` version `0.20.0-rc.6`.
+This reference covers the public API of `@oxian/oxian-js` version `0.20.0-rc.7`.
 Start with the [getting-started guide](getting-started.md) when learning Oxian;
 use these pages when composing a runtime, implementing a platform boundary, or
 checking an exact contract.
@@ -13,20 +13,18 @@ The package root is the side-effect-free, runtime-neutral execution core:
 import {
   createApplication,
   createHypervisor,
-  createWorkerClient,
-  createWorkerHost,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6";
+  createWorker,
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7";
 ```
 
 Explicit subpaths make ownership clearer and keep the executable boundary out of
 application code:
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.20.0-rc.6/app";
-import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.6/host";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/hypervisor";
-import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
-import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.6/worker";
+import { createApplication } from "jsr:@oxian/oxian-js@0.20.0-rc.7/app";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.7/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno";
+import { createWorker } from "jsr:@oxian/oxian-js@0.20.0-rc.7/worker";
 ```
 
 The root excludes filesystem discovery, static files, local processes, local
@@ -44,14 +42,14 @@ subpaths only when the target runtime provides the required capability.
 
 ## Execution and transport modules
 
-| Subpath                            | Use it to                                                                                                              |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| [`/http`](api/http.md)             | Encode HTTP metadata and bodies, create the gateway, or run an HTTP workload inside a worker.                          |
-| [`/host`](api/host.md)             | Embed process-local workers with direct streams and the same capacity, acceptance, cancellation, and drain semantics.  |
-| [`/hypervisor`](api/hypervisor.md) | Prepare authenticated worker admission, dispatch work, drain, and inspect process-local state without owning a server. |
-| [`/worker`](api/worker.md)         | Maintain an outbound worker connection, rotate credentials, heartbeat, reconnect, and execute workloads.               |
-| [`/transport`](api/transport.md)   | Open the worker WebSocket transport or provide a custom socket factory.                                                |
-| [`/protocol`](api/protocol.md)     | Build, validate, and interpret `oxian.worker.v1` control and binary frames.                                            |
+| Subpath                            | Use it to                                                                                                          |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| [`/http`](api/http.md)             | Encode HTTP metadata and bodies, create the gateway, or run an HTTP workload inside a worker.                      |
+| [`/hypervisor`](api/hypervisor.md) | Host in-process and remote Workers, dispatch work, drain, and inspect process-local state without owning a server. |
+| [`/worker`](api/worker.md)         | Declare workloads and bind a Worker through an in-process or WebSocket transport descriptor.                       |
+| [`/work`](api/work.md)             | Use the minimal runtime-neutral work input, stream handle, and dispatch capability contracts.                      |
+| [`/transport`](api/transport.md)   | Open the worker WebSocket transport or provide a custom socket factory.                                            |
+| [`/protocol`](api/protocol.md)     | Build, validate, and interpret `oxian.worker.v1` control and binary frames.                                        |
 
 ## Platform and local-runtime modules
 
@@ -71,11 +69,12 @@ Application and edge APIs use native `Request`, `Response`, `Headers`,
 `ReadableStream`, and `AbortSignal`. Oxian does not introduce parallel HTTP
 request or response classes.
 
-### Factories and lifecycle
+### Closure-based capabilities
 
-Public stateful APIs are factory functions rather than classes. Creation
-configures an object; methods such as `start()`, `stop()`, `drain()`, and
-`dispose()` own explicit transitions where the returned contract exposes them.
+Public stateful APIs are closure factories rather than classes. They return
+frozen records of functions and snapshots; Oxian does not expose constructors or
+`this`-managed objects. Transport variants are discriminated data such as
+`{ type: "in-process", hypervisor }`, not separately named factory functions.
 Callers should await lifecycle promises and must not infer readiness merely from
 the presence of provider compute.
 
@@ -100,18 +99,17 @@ terminal failures through rejection or their documented result types.
 
 ## Process and durability boundary
 
-One `WorkerHost` owns only its attached in-process sessions, and one Hypervisor
-owns only the WebSocket sessions attached to that process. Supervisor
-repositories may persist worker control records, but Oxian does not provide a
-distributed socket-owner directory or a durable cross-replica work relay.
-Applications that require durable acceptance, result persistence, or
-cross-replica forwarding own those policies outside the package.
+A Hypervisor owns only the in-process and WebSocket Worker sessions attached to
+that process. Supervisor repositories may persist worker control records, but
+Oxian does not provide a distributed socket-owner directory or a durable
+cross-replica work relay. Applications that require durable acceptance, result
+persistence, or cross-replica forwarding own those policies outside the package.
 
 See [runtime boundaries and adapters](runtime-adapters.md) for the supported
 runtime matrix and the `WorkerWireConnection` seam.
 
-The remote worker sends `work.accepted` before workload execution; an in-process
-host performs the equivalent claim directly. Once the owning host persists
+The remote Worker sends `work.accepted` before workload execution; an in-process
+Worker performs the equivalent claim directly. Once the Hypervisor persists
 acceptance and crosses the start boundary, Oxian does not replay that operation
 after an indeterminate failure. See the
 [normative worker protocol](worker-protocol-v1.md) for the complete state

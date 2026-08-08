@@ -1,4 +1,4 @@
-import { createAbortError, createWorkerClientError } from "./errors.ts";
+import { createAbortError, createWorkerError } from "./errors.ts";
 
 const MAX_TIMER_DELAY_MS = 0x7fff_ffff;
 
@@ -83,7 +83,7 @@ export function takeWithTimeout<T>(
     const timer = setTimeout(() => {
       cleanup();
       reject(
-        createWorkerClientError(
+        createWorkerError(
           "handshake_failed",
           timeoutMessage,
         ),

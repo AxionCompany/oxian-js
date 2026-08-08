@@ -9,7 +9,7 @@ runtime-specific server API.
 | Capability                       | Deno                                  | Node 22+                  | Bun                       | Cloudflare/browser       |
 | -------------------------------- | ------------------------------------- | ------------------------- | ------------------------- | ------------------------ |
 | Portable package root            | Supported                             | Verified in CI            | Web-API-compatible core   | Web-API-compatible core  |
-| Embedded `WorkerHost`            | Supported                             | Verified in CI            | Supported by core         | Isolate/event-loop local |
+| In-process Worker transport      | Supported                             | Verified in CI            | Supported by core         | Isolate/event-loop local |
 | HTTP workload and Web Streams    | Supported                             | Verified in CI            | Supported by core         | Supported by core        |
 | Hypervisor protocol/session core | Supported                             | Adapter-ready             | Adapter-ready             | Adapter-ready            |
 | Hypervisor WebSocket server      | `/adapters/deno`                      | Not yet published         | Not yet published         | Not yet published        |
@@ -52,20 +52,23 @@ expires on the configured handshake deadline.
 
 ## In-process workers
 
-`WorkerHost` continues to pass live `ReadableStream<Uint8Array>` values
-directly. It does not serialize operations through `WorkerWireConnection` or
-JavaScript payload events. This preserves the lighter in-process path while the
-remote Hypervisor keeps its protocol and isolation boundary.
+A Worker declared with `transport: { type: "in-process", hypervisor }` passes
+live `ReadableStream<Uint8Array>` values directly. It does not serialize
+operations through `WorkerWireConnection` or JavaScript payload events. The same
+Hypervisor can also admit remote Workers when `admission` is configured.
 
 ## Runtime-specific imports
 
 Use explicit subpaths for capabilities:
 
 ```ts
-import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.6";
-import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
-import { createFileRouter } from "jsr:@oxian/oxian-js@0.20.0-rc.6/router";
-import { createLocalProcessProvider } from "jsr:@oxian/oxian-js@0.20.0-rc.6/providers";
+import {
+  createHypervisor,
+  createWorker,
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7";
+import { handler, serve } from "jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno";
+import { createFileRouter } from "jsr:@oxian/oxian-js@0.20.0-rc.7/router";
+import { createLocalProcessProvider } from "jsr:@oxian/oxian-js@0.20.0-rc.7/providers";
 ```
 
 The root deliberately excludes `createFileRouter`, `createLocalRuntime`,

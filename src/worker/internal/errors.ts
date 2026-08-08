@@ -1,11 +1,11 @@
-import type { WorkerClientError, WorkerClientErrorCode } from "../types.ts";
+import type { WorkerError, WorkerErrorCode } from "../types.ts";
 
-export function createWorkerClientError(
-  code: WorkerClientErrorCode,
+export function createWorkerError(
+  code: WorkerErrorCode,
   message: string,
   cause?: unknown,
-): WorkerClientError {
-  const error = new Error(message) as WorkerClientError;
+): WorkerError {
+  const error = new Error(message) as WorkerError;
   Object.defineProperties(error, {
     code: {
       configurable: false,
@@ -13,7 +13,7 @@ export function createWorkerClientError(
       value: code,
       writable: false,
     },
-    workerClientError: {
+    workerError: {
       configurable: false,
       enumerable: true,
       value: true,
@@ -31,12 +31,12 @@ export function createWorkerClientError(
   return error;
 }
 
-export function isWorkerClientError(
+export function isWorkerError(
   value: unknown,
-): value is WorkerClientError {
+): value is WorkerError {
   return value instanceof Error &&
-    (value as unknown as { workerClientError?: unknown })
-        .workerClientError === true;
+    (value as unknown as { workerError?: unknown })
+        .workerError === true;
 }
 
 export function createAbortError(message: string): DOMException {

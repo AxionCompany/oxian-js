@@ -41,7 +41,7 @@ place that gateway behind an HTTPS reverse proxy that supports WebSocket
 upgrades. Keep the internal listener on loopback, and publish both normal HTTPS
 requests and `/_oxian/workers/connect` through the same TLS origin.
 
-You can also terminate TLS directly in Deno. Replace `hypervisor.listen(...)` in
+You can also terminate TLS directly in Deno. Replace `serve(...)` in
 `gateway.ts` with:
 
 ```ts
@@ -49,13 +49,14 @@ const [cert, key] = await Promise.all([
   Deno.readTextFile(Deno.env.get("TLS_CERT_FILE")!),
   Deno.readTextFile(Deno.env.get("TLS_KEY_FILE")!),
 ]);
+const fetch = handler(hypervisor);
 
 const server = Deno.serve({
   hostname: "0.0.0.0",
   port: 443,
   cert,
   key,
-}, hypervisor.fetch);
+}, fetch);
 
 console.log("Logwash gateway: https://logwash.example.com/");
 console.log(
@@ -66,7 +67,7 @@ await server.finished;
 ```
 
 Use a certificate valid for the public hostname. Do not expose the Chapter 5
-plain `ws:` endpoint beyond loopback; the worker client rejects it.
+plain `ws:` endpoint beyond loopback; the Worker rejects it.
 
 ## 2. Put worker authority where it belongs
 
@@ -75,13 +76,16 @@ commit from Chapter 5 are not production components. Replace them with durable,
 application-owned functions:
 
 ```ts
-const hypervisor = createDenoHypervisor({
-  authority: {
-    exchange: (input) => control.exchangeWorkerCredential(input),
-  },
-  repository: {
-    getDefinition: (workerId) => control.getWorkerDefinition(workerId),
-    assertCurrent: (identity) => control.assertCurrentAttempt(identity),
+const hypervisor = createHypervisor({
+  admission: {
+    type: "registered",
+    authority: {
+      exchange: (input) => control.exchangeWorkerCredential(input),
+    },
+    repository: {
+      getDefinition: (workerId) => control.getWorkerDefinition(workerId),
+      assertCurrent: (identity) => control.assertCurrentAttempt(identity),
+    },
   },
   persistAcceptance: (commit) => control.persistAcceptance(commit),
   fallback: httpGateway,
@@ -199,7 +203,7 @@ a committed environment file.
 Run:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin \
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin \
   worker --manifest ./oxian.worker.ts
 ```
 
@@ -245,10 +249,10 @@ handshake ID. It reconnects as the same attempt but receives a newer fenced
 session generation.
 
 To test the normal reconnect path, interrupt outbound connectivity without
-stopping the process, then restore it. The default worker client retries with
-bounded exponential backoff and keeps retrying unless it is stopped, shut down,
-or told that re-enrollment is required. Accepted work is never replayed across
-that reconnect.
+stopping the process, then restore it. The default Worker retries with bounded
+exponential backoff and keeps retrying unless it is stopped, shut down, or told
+that re-enrollment is required. Accepted work is never replayed across that
+reconnect.
 
 ## The socket-authentication seam
 
@@ -256,15 +260,15 @@ The protocol capability may be sufficient when WSS reaches the Hypervisor
 directly. Some platforms additionally require a short-lived identity token in
 the HTTP WebSocket upgrade. That policy remains outside Oxian's protocol.
 
-The lower-level `createWorkerClient` accepts a public `createWebSocket` factory
-for this case:
+The WebSocket transport descriptor accepts a public socket capability for this
+case:
 
 ```ts
 import type {
   WorkerWebSocketFactory,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/transport";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7/transport";
 
-const createWebSocket: WorkerWebSocketFactory = async (
+const socket: WorkerWebSocketFactory = async (
   { url, protocol, signal },
 ) => {
   signal.throwIfAborted();
@@ -287,11 +291,11 @@ const createWebSocket: WorkerWebSocketFactory = async (
 application-owned. The adapter must return a WebSocket-compatible object. The
 native Deno `WebSocket` constructor cannot attach arbitrary request headers.
 
-The 0.20 manifest CLI does not expose this socket factory. If your edge requires
-upgrade headers, compose `createWorkerClient` directly and pass
-`createWebSocket`; keep the same manifest values and use
-`createAtomicResumeCredentialStore` from the public `/local` export for durable
-rotation. Do not smuggle a bearer token into the gateway URL.
+The 0.20 manifest CLI does not expose this socket capability. If your edge
+requires upgrade headers, compose `createWorker` directly and set
+`transport: { type: "websocket", url, socket }`; keep the same manifest values
+and use `createAtomicResumeCredentialStore` from the public `/local` export for
+durable rotation. Do not smuggle a bearer token into the gateway URL.
 
 ## What happened
 
@@ -311,7 +315,7 @@ attempt and credential store are what let a restarted machine reconnect safely.
 ## What this unlocks
 
 Logwash can now run on a user's computer, a VM, or another provider behind
-outbound-only networking. Every provider can use the same worker client and wire
+outbound-only networking. Every provider can use the same Worker and wire
 protocol while keeping enrollment, compute lifecycle, and secrets in the system
 that owns them.
 

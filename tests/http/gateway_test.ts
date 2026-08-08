@@ -1,5 +1,4 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import type { HypervisorDispatchInput } from "../../src/hypervisor/types.ts";
 import {
   createHttpGateway,
   decodeHttpRequestMetadata,
@@ -9,6 +8,7 @@ import {
 } from "../../src/http/index.ts";
 import type { JsonObject } from "../../src/protocol/types.ts";
 import { WORKER_PROTOCOL_LIMITS } from "../../src/protocol/limits.ts";
+import type { WorkInput } from "../../src/work/types.ts";
 import {
   concat,
   createDeferred,
@@ -48,7 +48,7 @@ Deno.test("HTTP gateway maps request and streaming response without buffering", 
       headers: responseHeaders,
     }),
   );
-  let dispatched: HypervisorDispatchInput | undefined;
+  let dispatched: WorkInput | undefined;
   const gateway = createHttpGateway({
     workload: "http.api",
     createRequestId: () => "request-fixed",

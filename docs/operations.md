@@ -5,8 +5,8 @@
 Run a route and configuration check before starting a worker or gateway:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin routes --config oxian.config.ts
 deno task verify
 ```
 
@@ -21,21 +21,28 @@ commit that records the no-replay boundary. Compose `createHttpGateway` as its
 HTTP fallback.
 
 ```ts
-import { createHttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.6/http";
-import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
+import { createHttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.7/http";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.7/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno";
 
-const hypervisor = createDenoHypervisor({
-  authority,
-  repository,
+const hypervisor = createHypervisor({
+  admission: {
+    type: "registered",
+    authority,
+    repository,
+  },
   persistAcceptance: async (commit) => {
     await storeAcceptedOperation(commit);
   },
-  fallback: createHttpGateway({
-    dispatch: (input) => hypervisor.dispatch(input),
-  }),
+  fallback: (request) => http(request),
 });
 
-const listener = hypervisor.listen({ hostname: "0.0.0.0", port: 8000 });
+const http = createHttpGateway({ dispatch: hypervisor.dispatch });
+const listener = serve({
+  hypervisor,
+  hostname: "0.0.0.0",
+  port: 8000,
+});
 await listener.finished;
 ```
 
@@ -46,11 +53,11 @@ identity; the authority must atomically consume and rotate credentials.
 ## Observe and drain
 
 Use `snapshot()` for process-local operational metrics. `drain()` gracefully
-rotates one worker connection and lets its `WorkerClient` reconnect.
-`shutdownWorker()` gracefully terminates the current client for one logical
-worker. `shutdownSession()` does the same only when an exact session fence is
-still current, so stale attempt cleanup cannot stop a replacement. `shutdown()`
-terminates every connected worker and the Deno composition:
+rotates one Worker connection or direct binding and lets that Worker rebind.
+`shutdownWorker()` gracefully terminates one logical Worker. `shutdownSession()`
+does the same only when an exact session fence is still current, so stale
+attempt cleanup cannot stop a replacement. `shutdown()` terminates every bound
+or connected Worker. The listener remains owned by its runtime adapter:
 
 ```ts
 const snapshot = hypervisor.snapshot();
@@ -60,16 +67,18 @@ await hypervisor.drain("orders-worker", "deployment");
 await hypervisor.shutdownWorker("retired-worker", "worker_retired");
 await hypervisor.shutdownSession(exactFence, "attempt_settled");
 await hypervisor.shutdown("service_shutdown");
+await listener.shutdown();
 ```
 
 Both graceful worker operations stop new reservations and wait for active
-streams. A maintenance drain closes the current connection without a Shutdown
-frame; terminal worker shutdown sends one before closing and upgrades an
-already-running maintenance drain. Core shutdown stops accepting connections;
-`createDenoHypervisor` additionally closes the listeners owned by that adapter
-after the configured drain timeout. Treat a lost operation after the acceptance
-commit as indeterminate; record an application-level operation ID when a caller
-needs durable outcome lookup.
+streams. A maintenance drain replaces the current connection or binding;
+terminal worker shutdown sends a remote Shutdown frame where applicable and
+upgrades an already-running maintenance drain. Core shutdown stops accepting
+Workers and settles its sessions after the configured drain timeout. Treat a
+lost operation after the acceptance commit as indeterminate; record an
+application-level operation ID when a caller needs durable outcome lookup.
+`serve()` returns a separate listener capability; shutting down a Hypervisor
+does not implicitly claim ownership of every adapter that may expose it.
 
 ## Limits and secure transport
 

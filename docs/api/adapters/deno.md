@@ -1,69 +1,75 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno`
+# `jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno`
 
-[Back to the API reference](../../api-reference.md)
-
-The Deno adapter owns the native WebSocket upgrade and optional HTTP listener
-around a runtime-neutral Hypervisor core.
+The Deno adapter performs native WebSocket upgrades and optional listener
+binding for an application-owned Hypervisor. It does not create, configure, or
+own the Hypervisor.
 
 ```ts
 import {
-  createDenoHypervisor,
-  createDenoHypervisorFetch,
-  type DenoHypervisor,
-  type DenoHypervisorOptions,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
+  type DenoServeOptions,
+  handler,
+  serve,
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno";
 ```
 
-## Export summary
+## Exports
 
-| Export                      | Purpose                                                        |
-| --------------------------- | -------------------------------------------------------------- |
-| `createDenoHypervisor`      | Compose the portable core, Deno upgrade bridge, and listeners. |
-| `createDenoHypervisorFetch` | Adapt an existing core to a Deno Fetch handler.                |
-| `DenoHypervisor`            | Core API plus Deno `fetch` and `listen` methods.               |
-| `DenoHypervisorOptions`     | Alias of the portable `HypervisorOptions` contract.            |
+| Export             | Purpose                                                   |
+| ------------------ | --------------------------------------------------------- |
+| `handler`          | Adapt `Hypervisor.prepare()` to Deno's Fetch API.         |
+| `serve`            | Start one `Deno.serve` listener for a Hypervisor.         |
+| `DenoServeOptions` | Hypervisor plus hostname, port, and cancellation options. |
 
-## Complete Deno composition
+## Start a listener
 
 ```ts
-const hypervisor = createDenoHypervisor({
-  authority,
-  repository,
-  persistAcceptance,
-  fallback: gateway,
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.7/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno";
+
+const hypervisor = createHypervisor({
+  persistAcceptance: (commit) => operations.accept(commit),
 });
 
-const listener = hypervisor.listen({
-  hostname: "0.0.0.0",
+const listener = serve({
+  hypervisor,
+  hostname: "127.0.0.1",
   port: 8000,
 });
+
 await listener.finished;
 ```
 
-`createDenoHypervisor` preserves the complete v0.20 Deno server behavior while
-keeping `Deno.serve` and `Deno.upgradeWebSocket` outside `/hypervisor` and the
-package root. Its `shutdown()` first drains and closes core worker sessions,
-then closes every listener created by that composition.
-
-## Existing Deno server
-
-Use `createDenoHypervisorFetch` when another Deno server owns binding or TLS:
+`serve()` returns a separate `HypervisorListener`. The owner shuts down both
+capabilities explicitly:
 
 ```ts
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/hypervisor";
-import { createDenoHypervisorFetch } from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
-
-const hypervisor = createHypervisor({
-  authority,
-  repository,
-  persistAcceptance,
-  fallback: gateway,
-});
-const fetch = createDenoHypervisorFetch(hypervisor);
-
-Deno.serve({ port: 8443, cert, key }, fetch);
+await hypervisor.shutdown("service_shutdown");
+await listener.shutdown();
 ```
 
-The bridge calls `hypervisor.prepare(request)`, performs the native upgrade only
-after admission succeeds, and attaches the upgraded socket through
-`WorkerWireConnection`. Failed upgrades release their reserved admission slot.
+## Compose an existing server
+
+```ts
+import { handler } from "jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno";
+
+const fetch = handler(hypervisor);
+const server = Deno.serve({
+  hostname: "0.0.0.0",
+  port: 8443,
+  cert,
+  key,
+}, fetch);
+```
+
+The returned Fetch function upgrades only one-shot admissions produced by
+`Hypervisor.prepare()`. If Deno rejects the native upgrade, the adapter cancels
+the reserved admission slot.
+
+```ts
+type DenoServeOptions = Readonly<{
+  hypervisor: Hypervisor;
+  hostname?: string;
+  port?: number;
+  signal?: AbortSignal;
+}>;
+```

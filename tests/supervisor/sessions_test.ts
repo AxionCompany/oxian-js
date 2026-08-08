@@ -137,6 +137,29 @@ Deno.test("session heartbeat extends the lease and expiry removes readiness", ()
   assertEquals(registry.get("worker-1"), undefined);
 });
 
+Deno.test("bound sessions end explicitly and never enter heartbeat expiry", () => {
+  let nowMs = 10;
+  const registry = createSessionRegistry({ clock: () => nowMs });
+  const connected = registry.attach({
+    identity: IDENTITY,
+    connectionId: "bound-connection",
+    sessionGeneration: 1,
+    workloads: ["sandbox.command"],
+    capacity: 1,
+    leaseTimeoutMs: 100,
+    liveness: "binding",
+  }).session;
+  const ready = registry.markReady(fenceForSession(connected));
+
+  nowMs = 1_000;
+  assertEquals(registry.expireLeases(), []);
+  assertEquals(registry.get(IDENTITY.workerId)?.phase, "ready");
+  const error = assertThrows(() =>
+    registry.heartbeat(fenceForSession(ready), { sequence: 0 })
+  ) as SupervisorError;
+  assertEquals(error.code, "invalid_state");
+});
+
 Deno.test("connected sessions use the Ready deadline and start their lease when published", () => {
   let nowMs = 0;
   const registry = createSessionRegistry({ clock: () => nowMs });

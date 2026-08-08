@@ -1,14 +1,13 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import {
-  createDenoHypervisor,
-  type DenoHypervisor,
-} from "../../src/adapters/deno/index.ts";
+import { serve } from "../../src/adapters/deno/index.ts";
 import type {
+  Hypervisor,
   HypervisorConfig,
   HypervisorListener,
   HypervisorScheduler,
-  HypervisorWorkHandle,
 } from "../../src/hypervisor/index.ts";
+import { createHypervisor } from "../../src/hypervisor/index.ts";
+import type { WorkHandle } from "../../src/work/index.ts";
 import {
   createDrainedFrame,
   createHeartbeatFrame,
@@ -46,7 +45,7 @@ type Deferred<T> = Readonly<{
 }>;
 
 type ControlledHarness = Readonly<{
-  hypervisor: DenoHypervisor;
+  hypervisor: Hypervisor;
   listener: HypervisorListener;
   identity: WorkerIdentity;
   worker: ControlledWorker;
@@ -152,7 +151,7 @@ function observeSettlement<T>(
   return Object.freeze({ settled: () => value });
 }
 
-async function expectRejectedHandle(handle: HypervisorWorkHandle) {
+async function expectRejectedHandle(handle: WorkHandle) {
   await assertRejects(() => handle.started, Error);
   await assertRejects(() => handle.metadata, Error);
   await assertRejects(() => readAll(handle.output), Error);
@@ -206,9 +205,8 @@ async function startControlledHarness(
     .identity;
   const authority = createInMemoryRegistrationAuthority();
   const registration = await authority.issueRegistration(identity);
-  const hypervisor = createDenoHypervisor({
-    authority,
-    repository,
+  const hypervisor = createHypervisor({
+    admission: { type: "registered", authority, repository },
     persistAcceptance: input.persistAcceptance,
     ...(input.scheduler === undefined ? {} : { scheduler: input.scheduler }),
     ...(input.clock === undefined ? {} : { clock: input.clock }),
@@ -226,7 +224,8 @@ async function startControlledHarness(
       ...input.config,
     },
   });
-  const listener = hypervisor.listen({
+  const listener = serve({
+    hypervisor,
     hostname: "127.0.0.1",
     port: 0,
   });
@@ -1389,7 +1388,7 @@ Deno.test({
             workload: "sandbox.command",
           }),
         Error,
-        "no ready session",
+        "no ready Worker has capacity",
       );
     } finally {
       await harness.close();

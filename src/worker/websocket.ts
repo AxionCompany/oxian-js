@@ -37,8 +37,8 @@ import {
 import { createCredentialRotationCoordinator } from "./internal/credentials.ts";
 import {
   createAbortError,
-  createWorkerClientError,
-  isWorkerClientError,
+  createWorkerError,
+  isWorkerError,
   safeErrorMessage,
 } from "./internal/errors.ts";
 import {
@@ -62,14 +62,14 @@ import {
   terminalIsAbort,
 } from "./internal/work.ts";
 import type {
+  WebSocketWorkerOptions,
+  Worker,
   WorkerBody,
-  WorkerClient,
-  WorkerClientOptions,
-  WorkerClientResult,
-  WorkerClientSnapshot,
-  WorkerClientState,
   WorkerHeartbeatContext,
   WorkerReconnectDelay,
+  WorkerResult,
+  WorkerSnapshot,
+  WorkerState,
   WorkerWorkContext,
 } from "./types.ts";
 
@@ -134,12 +134,16 @@ type PendingHeartbeatMetadata = Readonly<{
 }>;
 
 /**
- * Creates a reconnecting outbound worker. Construction is side-effect free;
+ * Creates a reconnecting WebSocket-backed worker. Construction is side-effect free;
  * `run()` owns the connection until stop, shutdown, or re-enrollment.
  */
-export function createWorkerClient(
-  options: WorkerClientOptions,
-): WorkerClient {
+export function createWebSocketWorker(
+  options: WebSocketWorkerOptions,
+): Worker {
+  if (options.transport?.type !== "websocket") {
+    throw new TypeError('transport.type must be "websocket"');
+  }
+  const connection = options.transport;
   const identity = Object.freeze(createWorkerIdentity(options.identity));
   const workloadEntries = Object.entries(options.workloads);
   if (workloadEntries.length === 0) {
@@ -249,10 +253,28 @@ export function createWorkerClient(
     throw new TypeError("createHeartbeatMetadata must be a function");
   }
   if (
-    options.createWebSocket !== undefined &&
-    typeof options.createWebSocket !== "function"
+    options.beforeReady !== undefined &&
+    typeof options.beforeReady !== "function"
   ) {
-    throw new TypeError("createWebSocket must be a function");
+    throw new TypeError("beforeReady must be a function");
+  }
+  if (
+    options.onStateChange !== undefined &&
+    typeof options.onStateChange !== "function"
+  ) {
+    throw new TypeError("onStateChange must be a function");
+  }
+  if (
+    options.onReenrollmentRequired !== undefined &&
+    typeof options.onReenrollmentRequired !== "function"
+  ) {
+    throw new TypeError("onReenrollmentRequired must be a function");
+  }
+  if (
+    connection.socket !== undefined &&
+    typeof connection.socket !== "function"
+  ) {
+    throw new TypeError("transport.socket must be a function");
   }
 
   const defaultReconnectDelay = createBoundedExponentialBackoff({
@@ -284,7 +306,7 @@ export function createWorkerClient(
     handshakeTimeoutMs,
     createHandshakeId,
   });
-  const readyDeferred = createDeferred<WorkerClientSnapshot>();
+  const readyDeferred = createDeferred<WorkerSnapshot>();
   // A caller may choose not to await readiness; keep that from becoming an
   // unhandled rejection when startup terminates early.
   readyDeferred.promise.catch(() => undefined);
@@ -299,21 +321,24 @@ export function createWorkerClient(
   const reconnectDelayInvoker = reconnectDelay === false
     ? undefined
     : createSingleFlightInvoker(reconnectDelay, stopController.signal);
-  let state: WorkerClientState = "idle";
+  let state: WorkerState = "idle";
   let connectionId: string | undefined;
   let activeStreams = 0;
   let reconnectAttempt = 0;
   let runStarted = false;
   let runFinished = false;
+  let runTask: Promise<WorkerResult> | undefined;
   let everReady = false;
   let stopReason = "worker_stopped";
   let pendingInitialization: PendingInitialization | undefined;
   let pendingHeartbeatMetadata: PendingHeartbeatMetadata | undefined;
 
-  const snapshot = (): WorkerClientSnapshot => {
+  const snapshot = (): WorkerSnapshot => {
     const credentialState = credentials.current();
     return Object.freeze({
       state,
+      transport: "websocket" as const,
+      identity,
       credentialKind: credentialState.credential.kind,
       handshakeId: credentialState.handshakeId,
       ...(credentialState.resumeExpiresAtMs === undefined
@@ -326,7 +351,7 @@ export function createWorkerClient(
     });
   };
 
-  const setState = (next: WorkerClientState): void => {
+  const setState = (next: WorkerState): void => {
     state = next;
     stateNotifications.publish(snapshot());
   };
@@ -411,7 +436,7 @@ export function createWorkerClient(
       if (isCurrentSession()) activeStreams = streams.size;
     };
 
-    const setSessionState = (next: WorkerClientState): void => {
+    const setSessionState = (next: WorkerState): void => {
       if (isCurrentSession()) setState(next);
     };
 
@@ -586,7 +611,7 @@ export function createWorkerClient(
       }
       const operation = (async () => {
         if (transport === undefined) {
-          throw createWorkerClientError(
+          throw createWorkerError(
             "connection_lost",
             "Cannot terminate work on a closed connection",
           );
@@ -721,7 +746,7 @@ export function createWorkerClient(
       body: WorkerBody,
     ): Promise<void> => {
       if (transport === undefined) {
-        throw createWorkerClientError(
+        throw createWorkerError(
           "connection_lost",
           "Cannot write work output on a closed connection",
         );
@@ -803,7 +828,7 @@ export function createWorkerClient(
       }
       if (transport === undefined) {
         return Promise.reject(
-          createWorkerClientError(
+          createWorkerError(
             "connection_lost",
             "Cannot write work metadata on a closed connection",
           ),
@@ -1218,7 +1243,7 @@ export function createWorkerClient(
 
         case "protocol_error": {
           failSession(
-            createWorkerClientError(
+            createWorkerError(
               "invalid_server_message",
               `Hypervisor protocol error: ${frame.code}`,
             ),
@@ -1230,7 +1255,7 @@ export function createWorkerClient(
           // Welcome is consumed by the handshake. All worker-originated frame
           // types are rejected by the protocol validator before this point.
           failSession(
-            createWorkerClientError(
+            createWorkerError(
               "invalid_server_message",
               `Unexpected server frame ${frame.type}`,
             ),
@@ -1253,7 +1278,7 @@ export function createWorkerClient(
       stream.outstandingInputCredit -= frame.payload.byteLength;
       if (stream.outstandingInputCredit < 0) {
         failSession(
-          createWorkerClientError(
+          createWorkerError(
             "invalid_server_message",
             "Input credit accounting became negative",
           ),
@@ -1363,27 +1388,27 @@ export function createWorkerClient(
     try {
       setSessionState("connecting");
       socket = await connectWorkerWebSocket({
-        url: options.url,
+        url: connection.url,
         signal: stopController.signal,
-        ...(options.connectTimeoutMs === undefined
+        ...(connection.connectTimeoutMs === undefined
           ? {}
-          : { timeoutMs: options.connectTimeoutMs }),
-        ...(options.allowInsecureLoopback === undefined
+          : { timeoutMs: connection.connectTimeoutMs }),
+        ...(connection.allowInsecureLoopback === undefined
           ? {}
-          : { allowInsecureLoopback: options.allowInsecureLoopback }),
-        ...(options.createWebSocket === undefined
+          : { allowInsecureLoopback: connection.allowInsecureLoopback }),
+        ...(connection.socket === undefined
           ? {}
-          : { createWebSocket: options.createWebSocket }),
+          : { createWebSocket: connection.socket }),
       });
       transport = await createWebSocketTransport({
         socket,
         role: "worker",
         signal: stopController.signal,
-        ...options.transport,
+        ...connection.limits,
       });
       transport.closed.then((close) => {
         abortSession(
-          createWorkerClientError(
+          createWorkerError(
             "connection_lost",
             `Worker WebSocket closed (${close.code}: ${close.reason})`,
           ),
@@ -1411,12 +1436,12 @@ export function createWorkerClient(
       ) {
         const protocolError = first.value.acceptance.frame;
         if (PERMANENT_AUTH_ERROR_CODES.has(protocolError.code)) {
-          throw createWorkerClientError(
+          throw createWorkerError(
             "credential_rejected",
             `Worker credential requires re-enrollment: ${protocolError.code}`,
           );
         }
-        throw createWorkerClientError(
+        throw createWorkerError(
           "handshake_failed",
           `Hypervisor rejected worker handshake: ${protocolError.code}`,
         );
@@ -1426,7 +1451,7 @@ export function createWorkerClient(
         first.value.kind !== "control" ||
         first.value.acceptance.frame.type !== "welcome"
       ) {
-        throw createWorkerClientError(
+        throw createWorkerError(
           "handshake_failed",
           "Hypervisor did not send Welcome as its first frame",
         );
@@ -1434,7 +1459,7 @@ export function createWorkerClient(
       const welcome = first.value.acceptance.frame;
       welcomed = true;
       if (welcome.resumeExpiresAtMs <= now()) {
-        throw createWorkerClientError(
+        throw createWorkerError(
           "credential_expired",
           "Hypervisor issued an already-expired resume credential",
         );
@@ -1456,12 +1481,12 @@ export function createWorkerClient(
         let metadata: JsonObject | void = undefined;
         if (options.beforeReady !== undefined) {
           const task = Promise.resolve().then(() =>
-            options.beforeReady!({
+            options.beforeReady!(Object.freeze({
               bootstrap: welcome.bootstrap,
               connectionId: welcome.connectionId,
               signal: sessionAbortController.signal,
               reconnecting: credentialAtHello.kind === "resume",
-            })
+            }))
           );
           const initialization = Object.freeze({ task });
           pendingInitialization = initialization;
@@ -1499,7 +1524,7 @@ export function createWorkerClient(
         } catch {
           // Connection failure still prevents Ready and triggers reconnect.
         }
-        throw createWorkerClientError(
+        throw createWorkerError(
           "initialization_failed",
           "Worker pre-ready initialization failed",
           error,
@@ -1520,12 +1545,12 @@ export function createWorkerClient(
       ) {
         const protocolError = acknowledgement.value.acceptance.frame;
         if (PERMANENT_AUTH_ERROR_CODES.has(protocolError.code)) {
-          throw createWorkerClientError(
+          throw createWorkerError(
             "credential_rejected",
             `Worker credential requires re-enrollment: ${protocolError.code}`,
           );
         }
-        throw createWorkerClientError(
+        throw createWorkerError(
           "handshake_failed",
           `Hypervisor rejected worker readiness: ${protocolError.code}`,
         );
@@ -1535,7 +1560,7 @@ export function createWorkerClient(
         acknowledgement.value.kind !== "control" ||
         acknowledgement.value.acceptance.frame.type !== "ready_ack"
       ) {
-        throw createWorkerClientError(
+        throw createWorkerError(
           "handshake_failed",
           "Hypervisor did not acknowledge worker readiness",
         );
@@ -1544,7 +1569,7 @@ export function createWorkerClient(
         acknowledgement.value.acceptance.frame.connectionId !==
           welcome.connectionId
       ) {
-        throw createWorkerClientError(
+        throw createWorkerError(
           "handshake_failed",
           "Hypervisor acknowledged a stale worker connection",
         );
@@ -1604,7 +1629,7 @@ export function createWorkerClient(
       const close = await transport.closed;
       return {
         reason: "connection_lost",
-        error: createWorkerClientError(
+        error: createWorkerError(
           "connection_lost",
           `Worker WebSocket closed (${close.code}: ${close.reason})`,
         ),
@@ -1613,7 +1638,7 @@ export function createWorkerClient(
       if (stopController.signal.aborted) throw error;
       return {
         reason: "connection_lost",
-        error: isWorkerClientError(error) ? error : createWorkerClientError(
+        error: isWorkerError(error) ? error : createWorkerError(
           welcomed ? "connection_lost" : "handshake_failed",
           welcomed ? "Worker connection failed" : "Worker handshake failed",
           error,
@@ -1628,7 +1653,7 @@ export function createWorkerClient(
         stream.cancelDeadline?.();
         abortWork(
           stream,
-          createWorkerClientError(
+          createWorkerError(
             "connection_lost",
             "Work connection was lost; stream will not be replayed",
           ),
@@ -1638,7 +1663,7 @@ export function createWorkerClient(
       streams.clear();
       syncActiveStreams();
       abortSession(
-        createWorkerClientError(
+        createWorkerError(
           "connection_lost",
           "Worker session ended",
         ),
@@ -1683,12 +1708,9 @@ export function createWorkerClient(
     return reconnectDelayInvoker.run(context);
   };
 
-  const run = async (): Promise<WorkerClientResult> => {
-    if (runStarted) {
-      throw new TypeError("Worker client run() may only be called once");
-    }
+  const runLifecycle = async (): Promise<WorkerResult> => {
     runStarted = true;
-    let lastError: unknown = createWorkerClientError(
+    let lastError: unknown = createWorkerError(
       "connection_lost",
       "Worker has not connected",
     );
@@ -1701,7 +1723,7 @@ export function createWorkerClient(
           credentialState.resumeExpiresAtMs !== undefined &&
           credentialState.resumeExpiresAtMs <= now()
         ) {
-          const error = createWorkerClientError(
+          const error = createWorkerError(
             "credential_expired",
             "Worker resume credential expired; re-enrollment is required",
           );
@@ -1720,13 +1742,13 @@ export function createWorkerClient(
         }
         lastError = result.reason === "connection_lost"
           ? result.error
-          : createWorkerClientError(
+          : createWorkerError(
             "connection_lost",
             "Rotating worker resume credential",
           );
 
         if (
-          isWorkerClientError(lastError) &&
+          isWorkerError(lastError) &&
           (lastError.code === "credential_expired" ||
             lastError.code === "credential_rejected")
         ) {
@@ -1779,7 +1801,7 @@ export function createWorkerClient(
       options.signal?.removeEventListener("abort", stopFromExternalSignal);
       if (!everReady) {
         readyDeferred.reject(
-          isWorkerClientError(lastError) ? lastError : createWorkerClientError(
+          isWorkerError(lastError) ? lastError : createWorkerError(
             "worker_stopped",
             "Worker stopped before becoming ready",
             lastError,
@@ -1788,6 +1810,11 @@ export function createWorkerClient(
       }
       runDone.resolve();
     }
+  };
+
+  const run = (): Promise<WorkerResult> => {
+    runTask ??= runLifecycle();
+    return runTask;
   };
 
   const stop = async (reason = "worker_stopped"): Promise<void> => {
@@ -1801,7 +1828,7 @@ export function createWorkerClient(
     if (!runStarted) {
       setState("stopped");
       readyDeferred.reject(
-        createWorkerClientError(
+        createWorkerError(
           "worker_stopped",
           `Worker stopped before run: ${stopReason}`,
         ),

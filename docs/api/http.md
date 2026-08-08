@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.6/http`
+# `jsr:@oxian/oxian-js@0.20.0-rc.7/http`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   createHttpGateway,
   createHttpWorkload,
   HTTP_WORKLOAD,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/http";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7/http";
 ```
 
 ## Export summary
@@ -218,8 +218,8 @@ cancels the source.
 
 ```ts
 type HttpDispatch = (
-  input: WorkerHostDispatchInput,
-) => Promise<WorkerHostWorkHandle>;
+  input: WorkInput,
+) => Promise<WorkHandle>;
 
 type HttpGatewayDeadline = (
   request: Request,
@@ -323,7 +323,7 @@ const workload = createHttpWorkload({
   },
 });
 
-const worker = createWorkerClient({
+const worker = createWorker({
   // ...
   workloads: { [HTTP_WORKLOAD]: workload },
 });

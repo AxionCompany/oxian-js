@@ -1,15 +1,14 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import {
-  createDenoHypervisor,
-  type DenoHypervisor,
-} from "../../src/adapters/deno/index.ts";
+import { serve } from "../../src/adapters/deno/index.ts";
 import type {
+  Hypervisor,
   HypervisorDisconnectEvent,
   HypervisorHeartbeatCommitContext,
   HypervisorListener,
   HypervisorReadyCommitContext,
   HypervisorSessionLifecycle,
 } from "../../src/hypervisor/index.ts";
+import { createHypervisor } from "../../src/hypervisor/index.ts";
 import {
   createHeartbeatFrame,
   createHelloFrame,
@@ -53,7 +52,7 @@ type LifecycleWorker = Readonly<{
 }>;
 
 type LifecycleHarness = Readonly<{
-  hypervisor: DenoHypervisor;
+  hypervisor: Hypervisor;
   listener: HypervisorListener;
   definition: WorkerDefinition;
   identity: WorkerIdentity;
@@ -149,9 +148,8 @@ async function createLifecycleHarness(
   const registration = await registrationAuthority.issueRegistration(identity);
   const authority = options.wrapAuthority?.(registrationAuthority) ??
     registrationAuthority;
-  const hypervisor = createDenoHypervisor({
-    authority,
-    repository,
+  const hypervisor = createHypervisor({
+    admission: { type: "registered", authority, repository },
     persistAcceptance: () => Promise.resolve(),
     sessionLifecycle,
     clock: options.clock,
@@ -166,7 +164,8 @@ async function createLifecycleHarness(
       proactiveDrainMarginMs: 1_000,
     },
   });
-  const listener = hypervisor.listen({
+  const listener = serve({
+    hypervisor,
     hostname: "127.0.0.1",
     port: 0,
   });
@@ -295,7 +294,7 @@ Deno.test({
       await assertRejects(
         () => harness.hypervisor.dispatch({ workload: WORKLOAD }),
         Error,
-        "no ready session",
+        "no ready Worker has capacity",
       );
 
       release.resolve();

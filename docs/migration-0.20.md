@@ -11,15 +11,24 @@ application or operational integration.
 - Configuration is one strict `oxian.config.ts` module. It exports only
   `default` or `config` and contains application and gateway settings.
 - Local `dev` and `start` attach the HTTP workload in process by default. Set
-  `gateway.workerTransport: "worker-websocket"` when a local run must test the
-  complete loopback wire protocol.
-- Embedded applications can import `/host`, call `createWorkerHost`, and attach
-  workload handlers without creating a Hypervisor or listener.
+  `gateway.workerTransport: "websocket"` when a local run must test the complete
+  loopback wire protocol.
+- Embedded applications create one Hypervisor and one Worker with
+  `transport: { type: "in-process", hypervisor }`. The same declarations can
+  move remote by changing the transport descriptor and adding remote admission.
+- `createWorkerHost()` and `createWorkerClient()` are removed. Replace both with
+  `createHypervisor()` plus `createWorker({ transport: ... })`; import the
+  generic `WorkInput`, `WorkHandle`, and `Dispatcher` contracts from `/work`.
+- `createDenoHypervisor()` is removed. Create the Hypervisor independently, then
+  pass it to `handler(hypervisor)` or `serve({ hypervisor, ... })` from
+  `/adapters/deno`. Listener and Hypervisor shutdown are separately owned.
+- The local configuration value `gateway.workerTransport: "worker-websocket"` is
+  now the transport primitive `"websocket"`.
 - The package root now contains only the runtime-neutral execution core. Import
   filesystem, process, CLI, and server capabilities from explicit subpaths.
-- `createHypervisor` is the portable protocol/session core and exposes
-  `prepare(request)` for server adapters. Existing Deno gateways should import
-  `createDenoHypervisor` from `/adapters/deno` to retain `fetch` and `listen`.
+- `createHypervisor` is the portable host and exposes `prepare(request)` for
+  server adapters. Deno gateways import `handler` or `serve` from
+  `/adapters/deno`; adapters do not create or own the Hypervisor.
 - A worker attaches outbound through `oxian.worker.v1`. Remove worker target
   URLs, worker HTTP listeners, and readiness polling from deployment wiring.
 - HTTP is carried as the `oxian.http.v1` workload. Preserve repeated headers and
@@ -36,12 +45,12 @@ Start the migration with a clean local project and move one route tree at a
 time:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin init --root ./new-service
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin check --config ./new-service/oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin init --root ./new-service
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin check --config ./new-service/oxian.config.ts
 ```
 
 Then choose an
 [embedded in-process worker](workers.md#embedded-in-process-worker), a
-[worker manifest](workers.md#http-worker-manifest), or the direct remote
-worker-client boundary. Review the [protocol](worker-protocol-v1.md) before
+[worker manifest](workers.md#http-worker-manifest), or the direct remote Worker
+WebSocket boundary. Review the [protocol](worker-protocol-v1.md) before
 implementing a non-HTTP remote workload.

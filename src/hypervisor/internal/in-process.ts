@@ -1,38 +1,35 @@
-import { createWorkerIdentity } from "../protocol/control.ts";
-import type { JsonObject } from "../protocol/types.ts";
+import { createWorkerIdentity } from "../../protocol/control.ts";
+import type { JsonObject } from "../../protocol/types.ts";
 import {
-  createSessionRegistry,
-  createWorkDispatcher,
   fenceForSession,
   type SessionFence,
   type WorkDispatch,
-} from "../supervisor/index.ts";
+} from "../../supervisor/index.ts";
 import {
   copyJsonObject,
   copyUniqueWorkloads,
   expectIdentifier,
   expectPositiveInteger,
-} from "../supervisor/internal.ts";
+} from "../../supervisor/internal.ts";
 import {
   bodyAsStream,
   normalizeHandlerResult,
-} from "../worker/internal/work.ts";
-import type { WorkerWorkHandler } from "../worker/types.ts";
+} from "../../worker/internal/work.ts";
+import type { WorkerWorkHandler } from "../../worker/types.ts";
+import type { WorkHandle, WorkInput } from "../../work/types.ts";
 import type {
+  InProcessExecution,
+  InProcessExecutionError,
+  InProcessExecutionErrorCode,
+  InProcessExecutionOptions,
+  InProcessExecutionSnapshot,
+  InProcessScheduler,
   InProcessWorker,
-  InProcessWorkerOptions,
+  InProcessWorkerInput,
   InProcessWorkerSnapshot,
   InProcessWorkerState,
-  WorkerHost,
-  WorkerHostError,
-  WorkerHostErrorCode,
-  WorkerHostOptions,
-  WorkerHostScheduler,
-  WorkerHostSnapshot,
-  WorkerHostWorkHandle,
-} from "./types.ts";
+} from "./in-process-types.ts";
 
-const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_LEASE_TIMEOUT_MS = 30_000;
 const OUTPUT_HIGH_WATER_BYTES = 64 * 1024;
 
@@ -72,8 +69,8 @@ type InProcessEndpoint = {
   state: InProcessWorkerState;
   active: Map<string, InProcessOperation>;
   emptyWaiters: Set<Deferred<void>>;
-  heartbeatSequence: number;
-  heartbeatTimer?: unknown;
+  closed: Deferred<Awaited<InProcessWorker["closed"]>>;
+  onStateChange?: (state: InProcessWorkerState) => void;
   drainTask?: Promise<void>;
   stopTask?: Promise<void>;
 };
@@ -89,7 +86,7 @@ function createDeferred<T>(): Deferred<T> {
   return Object.freeze({ promise, resolve, reject });
 }
 
-function createDefaultScheduler(): WorkerHostScheduler {
+function createDefaultScheduler(): InProcessScheduler {
   return Object.freeze({
     schedule(callback, delayMs) {
       return setTimeout(callback, delayMs);
@@ -108,20 +105,20 @@ function positiveInteger(
   return expectPositiveInteger(value ?? fallback, name);
 }
 
-function createWorkerHostError(
-  code: WorkerHostErrorCode,
+function createInProcessExecutionError(
+  code: InProcessExecutionErrorCode,
   message: string,
   details: Readonly<{
     identity?: InProcessEndpoint["identity"];
     operationId?: string;
     cause?: unknown;
   }> = {},
-): WorkerHostError {
+): InProcessExecutionError {
   const error = new Error(message, {
     ...(details.cause === undefined ? {} : { cause: details.cause }),
-  }) as WorkerHostError;
+  }) as InProcessExecutionError;
   Object.defineProperties(error, {
-    name: { configurable: true, value: "WorkerHostError", writable: true },
+    name: { configurable: true, value: "HypervisorError", writable: true },
     code: { enumerable: true, value: code },
     ...(details.identity === undefined ? {} : {
       identity: { enumerable: true, value: details.identity },
@@ -193,11 +190,11 @@ function copyHandlers(
 function operationError(
   endpoint: InProcessEndpoint,
   operation: InProcessOperation,
-  code: WorkerHostErrorCode,
+  code: InProcessExecutionErrorCode,
   message: string,
   cause?: unknown,
-): WorkerHostError {
-  return createWorkerHostError(code, message, {
+): InProcessExecutionError {
+  return createInProcessExecutionError(code, message, {
     identity: endpoint.identity,
     operationId: operation.operationId,
     ...(cause === undefined ? {} : { cause }),
@@ -205,70 +202,36 @@ function operationError(
 }
 
 /**
- * Creates a transport-independent worker host. In-process workers attach
+ * Creates a transport-independent Hypervisor. In-process workers attach
  * handlers directly while retaining the same offer, claim, durable acceptance,
  * start, cancellation, capacity, and fencing boundaries used by remote workers.
  */
-export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
+export function createInProcessExecution(
+  options: InProcessExecutionOptions,
+): InProcessExecution {
   if (options === null || typeof options !== "object") {
-    throw new TypeError("worker host options are required");
+    throw new TypeError("Hypervisor options are required");
   }
-  if (typeof options.persistAcceptance !== "function") {
-    throw new TypeError("worker host persistAcceptance must be a function");
+  if (options.dispatcher === null || typeof options.dispatcher !== "object") {
+    throw new TypeError("Hypervisor dispatcher is required");
   }
   const clock = options.clock ?? Date.now;
   const scheduler = options.scheduler ?? createDefaultScheduler();
-  const heartbeatIntervalMs = positiveInteger(
-    options.heartbeatIntervalMs,
-    DEFAULT_HEARTBEAT_INTERVAL_MS,
-    "heartbeatIntervalMs",
-  );
   const leaseTimeoutMs = positiveInteger(
     options.leaseTimeoutMs,
     DEFAULT_LEASE_TIMEOUT_MS,
     "leaseTimeoutMs",
   );
-  if (heartbeatIntervalMs >= leaseTimeoutMs) {
-    throw new TypeError("heartbeatIntervalMs must be less than leaseTimeoutMs");
-  }
   const createConnectionId = options.createConnectionId ??
     (() => crypto.randomUUID());
   const createAttemptId = options.createAttemptId ??
     (() => crypto.randomUUID());
-  const sessions = options.sessions ?? createSessionRegistry({ clock });
-  const dispatcher = createWorkDispatcher({
-    sessions,
-    persistAcceptance: options.persistAcceptance,
-    clock,
-  });
+  const sessions = options.sessions;
+  const dispatcher = options.dispatcher;
   const endpoints = new Map<string, InProcessEndpoint>();
   const workerEpochs = new Map<string, number>();
   let acceptingWorkers = true;
-  let acceptingWork = true;
   let shutdownTask: Promise<void> | undefined;
-
-  const cancelHeartbeat = (endpoint: InProcessEndpoint): void => {
-    if (endpoint.heartbeatTimer === undefined) return;
-    scheduler.cancel(endpoint.heartbeatTimer);
-    endpoint.heartbeatTimer = undefined;
-  };
-
-  const scheduleHeartbeat = (endpoint: InProcessEndpoint): void => {
-    cancelHeartbeat(endpoint);
-    if (endpoint.state !== "ready" && endpoint.state !== "draining") return;
-    endpoint.heartbeatTimer = scheduler.schedule(() => {
-      endpoint.heartbeatTimer = undefined;
-      if (endpoint.state !== "ready" && endpoint.state !== "draining") return;
-      try {
-        sessions.heartbeat(endpoint.fence, {
-          sequence: endpoint.heartbeatSequence++,
-        });
-        scheduleHeartbeat(endpoint);
-      } catch {
-        void stopEndpoint(endpoint, "in_process_lease_lost");
-      }
-    }, heartbeatIntervalMs);
-  };
 
   const notifyEmpty = (endpoint: InProcessEndpoint): void => {
     if (endpoint.active.size > 0) return;
@@ -283,19 +246,35 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
     return waiter.promise;
   };
 
-  const removeEndpoint = (endpoint: InProcessEndpoint): void => {
-    cancelHeartbeat(endpoint);
+  const transitionEndpoint = (
+    endpoint: InProcessEndpoint,
+    state: InProcessWorkerState,
+  ): void => {
+    if (endpoint.state === state) return;
+    endpoint.state = state;
+    try {
+      endpoint.onStateChange?.(state);
+    } catch {
+      // Lifecycle observers cannot affect worker execution.
+    }
+  };
+
+  const removeEndpoint = (
+    endpoint: InProcessEndpoint,
+    result: Awaited<InProcessWorker["closed"]>,
+  ): void => {
     sessions.detach(endpoint.fence);
     if (endpoints.get(endpoint.connectionId) === endpoint) {
       endpoints.delete(endpoint.connectionId);
     }
+    endpoint.closed.resolve(Object.freeze(result));
   };
 
   const finishOperation = (
     endpoint: InProcessEndpoint,
     operation: InProcessOperation,
     dispatch: WorkDispatch,
-    error?: WorkerHostError,
+    error?: InProcessExecutionError,
   ): void => {
     if (operation.settled) return;
     operation.settled = true;
@@ -656,8 +635,8 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
   const openOperation = (
     endpoint: InProcessEndpoint,
     dispatch: WorkDispatch,
-    input: Parameters<WorkerHost["dispatch"]>[0],
-  ): WorkerHostWorkHandle => {
+    input: WorkInput,
+  ): WorkHandle => {
     const assignment = dispatch.assignment!;
     const metadata = createDeferred<JsonObject>();
     const started = createDeferred<void>();
@@ -745,15 +724,20 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
       return Promise.resolve();
     }
     endpoint.drainTask = (async () => {
+      if (endpoint.state === "connected") {
+        transitionEndpoint(endpoint, "drained");
+        removeEndpoint(endpoint, { reason: "drained" });
+        return;
+      }
       if (endpoint.state === "ready") {
-        endpoint.state = "draining";
+        transitionEndpoint(endpoint, "draining");
         sessions.startDrain(endpoint.fence);
       }
       await waitForEmpty(endpoint);
       if (endpoint.state === "draining") {
         sessions.markDrained(endpoint.fence);
-        endpoint.state = "drained";
-        removeEndpoint(endpoint);
+        transitionEndpoint(endpoint, "drained");
+        removeEndpoint(endpoint, { reason: "drained" });
       }
     })();
     return endpoint.drainTask;
@@ -765,27 +749,26 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
   ): Promise<void> => {
     if (endpoint.stopTask !== undefined) return endpoint.stopTask;
     if (endpoint.state === "stopped") return Promise.resolve();
-    endpoint.state = "stopping";
-    cancelHeartbeat(endpoint);
+    transitionEndpoint(endpoint, "stopping");
     endpoint.stopTask = (async () => {
       await Promise.all(
         [...endpoint.active.values()].map((operation) =>
           cancelOperation(endpoint, operation, reason).then(() => undefined)
         ),
       );
-      removeEndpoint(endpoint);
-      endpoint.state = "stopped";
+      transitionEndpoint(endpoint, "stopped");
+      removeEndpoint(endpoint, { reason: "shutdown", detail: reason });
     })();
     return endpoint.stopTask;
   };
 
-  const attachInProcessWorker = (
-    input: InProcessWorkerOptions,
+  const attach = (
+    input: InProcessWorkerInput,
   ): InProcessWorker => {
     if (!acceptingWorkers) {
-      throw createWorkerHostError(
+      throw createInProcessExecutionError(
         "shutting_down",
-        "worker host is not accepting workers",
+        "Hypervisor is not accepting workers",
       );
     }
     if (input === null || typeof input !== "object") {
@@ -793,20 +776,43 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
     }
     const workerId = expectIdentifier(input.workerId, "workerId");
     if (sessions.get(workerId) !== undefined) {
-      throw createWorkerHostError(
+      throw createInProcessExecutionError(
         "invalid_state",
         `worker ${workerId} is already attached`,
       );
     }
     const { handlers, workloads } = copyHandlers(input.workloads);
     const capacity = expectPositiveInteger(input.capacity ?? 1, "capacity");
+    if (
+      (input.identity === undefined) !==
+        (input.sessionGeneration === undefined)
+    ) {
+      throw new TypeError(
+        "identity and sessionGeneration must be supplied together",
+      );
+    }
+    if (
+      input.onStateChange !== undefined &&
+      typeof input.onStateChange !== "function"
+    ) {
+      throw new TypeError("onStateChange must be a function");
+    }
     input.signal?.throwIfAborted();
-    const epoch = (workerEpochs.get(workerId) ?? 0) + 1;
-    const identity = createWorkerIdentity({
-      workerId,
-      attemptId: createAttemptId(),
-      epoch,
-    });
+    const priorEpoch = workerEpochs.get(workerId) ?? 0;
+    const identity = input.identity === undefined
+      ? createWorkerIdentity({
+        workerId,
+        attemptId: createAttemptId(),
+        epoch: priorEpoch + 1,
+      })
+      : createWorkerIdentity(input.identity);
+    if (identity.workerId !== workerId) {
+      throw new TypeError("identity.workerId must match workerId");
+    }
+    const sessionGeneration = expectPositiveInteger(
+      input.sessionGeneration ?? 1,
+      "sessionGeneration",
+    );
     const connectionId = expectIdentifier(
       createConnectionId(),
       "connectionId",
@@ -814,33 +820,49 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
     const attachment = sessions.attach({
       identity,
       connectionId,
-      sessionGeneration: 1,
+      sessionGeneration,
       workloads,
       capacity,
       leaseTimeoutMs,
+      liveness: "binding",
     });
-    const ready = sessions.markReady(fenceForSession(attachment.session));
-    const endpoint = {
+    const endpoint: InProcessEndpoint = {
       identity,
       connectionId,
-      fence: fenceForSession(ready),
+      fence: fenceForSession(attachment.session),
       workloads,
       handlers,
       capacity,
-      state: "ready",
+      state: "connected",
       active: new Map(),
       emptyWaiters: new Set(),
-      heartbeatSequence: 0,
-    } satisfies InProcessEndpoint;
+      closed: createDeferred<Awaited<InProcessWorker["closed"]>>(),
+      ...(input.onStateChange === undefined
+        ? {}
+        : { onStateChange: input.onStateChange }),
+    };
     endpoints.set(connectionId, endpoint);
-    workerEpochs.set(workerId, epoch);
-    scheduleHeartbeat(endpoint);
+    workerEpochs.set(workerId, Math.max(priorEpoch, identity.epoch));
+
+    const markReady = (): void => {
+      if (endpoint.state !== "connected") {
+        throw createInProcessExecutionError(
+          "invalid_state",
+          `cannot ready an in-process worker in ${endpoint.state} state`,
+          { identity: endpoint.identity },
+        );
+      }
+      const ready = sessions.markReady(endpoint.fence);
+      endpoint.fence = fenceForSession(ready);
+      transitionEndpoint(endpoint, "ready");
+    };
 
     const snapshot = (): InProcessWorkerSnapshot =>
       Object.freeze({
         state: endpoint.state,
         identity: endpoint.identity,
         connectionId: endpoint.connectionId,
+        sessionGeneration: endpoint.fence.sessionGeneration,
         workloads: endpoint.workloads,
         capacity: endpoint.capacity,
         activeWork: endpoint.active.size,
@@ -849,10 +871,12 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
       identity,
       workloads,
       capacity,
+      ready: markReady,
       drain: () => drainEndpoint(endpoint),
       shutdown: (reason = "in_process_worker_shutdown") =>
         stopEndpoint(endpoint, reason),
       snapshot,
+      closed: endpoint.closed.promise,
     });
     if (input.signal !== undefined) {
       input.signal.addEventListener("abort", () => {
@@ -865,58 +889,13 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
     return worker;
   };
 
-  const dispatch: WorkerHost["dispatch"] = async (input) => {
-    if (!acceptingWork) {
-      throw createWorkerHostError(
-        "shutting_down",
-        "worker host is not accepting work",
-      );
-    }
-    if (input === null || typeof input !== "object") {
-      throw new TypeError("worker host dispatch input must be an object");
-    }
-    input.signal?.throwIfAborted();
-    if (
-      input.body !== undefined &&
-      !(input.body instanceof Uint8Array) &&
-      !(input.body instanceof ReadableStream)
-    ) {
-      throw new TypeError(
-        "dispatch body must be a Uint8Array or ReadableStream<Uint8Array>",
-      );
-    }
-    let offered: WorkDispatch;
-    try {
-      offered = dispatcher.offer({
-        workload: input.workload,
-        ...(input.target === undefined ? {} : { target: input.target }),
-        metadata: input.metadata,
-        ...(input.deadlineAtMs === undefined
-          ? {}
-          : { deadlineAtMs: input.deadlineAtMs }),
-      });
-    } catch (cause) {
-      throw createWorkerHostError(
-        "worker_unavailable",
-        "no in-process worker is available for this workload",
-        { cause },
-      );
-    }
+  const open: InProcessExecution["open"] = (offered, input) => {
     const assignment = offered.assignment!;
     const endpoint = endpoints.get(assignment.fence.connectionId);
     if (endpoint !== undefined && endpoint.state === "ready") {
-      return await Promise.resolve(openOperation(endpoint, offered, input));
+      return openOperation(endpoint, offered, input);
     }
-    dispatcher.withdrawOffer(
-      offered.operationId,
-      assignment.fence,
-      assignment.streamId,
-      {
-        code: "connection_route_failed",
-        message: "in-process worker route is unavailable",
-      },
-    );
-    throw createWorkerHostError(
+    throw createInProcessExecutionError(
       "worker_unavailable",
       "assigned in-process worker is unavailable",
       {
@@ -936,6 +915,9 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
       : endpoints.get(session.connectionId);
   };
 
+  const has = (workerId: string): boolean =>
+    findEndpoint(workerId) !== undefined;
+
   const drain = (workerId: string): Promise<void> => {
     const endpoint = findEndpoint(workerId);
     return endpoint === undefined ? Promise.resolve() : drainEndpoint(endpoint);
@@ -948,42 +930,26 @@ export function createWorkerHost(options: WorkerHostOptions): WorkerHost {
       : stopEndpoint(endpoint, reason);
   };
 
-  const shutdown = (reason = "worker_host_shutdown"): Promise<void> => {
+  const shutdown = (reason = "hypervisor_shutdown"): Promise<void> => {
     if (shutdownTask !== undefined) return shutdownTask;
     acceptingWorkers = false;
-    acceptingWork = false;
     shutdownTask = Promise.all(
       [...endpoints.values()].map((endpoint) => stopEndpoint(endpoint, reason)),
     ).then(() => undefined);
     return shutdownTask;
   };
 
-  const snapshot = (): WorkerHostSnapshot => {
-    const work = {
-      offered: 0,
-      claimed: 0,
-      committing: 0,
-      committed: 0,
-      cancelling: 0,
-      reschedulable: 0,
-      completed: 0,
-      cancelled: 0,
-      failed: 0,
-      indeterminate: 0,
-    };
-    for (const dispatch of dispatcher.list()) work[dispatch.status]++;
+  const snapshot = (): InProcessExecutionSnapshot => {
     return Object.freeze({
       acceptingWorkers,
-      acceptingWork,
       workers: endpoints.size,
-      sessions: sessions.list().length,
-      work: Object.freeze(work),
     });
   };
 
   return Object.freeze({
-    dispatch,
-    attachInProcessWorker,
+    open,
+    attach,
+    has,
     drain,
     shutdownWorker,
     shutdown,

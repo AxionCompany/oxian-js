@@ -66,9 +66,9 @@ commit to an application-owned durable store before resolving.
 
 ```ts
 // platform/hypervisor.ts
-import { createHttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.6/http";
-import { createDenoHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.6/adapters/deno";
-import type { AcceptanceCommit } from "jsr:@oxian/oxian-js@0.20.0-rc.6/supervisor";
+import { createHttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.7/http";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.7/hypervisor";
+import type { AcceptanceCommit } from "jsr:@oxian/oxian-js@0.20.0-rc.7/supervisor";
 import { authority, repository } from "./durable_control.ts";
 
 // This factory belongs to Logwash. It is not an Oxian export.
@@ -82,9 +82,8 @@ async function persistAcceptance(
   await operations.commitAccepted(commit);
 }
 
-const hypervisor = createDenoHypervisor({
-  authority,
-  repository,
+const hypervisor = createHypervisor({
+  admission: { type: "registered", authority, repository },
   persistAcceptance,
 });
 
@@ -140,7 +139,7 @@ ID at the application edge:
 
 ```ts
 // platform/idempotent_gateway.ts
-import type { HttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.6/http";
+import type { HttpGateway } from "jsr:@oxian/oxian-js@0.20.0-rc.7/http";
 
 export function createIdempotentGateway(
   gateway: HttpGateway,
@@ -230,7 +229,7 @@ Oxian's generic worker lifecycle.
 Use the narrowest lifecycle primitive for the intent.
 
 ```ts
-// Rotate a healthy connection for maintenance. The WorkerClient reconnects.
+// Rotate a healthy connection for maintenance. The Worker reconnects.
 await hypervisor.drain("logwash-cloud-a", "deployment");
 
 // Retire the current client for a logical worker. It receives Shutdown and
@@ -284,9 +283,9 @@ serverAbort.abort("service_shutdown");
 await server.finished;
 ```
 
-If the server was created by the Deno adapter's `hypervisor.listen()`, adapter
-shutdown owns those listeners. If it was composed into an application-owned
-`Deno.serve()`, the application owns that server's signal and completion.
+The Deno adapter returns a listener capability separate from the Hypervisor; the
+application explicitly shuts down whichever listener or `Deno.serve()` instance
+it owns.
 
 ### Require WSS and enforce limits
 
@@ -295,6 +294,7 @@ terminate at a trusted ingress, or Deno can serve the Hypervisor directly:
 
 ```ts
 const serverAbort = new AbortController();
+const fetch = handler(hypervisor);
 
 const server = Deno.serve({
   hostname: "0.0.0.0",
@@ -302,7 +302,7 @@ const server = Deno.serve({
   cert: await Deno.readTextFile("./secrets/tls.crt"),
   key: await Deno.readTextFile("./secrets/tls.key"),
   signal: serverAbort.signal,
-}, hypervisor.fetch);
+}, fetch);
 ```
 
 Workers offer exactly `oxian.worker.v1` as the WebSocket subprotocol. Do not put
@@ -325,9 +325,8 @@ streams, connection counts, buffered bytes, inbound queues, and concurrent
 acceptance commits:
 
 ```ts
-const hypervisor = createDenoHypervisor({
-  authority,
-  repository,
+const hypervisor = createHypervisor({
+  admission: { type: "registered", authority, repository },
   persistAcceptance,
   config: {
     maxConnections: 2_000,
@@ -351,8 +350,8 @@ request or response around Oxian.
 Start with static and route checks:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin routes --config oxian.config.ts
 deno check \
   application.ts \
   logwash.ts \

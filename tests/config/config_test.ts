@@ -76,7 +76,7 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     },
     gateway: {
       listener: { hostname: "localhost", port: 9_090 },
-      workerTransport: "worker-websocket",
+      workerTransport: "websocket",
       hypervisor: {
         workerPath: "/workers/connect",
         heartbeatIntervalMs: 2_000,
@@ -117,7 +117,7 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     hostname: "localhost",
     port: 9_090,
   });
-  assertEquals(config.gateway.workerTransport, "worker-websocket");
+  assertEquals(config.gateway.workerTransport, "websocket");
   assertEquals(config.gateway.hypervisor.workerPath, "/workers/connect");
   assertEquals(config.gateway.hypervisor.heartbeatIntervalMs, 2_000);
   assertEquals(config.gateway.edge?.cors, {
@@ -211,7 +211,7 @@ Deno.test("v0.20 config rejects unknown local worker transports", () => {
       defineUnknown({
         gateway: { workerTransport: "events" },
       }),
-    'config.gateway.workerTransport must be "in-process" or "worker-websocket"',
+    'config.gateway.workerTransport must be "in-process" or "websocket"',
   );
 });
 

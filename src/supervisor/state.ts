@@ -192,6 +192,7 @@ export function createWorkerSession(
     capacity: number;
     connectedAtMs: number;
     leaseTimeoutMs: number;
+    liveness?: "heartbeat" | "binding";
   }>,
 ): WorkerSession {
   const connectedAtMs = expectFiniteTimestamp(
@@ -202,6 +203,10 @@ export function createWorkerSession(
     input.leaseTimeoutMs,
     "leaseTimeoutMs",
   );
+  const liveness = input.liveness ?? "heartbeat";
+  if (liveness !== "heartbeat" && liveness !== "binding") {
+    throw new TypeError('liveness must be "heartbeat" or "binding"');
+  }
   const leaseExpiresAtMs = connectedAtMs + leaseTimeoutMs;
   if (!Number.isSafeInteger(leaseExpiresAtMs)) {
     throw new TypeError("lease expiration exceeds safe integer range");
@@ -210,6 +215,7 @@ export function createWorkerSession(
   return freeze({
     identity: copyIdentity(input.identity),
     connectionId: expectIdentifier(input.connectionId, "connectionId"),
+    liveness,
     sessionGeneration: expectPositiveInteger(
       input.sessionGeneration,
       "sessionGeneration",

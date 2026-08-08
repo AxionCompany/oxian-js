@@ -12,7 +12,7 @@ import {
   createSessionRegistry,
   createWorkDispatcher,
   createWorkerDefinition,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/supervisor";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7/supervisor";
 ```
 
 The reference implementations are process-local. `WorkerRepository` and
@@ -296,6 +296,7 @@ type SessionFence = Readonly<{
 type WorkerSession = Readonly<{
   identity: WorkerIdentity;
   connectionId: string;
+  liveness: "heartbeat" | "binding";
   sessionGeneration: number;
   workloads: readonly string[];
   capacity: number;
@@ -320,6 +321,7 @@ function createWorkerSession(
     capacity: number;
     connectedAtMs: number;
     leaseTimeoutMs: number;
+    liveness?: "heartbeat" | "binding";
   }>,
 ): WorkerSession;
 
@@ -330,7 +332,9 @@ function fenceForSession(session: WorkerSession): SessionFence;
 `sessionFence` and `fenceForSession` are equivalent public names. A new session
 starts in `connected`, with zero reservations and heartbeat sequence zero.
 Connection IDs and generations are part of every fence; a logical worker ID
-alone is never sufficient authority.
+alone is never sufficient authority. Remote sessions use the default
+`"heartbeat"` liveness and can expire. In-process sessions use `"binding"`
+liveness and end explicitly when their direct Worker capability closes.
 
 ### `SessionRegistry`
 
@@ -361,6 +365,7 @@ type SessionRegistry = Readonly<{
       workloads: readonly string[];
       capacity: number;
       leaseTimeoutMs: number;
+      liveness?: "heartbeat" | "binding";
     }>,
   ): SessionAttachment;
   markReady(fence: SessionFence): WorkerSession;

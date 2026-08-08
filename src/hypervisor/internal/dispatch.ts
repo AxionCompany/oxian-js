@@ -1,19 +1,12 @@
-import type { WorkDispatcher } from "../../supervisor/index.ts";
-import type { Hypervisor, HypervisorWorkHandle } from "../types.ts";
-import type { ConnectionDirectory } from "./directory.ts";
-import type { ConnectionRecord, PendingOpenInput } from "./model.ts";
+import type { WorkDispatch, WorkDispatcher } from "../../supervisor/index.ts";
+import type { WorkHandle, WorkInput } from "../../work/types.ts";
+import type { Hypervisor } from "../types.ts";
 import { createHypervisorError } from "./primitives.ts";
 
 export function createDispatch(
   options: Readonly<{
     dispatcher: WorkDispatcher;
-    directory: ConnectionDirectory;
-    openPending(
-      record: ConnectionRecord,
-      operationId: string,
-      payload: PendingOpenInput,
-      signal: AbortSignal | undefined,
-    ): HypervisorWorkHandle;
+    open(dispatch: WorkDispatch, input: WorkInput): WorkHandle;
   }>,
 ): Hypervisor["dispatch"] {
   return async (input) => {
@@ -27,43 +20,33 @@ export function createDispatch(
         "dispatch body must be a Uint8Array or ReadableStream<Uint8Array>",
       );
     }
-    const offered = options.dispatcher.offer({
-      workload: input.workload,
-      ...(input.target === undefined ? {} : { target: input.target }),
-      metadata: input.metadata,
-      ...(input.deadlineAtMs === undefined
-        ? {}
-        : { deadlineAtMs: input.deadlineAtMs }),
-    });
-    const assignment = offered.assignment!;
+    let offered: WorkDispatch;
     try {
-      const record = options.directory.get(assignment.fence.connectionId);
-      if (record === undefined) {
+      offered = options.dispatcher.offer({
+        workload: input.workload,
+        ...(input.target === undefined ? {} : { target: input.target }),
+        metadata: input.metadata,
+        ...(input.deadlineAtMs === undefined
+          ? {}
+          : { deadlineAtMs: input.deadlineAtMs }),
+      });
+    } catch (cause) {
+      if (
+        cause instanceof Error &&
+        "code" in cause &&
+        cause.code === "capacity_exhausted"
+      ) {
         throw createHypervisorError(
           "worker_unavailable",
-          "assigned worker connection is unavailable",
-          {
-            identity: assignment.fence.identity,
-            operationId: offered.operationId,
-          },
+          "no ready Worker has capacity for this workload",
+          { cause },
         );
       }
-      return await Promise.resolve(
-        options.openPending(
-          record,
-          offered.operationId,
-          Object.freeze({
-            streamId: assignment.streamId,
-            workload: offered.workload,
-            metadata: offered.metadata,
-            ...(input.body === undefined ? {} : { body: input.body }),
-            ...(input.deadlineAtMs === undefined
-              ? {}
-              : { deadlineAtMs: input.deadlineAtMs }),
-          }),
-          input.signal,
-        ),
-      );
+      throw cause;
+    }
+    const assignment = offered.assignment!;
+    try {
+      return await Promise.resolve(options.open(offered, input));
     } catch (cause) {
       const current = options.dispatcher.get(offered.operationId);
       if (current?.status === "offered") {

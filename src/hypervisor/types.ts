@@ -1,10 +1,5 @@
 import type { JsonObject, WorkerIdentity } from "../protocol/types.ts";
 import type {
-  WorkerHostDispatchInput,
-  WorkerHostInputBody,
-  WorkerHostWorkHandle,
-} from "../host/types.ts";
-import type {
   AcceptanceCommit,
   RegistrationAuthority,
   RegistrationExchange,
@@ -15,13 +10,8 @@ import type {
 } from "../supervisor/index.ts";
 import type { SessionFence } from "../supervisor/types.ts";
 import type { WorkerWireConnection } from "../transport/types.ts";
+import type { WorkHandle, WorkInput } from "../work/types.ts";
 import type { HypervisorConfig } from "./config.ts";
-
-export type HypervisorWorkInputBody = WorkerHostInputBody;
-
-export type HypervisorDispatchInput = WorkerHostDispatchInput;
-
-export type HypervisorWorkHandle = WorkerHostWorkHandle;
 
 export type HypervisorScheduler = Readonly<{
   schedule(callback: () => void, delayMs: number): unknown;
@@ -143,13 +133,16 @@ export type WorkerAdmissionRepository = Pick<
  */
 export type WorkerAdmissionAuthority = Pick<RegistrationAuthority, "exchange">;
 
-export type HypervisorOptions = Readonly<{
+/**
+ * Admission policy for workers that cross an untrusted transport boundary.
+ * In-process workers are admitted by direct object possession and do not need
+ * repository or credential ceremony.
+ */
+export type HypervisorAdmission = Readonly<{
+  type: "registered";
   authority: WorkerAdmissionAuthority;
   repository: WorkerAdmissionRepository;
-  persistAcceptance(
-    commit: AcceptanceCommit,
-  ): Promise<void>;
-  createBootstrap?(
+  bootstrap?(
     input: Readonly<{
       identity: WorkerIdentity;
       definition: WorkerDefinition;
@@ -157,14 +150,6 @@ export type HypervisorOptions = Readonly<{
       signal: AbortSignal;
     }>,
   ): JsonObject | Promise<JsonObject>;
-  /**
-   * Purely validates workload-owned Ready metadata before routing begins.
-   *
-   * This hook must have no durable or externally visible side effects. Its
-   * AbortSignal is advisory and an older validation Promise may settle after
-   * replacement; only the Hypervisor's later durable lifecycle gate followed
-   * by fenced `markReady` publishes routable readiness.
-   */
   validateReady?(
     input: Readonly<{
       identity: WorkerIdentity;
@@ -176,6 +161,13 @@ export type HypervisorOptions = Readonly<{
       signal: AbortSignal;
     }>,
   ): void | Promise<void>;
+}>;
+
+export type HypervisorOptions = Readonly<{
+  admission?: HypervisorAdmission;
+  persistAcceptance(
+    commit: AcceptanceCommit,
+  ): Promise<void>;
   sessionLifecycle?: HypervisorSessionLifecycle;
   config?: Partial<HypervisorConfig>;
   sessions?: SessionRegistry;
@@ -209,6 +201,7 @@ export type HypervisorSnapshot = Readonly<{
   handshakeOperations: number;
   readyOperations: number;
   sessions: number;
+  inProcessWorkers: number;
   pendingAcceptanceCommits: number;
   pendingAcceptanceCommitsByWorker: readonly Readonly<{
     workerId: string;
@@ -244,19 +237,19 @@ export type Hypervisor = Readonly<{
    * admission. A server adapter owns the native handshake and listener.
    */
   prepare(request: Request): HypervisorRequestDecision;
-  dispatch(input: HypervisorDispatchInput): Promise<HypervisorWorkHandle>;
+  dispatch(input: WorkInput): Promise<WorkHandle>;
   /**
-   * Gracefully drains one ready worker connection, then closes it so the
-   * WorkerClient reconnects with its resume credential.
+   * Gracefully drains one ready Worker connection or direct binding, then lets
+   * the Worker establish its next session.
    *
    * This is a maintenance/rotation primitive, not a terminal worker stop.
    * It is a no-op when the worker has no active ready session.
    */
   drain(workerId: string, reason?: string): Promise<void>;
   /**
-   * Gracefully drains one ready worker connection, sends the protocol
-   * `Shutdown` frame, and closes it. A conforming WorkerClient settles
-   * `run()` with `reason: "shutdown"` instead of reconnecting.
+   * Gracefully drains one ready Worker session, sends the protocol `Shutdown`
+   * frame when remote, and closes it. The Worker settles `run()` with
+   * `reason: "shutdown"` instead of reconnecting.
    *
    * This does not revoke durable worker authority or stop provider compute;
    * those remain application/provider orchestration concerns. An in-flight

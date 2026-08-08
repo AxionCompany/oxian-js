@@ -48,7 +48,7 @@ Deno.test({
   const url = new URL(request.url);
   return Response.json({
     path: url.pathname,
-    transport: "worker-websocket",
+    transport: "websocket",
   });
 }
 `,
@@ -57,7 +57,7 @@ Deno.test({
       application: { routesRoot },
       gateway: {
         listener: { hostname: "127.0.0.1", port: 0 },
-        workerTransport: "worker-websocket",
+        workerTransport: "websocket",
         hypervisor: {
           heartbeatIntervalMs: 20,
           leaseTimeoutMs: 500,
@@ -78,9 +78,12 @@ Deno.test({
       const firstStart = lifecycle.start();
       assertStrictEquals(lifecycle.start(), firstStart);
       const running = await firstStart;
-      assertEquals(running.workerTransport, "worker-websocket");
-      if (running.workerTransport !== "worker-websocket") {
+      assertEquals(running.workerTransport, "websocket");
+      if (running.workerTransport !== "websocket") {
         throw new Error("expected the worker WebSocket topology");
+      }
+      if (running.workerUrl === undefined) {
+        throw new Error("expected the worker WebSocket URL");
       }
       assertEquals(running.workerUrl.protocol, "ws:");
       assertEquals(running.workerUrl.hostname, "127.0.0.1");
@@ -99,7 +102,7 @@ Deno.test({
       assertEquals(response.headers.get("access-control-allow-origin"), "*");
       assertEquals(await response.json(), {
         path: "/",
-        transport: "worker-websocket",
+        transport: "websocket",
       });
 
       await lifecycle.stop("test_complete");
@@ -115,7 +118,8 @@ Deno.test({
 });
 
 Deno.test({
-  name: "local runtime uses the in-process worker host by default",
+  name:
+    "local runtime binds its worker to the Hypervisor in process by default",
   permissions: {
     net: ["127.0.0.1"],
     read: true,
@@ -147,15 +151,10 @@ Deno.test({
         throw new Error("expected the in-process worker topology");
       }
       assertEquals(running.workerUrl, undefined);
-      assertEquals(running.worker, undefined);
-      assertEquals(running.inProcessWorker.snapshot().state, "ready");
+      assertEquals(running.worker.snapshot().state, "ready");
       assertEquals(
-        running.host.sessions.get(running.identity.workerId)?.phase,
+        running.hypervisor.sessions.get(running.identity.workerId)?.phase,
         "ready",
-      );
-      assertEquals(
-        running.hypervisor.sessions.get(running.identity.workerId),
-        undefined,
       );
 
       const response = await fetch(new URL("/", running.listenerUrl));

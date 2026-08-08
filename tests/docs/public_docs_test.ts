@@ -5,7 +5,6 @@ import * as config from "@oxian/oxian-js/config";
 import * as core from "../../src/core.ts";
 import * as edge from "@oxian/oxian-js/edge";
 import * as http from "@oxian/oxian-js/http";
-import * as host from "@oxian/oxian-js/host";
 import * as hypervisor from "@oxian/oxian-js/hypervisor";
 import * as router from "@oxian/oxian-js/router";
 import * as worker from "@oxian/oxian-js/worker";
@@ -29,7 +28,6 @@ const API_REFERENCE_MODULES = Object.freeze([
   "../../docs/api/config.md",
   "../../docs/api/edge.md",
   "../../docs/api/http.md",
-  "../../docs/api/host.md",
   "../../docs/api/hypervisor.md",
   "../../docs/api/local.md",
   "../../docs/api/protocol.md",
@@ -37,6 +35,7 @@ const API_REFERENCE_MODULES = Object.freeze([
   "../../docs/api/router.md",
   "../../docs/api/supervisor.md",
   "../../docs/api/transport.md",
+  "../../docs/api/work.md",
   "../../docs/api/worker.md",
 ]);
 
@@ -93,18 +92,19 @@ function markdownHeadingAnchors(content: string): ReadonlySet<string> {
 }
 
 Deno.test("public documentation imports published symbols", () => {
-  assert(typeof denoAdapter.createDenoHypervisor === "function");
+  assert(typeof denoAdapter.handler === "function");
+  assert(typeof denoAdapter.serve === "function");
   assert(typeof app.createApplication === "function");
   assert(typeof app.createServerSentEvents === "function");
   assert(typeof app.defineApplicationFactory === "function");
   assert(typeof config.defineConfig === "function");
-  assert(typeof core.createWorkerHost === "function");
+  assert(typeof core.createHypervisor === "function");
+  assert(typeof core.createWorker === "function");
   assert(typeof edge.createCorsAdapter === "function");
   assert(typeof http.createHttpGateway === "function");
-  assert(typeof host.createWorkerHost === "function");
   assert(typeof hypervisor.createHypervisor === "function");
   assert(typeof router.createFileRouter === "function");
-  assert(typeof worker.createWorkerClient === "function");
+  assert(typeof worker.createWorker === "function");
 });
 
 Deno.test("API-reference pages match every embeddable package subpath", async () => {
@@ -257,8 +257,8 @@ Deno.test("worker documentation makes ReadyAck and durable replay authoritative"
   );
   assert(protocol.includes("`ready_ack` is authoritative"));
   assert(
-    workers.includes(
-      "Only after `ready_ack` does `worker.whenReady()` resolve",
+    /Only after `ready_ack`\s+does `worker\.whenReady\(\)` resolve/.test(
+      workers,
     ),
   );
   assert(

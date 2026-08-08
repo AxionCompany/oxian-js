@@ -3,6 +3,18 @@ const CLI_ENTRYPOINT = new URL("../cli.ts", import.meta.url);
 
 const errors: string[] = [];
 const sourceFiles: Array<{ relativePath: string; source: string }> = [];
+const retiredTopologyTerms = Object.freeze([
+  "WorkerHost",
+  "createWorkerHost",
+  "WorkerClient",
+  "createWorkerClient",
+  "attachInProcessWorker",
+  "createDenoHypervisor",
+  "DenoHypervisor",
+  "createInProcessTransport",
+  "worker-websocket",
+  "HypervisorWork",
+]);
 
 await collectSource(SOURCE_ROOT);
 sourceFiles.push({
@@ -25,6 +37,25 @@ for (const file of sourceFiles) {
   if (/\bthis\s*\./.test(file.source)) {
     errors.push(`${file.relativePath}: this-managed state is not allowed`);
   }
+  for (const term of retiredTopologyTerms) {
+    if (file.source.includes(term)) {
+      errors.push(
+        `${file.relativePath}: retired topology term ${term} is not allowed`,
+      );
+    }
+  }
+}
+
+const workerEntrypoint = sourceFiles.find((file) =>
+  file.relativePath === "worker/index.ts"
+);
+if (
+  workerEntrypoint?.source.includes('from "./in-process.ts"') ||
+  workerEntrypoint?.source.includes('from "./websocket.ts"')
+) {
+  errors.push(
+    "worker/index.ts: transport-specific Worker factories must remain internal",
+  );
 }
 
 if (errors.length > 0) {
@@ -34,7 +65,7 @@ if (errors.length > 0) {
 }
 
 console.log(
-  `Oxian architecture check passed (${sourceFiles.length} factory-style source modules; classes and this-managed state are forbidden).`,
+  `Oxian architecture check passed (${sourceFiles.length} functional source modules; classes and this-managed state are forbidden).`,
 );
 
 async function collectSource(directory: URL): Promise<void> {

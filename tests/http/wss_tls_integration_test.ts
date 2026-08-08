@@ -1,5 +1,6 @@
 import { assertEquals } from "@std/assert";
-import { createDenoHypervisor } from "../../src/adapters/deno/index.ts";
+import { handler } from "../../src/adapters/deno/index.ts";
+import { createHypervisor } from "../../src/hypervisor/index.ts";
 import {
   createHttpGateway,
   createHttpWorkload,
@@ -10,10 +11,7 @@ import {
   createInMemoryWorkerRepository,
   createWorkerDefinition,
 } from "../../src/supervisor/index.ts";
-import {
-  createWorkerClient,
-  type WorkerClientResult,
-} from "../../src/worker/index.ts";
+import { createWorker, type WorkerResult } from "../../src/worker/index.ts";
 
 /**
  * This test intentionally relies on certificate validation. Run it with:
@@ -105,9 +103,8 @@ Deno.test({
       .attempt.identity;
     const authority = createInMemoryRegistrationAuthority();
     const registration = await authority.issueRegistration(identity);
-    const hypervisor = createDenoHypervisor({
-      authority,
-      repository,
+    const hypervisor = createHypervisor({
+      admission: { type: "registered", authority, repository },
       persistAcceptance: () => Promise.resolve(),
       config: {
         heartbeatIntervalMs: 20,
@@ -125,11 +122,15 @@ Deno.test({
       cert: certificate,
       key: privateKey,
       onListen() {},
-    }, hypervisor.fetch);
+    }, handler(hypervisor));
     const url = workerUrl(server.addr, hypervisor.config.workerPath);
     assertEquals(url.protocol, "wss:");
-    const worker = createWorkerClient({
-      url,
+    const worker = createWorker({
+      transport: {
+        type: "websocket",
+        url,
+        connectTimeoutMs: 1_000,
+      },
       identity,
       credential: registration.credential,
       credentialPersistence: "ephemeral",
@@ -155,10 +156,9 @@ Deno.test({
       },
       capacity: 1,
       reconnectDelay: false,
-      connectTimeoutMs: 1_000,
       handshakeTimeoutMs: 1_000,
     });
-    let workerRun: Promise<WorkerClientResult> | undefined;
+    let workerRun: Promise<WorkerResult> | undefined;
 
     try {
       workerRun = worker.run();

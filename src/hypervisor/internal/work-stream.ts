@@ -13,8 +13,8 @@ import type {
   HypervisorError,
   HypervisorErrorCode,
   HypervisorScheduler,
-  HypervisorWorkHandle,
 } from "../types.ts";
+import type { WorkHandle } from "../../work/types.ts";
 import type {
   AcceptanceAdmissionState,
   CloseRecord,
@@ -54,7 +54,7 @@ export type WorkStreamController = Readonly<{
     operationId: string,
     payload: PendingOpenInput,
     signal: AbortSignal | undefined,
-  ): HypervisorWorkHandle;
+  ): WorkHandle;
 }>;
 
 /**
@@ -748,7 +748,7 @@ export function createWorkStreamController(
   };
 
   const bindCallerCancellation = (
-    handle: HypervisorWorkHandle,
+    handle: WorkHandle,
     signal: AbortSignal | undefined,
   ): void => {
     if (signal === undefined) return;
@@ -774,7 +774,7 @@ export function createWorkStreamController(
     operationId: string,
     payload: PendingOpenInput,
     signal: AbortSignal | undefined,
-  ): HypervisorWorkHandle => {
+  ): WorkHandle => {
     assertCurrentFrame(record, sessions);
     if (record.fence === undefined || record.transport === undefined) {
       throw createHypervisorError(
@@ -855,7 +855,7 @@ export function createWorkStreamController(
       completed,
       outputController,
     };
-    const handle: HypervisorWorkHandle = Object.freeze({
+    const handle: WorkHandle = Object.freeze({
       operationId,
       streamId: payload.streamId,
       metadata: metadata.promise,

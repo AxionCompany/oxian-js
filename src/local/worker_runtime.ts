@@ -3,8 +3,8 @@ import type { Application } from "../app/types.ts";
 import { loadConfig } from "../config/config.ts";
 import { createHttpWorkload } from "../http/workload.ts";
 import { HTTP_WORKLOAD } from "../http/types.ts";
-import { createWorkerClient } from "../worker/client.ts";
-import type { WorkerClient, WorkerClientResult } from "../worker/types.ts";
+import { createWorker } from "../worker/worker.ts";
+import type { Worker, WorkerResult } from "../worker/types.ts";
 import { createAtomicResumeCredentialStore } from "./credential_store.ts";
 import type {
   AtomicResumeCredentialStore,
@@ -30,7 +30,7 @@ function createDeferred<T>(): Deferred<T> {
   return Object.freeze({ promise, resolve, reject });
 }
 
-function workerStoppedError(result: WorkerClientResult): Error {
+function workerStoppedError(result: WorkerResult): Error {
   const error = new Error(`worker stopped: ${result.reason}`);
   error.name = "ManifestWorkerRuntimeError";
   if ("error" in result) {
@@ -64,8 +64,8 @@ export function createManifestWorkerRuntime(
 
   let state: LocalRuntimeState = "idle";
   let application: Application<unknown> | undefined;
-  let worker: WorkerClient | undefined;
-  let workerRun: Promise<WorkerClientResult> | undefined;
+  let worker: Worker | undefined;
+  let workerRun: Promise<WorkerResult> | undefined;
   let credentialStore: AtomicResumeCredentialStore | undefined;
   let running: ManifestWorkerRuntimeRunning | undefined;
   let startTask: Promise<ManifestWorkerRuntimeRunning> | undefined;
@@ -106,7 +106,7 @@ export function createManifestWorkerRuntime(
     });
   };
 
-  const finishWorkerRun = (result: WorkerClientResult): void => {
+  const finishWorkerRun = (result: WorkerResult): void => {
     if (stopRequested) return;
     if (result.reason !== "shutdown" && result.reason !== "stopped") {
       fail(workerStoppedError(result));
@@ -167,8 +167,12 @@ export function createManifestWorkerRuntime(
           }
         }
 
-        worker = createWorkerClient({
-          url: manifest.gatewayUrl,
+        worker = createWorker({
+          transport: {
+            type: "websocket",
+            url: manifest.gatewayUrl,
+            allowInsecureLoopback: isLoopbackWebSocket(manifest.gatewayUrl),
+          },
           identity: manifest.identity,
           credential,
           handshakeId,
@@ -176,7 +180,6 @@ export function createManifestWorkerRuntime(
           workloads: { [HTTP_WORKLOAD]: workload },
           capacity: manifest.capacity,
           signal: lifecycleAbort.signal,
-          allowInsecureLoopback: isLoopbackWebSocket(manifest.gatewayUrl),
           ...(credentialStore === undefined
             ? { credentialPersistence: "ephemeral" as const }
             : {

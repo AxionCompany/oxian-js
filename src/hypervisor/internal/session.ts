@@ -71,6 +71,16 @@ export function createSessionProtocolController(
   }>,
 ): SessionProtocolController {
   const awaitExternal = options.admission.awaitExternal;
+  const requireWorkerAdmission = () => {
+    const admission = options.hypervisor.admission;
+    if (admission === undefined) {
+      throw Object.assign(
+        new Error("Hypervisor does not accept remote workers"),
+        { code: "authentication_failed" },
+      );
+    }
+    return admission;
+  };
 
   const welcome = async (
     record: ConnectionRecord,
@@ -81,7 +91,7 @@ export function createSessionProtocolController(
     const attempt = await awaitExternal(
       record,
       "handshake",
-      () => options.hypervisor.repository.assertCurrent(hello.identity),
+      () => requireWorkerAdmission().repository.assertCurrent(hello.identity),
     );
     ensureOpen(record);
     if (isTerminalAttempt(attempt)) {
@@ -94,7 +104,9 @@ export function createSessionProtocolController(
       record,
       "handshake",
       () =>
-        options.hypervisor.repository.getDefinition(hello.identity.workerId),
+        requireWorkerAdmission().repository.getDefinition(
+          hello.identity.workerId,
+        ),
     );
     ensureOpen(record);
     if (definition === undefined) {
@@ -122,7 +134,7 @@ export function createSessionProtocolController(
       record,
       "handshake",
       () =>
-        options.hypervisor.authority.exchange({
+        requireWorkerAdmission().authority.exchange({
           identity: hello.identity,
           credential: hello.credential,
           handshakeId: hello.handshakeId,
@@ -143,13 +155,13 @@ export function createSessionProtocolController(
     options.directory.publish(record);
 
     const bootstrap = copyBootstrap(
-      options.hypervisor.createBootstrap === undefined
+      requireWorkerAdmission().bootstrap === undefined
         ? {}
         : await awaitExternal(
           record,
           "handshake",
           () =>
-            options.hypervisor.createBootstrap!({
+            requireWorkerAdmission().bootstrap!({
               identity: hello.identity,
               definition,
               exchange,
@@ -195,7 +207,10 @@ export function createSessionProtocolController(
     const attempt = await awaitExternal(
       record,
       "ready",
-      () => options.hypervisor.repository.assertCurrent(record.hello!.identity),
+      () =>
+        requireWorkerAdmission().repository.assertCurrent(
+          record.hello!.identity,
+        ),
     );
     ensureOpen(record);
     if (isTerminalAttempt(attempt)) {
@@ -204,12 +219,12 @@ export function createSessionProtocolController(
         { code: "stale_attempt" },
       );
     }
-    if (options.hypervisor.validateReady !== undefined) {
+    if (requireWorkerAdmission().validateReady !== undefined) {
       await awaitExternal(
         record,
         "ready",
         () =>
-          options.hypervisor.validateReady!({
+          requireWorkerAdmission().validateReady!({
             identity: record.hello!.identity,
             definition: record.definition!,
             exchange: record.exchange!,
@@ -265,7 +280,7 @@ export function createSessionProtocolController(
           record,
           "ready",
           () =>
-            options.hypervisor.repository.assertCurrent(
+            requireWorkerAdmission().repository.assertCurrent(
               record.hello!.identity,
             ),
         );
@@ -329,7 +344,9 @@ export function createSessionProtocolController(
         record,
         "ready",
         () =>
-          options.hypervisor.repository.assertCurrent(record.fence!.identity),
+          requireWorkerAdmission().repository.assertCurrent(
+            record.fence!.identity,
+          ),
       );
       ensureOpen(record);
       if (isTerminalAttempt(attempt)) {
@@ -358,7 +375,9 @@ export function createSessionProtocolController(
           record,
           "ready",
           () =>
-            options.hypervisor.repository.assertCurrent(record.fence!.identity),
+            requireWorkerAdmission().repository.assertCurrent(
+              record.fence!.identity,
+            ),
         );
         ensureOpen(record);
         if (isTerminalAttempt(currentAttempt)) {

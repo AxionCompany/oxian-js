@@ -18,7 +18,7 @@ import {
   createLocalRuntime,
   createManifestWorkerRuntime,
   loadWorkerManifest,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/local";
+} from "jsr:@oxian/oxian-js@0.20.0-rc.7/local";
 ```
 
 Constructing either runtime is side-effect free. `start()` owns imports,
@@ -80,18 +80,11 @@ type LocalRuntimeRunningBase = Readonly<{
 
 type LocalRuntimeRunning =
   & LocalRuntimeRunningBase
-  & (
-    | Readonly<{
-      workerTransport: "in-process";
-      host: WorkerHost;
-      inProcessWorker: InProcessWorker;
-    }>
-    | Readonly<{
-      workerTransport: "worker-websocket";
-      workerUrl: URL;
-      worker: WorkerClient;
-    }>
-  );
+  & Readonly<{
+    workerTransport: LocalWorkerTransport;
+    worker: Worker;
+    workerUrl?: URL;
+  }>;
 
 type LocalRuntime = Readonly<{
   start(): Promise<LocalRuntimeRunning>;
@@ -118,11 +111,9 @@ On `start()`, the runtime:
 1. compiles the configured router and creates the configured application;
 2. wraps it as the built-in HTTP workload;
 3. creates a Hypervisor and binds its HTTP/WebSocket listener;
-4. for `"in-process"`, creates a `WorkerHost`, directly attaches the HTTP
-   workload, and routes the HTTP gateway to that host; or
-5. for `"worker-websocket"`, creates an in-memory authority and repository,
-   connects an ephemeral-credential worker back to the Hypervisor, and waits for
-   protocol readiness.
+4. creates a Worker with either an in-process or WebSocket transport descriptor;
+   and
+5. waits for the same Worker readiness boundary in both placements.
 
 The default `"in-process"` path avoids loopback serialization, protocol frames,
 socket buffers, authentication, heartbeats over the wire, and reconnect work. It
@@ -131,22 +122,20 @@ targeting, and offer → claim → acceptance → start boundary. It is the pref
 composition when Oxian is embedded in another application or when `dev` and
 `start` do not need transport integration coverage.
 
-`"worker-websocket"` preserves the honest loopback protocol topology. Use it for
+`"websocket"` preserves the honest loopback protocol topology. Use it for
 end-to-end transport tests or when local behavior must reproduce a separated
 worker process. Its repository, credential authority, and acceptance decision
 are process-local and not durable. Production durability remains an application
 concern in both modes.
 
 `mode: "dev"` enables a configured development proxy. Both modes apply
-configured CORS and static-file edges. `workerUrl` and `worker` exist only in
-the `"worker-websocket"` result. That URL is derived from the actual bound
-listener and Hypervisor worker path, using `ws:` for HTTP and `wss:` for HTTPS.
-The `"in-process"` result instead exposes `host` and `inProcessWorker` for
-embedding and process-local inspection.
+configured CORS and static-file edges. `worker` exists in both results;
+`workerUrl` exists only for `"websocket"` and is derived from the bound listener
+and Hypervisor Worker path, using `ws:` for HTTP and `wss:` for HTTPS.
 
 Repeated `start()` calls return the same promise. `stop(reason)` is idempotent,
-may preempt an in-progress startup, shuts down the host or worker, Hypervisor,
-listener, and application, and prevents restart. Its default reason is
+may preempt an in-progress startup, shuts down the Worker, Hypervisor, listener,
+and application, and prevents restart. Its default reason is
 `"local_runtime_stopped"`. `finished` resolves after an orderly stop and rejects
 on a runtime failure. An unexpected worker result creates an error named
 `LocalRuntimeWorkerError`. `snapshot()` is a frozen point-in-time value; URLs
@@ -355,8 +344,8 @@ type ManifestWorkerRuntimeOptions = Readonly<{
 type ManifestWorkerRuntimeRunning = Readonly<{
   router: FileRouter<unknown>;
   application: Application<unknown>;
-  worker: WorkerClient;
-  workerRun: Promise<WorkerClientResult>;
+  worker: Worker;
+  workerRun: Promise<WorkerResult>;
 }>;
 
 type ManifestWorkerRuntime = Readonly<{
@@ -365,7 +354,7 @@ type ManifestWorkerRuntime = Readonly<{
   readonly finished: Promise<void>;
   snapshot(): Readonly<{
     state: LocalRuntimeState;
-    worker?: ReturnType<WorkerClient["snapshot"]>;
+    worker?: ReturnType<Worker["snapshot"]>;
   }>;
 }>;
 ```
@@ -382,12 +371,13 @@ This factory accepts an already validated `WorkerManifest`; use
 `loadWorkerManifest` at an untrusted module boundary.
 
 On `start()`, the runtime loads the manifest's application configuration,
-creates its configured application and HTTP workload, then connects a
-`WorkerClient` to `gatewayUrl`. With a durable store it first loads any current
-resume credential and supplies the store's compare-and-set persister to the
-client. With an ephemeral store, credential rotation is kept only in memory.
-Insecure WebSocket transport is enabled only for a manifest URL already
-validated as loopback. `start()` resolves after the worker reaches ready.
+creates its configured application and HTTP workload, then connects a Worker
+with a WebSocket transport pointing at `gatewayUrl`. With a durable store it
+first loads any current resume credential and supplies the store's
+compare-and-set persister to the client. With an ephemeral store, credential
+rotation is kept only in memory. Insecure WebSocket transport is enabled only
+for a manifest URL already validated as loopback. `start()` resolves after the
+worker reaches ready.
 
 Repeated starts share one promise. `stop(reason)` aborts connection attempts,
 stops the worker, disposes the application, closes the credential store, and is

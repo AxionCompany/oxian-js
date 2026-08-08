@@ -9,7 +9,7 @@ import type {
   WorkerResumeCredentialUpdate,
 } from "../types.ts";
 import { runBoundedHandshakeStep, waitForTaskOrStop } from "./async.ts";
-import { createWorkerClientError } from "./errors.ts";
+import { createWorkerError } from "./errors.ts";
 
 type PendingRotationPersistence = {
   sourceCredential: WorkerCredential;
@@ -113,7 +113,7 @@ export function createCredentialRotationCoordinator(
 
   const adopt = (candidate: PendingRotationPersistence): void => {
     if (pending !== candidate) {
-      throw createWorkerClientError(
+      throw createWorkerError(
         "credential_persistence_failed",
         "Resume persistence completed for a stale rotation",
       );
@@ -151,7 +151,7 @@ export function createCredentialRotationCoordinator(
       candidate.resumeCapability !== welcome.resumeCapability ||
       candidate.resumeExpiresAtMs !== welcome.resumeExpiresAtMs
     ) {
-      throw createWorkerClientError(
+      throw createWorkerError(
         "credential_rejected",
         "Hypervisor changed a replayed resume-credential rotation",
       );
@@ -172,7 +172,7 @@ export function createCredentialRotationCoordinator(
         () => candidate.task!,
       );
     } catch (error) {
-      throw createWorkerClientError(
+      throw createWorkerError(
         "credential_persistence_failed",
         "Failed to persist rotated resume credential",
         error,

@@ -11,12 +11,11 @@ import type {
 } from "../../supervisor/index.ts";
 import type { WebSocketTransport } from "../../transport/index.ts";
 import type { WorkerWireConnection } from "../../transport/types.ts";
+import type { WorkBody, WorkHandle } from "../../work/types.ts";
 import type {
   HypervisorDisconnectPhase,
   HypervisorDisconnectReason,
   HypervisorPeerClose,
-  HypervisorWorkHandle,
-  HypervisorWorkInputBody,
 } from "../types.ts";
 
 export type ConnectionPhase =
@@ -92,14 +91,14 @@ export type PendingWork = {
   completed: Deferred<WorkDispatch>;
   deadlineTimer?: unknown;
   cancellationTimer?: unknown;
-  handle?: HypervisorWorkHandle;
+  handle?: WorkHandle;
 };
 
 export type PendingOpenInput = Readonly<{
   streamId: string;
   workload: string;
   metadata: JsonObject;
-  body?: HypervisorWorkInputBody;
+  body?: WorkBody;
   deadlineAtMs?: number;
 }>;
 

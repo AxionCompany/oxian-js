@@ -3,9 +3,8 @@ import type { Application } from "../app/types.ts";
 import { createHttpGateway } from "../http/gateway.ts";
 import { createHttpWorkload } from "../http/workload.ts";
 import { HTTP_WORKLOAD, type HttpDispatch } from "../http/types.ts";
-import { createWorkerHost } from "../host/host.ts";
-import type { InProcessWorker, WorkerHost } from "../host/types.ts";
-import { createDenoHypervisor } from "../adapters/deno/server.ts";
+import { serve } from "../adapters/deno/server.ts";
+import { createHypervisor } from "../hypervisor/hypervisor.ts";
 import type { Hypervisor, HypervisorListener } from "../hypervisor/types.ts";
 import type { WorkerCredential, WorkerIdentity } from "../protocol/types.ts";
 import {
@@ -13,8 +12,8 @@ import {
   createInMemoryWorkerRepository,
   createWorkerDefinition,
 } from "../supervisor/index.ts";
-import { createWorkerClient } from "../worker/client.ts";
-import type { WorkerClient, WorkerClientResult } from "../worker/types.ts";
+import { createWorker } from "../worker/worker.ts";
+import type { Worker, WorkerResult } from "../worker/types.ts";
 import { composeConfiguredEdge } from "./edge.ts";
 import type {
   LocalRuntime,
@@ -26,24 +25,11 @@ import type {
 
 type RuntimeResources = {
   application?: Application<unknown>;
-  host?: WorkerHost;
   hypervisor?: Hypervisor;
   listener?: HypervisorListener;
-  worker?: WorkerClient;
-  workerRun?: Promise<WorkerClientResult>;
+  worker?: Worker;
+  workerRun?: Promise<WorkerResult>;
 };
-
-type PreparedLocalWorker =
-  | Readonly<{
-    transport: "in-process";
-    host: WorkerHost;
-    worker: InProcessWorker;
-  }>
-  | Readonly<{
-    transport: "worker-websocket";
-    identity: WorkerIdentity;
-    credential: WorkerCredential;
-  }>;
 
 type Deferred<T> = Readonly<{
   promise: Promise<T>;
@@ -81,7 +67,7 @@ function listenerPort(value: number): number {
   return value;
 }
 
-function localRuntimeError(result: WorkerClientResult): Error {
+function localRuntimeError(result: WorkerResult): Error {
   const error = new Error(`local worker stopped: ${result.reason}`);
   error.name = "LocalRuntimeWorkerError";
   if ("error" in result) {
@@ -120,10 +106,10 @@ export function createLocalRuntime(
     options.config.gateway.workerTransport;
   if (
     workerTransport !== "in-process" &&
-    workerTransport !== "worker-websocket"
+    workerTransport !== "websocket"
   ) {
     throw new TypeError(
-      'local runtime workerTransport must be "in-process" or "worker-websocket"',
+      'local runtime workerTransport must be "in-process" or "websocket"',
     );
   }
   const resources: RuntimeResources = {};
@@ -148,12 +134,10 @@ export function createLocalRuntime(
   const cleanupResources = async (reason: string): Promise<void> => {
     if (!lifecycleAbort.signal.aborted) lifecycleAbort.abort(reason);
     const hypervisor = resources.hypervisor;
-    const host = resources.host;
     const listener = resources.listener;
     const worker = resources.worker;
     await Promise.allSettled([
       hypervisor?.shutdown(reason),
-      host?.shutdown(reason),
       listener?.shutdown(),
       worker?.stop(reason),
     ].filter((task): task is Promise<void> => task !== undefined));
@@ -199,24 +183,13 @@ export function createLocalRuntime(
         const repository = createInMemoryWorkerRepository();
         const authority = createInMemoryRegistrationAuthority();
         const dispatchReference: { current?: HttpDispatch } = {};
-        let prepared: PreparedLocalWorker;
-        if (workerTransport === "in-process") {
-          const host = createWorkerHost({
-            persistAcceptance: () => Promise.resolve(),
-          });
-          resources.host = host;
-          prepared = Object.freeze({
-            transport: workerTransport,
-            host,
-            worker: host.attachInProcessWorker({
-              workerId,
-              workloads: { [HTTP_WORKLOAD]: workload },
-              capacity,
-              signal: lifecycleAbort.signal,
-            }),
-          });
-          dispatchReference.current = host.dispatch;
-        } else {
+        let remote:
+          | Readonly<{
+            identity: WorkerIdentity;
+            credential: WorkerCredential;
+          }>
+          | undefined;
+        if (workerTransport === "websocket") {
           await repository.define(createWorkerDefinition({
             workerId,
             providerId: "local-attached",
@@ -229,8 +202,7 @@ export function createLocalRuntime(
           lifecycleAbort.signal.throwIfAborted();
           const registration = await authority.issueRegistration(identity);
           lifecycleAbort.signal.throwIfAborted();
-          prepared = Object.freeze({
-            transport: workerTransport,
+          remote = Object.freeze({
             identity,
             credential: registration.credential,
           });
@@ -240,7 +212,7 @@ export function createLocalRuntime(
             const current = dispatchReference.current;
             if (current === undefined) {
               return Promise.reject(
-                new Error("local worker host is not initialized"),
+                new Error("local Hypervisor is not initialized"),
               );
             }
             return current(input);
@@ -251,74 +223,82 @@ export function createLocalRuntime(
           options.config.gateway.edge,
           mode,
         );
-        const hypervisor = createDenoHypervisor({
-          authority,
-          repository,
+        const hypervisor = createHypervisor({
+          ...(remote === undefined ? {} : {
+            admission: {
+              type: "registered" as const,
+              authority,
+              repository,
+            },
+          }),
           persistAcceptance: () => Promise.resolve(),
           config: options.config.gateway.hypervisor,
           fallback,
         });
         resources.hypervisor = hypervisor;
-        if (prepared.transport === "worker-websocket") {
-          dispatchReference.current = hypervisor.dispatch;
-        }
+        dispatchReference.current = hypervisor.dispatch;
         lifecycleAbort.signal.throwIfAborted();
 
-        const listener = hypervisor.listen({
+        const listener = serve({
+          hypervisor,
           hostname,
           port,
           signal: lifecycleAbort.signal,
         });
         resources.listener = listener;
 
-        if (prepared.transport === "in-process") {
-          lifecycleAbort.signal.throwIfAborted();
-          running = Object.freeze({
-            workerTransport: prepared.transport,
-            listenerUrl: new URL(listener.url.href),
-            identity: prepared.worker.identity,
-            router,
-            application,
-            hypervisor,
-            host: prepared.host,
-            inProcessWorker: prepared.worker,
-          });
-        } else {
-          const outboundUrl = workerUrl(
+        const outboundUrl = workerTransport === "websocket"
+          ? workerUrl(
             listener,
             hypervisor.config.workerPath,
-          );
-          const worker = createWorkerClient({
-            url: outboundUrl,
-            identity: prepared.identity,
-            credential: prepared.credential,
+          )
+          : undefined;
+        const worker = remote === undefined
+          ? createWorker({
+            id: workerId,
+            transport: { type: "in-process", hypervisor },
+            workloads: { [HTTP_WORKLOAD]: workload },
+            capacity,
+            signal: lifecycleAbort.signal,
+          })
+          : createWorker({
+            transport: {
+              type: "websocket",
+              url: outboundUrl!,
+              allowInsecureLoopback: outboundUrl!.protocol === "ws:",
+            },
+            identity: remote.identity,
+            credential: remote.credential,
             credentialPersistence: "ephemeral",
             workloads: { [HTTP_WORKLOAD]: workload },
             capacity,
             signal: lifecycleAbort.signal,
-            allowInsecureLoopback: outboundUrl.protocol === "ws:",
           });
-          resources.worker = worker;
-          const workerRun = worker.run();
-          resources.workerRun = workerRun;
-          workerRun.then(
-            (result) => fail(localRuntimeError(result)),
-            fail,
-          );
+        resources.worker = worker;
+        const workerRun = worker.run();
+        resources.workerRun = workerRun;
+        workerRun.then(
+          (result) => fail(localRuntimeError(result)),
+          fail,
+        );
 
-          await worker.whenReady();
-          lifecycleAbort.signal.throwIfAborted();
-          running = Object.freeze({
-            workerTransport: prepared.transport,
-            listenerUrl: new URL(listener.url.href),
-            workerUrl: new URL(outboundUrl.href),
-            identity: prepared.identity,
-            router,
-            application,
-            hypervisor,
-            worker,
-          });
+        const ready = await worker.whenReady();
+        lifecycleAbort.signal.throwIfAborted();
+        if (ready.identity === undefined) {
+          throw new Error("local Worker became ready without an identity");
         }
+        running = Object.freeze({
+          workerTransport,
+          listenerUrl: new URL(listener.url.href),
+          ...(outboundUrl === undefined
+            ? {}
+            : { workerUrl: new URL(outboundUrl.href) }),
+          identity: ready.identity,
+          router,
+          application,
+          hypervisor,
+          worker,
+        });
         state = "running";
         return running;
       } catch (error) {

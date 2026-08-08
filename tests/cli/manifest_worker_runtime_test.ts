@@ -5,7 +5,8 @@ import {
   assertRejects,
 } from "@std/assert";
 import { join } from "@std/path";
-import { createDenoHypervisor } from "../../src/adapters/deno/index.ts";
+import { serve } from "../../src/adapters/deno/index.ts";
+import { createHypervisor } from "../../src/hypervisor/index.ts";
 import { createHttpGateway, HTTP_WORKLOAD } from "../../src/http/index.ts";
 import { loadWorkerManifest } from "../../src/local/worker_manifest.ts";
 import { createManifestWorkerRuntime } from "../../src/local/worker_runtime.ts";
@@ -77,9 +78,8 @@ Deno.test({
       .identity;
     const authority = createInMemoryRegistrationAuthority();
     const registration = await authority.issueRegistration(identity);
-    const hypervisor = createDenoHypervisor({
-      authority,
-      repository,
+    const hypervisor = createHypervisor({
+      admission: { type: "registered", authority, repository },
       persistAcceptance: () => Promise.resolve(),
       config: {
         heartbeatIntervalMs: 20,
@@ -91,7 +91,8 @@ Deno.test({
         proactiveDrainMarginMs: 1_000,
       },
     });
-    const listener = hypervisor.listen({
+    const listener = serve({
+      hypervisor,
       hostname: "127.0.0.1",
       port: 0,
     });

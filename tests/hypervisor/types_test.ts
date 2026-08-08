@@ -13,8 +13,7 @@ Deno.test("portable Hypervisor prepares responses and cancellable upgrade admiss
   const authority = createInMemoryRegistrationAuthority();
   const repository = createInMemoryWorkerRepository();
   const hypervisor = createHypervisor({
-    authority,
-    repository,
+    admission: { type: "registered", authority, repository },
     persistAcceptance: () => Promise.resolve(),
     fallback: () => new Response("fallback", { status: 202 }),
   });
@@ -61,8 +60,11 @@ Deno.test("Hypervisor admission accepts exchange-only authority and read-only re
     assertCurrent: repository.assertCurrent,
   });
   const hypervisor = createHypervisor({
-    authority: admissionAuthority,
-    repository: admissionRepository,
+    admission: {
+      type: "registered",
+      authority: admissionAuthority,
+      repository: admissionRepository,
+    },
     persistAcceptance: () => Promise.resolve(),
   });
 
@@ -78,10 +80,13 @@ Deno.test("Hypervisor rejects malformed admission seams during construction", ()
   const authority = createInMemoryRegistrationAuthority();
   const repository = createInMemoryWorkerRepository();
   const valid = {
-    authority: { exchange: authority.exchange },
-    repository: {
-      getDefinition: repository.getDefinition,
-      assertCurrent: repository.assertCurrent,
+    admission: {
+      type: "registered" as const,
+      authority: { exchange: authority.exchange },
+      repository: {
+        getDefinition: repository.getDefinition,
+        assertCurrent: repository.assertCurrent,
+      },
     },
     persistAcceptance: () => Promise.resolve(),
   };
@@ -90,31 +95,40 @@ Deno.test("Hypervisor rejects malformed admission seams during construction", ()
     () =>
       createHypervisor({
         ...valid,
-        authority: {} as WorkerAdmissionAuthority,
+        admission: {
+          ...valid.admission,
+          authority: {} as WorkerAdmissionAuthority,
+        },
       }),
     TypeError,
-    "authority.exchange",
+    "admission.authority.exchange",
   );
   assertThrows(
     () =>
       createHypervisor({
         ...valid,
-        repository: {
-          assertCurrent: repository.assertCurrent,
-        } as WorkerAdmissionRepository,
+        admission: {
+          ...valid.admission,
+          repository: {
+            assertCurrent: repository.assertCurrent,
+          } as WorkerAdmissionRepository,
+        },
       }),
     TypeError,
-    "repository.getDefinition",
+    "admission.repository",
   );
   assertThrows(
     () =>
       createHypervisor({
         ...valid,
-        repository: {
-          getDefinition: repository.getDefinition,
-        } as WorkerAdmissionRepository,
+        admission: {
+          ...valid.admission,
+          repository: {
+            getDefinition: repository.getDefinition,
+          } as WorkerAdmissionRepository,
+        },
       }),
     TypeError,
-    "repository.assertCurrent",
+    "admission.repository",
   );
 });

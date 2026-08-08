@@ -1,8 +1,5 @@
-import type {
-  WorkerHostDispatchInput,
-  WorkerHostWorkHandle,
-} from "../host/types.ts";
 import type { JsonObject } from "../protocol/types.ts";
+import type { WorkHandle, WorkInput } from "../work/types.ts";
 
 export const HTTP_REQUEST_METADATA_SCHEMA = "oxian.http.request.v1" as const;
 export const HTTP_RESPONSE_METADATA_SCHEMA = "oxian.http.response.v1" as const;
@@ -32,8 +29,8 @@ export type HttpResponseMetadata =
   }>;
 
 export type HttpDispatch = (
-  input: WorkerHostDispatchInput,
-) => Promise<WorkerHostWorkHandle>;
+  input: WorkInput,
+) => Promise<WorkHandle>;
 
 export type HttpGatewayDeadline = (
   request: Request,

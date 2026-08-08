@@ -45,6 +45,7 @@ export type SessionRegistry = Readonly<{
       workloads: readonly string[];
       capacity: number;
       leaseTimeoutMs: number;
+      liveness?: "heartbeat" | "binding";
     }>,
   ): SessionAttachment;
   markReady(fence: SessionFence): WorkerSession;
@@ -132,6 +133,8 @@ export function createSessionRegistry(
     session: WorkerSession,
     currentTime: number,
   ): WorkerSession | undefined => {
+    // A directly bound session has process-local liveness and ends explicitly.
+    if (session.liveness === "binding") return undefined;
     // A connected session is authenticated and fenced but deliberately not
     // routable yet. Its Ready handshake timer, owned by the Hypervisor, is the
     // sole startup deadline. The heartbeat lease begins only at markReady().
@@ -320,6 +323,9 @@ export function createSessionRegistry(
     input: Readonly<{ sequence: number }>,
   ): WorkerSession => {
     return replace(fence, (session) => {
+      if (session.liveness !== "heartbeat") {
+        return fail("invalid_state", "cannot heartbeat a bound session");
+      }
       if (session.phase !== "ready" && session.phase !== "draining") {
         return fail(
           "invalid_state",
