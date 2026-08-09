@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.1/http`
+# `jsr:@oxian/oxian-js@0.21.0-rc.2/http`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   createHttpGateway,
   createHttpWorkload,
   HTTP_WORKLOAD,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.1/http";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.2/http";
 ```
 
 ## Export summary

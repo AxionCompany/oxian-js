@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.1/hypervisor`
+# `jsr:@oxian/oxian-js@0.21.0-rc.2/hypervisor`
 
 The Hypervisor hosts declared Worker transports, admits fenced sessions, assigns
 work, and owns process-local drain/shutdown. It does not own a network listener
@@ -26,7 +26,7 @@ import {
   createHypervisor,
   type Hypervisor,
   type HypervisorOptions,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.1/hypervisor";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.2/hypervisor";
 
 const local = {
   type: "in-process",
@@ -89,6 +89,10 @@ root). Its relevant context types are `HypervisorAdmitContext`,
 
 Hypervisor work callbacks extend `HypervisorWorkLifecycleContext` and therefore
 carry both the application operation ID and its connection-local stream ID.
+`onWorkAccepted` additionally receives the immutable target, deadline, delivery
+count, exact assignment, and acceptance timestamp that crossed the no-replay
+boundary. Durable adapters do not need to reconstruct these values from live
+session state.
 
 Ready and heartbeat are fenced fail-closed gates. `onWorkAssigned` precedes
 Open. Hypervisor `onWorkAccepted` follows the Worker's ACK and is the durable

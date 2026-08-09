@@ -184,6 +184,14 @@ export type HypervisorWorkAcceptedContext =
   & HypervisorWorkLifecycleContext
   & Readonly<{
     stage: "work_accepted";
+    target?: Readonly<{ workerId: string }>;
+    deadlineAtMs?: number;
+    deliveryCount: number;
+    assignment: Readonly<{
+      fence: SessionFence;
+      streamId: string;
+    }>;
+    acceptedAtMs: number;
     fence: SessionFence;
   }>;
 

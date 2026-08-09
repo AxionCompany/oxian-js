@@ -41,13 +41,14 @@ function createHypervisor(
       await options.commitAcceptedWork(Object.freeze({
         operationId: context.operationId,
         workload: context.workload,
+        ...(context.target === undefined ? {} : { target: context.target }),
         metadata: context.metadata,
-        deliveryCount: 1,
-        assignment: Object.freeze({
-          fence: context.fence,
-          streamId: context.streamId,
-        }),
-        claimedAtMs: options.clock?.() ?? Date.now(),
+        ...(context.deadlineAtMs === undefined
+          ? {}
+          : { deadlineAtMs: context.deadlineAtMs }),
+        deliveryCount: context.deliveryCount,
+        assignment: context.assignment,
+        claimedAtMs: context.acceptedAtMs,
       }));
     },
   });
@@ -177,9 +178,12 @@ Deno.test("in-process work starts only after durable acceptance commits", async 
   });
 
   try {
+    const deadlineAtMs = Date.now() + 30_000;
     const pendingHandle = hypervisor.dispatch({
       workload: "copilotz.turn",
+      target: { workerId: "embedded-worker" },
       metadata: { conversationId: "conversation-1" },
+      deadlineAtMs,
     });
     await waitUntil(() => accepted !== undefined);
 
@@ -187,6 +191,15 @@ Deno.test("in-process work starts only after durable acceptance commits", async 
     assertEquals(accepted?.metadata, {
       conversationId: "conversation-1",
     });
+    assertEquals(typeof accepted?.operationId, "string");
+    assertEquals(accepted?.target, { workerId: "embedded-worker" });
+    assertEquals(accepted?.deadlineAtMs, deadlineAtMs);
+    assertEquals(accepted?.deliveryCount, 1);
+    assertEquals(
+      Number.isSafeInteger(accepted?.claimedAtMs) &&
+        (accepted?.claimedAtMs ?? -1) >= 0,
+      true,
+    );
     assertEquals(
       accepted?.assignment.fence.identity,
       worker.snapshot().identity,

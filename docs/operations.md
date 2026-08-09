@@ -8,9 +8,9 @@ results, and cross-replica routing.
 ## Production composition
 
 ```ts
-import { createHttpGateway } from "jsr:@oxian/oxian-js@0.21.0-rc.1/http";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.1/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.1/adapters/deno";
+import { createHttpGateway } from "jsr:@oxian/oxian-js@0.21.0-rc.2/http";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.2/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.2/adapters/deno";
 
 const hypervisor = createHypervisor(
   {
@@ -92,7 +92,9 @@ After the Worker sends `work.accepted`, Hypervisor `onWorkAccepted` is the
 durable no-replay gate. Commit by stable operation ID and stage ID. Only a
 confirmed callback lets Oxian send `work.start`. If the callback rejects or its
 outcome becomes unknowable, classify the work as indeterminate and never blindly
-replay it.
+replay it. The callback includes the exact target, deadline, delivery count,
+assignment fence and stream, and `acceptedAtMs`, so persistence never has to
+infer an acceptance record from mutable routing state.
 
 External side effects should receive the operation/stage idempotency key. A
 completed callback may be retried by the surrounding application even when the
@@ -172,8 +174,8 @@ Do not treat peer-provided close text as trusted lifecycle policy.
 ## Verification commands
 
 ```sh
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.1/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.1/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.2/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.2/bin routes --config oxian.config.ts
 ```
 
 Test crash points before dispatch, after acceptance ACK, during the durable

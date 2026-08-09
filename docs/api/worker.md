@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.1/worker`
+# `jsr:@oxian/oxian-js@0.21.0-rc.2/worker`
 
 This subpath creates auto-starting functional Workers and defines workload,
 stream, snapshot, reconnect, and error contracts.
@@ -26,7 +26,7 @@ import {
   createWorker,
   type Worker,
   type WorkerOptions,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.1/worker";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.2/worker";
 
 const worker = createWorker(
   {

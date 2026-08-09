@@ -84,13 +84,14 @@ export function createProtocolTestHypervisor(
       await options.commitAcceptedWork(Object.freeze({
         operationId: context.operationId,
         workload: context.workload,
+        ...(context.target === undefined ? {} : { target: context.target }),
         metadata: context.metadata,
-        deliveryCount: 1,
-        assignment: Object.freeze({
-          fence: context.fence,
-          streamId: context.streamId,
-        }),
-        claimedAtMs: options.clock?.() ?? Date.now(),
+        ...(context.deadlineAtMs === undefined
+          ? {}
+          : { deadlineAtMs: context.deadlineAtMs }),
+        deliveryCount: context.deliveryCount,
+        assignment: context.assignment,
+        claimedAtMs: context.acceptedAtMs,
       }));
     },
     onReady: async (context) => {

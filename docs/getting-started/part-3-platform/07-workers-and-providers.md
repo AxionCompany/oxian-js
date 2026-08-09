@@ -20,7 +20,7 @@ Provider APIs remain functional capabilities:
 import {
   createCloudRunJobsProvider,
   type WorkerProvider,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.1/providers";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.2/providers";
 
 const provider = createCloudRunJobsProvider({
   project: "acme-workers",
@@ -71,9 +71,9 @@ observe that session disconnect is a separate event, not inferred state.
 Use the CLI contracts as independent validation where appropriate:
 
 ```sh
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.1/bin worker --manifest oxian.worker.ts
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.1/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.1/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.2/bin worker --manifest oxian.worker.ts
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.2/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.2/bin routes --config oxian.config.ts
 ```
 
 ## What happened

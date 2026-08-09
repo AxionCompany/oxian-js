@@ -192,7 +192,14 @@ export function createHypervisor(
         operationId: commit.operationId,
         streamId: commit.assignment.streamId,
         workload: commit.workload,
+        ...(commit.target === undefined ? {} : { target: commit.target }),
         metadata: commit.metadata,
+        ...(commit.deadlineAtMs === undefined
+          ? {}
+          : { deadlineAtMs: commit.deadlineAtMs }),
+        deliveryCount: commit.deliveryCount,
+        assignment: commit.assignment,
+        acceptedAtMs: commit.claimedAtMs,
         fence: commit.assignment.fence,
       }));
     },
