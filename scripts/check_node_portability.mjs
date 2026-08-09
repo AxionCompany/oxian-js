@@ -24,18 +24,19 @@ for (
   assert.equal(name in oxian, false, `${name} must not leak from the root`);
 }
 
-const hypervisor = oxian.createHypervisor({
-  persistAcceptance: () => Promise.resolve(),
-});
+const transport = {
+  type: "in-process",
+  config: { topic: `node-portability-${crypto.randomUUID()}` },
+};
+const hypervisor = oxian.createHypervisor({ transports: [transport] });
 const worker = oxian.createWorker({
   id: "node-portability-worker",
-  transport: { type: "in-process", hypervisor },
+  transport,
   workloads: {
     echo: ({ input }) => ({ body: input }),
   },
 });
-const running = worker.run();
-await worker.whenReady();
+await worker.ready;
 const operation = await hypervisor.dispatch({
   workload: "echo",
   body: new Uint8Array([1, 2, 3]),
@@ -46,7 +47,7 @@ assert.deepEqual(
 );
 await operation.completed;
 await worker.stop("node_portability_complete");
-await running;
+await worker.closed;
 await hypervisor.shutdown("node_portability_complete");
 
 let receivedBody = "";

@@ -4,12 +4,11 @@ import {
   type WorkerIdentity,
 } from "../../protocol/index.ts";
 import type { SessionRegistry } from "../../supervisor/index.ts";
-import type { WebSocketTransportClose } from "../../transport/index.ts";
+import type { ConnectionClose } from "../../transport/index.ts";
 import type { HypervisorConfig } from "../config.ts";
 import type {
   HypervisorError,
   HypervisorErrorCode,
-  HypervisorOptions,
   HypervisorPeerClose,
   HypervisorScheduler,
 } from "../types.ts";
@@ -120,7 +119,7 @@ export function ensureOpen(record: ConnectionRecord): void {
   if (
     record.phase === "closed" ||
     record.abort.signal.aborted ||
-    record.connection?.state !== "open"
+    record.connection === undefined
   ) {
     throw createHypervisorError(
       "connection_lost",
@@ -146,30 +145,13 @@ export function assertCurrentFrame(
 }
 
 export function copyPeerClose(
-  close: WebSocketTransportClose,
+  close: ConnectionClose,
 ): HypervisorPeerClose {
   return Object.freeze({
     code: close.code,
     reason: close.reason,
     wasClean: close.wasClean,
   });
-}
-
-export function validateSessionLifecycle(
-  lifecycle: HypervisorOptions["sessionLifecycle"],
-): void {
-  if (lifecycle === undefined) return;
-  if (
-    lifecycle === null ||
-    typeof lifecycle !== "object" ||
-    typeof lifecycle.commitReady !== "function" ||
-    typeof lifecycle.commitHeartbeat !== "function" ||
-    typeof lifecycle.onDisconnect !== "function"
-  ) {
-    throw new TypeError(
-      "sessionLifecycle must provide commitReady, commitHeartbeat, and onDisconnect functions",
-    );
-  }
 }
 
 export function copyBootstrap(input: JsonObject): JsonObject {

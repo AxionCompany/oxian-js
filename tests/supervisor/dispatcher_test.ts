@@ -90,7 +90,7 @@ Deno.test("claim does not authorize execution until durable acceptance commits",
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[streamIndex++],
-    persistAcceptance: (commit) => {
+    commitAcceptedWork: (commit) => {
       accepted = commit;
       return persistence;
     },
@@ -159,7 +159,7 @@ Deno.test("disconnect before commit is explicitly reschedulable", () => {
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[streamIndex++],
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   dispatcher.claim(
@@ -186,7 +186,7 @@ Deno.test("exact target is immutable and survives rescheduling", async () => {
   const dispatcher = createWorkDispatcher({
     sessions,
     createWorkStreamId: () => STREAM_IDS[streamIndex++],
-    persistAcceptance: (commit) => {
+    commitAcceptedWork: (commit) => {
       accepted = commit;
       return Promise.resolve();
     },
@@ -233,7 +233,7 @@ Deno.test("disconnect after commit is indeterminate and never retryable", async 
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[0],
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   const claimed = dispatcher.claim(
@@ -262,7 +262,7 @@ Deno.test("pre-start cancellation remains reserved until worker acknowledgement"
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[0],
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   dispatcher.claim(
@@ -291,7 +291,7 @@ Deno.test("crossed Accepted after pre-claim cancellation is idempotent", () => {
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[0],
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   assertEquals(dispatcher.cancel(offered.operationId).status, "cancelling");
@@ -318,7 +318,7 @@ Deno.test("post-start cancellation remains reserved until worker acknowledgement
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[0],
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   dispatcher.claim(
@@ -353,7 +353,7 @@ Deno.test("connection loss before cancellation acknowledgement is indeterminate"
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[0],
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   dispatcher.claim(
@@ -388,7 +388,7 @@ Deno.test("crossed result settles work that was awaiting cancellation acknowledg
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[streamIndex++],
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
 
   const first = dispatcher.offer({ workload: "sandbox.command" });
@@ -452,7 +452,7 @@ Deno.test("loss during durable commit becomes indeterminate only after persisten
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[0],
-    persistAcceptance: () => persistence,
+    commitAcceptedWork: () => persistence,
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   dispatcher.claim(
@@ -484,7 +484,7 @@ Deno.test("replacement fencing rejects frames from the displaced socket", () => 
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[0],
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   const staleFence = offered.assignment!.fence;
@@ -520,7 +520,7 @@ Deno.test("assignment matching includes worker, attempt, epoch, connection, and 
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[0],
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   const wrongFence: SessionFence = {
@@ -547,7 +547,7 @@ Deno.test("peer terminal safely reschedules offered and claimed streams", () => 
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => streamId(++sequence),
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
 
   const offered = dispatcher.offer({ workload: "sandbox.command" });
@@ -582,7 +582,7 @@ Deno.test("peer rejection crossing acceptance persistence suppresses commit", as
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => streamId(1),
-    persistAcceptance: () => persistence.promise,
+    commitAcceptedWork: () => persistence.promise,
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   dispatcher.claim(
@@ -613,7 +613,7 @@ Deno.test("ambiguous persistence stays indeterminate until stream cancellation c
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => streamId(1),
-    persistAcceptance: () => Promise.reject(new Error("ack lost")),
+    commitAcceptedWork: () => Promise.reject(new Error("ack lost")),
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   dispatcher.claim(
@@ -647,7 +647,7 @@ Deno.test("synchronous persistence throw is deferred and cannot strand commit bo
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => streamId(1),
-    persistAcceptance: () => {
+    commitAcceptedWork: () => {
       throw new Error("synchronous adapter failure");
     },
   });
@@ -679,7 +679,7 @@ Deno.test("cancellation may cross an in-flight acceptance commit", async () => {
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => streamId(1),
-    persistAcceptance: () => persistence.promise,
+    commitAcceptedWork: () => persistence.promise,
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   dispatcher.claim(
@@ -717,7 +717,7 @@ Deno.test("completed operations are evicted from process-local dispatcher memory
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => streamId(++sequence),
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
 
   for (let index = 0; index < 100; index++) {
@@ -748,7 +748,7 @@ Deno.test("a definitely undelivered offer can be withdrawn without a worker ackn
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[0],
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
 
@@ -774,7 +774,7 @@ Deno.test("a surfaced reschedulable result can be explicitly evicted but an acti
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
     createWorkStreamId: () => STREAM_IDS[0],
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
   assertThrows(

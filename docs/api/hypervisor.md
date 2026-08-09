@@ -1,191 +1,128 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.7/hypervisor`
+# `jsr:@oxian/oxian-js@0.21.0-rc.1/hypervisor`
 
-The Hypervisor is Oxian's single hosting role. It routes work to Workers bound
-in process or connected through the remote worker protocol. The portable core
-does not own a native listener.
+The Hypervisor hosts declared Worker transports, admits fenced sessions, assigns
+work, and owns process-local drain/shutdown. It does not own a network listener
+or force a database/credential manager abstraction.
+
+Exports: `createHypervisor`, `createHypervisorConfig`,
+`DEFAULT_HYPERVISOR_CONFIG`, `Hypervisor`, `HypervisorConfig`,
+`HypervisorDisconnectEvent`, `HypervisorDisconnectPhase`,
+`HypervisorDisconnectReason`, `HypervisorError`, `HypervisorErrorCode`,
+`HypervisorHeartbeatContext`, `HypervisorListenOptions`, `HypervisorListener`,
+`HypervisorOptions`, `HypervisorPeerClose`, `HypervisorReadyContext`,
+`HypervisorRequestDecision`, `HypervisorScheduler`, and `HypervisorSnapshot`.
+
+Root lifecycle contracts used here are `HypervisorAdmit`,
+`HypervisorAdmitContext`, `HypervisorAdmission`, `HypervisorAssign`,
+`HypervisorAssignContext`, `HypervisorCompleteContext`,
+`HypervisorLifecycleCallbacks`, `HypervisorStartContext`,
+`HypervisorWorkLifecycleContext`, `HypervisorWorkAcceptedContext`, and
+`HypervisorWorkAssignedContext`.
+
+## Create
 
 ```ts
 import {
   createHypervisor,
   type Hypervisor,
   type HypervisorOptions,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.7/hypervisor";
-```
+} from "jsr:@oxian/oxian-js@0.21.0-rc.1/hypervisor";
 
-## Exports
+const local = {
+  type: "in-process",
+  config: { topic: "orders" },
+} as const;
 
-| Export                             | Purpose                                                       |
-| ---------------------------------- | ------------------------------------------------------------- |
-| `createHypervisor`                 | Create one closure-backed host capability.                    |
-| `Hypervisor`                       | Dispatch, admission, lifecycle, and snapshot functions.       |
-| `HypervisorOptions`                | Acceptance, optional remote admission, hooks, and config.     |
-| `HypervisorAdmission`              | Declarative remote admission policy.                          |
-| `WorkerAdmissionAuthority`         | Credential-exchange capability required for remote Workers.   |
-| `WorkerAdmissionRepository`        | Current-definition checks required for remote Workers.        |
-| `HypervisorConfig`                 | Validated protocol, capacity, timeout, and flow-control data. |
-| `DEFAULT_HYPERVISOR_CONFIG`        | Frozen default configuration.                                 |
-| `createHypervisorConfig`           | Validate and normalize partial configuration.                 |
-| `HypervisorRequestDecision`        | Normal response or one-shot native upgrade admission.         |
-| `HypervisorListenOptions`          | Runtime-neutral listener address and signal fields.           |
-| `HypervisorListener`               | Address, completion, and shutdown capability.                 |
-| `HypervisorSnapshot`               | Process-local connection, Worker, acceptance, and work state. |
-| `HypervisorSessionLifecycle`       | Durable ready/heartbeat commits and disconnect observer.      |
-| `HypervisorReadyCommitContext`     | Fenced data for a durable Ready commit.                       |
-| `HypervisorHeartbeatCommitContext` | Fenced data for a durable heartbeat commit.                   |
-| `HypervisorDisconnectEvent`        | Trusted lifecycle event for one ended connection.             |
-| `HypervisorDisconnectPhase`        | Phase observed at disconnect.                                 |
-| `HypervisorDisconnectReason`       | Hypervisor-authored disconnect classification.                |
-| `HypervisorPeerClose`              | Untrusted peer close details retained for diagnostics.        |
-| `HypervisorScheduler`              | Injectable timer capability for deterministic tests.          |
-| `HypervisorErrorCode`              | Stable operation failure classification.                      |
-| `HypervisorError`                  | Structurally typed Hypervisor error.                          |
-
-Work input and output live in [`/work`](work.md) as `WorkInput`, `WorkHandle`,
-`WorkBody`, and `Dispatcher` so embedding libraries do not need Hypervisor
-implementation types.
-
-## Construction
-
-An in-process-only Hypervisor needs only the durable acceptance callback:
-
-```ts
-const hypervisor = createHypervisor({
-  persistAcceptance: (commit) => operations.accept(commit),
-});
-```
-
-Remote Workers add one admission descriptor:
-
-```ts
-const hypervisor = createHypervisor({
-  admission: {
-    type: "registered",
-    authority,
-    repository,
-    bootstrap: ({ identity }) => ({ tenant: tenantFor(identity) }),
-    validateReady: ({ metadata }) => validateRuntime(metadata),
+const hypervisor = createHypervisor(
+  {
+    transports: [local, {
+      type: "websocket",
+      config: { path: "/_oxian/workers/connect" },
+    }],
+    admit,
+    assign,
+    signal,
   },
-  persistAcceptance: (commit) => operations.accept(commit),
-  sessionLifecycle,
-  fallback: (request) => application.fetch(request),
-});
+  {
+    onReady,
+    onHeartbeat,
+    onWorkAssigned,
+    onWorkAccepted,
+    onStart,
+    onComplete,
+    onDisconnect,
+  },
+);
 ```
 
-```ts
-type HypervisorOptions = Readonly<{
-  admission?: HypervisorAdmission;
-  persistAcceptance(commit: AcceptanceCommit): Promise<void>;
-  sessionLifecycle?: HypervisorSessionLifecycle;
-  config?: Partial<HypervisorConfig>;
-  sessions?: SessionRegistry;
-  fallback?: (request: Request) => Response | Promise<Response>;
-  clock?: () => number;
-  scheduler?: HypervisorScheduler;
-  createConnectionId?: () => string;
-}>;
-```
+`createHypervisor(options, callbacks)` returns a frozen `Hypervisor` capability.
+`HypervisorOptions` requires plural declarative `transports` and accepts
+functional `admit` / `assign` policy, `AbortSignal`, bounded configuration, and
+an optional Fetch fallback.
 
-Construction is side-effect free. It returns a frozen record of functions, not a
-class instance.
+## Capability
 
-## Remote admission
+`Hypervisor` exposes:
 
-```ts
-type HypervisorAdmission = Readonly<{
-  type: "registered";
-  authority: WorkerAdmissionAuthority;
-  repository: WorkerAdmissionRepository;
-  bootstrap?: (context) => JsonObject | Promise<JsonObject>;
-  validateReady?: (context) => void | Promise<void>;
-}>;
-```
+- `prepare(request): HypervisorRequestDecision` for runtime-owned HTTP/WSS
+  ingress;
+- `dispatch(input)` for streaming work;
+- `drain(workerId)` for maintenance rotation;
+- `shutdownWorker(workerId)` for terminal logical-Worker shutdown;
+- `shutdownSession(fence)` for exact-generation cleanup;
+- `shutdown()` for all owned bindings/connections; and
+- `snapshot(): HypervisorSnapshot` plus validated `config` and read-only
+  process-local session diagnostics.
 
-In-process binding is authorized by direct possession of the Hypervisor and does
-not use this descriptor. Across WebSocket, identity names one exact Worker
-attempt; the authority exchanges and rotates its credential; the repository
-confirms that its definition and attempt remain current. These are admission
-data, not additional runtime roles.
+A `HypervisorRequestDecision` is either a normal response or a one-shot upgrade
+capability with `attach()` and `cancel()`. Runtime adapters attach a
+`SocketConnection` only after negotiating the exact protocol.
 
-## Host capability
+## Lifecycle
 
-```ts
-type Hypervisor = Readonly<{
-  prepare(request: Request): HypervisorRequestDecision;
-  dispatch(input: WorkInput): Promise<WorkHandle>;
-  drain(workerId: string, reason?: string): Promise<void>;
-  shutdownWorker(workerId: string, reason?: string): Promise<void>;
-  shutdownSession(fence: SessionFence, reason?: string): Promise<void>;
-  shutdown(reason?: string): Promise<void>;
-  snapshot(): HypervisorSnapshot;
-  readonly config: HypervisorConfig;
-  readonly sessions: SessionRegistry;
-}>;
-```
+The second argument is `HypervisorLifecycleCallbacks` (exported by the package
+root). Its relevant context types are `HypervisorAdmitContext`,
+`HypervisorAdmission`, `HypervisorAssignContext`, `HypervisorAssign`,
+`HypervisorWorkAssignedContext`, `HypervisorWorkAcceptedContext`,
+`HypervisorStartContext`, `HypervisorCompleteContext`, `HypervisorReadyContext`,
+`HypervisorHeartbeatContext`, and `HypervisorDisconnectEvent`.
 
-`dispatch()` selects a ready local or remote Worker with capacity unless
-`input.target.workerId` names one. It returns after the operation is represented
-by a streaming handle; execution starts only after `persistAcceptance` resolves.
+Hypervisor work callbacks extend `HypervisorWorkLifecycleContext` and therefore
+carry both the application operation ID and its connection-local stream ID.
 
-`drain()` stops new reservations, waits for current work, and lets the Worker
-replace that connection or direct binding. The Worker keeps its identity,
-publishes a newer session generation, and reruns `beforeReady` with
-`reconnecting: true`. `shutdownWorker()` requests terminal Worker shutdown.
-`shutdownSession()` is fenced to one exact connection so stale cleanup cannot
-terminate its replacement. `shutdown()` covers every Worker bound to this
-Hypervisor but does not claim runtime-adapter listener ownership.
+Ready and heartbeat are fenced fail-closed gates. `onWorkAssigned` precedes
+Open. Hypervisor `onWorkAccepted` follows the Worker's ACK and is the durable
+no-replay gate before Start. `onDisconnect` is nonblocking and exactly once per
+fenced connection.
 
-## Runtime adapter seam
+`HypervisorDisconnectPhase` identifies the last trusted phase.
+`HypervisorDisconnectReason` is Hypervisor-authored policy; untrusted native
+close details are isolated in `HypervisorPeerClose`.
 
-`prepare(request)` returns a `HypervisorRequestDecision`:
+## Configuration
 
-- `kind: "response"` contains a normal response or fallback result;
-- `kind: "upgrade"` reserves admission and exposes the exact protocol plus
-  one-shot `attach(connection)` and `cancel(reason)` functions.
+`DEFAULT_HYPERVISOR_CONFIG` is immutable. Use `createHypervisorConfig(partial)`
+to validate a `HypervisorConfig` directly, or pass `config` into
+`createHypervisor`.
 
-A runtime adapter performs its native handshake and supplies a
-`WorkerWireConnection`. Deno applications can use `handler(hypervisor)` or
-`serve({ hypervisor })` from [`/adapters/deno`](adapters/deno.md).
+The config bounds handshake/Ready deadlines, heartbeat and lease timing,
+shutdown/cancellation, connection age, connection counts, acceptance commits,
+message/byte buffering, Worker capacity, lifetime streams, payload size, and
+credit. WebSocket path is not global configuration; it belongs to
+`transports[].config.path`.
 
-Without `admission`, the configured Worker WebSocket path returns 404 while
-normal fallback requests continue to work.
+`HypervisorScheduler`, `HypervisorListenOptions`, and `HypervisorListener` are
+runtime integration contracts. Deno listener ownership is implemented by the
+explicit `/adapters/deno` subpath.
 
-## Durable lifecycle hooks
+## Snapshots and errors
 
-`HypervisorSessionLifecycle` has three functions:
+`HypervisorSnapshot` reports connection/admission/session counts, ready local
+Workers, pending acceptance commits, and work counts by status.
 
-- `commitReady(HypervisorReadyCommitContext)` gates publication of a remote
-  ready session;
-- `commitHeartbeat(HypervisorHeartbeatCommitContext)` gates heartbeat state;
-- `onDisconnect(HypervisorDisconnectEvent)` observes one fenced disconnect
-  without delaying socket cleanup.
+Runtime failures use `HypervisorError` with `HypervisorErrorCode`:
+authentication, connection loss, timeout, indeterminate acceptance, invalid
+state, unavailable Worker, reschedulable work, shutdown, or work failure.
 
-Ready and heartbeat stores must compare the complete fence and retain a
-monotonic disconnect tombstone so a late commit cannot resurrect an ended
-session. `HypervisorDisconnectReason` is trusted and authored locally;
-`HypervisorPeerClose` is untrusted peer text.
-
-## Snapshot and configuration
-
-`HypervisorSnapshot` reports local and remote session counts, in-process Worker
-count, connection admission, pending acceptance commits, and counts for each
-dispatch status. It is process-local, not a durable global directory.
-
-`createHypervisorConfig()` merges a partial `HypervisorConfig` with
-`DEFAULT_HYPERVISOR_CONFIG`, validates bounds and relationships, and freezes the
-result. Configuration covers paths, connection and handshake bounds, heartbeat
-and lease timing, drain/shutdown timing, capacity, frame queues, stream credit,
-and protocol limits.
-
-`HypervisorListenOptions` and `HypervisorListener` are runtime-neutral contracts
-shared with server adapters. The core itself never binds a port.
-
-## Errors and scheduling
-
-`HypervisorError` is an ordinary `Error` augmented with a `HypervisorErrorCode`
-and optional identity or operation ID. It is not a custom class. Codes classify
-authentication, connection, timeout, state, availability, rescheduling,
-shutdown, indeterminate acceptance, and workload failures.
-
-`HypervisorScheduler` is a two-function timer capability (`schedule` and
-`cancel`) used for deterministic tests or unusual runtimes; normal callers use
-the default Web timer implementation.
+See [workers](../workers.md), [operations](../operations.md), and the
+[protocol](../worker-protocol-v1.md).

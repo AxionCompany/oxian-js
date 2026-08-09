@@ -9,7 +9,7 @@ import { normalizeConfig } from "./validation.ts";
 export const DEFAULT_OXIAN_CONFIG: OxianConfig = normalizeConfig({});
 
 /**
- * Defines and validates a code-first Oxian 0.20 configuration.
+ * Defines and validates a code-first Oxian 0.21 configuration.
  *
  * Relative filesystem paths are intentionally preserved here. When a module is
  * loaded with `loadConfig()`, those paths are resolved against that module's

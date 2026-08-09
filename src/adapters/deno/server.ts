@@ -4,7 +4,7 @@ import {
   listenerUrl,
 } from "../../hypervisor/internal/primitives.ts";
 import type { Hypervisor, HypervisorListener } from "../../hypervisor/types.ts";
-import { createWebSocketWireConnection } from "../../transport/wire.ts";
+import { adaptWebSocket } from "../../transport/socket.ts";
 import type { DenoServeOptions } from "./types.ts";
 
 /** Adapts a portable Hypervisor to Deno's Fetch/WebSocket upgrade boundary. */
@@ -26,7 +26,7 @@ export function handler(
     }
     try {
       decision.attach(
-        createWebSocketWireConnection(upgraded.socket),
+        adaptWebSocket(upgraded.socket),
         decision.protocol,
       );
     } catch {

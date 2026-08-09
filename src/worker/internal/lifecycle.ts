@@ -133,7 +133,7 @@ export type PendingSettlementTracker = Readonly<{
 }>;
 
 /**
- * Owns asynchronous cleanup that may outlive one WebSocket session.
+ * Owns asynchronous cleanup that may outlive one physical connection.
  *
  * Tracked failures are considered settled rather than propagated: the caller
  * that initiated cleanup owns protocol error handling, while this tracker owns

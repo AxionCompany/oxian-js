@@ -6,14 +6,16 @@ import {
 } from "../../protocol/index.ts";
 import type { SessionRegistry } from "../../supervisor/index.ts";
 import {
-  createWebSocketTransport,
-  expectWorkerWireConnection,
-  type WorkerWireConnection,
+  createFrameConnection,
+  createProtocolTransport,
+  expectSocketConnection,
+  type SocketConnection,
 } from "../../transport/index.ts";
 import type { HypervisorConfig } from "../config.ts";
 import type {
   Hypervisor,
   HypervisorDisconnectReason,
+  HypervisorRequestDecision,
   HypervisorScheduler,
 } from "../types.ts";
 import type { AdmissionController } from "./admission.ts";
@@ -31,6 +33,15 @@ import {
   POLICY_CLOSE_CODE,
   websocketRequestError,
 } from "./primitives.ts";
+
+export type ConnectionAdmission = Readonly<{
+  prepare: Hypervisor["prepare"];
+  accept(
+    connection: SocketConnection,
+    negotiatedProtocol?: string,
+    transportType?: "in-process" | "websocket",
+  ): void;
+}>;
 
 export function createConnectionAdmission(
   options: Readonly<{
@@ -66,26 +77,18 @@ export function createConnectionAdmission(
     ): Promise<void>;
     cleanupConnection(record: ConnectionRecord): Promise<void>;
   }>,
-): Hypervisor["prepare"] {
+): ConnectionAdmission {
   const runConnection = async (
     record: ConnectionRecord,
     negotiatedProtocol: string | undefined,
   ): Promise<void> => {
     try {
-      record.transport = await createWebSocketTransport({
-        socket: record.connection!,
-        role: "hypervisor",
+      record.connection = await createFrameConnection(record.socket!, {
         negotiatedProtocol,
         signal: record.abort.signal,
-        maxInboundMessages: options.config.maxInboundMessages,
+        maxInboundFrames: options.config.maxInboundMessages,
         maxInboundBytes: options.config.maxInboundBytes,
         maxBufferedAmountBytes: options.config.maxBufferedAmountBytes,
-        protocol: {
-          maxCapacity: options.config.maxWorkerCapacity,
-          maxLifetimeStreams: options.config.maxLifetimeStreams,
-          maxDataPayloadBytes: options.config.maxDataPayloadBytes,
-          maxReceiveCreditBytes: options.config.maxReceiveCreditBytes,
-        },
         bufferedAmountLowWaterBytes: Math.max(
           1,
           Math.min(
@@ -93,6 +96,19 @@ export function createConnectionAdmission(
             Math.floor(options.config.maxBufferedAmountBytes / 2),
           ),
         ),
+      });
+      record.transport = await createProtocolTransport({
+        connection: record.connection,
+        role: "hypervisor",
+        signal: record.abort.signal,
+        maxInboundMessages: options.config.maxInboundMessages,
+        maxInboundBytes: options.config.maxInboundBytes,
+        protocol: {
+          maxCapacity: options.config.maxWorkerCapacity,
+          maxLifetimeStreams: options.config.maxLifetimeStreams,
+          maxDataPayloadBytes: options.config.maxDataPayloadBytes,
+          maxReceiveCreditBytes: options.config.maxReceiveCreditBytes,
+        },
       });
       // Wire close details remain diagnostic and untrusted. The observer owns
       // prompt idempotent cleanup even if an ordered lifecycle hook is stalled.
@@ -200,32 +216,14 @@ export function createConnectionAdmission(
     }
   };
 
-  return (request) => {
-    const url = new URL(request.url);
-    if (url.pathname !== options.config.workerPath) {
-      return Object.freeze({
-        kind: "response" as const,
-        response: options.fallback?.(request) ??
-          new Response("Not Found", { status: 404 }),
-      });
-    }
-    const admissionSnapshot = options.admission.snapshot();
-    const response = websocketRequestError(
-      request,
-      options.config,
-      options.isAcceptingConnections(),
-      options.directory.records.size,
-      admissionSnapshot.unauthenticatedConnections,
-      admissionSnapshot.handshakeOperations,
-    );
-    if (response !== undefined) {
-      return Object.freeze({
-        kind: "response" as const,
-        response,
-      });
-    }
-
+  const reserve = (
+    transportType: "in-process" | "websocket",
+  ): Extract<
+    HypervisorRequestDecision,
+    Readonly<{ kind: "upgrade" }>
+  > => {
     const record: ConnectionRecord = {
+      transportType,
       phase: "pending",
       connectedAtMs: options.clock(),
       acceptingWork: false,
@@ -251,10 +249,10 @@ export function createConnectionAdmission(
     };
 
     const attach = (
-      value: WorkerWireConnection,
+      value: SocketConnection,
       negotiatedProtocol?: string,
     ): void => {
-      const connection = expectWorkerWireConnection(value);
+      const connection = expectSocketConnection(value);
       if (state !== "pending") {
         try {
           connection.close(4400, "admission_expired");
@@ -281,7 +279,7 @@ export function createConnectionAdmission(
       }
       state = "attached";
       cancelConnectionTimer(options.scheduler, record, "attachmentTimer");
-      record.connection = connection;
+      record.socket = connection;
       record.phase = "unauthenticated";
       void runConnection(record, selectedProtocol);
     };
@@ -301,4 +299,48 @@ export function createConnectionAdmission(
       cancel,
     });
   };
+
+  const prepare: Hypervisor["prepare"] = (request) => {
+    const admissionSnapshot = options.admission.snapshot();
+    const response = websocketRequestError(
+      request,
+      options.config,
+      options.isAcceptingConnections(),
+      options.directory.records.size,
+      admissionSnapshot.unauthenticatedConnections,
+      admissionSnapshot.handshakeOperations,
+    );
+    if (response !== undefined) {
+      return Object.freeze({
+        kind: "response" as const,
+        response,
+      });
+    }
+    return reserve("websocket");
+  };
+
+  const accept: ConnectionAdmission["accept"] = (
+    connection,
+    negotiatedProtocol = WORKER_PROTOCOL,
+    transportType = "in-process",
+  ) => {
+    if (!options.isAcceptingConnections()) {
+      connection.close(4403, "hypervisor_not_accepting_connections");
+      throw new TypeError("Hypervisor is not accepting Worker connections");
+    }
+    const admissionSnapshot = options.admission.snapshot();
+    if (
+      options.directory.records.size >= options.config.maxConnections ||
+      admissionSnapshot.unauthenticatedConnections >=
+        options.config.maxUnauthenticatedConnections ||
+      admissionSnapshot.handshakeOperations >=
+        options.config.maxUnauthenticatedConnections
+    ) {
+      connection.close(4429, "connection_admission_exhausted");
+      throw new TypeError("Hypervisor Worker admission is exhausted");
+    }
+    reserve(transportType).attach(connection, negotiatedProtocol);
+  };
+
+  return Object.freeze({ prepare, accept });
 }

@@ -5,14 +5,15 @@ versions may change without changing this protocol identifier.
 
 ## Transport and framing
 
-A worker connects outbound to the Hypervisor over WSS and offers the exact
-`Sec-WebSocket-Protocol` value `oxian.worker.v1`. Native workers never expose an
-HTTP listener. HTTPS endpoints may enroll, revoke, or inspect workers, but work
-travels over the authenticated WebSocket.
+A Worker connects outward to the Hypervisor. Across a process boundary it uses
+WSS and offers the exact `Sec-WebSocket-Protocol` value `oxian.worker.v1`;
+Workers never expose an HTTP listener. In one module realm, the built-in local
+transport carries the unchanged encoded frames through an addressed event fabric
+and executes this same state machine.
 
-Control frames are UTF-8 JSON WebSocket text messages. Bulk data uses binary
-WebSocket messages with the 28-byte `OXNB` header implemented by
-`src/protocol/binary.ts`; data is never base64-encoded.
+Control frames are canonical UTF-8 JSON strings. Bulk data uses binary frames
+with the 28-byte `OXNB` header implemented by `src/protocol/binary.ts`; data is
+never base64-encoded.
 
 The v1 hard limits are:
 
@@ -49,8 +50,9 @@ a fresh connection; used stream IDs are never reused on one connection.
    handshake ID. Durable writes must be atomic, idempotent for that update, and
    compare-and-set the candidate's predecessor handshake ID. The persistence
    Promise resolves only after durable commit. This prevents a late completion
-   from overwriting a later rotation. Durable persistence is the client default;
-   a process-lifetime worker must explicitly opt into ephemeral resume state.
+   from overwriting a later rotation. Remote production Workers persist through
+   their functional `handshake` operation; private local defaults retain only
+   process-lifetime resume state.
 4. The worker applies optional bootstrap through its workload-owned pre-ready
    hook and sends `ready`, echoing connection ID and capacity plus bounded
    workload-owned result metadata. Bootstrap failure never advertises the worker
@@ -105,8 +107,8 @@ Work authorization is deliberately two-phase:
 
 1. The worker reserves capacity and replies `work.accepted`. It must not invoke
    workload code, expose the body to a handler, or perform side effects yet.
-2. The Hypervisor observes the claim and durably commits the operation's
-   acceptance. That successful commit is the no-replay boundary.
+2. The Hypervisor observes the claim and awaits its `onWorkAccepted` durable
+   acceptance callback. That successful commit is the no-replay boundary.
 3. Only then does the Hypervisor send `work.start`.
 4. The worker invokes the workload only when a delivered `work.start` is
    accepted by its connection state machine.

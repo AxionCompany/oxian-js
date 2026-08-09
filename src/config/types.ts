@@ -1,7 +1,7 @@
 import type { HypervisorConfig } from "../hypervisor/config.ts";
 
 /**
- * Code-first Oxian 0.20 configuration.
+ * Code-first Oxian 0.21 configuration.
  *
  * This contract deliberately contains only application and gateway behavior
  * owned by the 0.20 runtime. Worker definitions, bootstrap manifests,

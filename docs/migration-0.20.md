@@ -45,12 +45,11 @@ Start the migration with a clean local project and move one route tree at a
 time:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin init --root ./new-service
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin check --config ./new-service/oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.1/bin init --root ./new-service
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.1/bin check --config ./new-service/oxian.config.ts
 ```
 
-Then choose an
-[embedded in-process worker](workers.md#embedded-in-process-worker), a
-[worker manifest](workers.md#http-worker-manifest), or the direct remote Worker
-WebSocket boundary. Review the [protocol](worker-protocol-v1.md) before
+Then choose an [embedded in-process worker](workers.md#in-process-worker), a
+[worker manifest](workers.md#manifest-worker-runtime), or the direct remote
+Worker WebSocket boundary. Review the [protocol](worker-protocol-v1.md) before
 implementing a non-HTTP remote workload.

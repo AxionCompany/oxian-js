@@ -1,197 +1,114 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.7/worker`
+# `jsr:@oxian/oxian-js@0.21.0-rc.1/worker`
 
-The `/worker` subpath declares workload execution independently of placement.
-`createWorker()` accepts one discriminated `WorkerTransport` record; there are
-no transport-specific public constructors.
+This subpath creates auto-starting functional Workers and defines workload,
+stream, snapshot, reconnect, and error contracts.
+
+Exports: `createBoundedExponentialBackoff`, `createWorker`,
+`BoundedExponentialBackoffOptions`, `Worker`, `WorkerBeforeReadyContext`,
+`WorkerBody`, `WorkerError`, `WorkerErrorCode`, `WorkerHeartbeatContext`,
+`WorkerOptions`, `WorkerReconnectContext`, `WorkerReconnectDelay`,
+`WorkerResult`, `WorkerResumeCredentialPersister`,
+`WorkerResumeCredentialUpdate`, `WorkerSnapshot`, `WorkerState`,
+`WorkerWebSocketLimits`, `WorkerWorkContext`, `WorkerWorkHandler`, and
+`WorkerWorkResult`.
+
+Root lifecycle contracts used here are `LifecycleContext`, `LifecycleStage`,
+`WorkerWorkLifecycleContext`, `WorkerActivate`, `WorkerActivationContext`,
+`WorkerActivationResult`, `WorkerCompleteContext`, `WorkerHandshake`,
+`WorkerHandshakeContext`, `WorkerLifecycleCallbacks`, `WorkerLifecycleEvent`,
+`WorkerRegister`, `WorkerRegistration`, `WorkerRegistrationContext`,
+`WorkerStartContext`, and `WorkerWorkAcceptedContext`.
+
+## Create
 
 ```ts
 import {
   createWorker,
   type Worker,
   type WorkerOptions,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.7/worker";
-```
+} from "jsr:@oxian/oxian-js@0.21.0-rc.1/worker";
 
-## Exports
-
-| Export                             | Purpose                                                  |
-| ---------------------------------- | -------------------------------------------------------- |
-| `createWorker`                     | Create one side-effect-free Worker lifecycle.            |
-| `Worker`                           | Frozen closure-capability returned by `createWorker`.    |
-| `WorkerOptions`                    | In-process or WebSocket Worker declaration.              |
-| `WorkerTransport`                  | Discriminated placement descriptor.                      |
-| `InProcessWorkerOptions`           | Options for direct binding to a Hypervisor.              |
-| `InProcessWorkerTransport`         | `{ type: "in-process", hypervisor }`.                    |
-| `WebSocketWorkerOptions`           | Options for a remotely admitted Worker.                  |
-| `WebSocketWorkerTransport`         | WebSocket URL, socket capability, deadline, and limits.  |
-| `WorkerWebSocketLimits`            | Optional protocol queue and flow-control bounds.         |
-| `WorkerWorkHandler`                | Function implementing one named workload.                |
-| `WorkerWorkContext`                | Work metadata, streams, cancellation, and response hook. |
-| `WorkerWorkResult`                 | Empty, bytes, stream, or metadata-plus-body result.      |
-| `WorkerBody`                       | Byte array or byte stream.                               |
-| `WorkerState`                      | Observable lifecycle state union.                        |
-| `WorkerSnapshot`                   | Immutable current lifecycle observation.                 |
-| `WorkerResult`                     | Terminal `run()` outcome.                                |
-| `WorkerBeforeReadyContext`         | Bootstrap initialization context.                        |
-| `WorkerHeartbeatContext`           | Point-in-time remote heartbeat context.                  |
-| `WorkerReconnectContext`           | Input to reconnect-delay policy.                         |
-| `WorkerReconnectDelay`             | Reconnect delay policy.                                  |
-| `WorkerCredentialPersistence`      | Durable or explicitly ephemeral credential policy.       |
-| `WorkerResumeCredentialPersister`  | Atomic persistence callback.                             |
-| `WorkerResumeCredentialUpdate`     | Resume rotation compare-and-set payload.                 |
-| `WorkerErrorCode`                  | Stable Worker failure classification.                    |
-| `WorkerError`                      | Structurally typed Worker error.                         |
-| `createBoundedExponentialBackoff`  | Build a capped reconnect-delay function.                 |
-| `BoundedExponentialBackoffOptions` | Bounds and jitter for reconnect backoff.                 |
-
-## One declaration, two placements
-
-```ts
-const local = createWorker({
-  id: "search-worker",
-  transport: { type: "in-process", hypervisor },
-  workloads,
-  capacity: 4,
-});
-
-const remote = createWorker({
-  identity,
-  credential,
-  credentialPersistence: "ephemeral",
-  transport: {
-    type: "websocket",
-    url: "wss://gateway.example/_oxian/workers/connect",
+const worker = createWorker(
+  {
+    id: "image-worker",
+    transport: {
+      type: "in-process",
+      config: { topic: "images" },
+    },
+    workloads: {
+      "image.resize": resize,
+    },
+    capacity: 4,
   },
-  workloads,
-  capacity: 4,
-});
+  {
+    onWorkAccepted,
+    onStart,
+    onComplete,
+  },
+);
+
+await worker.ready;
+await worker.closed;
 ```
 
-The in-process declaration uses `id` because direct capability possession is the
-trust boundary. The WebSocket declaration uses a provisioned identity and
-credential because it crosses an untrusted boundary.
+`createWorker(options, callbacks)` starts immediately. `WorkerOptions` contains
+one visible `transport`, named workload handlers, capacity/cancellation,
+functional activation/registration/handshake operations, heartbeat metadata,
+reconnect policy, and bounded timing/stream options.
 
-```ts
-type InProcessWorkerTransport = Readonly<{
-  type: "in-process";
-  hypervisor: Hypervisor;
-}>;
+The returned `Worker` exposes `ready`, `closed`, lifecycle `events`, `stop()`,
+and `snapshot()`—no separate start choreography.
 
-type WebSocketWorkerTransport = Readonly<{
-  type: "websocket";
-  url: string | URL;
-  allowInsecureLoopback?: boolean;
-  connectTimeoutMs?: number;
-  socket?: WorkerWebSocketFactory;
-  limits?: WorkerWebSocketLimits;
-}>;
-```
+## Workloads
 
-`ws:` is rejected except when `allowInsecureLoopback` explicitly permits a
-loopback address. Deployed Workers should use `wss:`.
+A `WorkerWorkHandler` receives `WorkerWorkContext` with stream/workload IDs,
+immutable metadata, credited `input`, cancellation `signal`, and
+`sendMetadata()`.
 
-## Workload contract
+Worker lifecycle contexts expose the protocol `streamId`. The application-level
+Hypervisor `operationId` is intentionally absent because worker protocol v1 does
+not transmit it; applications can place their own durable identifier in metadata
+when both sides require it.
 
-```ts
-type WorkerWorkContext = Readonly<{
-  streamId: string;
-  workload: string;
-  metadata: JsonObject;
-  input: ReadableStream<Uint8Array>;
-  signal: AbortSignal;
-  sendMetadata(metadata: JsonObject): Promise<void>;
-}>;
+It returns `WorkerWorkResult`: nothing, a `WorkerBody`, or an object with
+metadata and body. `WorkerBody` is `Uint8Array | ReadableStream<Uint8Array>`.
+Large content remains streamed and binary.
 
-type WorkerWorkHandler = (
-  context: WorkerWorkContext,
-) => WorkerWorkResult | Promise<WorkerWorkResult>;
+The Worker reserves capacity before acceptance. `onWorkAccepted` precedes the
+ACK; `onStart` precedes handler invocation after a validated Start; completion
+and output cancellation settle before capacity is released.
 
-type WorkerBody = Uint8Array | ReadableStream<Uint8Array>;
+## State and results
 
-type WorkerWorkResult =
-  | void
-  | WorkerBody
-  | Readonly<{ metadata?: JsonObject; body?: WorkerBody | null }>;
-```
+`WorkerSnapshot` contains `WorkerState`, physical transport type, full identity,
+credential/handshake state, connection ID, active streams, occupied process
+executions, and reconnect attempt. `WorkerResult` distinguishes normal
+shutdown/stop, re-enrollment, and reconnect exhaustion.
 
-Metadata is sent once. Bodies use Web Streams so producers observe backpressure.
-Handlers must stop cooperatively when `signal` aborts.
+`WorkerError` uses `WorkerErrorCode` for connection, credential, handshake,
+initialization, protocol, reconnect, and explicit-stop failures.
 
-## Lifecycle capability
+## Reconnect
 
-```ts
-type Worker = Readonly<{
-  run(): Promise<WorkerResult>;
-  whenReady(): Promise<WorkerSnapshot>;
-  stop(reason?: string): Promise<void>;
-  snapshot(): WorkerSnapshot;
-}>;
-```
+A `WorkerReconnectDelay` receives `WorkerReconnectContext`. Use
+`createBoundedExponentialBackoff(options)` with
+`BoundedExponentialBackoffOptions` for bounded exponential delay and optional
+jitter/attempt limits.
 
-Construction performs no connection or binding. Call `run()`, then await
-`whenReady()` before assuming the Worker is routable. Repeated `run()` calls
-return the same lifecycle promise, and `stop()` is idempotent. The lifecycle
-states are:
+Process-lifetime reservations survive a lost session until the handler/output
+source actually settles. This prevents replacement sessions from exceeding
+capacity.
 
-```ts
-type WorkerState =
-  | "idle"
-  | "connecting"
-  | "handshaking"
-  | "ready"
-  | "draining"
-  | "drained"
-  | "reconnecting"
-  | "stopped";
-```
+## Credential and readiness contexts
 
-`WorkerSnapshot` includes `state`, transport type, optional remote credential
-state, connection identity, active streams, occupied executions, and reconnect
-attempt. `WorkerResult` reports shutdown, explicit stop, re-enrollment required,
-or exhausted reconnect policy.
+`WorkerResumeCredentialUpdate` is the atomic rotation record. The lower-level
+`WorkerResumeCredentialPersister` persists it with compare-and-set semantics.
+`WorkerBeforeReadyContext` carries bootstrap and connection state;
+`WorkerHeartbeatContext` carries a frozen capacity/status snapshot.
 
-## Initialization and heartbeats
+WebSocket-specific queue/backpressure bounds use `WorkerWebSocketLimits`.
+Lifecycle operation/callback types such as `WorkerActivate`, `WorkerRegister`,
+`WorkerHandshake`, and `WorkerLifecycleCallbacks` are exported from the package
+root.
 
-`beforeReady(context)` runs before either placement becomes routable. For an
-in-process Worker, `bootstrap` is empty; `reconnecting` is false for the first
-binding and true after a maintenance drain. Its signal is scoped to that
-binding. A remote Hypervisor may provide opaque bootstrap data.
-
-`createHeartbeatMetadata(context)` supplies bounded workload-owned status for
-remote heartbeats. Calls are single-flight. The frozen `WorkerHeartbeatContext`
-contains identity, connection ID, capacity, sequence, inflight work, available
-capacity, drain state, and a session signal.
-
-## Credential persistence
-
-Remote Workers choose one policy:
-
-```ts
-type WorkerCredentialPersistence =
-  | Readonly<{
-    credentialPersistence?: "durable";
-    persistResumeCredential: WorkerResumeCredentialPersister;
-  }>
-  | Readonly<{
-    credentialPersistence: "ephemeral";
-  }>;
-```
-
-A durable `WorkerResumeCredentialUpdate` contains the rotated resume capability,
-the replaced handshake ID, candidate handshake ID, and expiry. Persist them in
-one compare-and-set transaction. The callback's `AbortSignal` is advisory; Oxian
-never overlaps credential writes.
-
-## Reconnect policy
-
-`WorkerReconnectDelay` receives `WorkerReconnectContext` and returns a delay in
-milliseconds or `null` to stop. `createBoundedExponentialBackoff()` accepts
-`BoundedExponentialBackoffOptions` for initial delay, multiplier, cap, attempts,
-and jitter. Pass `reconnectDelay: false` to disable reconnect.
-
-## Errors
-
-`WorkerError` is an ordinary `Error` augmented with `workerError: true`, a
-`WorkerErrorCode`, and optional `cause`; no custom error class is constructed.
-Codes distinguish connection, credential, handshake, initialization, protocol,
-reconnect, and explicit stop failures.
+See the full [Worker guide](../workers.md).

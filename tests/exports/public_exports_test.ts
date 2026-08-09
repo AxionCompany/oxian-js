@@ -12,7 +12,6 @@ import * as local from "@oxian/oxian-js/local";
 import * as protocol from "@oxian/oxian-js/protocol";
 import * as providers from "@oxian/oxian-js/providers";
 import * as router from "@oxian/oxian-js/router";
-import * as supervisor from "@oxian/oxian-js/supervisor";
 import * as transport from "@oxian/oxian-js/transport";
 import * as worker from "@oxian/oxian-js/worker";
 
@@ -31,14 +30,10 @@ Deno.test("package root is exactly the portable execution core", () => {
     root.createCloudRunJobsProvider,
     providers.createCloudRunJobsProvider,
   );
-  assertEquals(
-    root.createInMemoryWorkerRepository,
-    supervisor.createInMemoryWorkerRepository,
-  );
-  assertEquals(
-    root.connectWorkerWebSocket,
-    transport.connectWorkerWebSocket,
-  );
+  assertEquals("createEphemeralWorkerStore" in root, false);
+  assertEquals("createEphemeralCredentialLifecycle" in root, false);
+  assertEquals("connectWorkerWebSocket" in root, false);
+  assertEquals(typeof transport.connectWorkerWebSocket, "function");
 
   for (
     const platformExport of [

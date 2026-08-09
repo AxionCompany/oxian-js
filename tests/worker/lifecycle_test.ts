@@ -18,7 +18,7 @@ import {
   encodeControlFrame,
   type HelloFrame,
 } from "../../src/protocol/index.ts";
-import { createWorker } from "../../src/worker/index.ts";
+import { createProtocolTestWorker as createWorker } from "./protocol_worker.ts";
 import {
   acceptTestHandshake,
   nextControl,
@@ -80,7 +80,7 @@ Deno.test("worker multiplexes concurrent credited streams", async () => {
     capacity: 2,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -166,7 +166,7 @@ Deno.test("ignored request body stops at credit while response finishes promptly
     reconnectDelay: () => 0,
     inputBufferBytes: 64 * 1024,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -276,7 +276,7 @@ Deno.test("slow output reader applies credit backpressure to native stream", asy
     },
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -348,7 +348,7 @@ Deno.test("remote cancel aborts handler and receives directional acknowledgement
     },
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -399,7 +399,7 @@ Deno.test("deadline rejection discards a crossed Start after Accepted", async ()
     },
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -467,7 +467,7 @@ Deno.test("loss before Start never invokes; loss after Start aborts without repl
     },
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const beforeStart = await peer.nextConnection();
@@ -531,7 +531,7 @@ Deno.test("drained waits: peer close reconnects, explicit Shutdown stops", async
     workloads: { echo: () => undefined },
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -602,7 +602,7 @@ Deno.test("resume rotation rejects racing Open as retryable before acceptance", 
     reconnectDelay: () => 0,
     resumeExpirySkewMs: 400,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -689,7 +689,7 @@ Deno.test("hung execution keeps process capacity across cancel and reconnect", a
     capacity: 1,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -787,7 +787,7 @@ Deno.test("deferred output cancellation holds capacity and Drain until source se
     capacity: 1,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -876,7 +876,7 @@ Deno.test("deferred output cancellation keeps replacement-session capacity occup
     capacity: 1,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -965,7 +965,7 @@ Deno.test("run waits for deferred output cancellation after terminal connection 
     capacity: 1,
     reconnectDelay: false,
   });
-  const run = client.run();
+  const run = client.closed;
   let runSettled = false;
   void run.then(() => {
     runSettled = true;
@@ -1024,7 +1024,7 @@ Deno.test("late zombie failure cannot terminate the replacement session", async 
     capacity: 1,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -1113,7 +1113,7 @@ Deno.test("crossed pre-start cancel stays stream-local on a multiplexed worker",
     capacity: 2,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();

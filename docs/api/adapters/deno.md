@@ -1,75 +1,42 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno`
+# `jsr:@oxian/oxian-js@0.21.0-rc.1/adapters/deno`
 
-The Deno adapter performs native WebSocket upgrades and optional listener
-binding for an application-owned Hypervisor. It does not create, configure, or
-own the Hypervisor.
+This explicit runtime adapter owns Deno's native WebSocket upgrade and optional
+HTTP listener boundary. It never creates or shuts down an injected Hypervisor.
 
-```ts
-import {
-  type DenoServeOptions,
-  handler,
-  serve,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno";
-```
+Exports: `handler`, `serve`, and `DenoServeOptions`.
 
-## Exports
-
-| Export             | Purpose                                                   |
-| ------------------ | --------------------------------------------------------- |
-| `handler`          | Adapt `Hypervisor.prepare()` to Deno's Fetch API.         |
-| `serve`            | Start one `Deno.serve` listener for a Hypervisor.         |
-| `DenoServeOptions` | Hypervisor plus hostname, port, and cancellation options. |
-
-## Start a listener
+## Compose a handler
 
 ```ts
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.7/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.1/hypervisor";
+import { handler } from "jsr:@oxian/oxian-js@0.21.0-rc.1/adapters/deno";
 
 const hypervisor = createHypervisor({
-  persistAcceptance: (commit) => operations.accept(commit),
+  transports: [{
+    type: "websocket",
+    config: { path: "/_oxian/workers/connect" },
+  }],
+  admit,
 });
 
-const listener = serve({
-  hypervisor,
-  hostname: "127.0.0.1",
-  port: 8000,
-});
+Deno.serve(handler(hypervisor));
+```
 
+`handler(hypervisor)` calls `hypervisor.prepare()`, performs
+`Deno.upgradeWebSocket`, negotiates the exact protocol, adapts the native
+socket, and attaches it once. Other requests use the Hypervisor fallback.
+
+## Own a listener
+
+```ts
+import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.1/adapters/deno";
+
+const listener = serve({ hypervisor, hostname: "0.0.0.0", port: 8080 });
 await listener.finished;
 ```
 
-`serve()` returns a separate `HypervisorListener`. The owner shuts down both
-capabilities explicitly:
+`serve(options: DenoServeOptions)` returns a `HypervisorListener` with resolved
+address, URL, `finished`, and idempotent `shutdown()`. An optional signal closes
+only this listener.
 
-```ts
-await hypervisor.shutdown("service_shutdown");
-await listener.shutdown();
-```
-
-## Compose an existing server
-
-```ts
-import { handler } from "jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno";
-
-const fetch = handler(hypervisor);
-const server = Deno.serve({
-  hostname: "0.0.0.0",
-  port: 8443,
-  cert,
-  key,
-}, fetch);
-```
-
-The returned Fetch function upgrades only one-shot admissions produced by
-`Hypervisor.prepare()`. If Deno rejects the native upgrade, the adapter cancels
-the reserved admission slot.
-
-```ts
-type DenoServeOptions = Readonly<{
-  hypervisor: Hypervisor;
-  hostname?: string;
-  port?: number;
-  signal?: AbortSignal;
-}>;
-```
+Call `hypervisor.shutdown()` separately in the application layer that owns it.

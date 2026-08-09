@@ -5,11 +5,10 @@ import {
   DEFAULT_HYPERVISOR_CONFIG,
 } from "../../src/hypervisor/config.ts";
 
-Deno.test("v0.20 hypervisor config has bounded immutable defaults", () => {
+Deno.test("v0.21 hypervisor config has bounded immutable defaults", () => {
   const config = createHypervisorConfig();
 
   assertEquals(config, DEFAULT_HYPERVISOR_CONFIG);
-  assertEquals(config.workerPath, "/_oxian/workers/connect");
   assertEquals(
     config.maxDataPayloadBytes,
     WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes,
@@ -17,9 +16,8 @@ Deno.test("v0.20 hypervisor config has bounded immutable defaults", () => {
   assertEquals(Object.isFrozen(config), true);
 });
 
-Deno.test("v0.20 hypervisor config accepts stricter protocol admission limits", () => {
+Deno.test("v0.21 hypervisor config accepts stricter protocol admission limits", () => {
   const config = createHypervisorConfig({
-    workerPath: "/workers/connect",
     handshakeTimeoutMs: 2_000,
     readyTimeoutMs: 20_000,
     heartbeatIntervalMs: 3_000,
@@ -43,38 +41,13 @@ Deno.test("v0.20 hypervisor config accepts stricter protocol admission limits", 
     maxReceiveCreditBytes: 1_024 * 1_024,
   });
 
-  assertEquals(config.workerPath, "/workers/connect");
   assertEquals(config.maxWorkerCapacity, 8);
   assertEquals(config.maxUnauthenticatedConnections, 4);
   assertEquals(config.maxPendingAcceptanceCommits, 12);
   assertEquals(config.maxPendingAcceptanceCommitsPerWorker, 3);
 });
 
-Deno.test("v0.20 hypervisor config rejects ambiguous paths and invalid timing", () => {
-  for (
-    const workerPath of [
-      "",
-      "/",
-      "workers",
-      "/workers/",
-      "/workers?token=x",
-      "/workers#fragment",
-      "/workers\\connect",
-      "//example.com/workers",
-      "///example.com/workers",
-      "/workers/./connect",
-      "/workers/admin/../connect",
-      "/workers/%2e/connect",
-      "/workers/%2e%2e/connect",
-    ]
-  ) {
-    assertThrows(
-      () => createHypervisorConfig({ workerPath }),
-      TypeError,
-      "workerPath",
-    );
-  }
-
+Deno.test("v0.21 hypervisor config rejects invalid timing", () => {
   assertThrows(
     () =>
       createHypervisorConfig({
@@ -123,7 +96,7 @@ Deno.test("v0.20 hypervisor config rejects ambiguous paths and invalid timing", 
   );
 });
 
-Deno.test("v0.20 hypervisor config cannot exceed wire hard limits", () => {
+Deno.test("v0.21 hypervisor config cannot exceed wire hard limits", () => {
   assertThrows(
     () =>
       createHypervisorConfig({

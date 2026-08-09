@@ -9,10 +9,9 @@ import {
   createHttpWorkload,
   HTTP_WORKLOAD,
 } from "../../src/http/index.ts";
-import {
-  createHypervisor,
-  type Hypervisor,
-  type HypervisorListener,
+import type {
+  Hypervisor,
+  HypervisorListener,
 } from "../../src/hypervisor/index.ts";
 import { WORKER_PROTOCOL_LIMITS } from "../../src/protocol/limits.ts";
 import type {
@@ -21,15 +20,16 @@ import type {
   RouteMethods,
 } from "../../src/router/types.ts";
 import {
-  createInMemoryRegistrationAuthority,
-  createInMemoryWorkerRepository,
+  createEphemeralCredentialLifecycle,
+  createEphemeralWorkerStore,
   createWorkerDefinition,
 } from "../../src/supervisor/index.ts";
+import type { Worker, WorkerResult } from "../../src/worker/index.ts";
 import {
-  createWorker,
-  type Worker,
-  type WorkerResult,
-} from "../../src/worker/index.ts";
+  createProtocolTestHypervisor as createHypervisor,
+  TEST_WORKER_PATH,
+} from "../hypervisor/protocol_hypervisor.ts";
+import { createProtocolTestWorker as createWorker } from "../worker/protocol_worker.ts";
 import { createDeferred, streamOf } from "./test_utils.ts";
 
 const TEST_TIMEOUT_MS = 5_000;
@@ -38,7 +38,7 @@ type HttpWebSocketHarness = Readonly<{
   hypervisor: Hypervisor;
   listener: HypervisorListener;
   worker: Worker;
-  workerRun: Promise<WorkerResult>;
+  workerClosed: Promise<WorkerResult>;
   close(): Promise<void>;
 }>;
 
@@ -89,7 +89,7 @@ function workerUrl(
 async function startHarness(
   workload: ReturnType<typeof createHttpWorkload>,
 ): Promise<HttpWebSocketHarness> {
-  const repository = createInMemoryWorkerRepository();
+  const repository = createEphemeralWorkerStore();
   await repository.define(createWorkerDefinition({
     workerId: "http-wss-worker",
     providerId: "attached",
@@ -98,11 +98,11 @@ async function startHarness(
   }));
   const identity = (await repository.activate("http-wss-worker")).attempt
     .identity;
-  const authority = createInMemoryRegistrationAuthority();
+  const authority = createEphemeralCredentialLifecycle();
   const registration = await authority.issueRegistration(identity);
   const hypervisor = createHypervisor({
-    admission: { type: "registered", authority, repository },
-    persistAcceptance: () => Promise.resolve(),
+    control: { authority, repository },
+    commitAcceptedWork: () => Promise.resolve(),
     config: {
       heartbeatIntervalMs: 20,
       leaseTimeoutMs: 500,
@@ -121,7 +121,7 @@ async function startHarness(
   const worker = createWorker({
     transport: {
       type: "websocket",
-      url: workerUrl(listener, hypervisor.config.workerPath),
+      url: workerUrl(listener, TEST_WORKER_PATH),
       allowInsecureLoopback: true,
       connectTimeoutMs: 1_000,
     },
@@ -133,11 +133,11 @@ async function startHarness(
     reconnectDelay: () => 0,
     handshakeTimeoutMs: 1_000,
   });
-  const workerRun = worker.run();
+  const workerClosed = worker.closed;
 
   try {
     await withTimeout(
-      worker.whenReady(),
+      worker.ready,
       "HTTP WebSocket worker did not become ready",
     );
     await waitFor(
@@ -148,7 +148,7 @@ async function startHarness(
     await worker.stop("harness_start_failed").catch(() => undefined);
     await hypervisor.shutdown("harness_start_failed").catch(() => undefined);
     await listener.shutdown().catch(() => undefined);
-    await workerRun.catch(() => undefined);
+    await workerClosed.catch(() => undefined);
     throw error;
   }
 
@@ -158,9 +158,10 @@ async function startHarness(
       await hypervisor.shutdown("test_cleanup").catch(() => undefined);
       await worker.stop("test_cleanup").catch(() => undefined);
       await listener.shutdown().catch(() => undefined);
-      await withTimeout(workerRun, "HTTP WebSocket worker did not stop").catch(
-        () => undefined,
-      );
+      await withTimeout(workerClosed, "HTTP WebSocket worker did not stop")
+        .catch(
+          () => undefined,
+        );
     })();
     return closed;
   };
@@ -168,7 +169,7 @@ async function startHarness(
     hypervisor,
     listener,
     worker,
-    workerRun,
+    workerClosed,
     close,
   });
 }

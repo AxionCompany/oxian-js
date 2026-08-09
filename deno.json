@@ -1,6 +1,6 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.20.0-rc.7",
+  "version": "0.21.0-rc.1",
   "exports": {
     ".": "./src/mod.ts",
     "./adapters/deno": "./src/adapters/deno/index.ts",
@@ -15,7 +15,6 @@
     "./protocol": "./src/protocol/index.ts",
     "./providers": "./src/providers/index.ts",
     "./router": "./src/router/index.ts",
-    "./supervisor": "./src/supervisor/index.ts",
     "./transport": "./src/transport/index.ts",
     "./work": "./src/work/index.ts",
     "./worker": "./src/worker/index.ts"
@@ -34,15 +33,18 @@
       "docs/application.md",
       "docs/workers.md",
       "docs/operations.md",
+      "docs/performance.md",
       "docs/runtime-adapters.md",
       "docs/api-reference.md",
       "docs/api/**",
       "docs/migration-0.20.md",
+      "docs/migration-0.21.md",
       "docs/worker-protocol-v1.md",
       "LICENSE*"
     ],
     "exclude": [
-      "docs/v0.20-implementation-plan.md"
+      "docs/v0.20-implementation-plan.md",
+      "docs/v0.21-implementation-plan.md"
     ]
   },
   "imports": {
@@ -50,11 +52,14 @@
     "@std/path": "jsr:@std/path@1.1.1"
   },
   "tasks": {
-    "check": "deno task check:portability && deno task check:architecture && deno task check:api-reference && deno fmt --check && deno lint && deno check src/mod.ts cli.ts",
+    "check": "deno task check:portability && deno task check:architecture && deno task check:source-graph && deno task check:api-reference && deno fmt --check && deno lint && deno check src/mod.ts cli.ts",
     "check:api-reference": "deno run --allow-read=. --allow-run=deno scripts/check_api_reference.ts",
-    "check:architecture": "deno run --allow-read=src,cli.ts scripts/check_architecture.ts",
+    "check:architecture": "deno run --allow-read=src,tests,docs,README.md,cli.ts scripts/check_architecture.ts",
     "check:portability": "deno run --allow-read=src scripts/check_portability.ts",
+    "check:source-graph": "deno run --allow-read=. scripts/check_source_graph.ts",
     "check:publish": "deno publish --dry-run --allow-dirty",
+    "check:wire-compat": "deno run --allow-all scripts/check_v020_wire_compatibility.ts",
+    "bench:topology": "deno run --allow-all scripts/benchmark_v020_v021.ts",
     "test": "deno test --cert=tests/fixtures/tls/test-ca.pem --allow-all",
     "verify": "deno task check && deno task test && deno task check:publish"
   },

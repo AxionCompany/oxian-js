@@ -19,7 +19,7 @@ request `AbortSignal` and stream cancellation stop the pipeline on disconnect.
 Stop `dev` with `Ctrl-C`. Create `routes/redactions/stream.ts`:
 
 ```ts
-import type { RouteContext } from "jsr:@oxian/oxian-js@0.20.0-rc.7/router";
+import type { RouteContext } from "jsr:@oxian/oxian-js@0.21.0-rc.1/router";
 import { asProfile, type LogwashState } from "../../logwash.ts";
 
 type Context = RouteContext<LogwashState>;
@@ -189,9 +189,9 @@ The new static route is `POST /redactions/stream`. It wins over the dynamic
 Check and start the project:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin check
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin routes
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin dev
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.1/bin check
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.1/bin routes
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.1/bin dev
 ```
 
 The route table now includes:

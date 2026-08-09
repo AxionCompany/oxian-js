@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.7/config`
+# `jsr:@oxian/oxian-js@0.21.0-rc.1/config`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   DEFAULT_OXIAN_CONFIG,
   defineConfig,
   loadConfig,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.7/config";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.1/config";
 ```
 
 Worker manifests, credentials, provider launch specifications, secrets, logging
@@ -53,7 +53,7 @@ function defineConfig(input: OxianConfigInput): OxianConfig;
 objects and arrays are new and recursively frozen.
 
 ```ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.7/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.1/config";
 
 export default defineConfig({
   application: {
@@ -344,30 +344,29 @@ The constant is deeply frozen. Its application, listener, and edge defaults are:
 
 Its normalized Hypervisor fields are:
 
-| Field                                  | Default                     |
-| -------------------------------------- | --------------------------- |
-| `workerPath`                           | `"/_oxian/workers/connect"` |
-| `handshakeTimeoutMs`                   | `10_000`                    |
-| `readyTimeoutMs`                       | `300_000`                   |
-| `heartbeatIntervalMs`                  | `10_000`                    |
-| `leaseTimeoutMs`                       | `30_000`                    |
-| `leaseSweepIntervalMs`                 | `1_000`                     |
-| `shutdownTimeoutMs`                    | `30_000`                    |
-| `cancellationAckTimeoutMs`             | `10_000`                    |
-| `maxConnectionAgeMs`                   | `3_000_000`                 |
-| `proactiveDrainMarginMs`               | `60_000`                    |
-| `maxConnections`                       | `10_000`                    |
-| `maxUnauthenticatedConnections`        | `128`                       |
-| `maxAuthenticatedConnections`          | `10_000`                    |
-| `maxPendingAcceptanceCommits`          | `1_024`                     |
-| `maxPendingAcceptanceCommitsPerWorker` | `64`                        |
-| `maxInboundMessages`                   | `256`                       |
-| `maxInboundBytes`                      | `16_777_216`                |
-| `maxBufferedAmountBytes`               | `4_194_304`                 |
-| `maxWorkerCapacity`                    | `1_024`                     |
-| `maxLifetimeStreams`                   | `65_536`                    |
-| `maxDataPayloadBytes`                  | `1_048_576`                 |
-| `maxReceiveCreditBytes`                | `16_777_216`                |
+| Field                                  | Default      |
+| -------------------------------------- | ------------ |
+| `handshakeTimeoutMs`                   | `10_000`     |
+| `readyTimeoutMs`                       | `300_000`    |
+| `heartbeatIntervalMs`                  | `10_000`     |
+| `leaseTimeoutMs`                       | `30_000`     |
+| `leaseSweepIntervalMs`                 | `1_000`      |
+| `shutdownTimeoutMs`                    | `30_000`     |
+| `cancellationAckTimeoutMs`             | `10_000`     |
+| `maxConnectionAgeMs`                   | `3_000_000`  |
+| `proactiveDrainMarginMs`               | `60_000`     |
+| `maxConnections`                       | `10_000`     |
+| `maxUnauthenticatedConnections`        | `128`        |
+| `maxAuthenticatedConnections`          | `10_000`     |
+| `maxPendingAcceptanceCommits`          | `1_024`      |
+| `maxPendingAcceptanceCommitsPerWorker` | `64`         |
+| `maxInboundMessages`                   | `256`        |
+| `maxInboundBytes`                      | `16_777_216` |
+| `maxBufferedAmountBytes`               | `4_194_304`  |
+| `maxWorkerCapacity`                    | `1_024`      |
+| `maxLifetimeStreams`                   | `65_536`     |
+| `maxDataPayloadBytes`                  | `1_048_576`  |
+| `maxReceiveCreditBytes`                | `16_777_216` |
 
 The `/hypervisor` reference defines the bounds and relationships among those
 fields.
@@ -389,7 +388,7 @@ The module must have exactly one runtime export:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.7/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.1/config";
 
 export default defineConfig({
   application: { routesRoot: "./routes" },
@@ -400,7 +399,7 @@ The named form is equivalent:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.7/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.1/config";
 
 export const config = defineConfig({
   application: { routesRoot: "./routes" },

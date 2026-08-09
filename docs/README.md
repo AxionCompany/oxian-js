@@ -1,9 +1,9 @@
-# Oxian 0.20 documentation
+# Oxian 0.21 documentation
 
-Oxian serves Fetch-native HTTP applications through in-process or outbound
-WebSocket workers. The local runtime composes ingress and a lightweight embedded
-worker for development; the same application can later execute in a separate
-process or on another machine.
+Oxian serves Fetch-native HTTP applications through one Worker lifecycle over an
+addressed in-process event fabric or outbound WebSocket. The local runtime
+composes ingress and an embedded Worker for development; the same workload can
+later execute in a separate process or on another machine.
 
 ## Start here
 
@@ -25,12 +25,16 @@ maintainers can continue without changing the application built there.
 - [Operations](operations.md): launch, drain, observe, and release safely.
 - [Runtime boundaries and adapters](runtime-adapters.md): portable exports,
   server ownership, and the current runtime support matrix.
+- [Worker transport performance](performance.md): reproducible local/WSS release
+  evidence and tradeoffs.
 
 ## Reference
 
 - [API reference](api-reference.md): every public subpath, value, exported type,
   option contract, lifecycle, and failure behavior.
-- [Migration to 0.20](migration-0.20.md): concrete migration facts.
-- [Worker protocol v1](worker-protocol-v1.md): normative WSS wire contract.
+- [Migration to 0.21](migration-0.21.md): lifecycle and transport unification.
+- [Migration to 0.20](migration-0.20.md): earlier package-boundary facts.
+- [Worker protocol v1](worker-protocol-v1.md): normative transport-neutral state
+  machine and frame contract.
 
 Use `deno task verify` before publishing or releasing a package change.

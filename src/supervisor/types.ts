@@ -60,8 +60,6 @@ export type SessionFence = Readonly<{
 export type WorkerSession = Readonly<{
   identity: WorkerIdentity;
   connectionId: string;
-  /** Remote sessions use heartbeat leases; direct bindings end explicitly. */
-  liveness: "heartbeat" | "binding";
   /**
    * Authority-issued monotonic fence within this worker attempt.
    */
@@ -92,36 +90,6 @@ export type RegistrationExchange = Readonly<{
   sessionGeneration: number;
   authenticatedWith: WorkerCredential["kind"];
   resume: RegistrationGrant;
-}>;
-
-export type RegistrationAuthority = Readonly<{
-  issueRegistration(
-    identity: WorkerIdentity,
-    options?: Readonly<{ ttlMs?: number }>,
-  ): Promise<RegistrationGrant>;
-  exchange(
-    input: Readonly<{
-      identity: WorkerIdentity;
-      credential: WorkerCredential;
-      handshakeId: string;
-    }>,
-  ): Promise<RegistrationExchange>;
-  revoke(identity: WorkerIdentity): Promise<void>;
-}>;
-
-export type RegistrationAuthorityHooks = Readonly<{
-  issueRegistration(
-    identity: WorkerIdentity,
-    options?: Readonly<{ ttlMs?: number }>,
-  ): RegistrationGrant | Promise<RegistrationGrant>;
-  exchange(
-    input: Readonly<{
-      identity: WorkerIdentity;
-      credential: WorkerCredential;
-      handshakeId: string;
-    }>,
-  ): RegistrationExchange | Promise<RegistrationExchange>;
-  revoke(identity: WorkerIdentity): void | Promise<void>;
 }>;
 
 export type WorkDispatchStatus =

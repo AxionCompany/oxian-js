@@ -42,10 +42,6 @@ Deno.test("v0.20 config exposes immutable, implemented-only defaults", () => {
     port: 8_000,
   });
   assertEquals(config.gateway.workerTransport, "in-process");
-  assertEquals(
-    config.gateway.hypervisor.workerPath,
-    "/_oxian/workers/connect",
-  );
   assertEquals(config.gateway.edge, undefined);
   assertDeepFrozen(config);
 
@@ -78,7 +74,6 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
       listener: { hostname: "localhost", port: 9_090 },
       workerTransport: "websocket",
       hypervisor: {
-        workerPath: "/workers/connect",
         heartbeatIntervalMs: 2_000,
         leaseTimeoutMs: 8_000,
       },
@@ -118,7 +113,6 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     port: 9_090,
   });
   assertEquals(config.gateway.workerTransport, "websocket");
-  assertEquals(config.gateway.hypervisor.workerPath, "/workers/connect");
   assertEquals(config.gateway.hypervisor.heartbeatIntervalMs, 2_000);
   assertEquals(config.gateway.edge?.cors, {
     origins: ["https://example.com"],
@@ -399,7 +393,7 @@ Deno.test("v0.20 config rejects invalid paths, ports, hosts, and URLs", () => {
   );
 });
 
-Deno.test("v0.20 config delegates Hypervisor bounds and relationships", () => {
+Deno.test("v0.21 config delegates Hypervisor bounds and relationships", () => {
   assertTypeErrorMessage(
     () =>
       defineUnknown({
@@ -416,19 +410,10 @@ Deno.test("v0.20 config delegates Hypervisor bounds and relationships", () => {
     () =>
       defineUnknown({
         gateway: {
-          hypervisor: { workerPath: "/workers/" },
+          hypervisor: { path: "/workers/connect" },
         },
       }),
-    "workerPath must be an absolute path without a trailing slash, query, fragment, or backslash, and must be URL-canonical without dot segments or an authority",
-  );
-  assertTypeErrorMessage(
-    () =>
-      defineUnknown({
-        gateway: {
-          hypervisor: { workerPath: null },
-        },
-      }),
-    "config.gateway.hypervisor.workerPath must not be null",
+    'config.gateway.hypervisor contains unknown key "path"',
   );
 });
 

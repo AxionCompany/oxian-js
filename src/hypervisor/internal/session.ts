@@ -7,9 +7,9 @@ import {
 } from "../../protocol/index.ts";
 import {
   createSessionFence,
-  isTerminalAttempt,
   type SessionRegistry,
 } from "../../supervisor/index.ts";
+import type { HypervisorLifecycleCallbacks } from "../../lifecycle/index.ts";
 import type { HypervisorConfig } from "../config.ts";
 import type {
   HypervisorDisconnectReason,
@@ -48,6 +48,7 @@ export type SessionProtocolController = Readonly<{
 export function createSessionProtocolController(
   options: Readonly<{
     hypervisor: HypervisorOptions;
+    callbacks: HypervisorLifecycleCallbacks;
     config: HypervisorConfig;
     clock: () => number;
     scheduler: HypervisorScheduler;
@@ -71,15 +72,15 @@ export function createSessionProtocolController(
   }>,
 ): SessionProtocolController {
   const awaitExternal = options.admission.awaitExternal;
-  const requireWorkerAdmission = () => {
-    const admission = options.hypervisor.admission;
-    if (admission === undefined) {
+  const requireAdmit = () => {
+    const admit = options.hypervisor.admit;
+    if (admit === undefined) {
       throw Object.assign(
-        new Error("Hypervisor does not accept remote workers"),
+        new Error("Hypervisor does not admit Workers"),
         { code: "authentication_failed" },
       );
     }
-    return admission;
+    return admit;
   };
 
   const welcome = async (
@@ -88,32 +89,53 @@ export function createSessionProtocolController(
   ): Promise<void> => {
     ensureOpen(record);
     record.hello = hello;
-    const attempt = await awaitExternal(
-      record,
-      "handshake",
-      () => requireWorkerAdmission().repository.assertCurrent(hello.identity),
-    );
-    ensureOpen(record);
-    if (isTerminalAttempt(attempt)) {
-      throw Object.assign(
-        new Error("worker attempt is terminal"),
-        { code: "stale_attempt" },
-      );
-    }
-    const definition = await awaitExternal(
+    const connectionId = options.directory.reserveId(record);
+    await awaitExternal(
       record,
       "handshake",
       () =>
-        requireWorkerAdmission().repository.getDefinition(
-          hello.identity.workerId,
-        ),
+        options.callbacks.onConnect?.(Object.freeze({
+          stage: "connect" as const,
+          stageId: `connect:${connectionId}`,
+          callbackAttempt: 1,
+          signal: record.abort.signal,
+          connectionId,
+        })),
     );
     ensureOpen(record);
-    if (definition === undefined) {
-      throw Object.assign(
-        new Error("worker definition is missing"),
-        { code: "stale_attempt" },
-      );
+    const admitContext = Object.freeze({
+      stage: "admit" as const,
+      stageId: `admit:${hello.identity.workerId}:${hello.handshakeId}`,
+      callbackAttempt: 1,
+      signal: record.abort.signal,
+      identity: hello.identity,
+      credential: hello.credential,
+      handshakeId: hello.handshakeId,
+      workloads: hello.workloads,
+      capacity: hello.capacity,
+    });
+    const admitted = await awaitExternal(
+      record,
+      "handshake",
+      () => requireAdmit()(admitContext),
+    );
+    ensureOpen(record);
+    const definition = admitted?.definition;
+    if (
+      definition === undefined ||
+      definition.workerId !== hello.identity.workerId ||
+      !Number.isSafeInteger(admitted.sessionGeneration) ||
+      admitted.sessionGeneration < 1 ||
+      admitted.authenticatedWith !== hello.credential.kind ||
+      admitted.resume?.credential.kind !== "resume" ||
+      typeof admitted.resume.credential.capability !== "string" ||
+      admitted.resume.credential.capability.length === 0 ||
+      !Number.isSafeInteger(admitted.resume.expiresAtMs) ||
+      admitted.resume.expiresAtMs <= options.clock()
+    ) {
+      throw Object.assign(new Error("admit returned an invalid result"), {
+        code: "authentication_failed",
+      });
     }
     if (
       hello.capacity > definition.capacity ||
@@ -127,48 +149,58 @@ export function createSessionProtocolController(
       );
     }
     options.admission.assertAuthenticatedAvailable();
-    const connectionId = options.directory.reserveId(record);
     options.admission.reserveAuthenticated(record);
 
-    const exchange = await awaitExternal(
+    await awaitExternal(
       record,
       "handshake",
       () =>
-        requireWorkerAdmission().authority.exchange({
-          identity: hello.identity,
-          credential: hello.credential,
-          handshakeId: hello.handshakeId,
-        }),
+        options.callbacks.onAdmit?.(Object.freeze({
+          ...admitContext,
+          ...admitted,
+        })),
     );
     ensureOpen(record);
 
     options.admission.completeAuthentication(record);
     record.phase = "authenticated";
-    record.exchange = exchange;
+    record.exchange = Object.freeze({
+      identity: hello.identity,
+      handshakeId: hello.handshakeId,
+      sessionGeneration: admitted.sessionGeneration,
+      authenticatedWith: admitted.authenticatedWith,
+      resume: Object.freeze({
+        identity: hello.identity,
+        credential: admitted.resume.credential,
+        expiresAtMs: admitted.resume.expiresAtMs,
+      }),
+    });
     record.definition = definition;
     record.fence = createSessionFence({
       identity: hello.identity,
       connectionId,
-      sessionGeneration: exchange.sessionGeneration,
+      sessionGeneration: admitted.sessionGeneration,
     });
     record.sessionPhase = "authenticated";
     options.directory.publish(record);
 
-    const bootstrap = copyBootstrap(
-      requireWorkerAdmission().bootstrap === undefined
-        ? {}
-        : await awaitExternal(
-          record,
-          "handshake",
-          () =>
-            requireWorkerAdmission().bootstrap!({
-              identity: hello.identity,
-              definition,
-              exchange,
-              signal: record.abort.signal,
-            }),
-        ),
+    await awaitExternal(
+      record,
+      "handshake",
+      () =>
+        options.callbacks.onHandshake?.(Object.freeze({
+          stage: "handshake" as const,
+          stageId: `handshake:${
+            record.fence!.connectionId
+          }:${hello.handshakeId}`,
+          callbackAttempt: 1,
+          signal: record.abort.signal,
+          fence: record.fence!,
+          definition,
+        })),
     );
+    ensureOpen(record);
+    const bootstrap = copyBootstrap(admitted.bootstrap ?? {});
     ensureOpen(record);
     await record.transport!.sendControl({
       protocol: WORKER_PROTOCOL,
@@ -176,8 +208,8 @@ export function createSessionProtocolController(
       connectionId,
       heartbeatIntervalMs: options.config.heartbeatIntervalMs,
       leaseTimeoutMs: options.config.leaseTimeoutMs,
-      resumeCapability: exchange.resume.credential.capability,
-      resumeExpiresAtMs: exchange.resume.expiresAtMs,
+      resumeCapability: admitted.resume.credential.capability,
+      resumeExpiresAtMs: admitted.resume.expiresAtMs,
       bootstrap,
     });
     ensureOpen(record);
@@ -202,39 +234,6 @@ export function createSessionProtocolController(
         "invalid_state",
         "Ready arrived without an authenticated Welcome",
       );
-    }
-
-    const attempt = await awaitExternal(
-      record,
-      "ready",
-      () =>
-        requireWorkerAdmission().repository.assertCurrent(
-          record.hello!.identity,
-        ),
-    );
-    ensureOpen(record);
-    if (isTerminalAttempt(attempt)) {
-      throw Object.assign(
-        new Error("worker attempt became terminal before Ready"),
-        { code: "stale_attempt" },
-      );
-    }
-    if (requireWorkerAdmission().validateReady !== undefined) {
-      await awaitExternal(
-        record,
-        "ready",
-        () =>
-          requireWorkerAdmission().validateReady!({
-            identity: record.hello!.identity,
-            definition: record.definition!,
-            exchange: record.exchange!,
-            sessionGeneration: record.exchange!.sessionGeneration,
-            connectionId: record.connectionId!,
-            metadata: frame.metadata,
-            signal: record.abort.signal,
-          }),
-      );
-      ensureOpen(record);
     }
 
     try {
@@ -263,12 +262,17 @@ export function createSessionProtocolController(
         }
       }
 
-      if (options.hypervisor.sessionLifecycle !== undefined) {
+      if (options.callbacks.onReady !== undefined) {
         await awaitExternal(
           record,
           "ready",
           () =>
-            options.hypervisor.sessionLifecycle!.commitReady(Object.freeze({
+            options.callbacks.onReady!(Object.freeze({
+              stage: "ready" as const,
+              stageId: `ready:${record.fence!.connectionId}:${
+                record.fence!.sessionGeneration
+              }`,
+              callbackAttempt: 1,
               fence: record.fence!,
               definition: record.definition!,
               metadata: frame.metadata,
@@ -276,21 +280,6 @@ export function createSessionProtocolController(
             })),
         );
         ensureOpen(record);
-        const currentAttempt = await awaitExternal(
-          record,
-          "ready",
-          () =>
-            requireWorkerAdmission().repository.assertCurrent(
-              record.hello!.identity,
-            ),
-        );
-        ensureOpen(record);
-        if (isTerminalAttempt(currentAttempt)) {
-          throw Object.assign(
-            new Error("worker attempt became terminal during Ready commit"),
-            { code: "stale_attempt" },
-          );
-        }
       }
 
       ensureOpen(record);
@@ -340,27 +329,17 @@ export function createSessionProtocolController(
     assertCurrentFrame(record, options.sessions);
     if (await options.handleWorkControl(record, frame, disposition)) return;
     if (frame.type === "heartbeat") {
-      const attempt = await awaitExternal(
-        record,
-        "ready",
-        () =>
-          requireWorkerAdmission().repository.assertCurrent(
-            record.fence!.identity,
-          ),
-      );
-      ensureOpen(record);
-      if (isTerminalAttempt(attempt)) {
-        throw Object.assign(
-          new Error("worker attempt is no longer active"),
-          { code: "stale_attempt" },
-        );
-      }
-      if (options.hypervisor.sessionLifecycle !== undefined) {
+      if (options.callbacks.onHeartbeat !== undefined) {
         await awaitExternal(
           record,
           "ready",
           () =>
-            options.hypervisor.sessionLifecycle!.commitHeartbeat(Object.freeze({
+            options.callbacks.onHeartbeat!(Object.freeze({
+              stage: "heartbeat" as const,
+              stageId: `heartbeat:${
+                record.fence!.connectionId
+              }:${frame.sequence}`,
+              callbackAttempt: 1,
               fence: record.fence!,
               definition: record.definition!,
               sequence: frame.sequence,
@@ -371,21 +350,6 @@ export function createSessionProtocolController(
             })),
         );
         ensureOpen(record);
-        const currentAttempt = await awaitExternal(
-          record,
-          "ready",
-          () =>
-            requireWorkerAdmission().repository.assertCurrent(
-              record.fence!.identity,
-            ),
-        );
-        ensureOpen(record);
-        if (isTerminalAttempt(currentAttempt)) {
-          throw Object.assign(
-            new Error("worker attempt became terminal during heartbeat commit"),
-            { code: "stale_attempt" },
-          );
-        }
       }
       ensureOpen(record);
       options.sessions.assertCurrent(record.fence!);

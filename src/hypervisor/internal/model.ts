@@ -9,8 +9,11 @@ import type {
   WorkDispatch,
   WorkerDefinition,
 } from "../../supervisor/index.ts";
-import type { WebSocketTransport } from "../../transport/index.ts";
-import type { WorkerWireConnection } from "../../transport/types.ts";
+import type {
+  FrameConnection,
+  ProtocolTransport,
+} from "../../transport/index.ts";
+import type { SocketConnection } from "../../transport/types.ts";
 import type { WorkBody, WorkHandle } from "../../work/types.ts";
 import type {
   HypervisorDisconnectPhase,
@@ -26,8 +29,10 @@ export type ConnectionPhase =
   | "closed";
 
 export type ConnectionRecord = {
-  connection?: WorkerWireConnection;
-  transport?: WebSocketTransport;
+  transportType: "in-process" | "websocket";
+  socket?: SocketConnection;
+  connection?: FrameConnection;
+  transport?: ProtocolTransport;
   phase: ConnectionPhase;
   connectedAtMs: number;
   acceptingWork: boolean;

@@ -65,7 +65,7 @@ export function createManifestWorkerRuntime(
   let state: LocalRuntimeState = "idle";
   let application: Application<unknown> | undefined;
   let worker: Worker | undefined;
-  let workerRun: Promise<WorkerResult> | undefined;
+  let workerClosed: Promise<WorkerResult> | undefined;
   let credentialStore: AtomicResumeCredentialStore | undefined;
   let running: ManifestWorkerRuntimeRunning | undefined;
   let startTask: Promise<ManifestWorkerRuntimeRunning> | undefined;
@@ -83,7 +83,7 @@ export function createManifestWorkerRuntime(
   const cleanupResources = async (reason: string): Promise<void> => {
     if (!lifecycleAbort.signal.aborted) lifecycleAbort.abort(reason);
     await worker?.stop(reason).catch(() => undefined);
-    await workerRun?.catch(() => undefined);
+    await workerClosed?.catch(() => undefined);
     await application?.dispose(reason).catch(() => undefined);
     await credentialStore?.close().catch(() => undefined);
   };
@@ -168,31 +168,43 @@ export function createManifestWorkerRuntime(
         }
 
         worker = createWorker({
+          id: manifest.identity.workerId,
           transport: {
             type: "websocket",
-            url: manifest.gatewayUrl,
-            allowInsecureLoopback: isLoopbackWebSocket(manifest.gatewayUrl),
+            config: {
+              url: manifest.gatewayUrl,
+              allowInsecureLoopback: isLoopbackWebSocket(manifest.gatewayUrl),
+            },
           },
-          identity: manifest.identity,
-          credential,
-          handshakeId,
-          ...(resumeExpiresAtMs === undefined ? {} : { resumeExpiresAtMs }),
+          activate: () => manifest.identity,
+          register: () => ({
+            credential,
+            handshakeId,
+            expiresAtMs: credential.kind === "resume"
+              ? resumeExpiresAtMs!
+              : Date.now() + 5 * 60_000,
+            ...(resumeExpiresAtMs === undefined ? {} : { resumeExpiresAtMs }),
+          }),
+          ...(credentialStore === undefined ? {} : {
+            handshake: (context) =>
+              credentialStore!.persist(context.rotation, {
+                signal: context.signal,
+                connectionId: context.connectionId,
+                bootstrap: context.bootstrap,
+                reconnecting: context.reconnecting,
+              }),
+          }),
           workloads: { [HTTP_WORKLOAD]: workload },
           capacity: manifest.capacity,
           signal: lifecycleAbort.signal,
-          ...(credentialStore === undefined
-            ? { credentialPersistence: "ephemeral" as const }
-            : {
-              credentialPersistence: "durable" as const,
-              persistResumeCredential: credentialStore.persist,
-            }),
         });
-        workerRun = worker.run();
-        workerRun.then(
+        workerClosed = worker.closed;
+        const runningWorker = workerClosed;
+        runningWorker.then(
           finishWorkerRun,
           fail,
         );
-        await worker.whenReady();
+        await worker.ready;
         if (stopRequested || state !== "starting") {
           throw new DOMException(
             "worker runtime stopped during startup",
@@ -203,7 +215,7 @@ export function createManifestWorkerRuntime(
           router,
           application,
           worker,
-          workerRun,
+          workerClosed: runningWorker,
         });
         state = "running";
         return running;

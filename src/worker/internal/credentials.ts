@@ -4,10 +4,8 @@ import {
   type WorkerCredential,
   type WorkerIdentity,
 } from "../../protocol/index.ts";
-import type {
-  WorkerCredentialPersistence,
-  WorkerResumeCredentialUpdate,
-} from "../types.ts";
+import type { WorkerResumeCredentialUpdate } from "../types.ts";
+import type { WorkerCredentialPersistence } from "./session-options.ts";
 import { runBoundedHandshakeStep, waitForTaskOrStop } from "./async.ts";
 import { createWorkerError } from "./errors.ts";
 
@@ -161,6 +159,9 @@ export function createCredentialRotationCoordinator(
       candidate.task = Promise.resolve().then(() =>
         persistResumeCredential(candidate.update, {
           signal,
+          connectionId: welcome.connectionId,
+          bootstrap: welcome.bootstrap,
+          reconnecting: source.credential.kind === "resume",
         })
       );
     }

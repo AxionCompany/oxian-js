@@ -1,13 +1,13 @@
-# Oxian 0.20
+# Oxian 0.21
 
 Oxian is a Fetch-native framework for file-routed HTTP applications and worker
-workloads. Work can run directly in the embedding JavaScript process or on
-authenticated outbound WebSocket workers over `oxian.worker.v1`; workers never
-need to expose an HTTP listener.
+workloads. Workers connect through an addressed in-process event fabric or an
+authenticated outbound WebSocket over `oxian.worker.v1`; Workers never need to
+expose an HTTP listener.
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin init
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.7/bin dev
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.1/bin init
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.1/bin dev
 ```
 
 `init` creates `oxian.config.ts` and `routes/index.ts`. `dev` starts a local
@@ -34,7 +34,9 @@ Applications use native `Request`, `Response`, `ReadableStream`, and
 - [Operations](docs/operations.md)
 - [Architecture](docs/architecture.md)
 - [Runtime boundaries and adapters](docs/runtime-adapters.md)
+- [Worker transport performance](docs/performance.md)
 - [API reference](docs/api-reference.md)
+- [Migrating to 0.21](docs/migration-0.21.md)
 - [0.20 migration facts](docs/migration-0.20.md)
 - [Worker protocol v1](docs/worker-protocol-v1.md)
 
@@ -45,15 +47,15 @@ local processes, listeners, and executable lifecycle require explicit
 runtime/capability subpaths:
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.20.0-rc.7/app";
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.7/config";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.20.0-rc.7/hypervisor";
-import { createWorker } from "jsr:@oxian/oxian-js@0.20.0-rc.7/worker";
-import { serve } from "jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno";
+import { createApplication } from "jsr:@oxian/oxian-js@0.21.0-rc.1/app";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.1/config";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.1/hypervisor";
+import { createWorker } from "jsr:@oxian/oxian-js@0.21.0-rc.1/worker";
+import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.1/adapters/deno";
 ```
 
-The executable is `jsr:@oxian/oxian-js@0.20.0-rc.7/bin`; the embeddable CLI API
-is `jsr:@oxian/oxian-js@0.20.0-rc.7/cli`.
+The executable is `jsr:@oxian/oxian-js@0.21.0-rc.1/bin`; the embeddable CLI API
+is `jsr:@oxian/oxian-js@0.21.0-rc.1/cli`.
 
 ## Verification
 

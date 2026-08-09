@@ -131,8 +131,14 @@ Deno.test("resume credentials use locked atomic compare-and-set persistence", as
       handshakeId: "handshake-next",
       resumeExpiresAtMs: 4_000_000_000_000,
     });
-    await store.persist(update, { signal: new AbortController().signal });
-    await store.persist(update, { signal: new AbortController().signal });
+    const persistenceContext = Object.freeze({
+      signal: new AbortController().signal,
+      connectionId: "test-connection",
+      bootstrap: Object.freeze({}),
+      reconnecting: false,
+    });
+    await store.persist(update, persistenceContext);
+    await store.persist(update, persistenceContext);
     const serialized = JSON.parse(await Deno.readTextFile(path));
     assertEquals(serialized.schema, "oxian.worker-resume.v1");
     assertEquals(serialized.handshakeId, "handshake-next");
@@ -152,7 +158,7 @@ Deno.test("resume credentials use locked atomic compare-and-set persistence", as
           replacesHandshakeId: initialHandshakeId,
           handshakeId: "handshake-stale",
           resumeExpiresAtMs: 4_000_000_000_001,
-        }, { signal: new AbortController().signal });
+        }, persistenceContext);
       },
       Error,
       "predecessor does not match",

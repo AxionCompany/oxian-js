@@ -1,83 +1,113 @@
 # Runtime boundaries and adapters
 
-Oxian's package root is the runtime-neutral execution core. Importing it does
-not load filesystem discovery, local process management, an HTTP listener, or a
-runtime-specific server API.
+The Oxian core is runtime-neutral. Importing the package root does not read a
+filesystem, spawn a process, bind a listener, or install process signals.
 
-## Current support
-
-| Capability                       | Deno                                  | Node 22+                  | Bun                       | Cloudflare/browser       |
-| -------------------------------- | ------------------------------------- | ------------------------- | ------------------------- | ------------------------ |
-| Portable package root            | Supported                             | Verified in CI            | Web-API-compatible core   | Web-API-compatible core  |
-| In-process Worker transport      | Supported                             | Verified in CI            | Supported by core         | Isolate/event-loop local |
-| HTTP workload and Web Streams    | Supported                             | Verified in CI            | Supported by core         | Supported by core        |
-| Hypervisor protocol/session core | Supported                             | Adapter-ready             | Adapter-ready             | Adapter-ready            |
-| Hypervisor WebSocket server      | `/adapters/deno`                      | Not yet published         | Not yet published         | Not yet published        |
-| Filesystem routes/static/process | Existing explicit Deno-facing modules | Future capability adapter | Future capability adapter | Build/binding adapters   |
-
-“Adapter-ready” means the core no longer depends on Deno's upgrade or listener
-APIs. It does not claim that a server adapter for that runtime is already part
-of this release candidate.
-
-Automated verification currently covers the complete Deno composition and the
-portable root under Node. The Bun and Cloudflare/browser core entries describe
-standards-compatible boundaries, not a support guarantee; each runtime still
-needs its own adapter and conformance job before Oxian can make that claim.
-
-## Connection seam
-
-`Hypervisor.prepare(request)` returns either a normal HTTP response decision or
-a one-shot WebSocket upgrade admission. A server adapter performs its native
-handshake and attaches a `WorkerWireConnection`.
+## Layering
 
 ```text
-request -> Hypervisor.prepare
-                 |
-                 +-- response -> return without upgrading
-                 |
-                 +-- upgrade admission
-                        -> runtime-native handshake
-                        -> WorkerWireConnection
-                        -> protocol/session core
+application policy
+  activate / register / admit / assign / lifecycle callbacks
+                         │
+Worker + Hypervisor shared lifecycle kernels
+                         │
+oxian.worker.v1 codec, order, credit, bounded FrameConnection
+                    ┌────┴────┐
+addressed local fabric      native WebSocket adapter
+                    │           │
+                 same realm   Deno / Node / Bun / browser / edge runtime
 ```
 
-`WorkerWireConnection` is callback-based instead of extending `EventTarget`.
-This lets adapters represent DOM WebSockets, Bun server callbacks, Node upgrade
-libraries, and Cloudflare Durable Object callbacks without leaking any of them
-into protocol state.
+Runtime adapters only acquire or expose physical resources. They do not
+implement Worker lifecycle transitions.
 
-The admission reserves capacity before the native upgrade. The adapter must call
-exactly one of `attach(connection)` or `cancel()`. An unconsumed admission
-expires on the configured handshake deadline.
-
-## In-process workers
-
-A Worker declared with `transport: { type: "in-process", hypervisor }` passes
-live `ReadableStream<Uint8Array>` values directly. It does not serialize
-operations through `WorkerWireConnection` or JavaScript payload events. The same
-Hypervisor can also admit remote Workers when `admission` is configured.
-
-## Runtime-specific imports
-
-Use explicit subpaths for capabilities:
+## Deno
 
 ```ts
-import {
-  createHypervisor,
-  createWorker,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.7";
-import { handler, serve } from "jsr:@oxian/oxian-js@0.20.0-rc.7/adapters/deno";
-import { createFileRouter } from "jsr:@oxian/oxian-js@0.20.0-rc.7/router";
-import { createLocalProcessProvider } from "jsr:@oxian/oxian-js@0.20.0-rc.7/providers";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.1";
+import { handler, serve } from "jsr:@oxian/oxian-js@0.21.0-rc.1/adapters/deno";
+
+const hypervisor = createHypervisor({
+  transports: [{
+    type: "websocket",
+    config: { path: "/_oxian/workers/connect" },
+  }],
+  admit,
+});
+
+// Compose into an app-owned server:
+const fetch = handler(hypervisor);
+
+// Or let this explicit adapter own Deno.serve:
+const listener = serve({ hypervisor, port: 8080 });
 ```
 
-The root deliberately excludes `createFileRouter`, `createLocalRuntime`,
-`createLocalProcessProvider`, and Deno adapters. This keeps unsupported
-capabilities out of Node, Bun, Worker, and browser bundles.
+`handler()` owns `Deno.upgradeWebSocket`, selects the v1 subprotocol, adapts the
+native socket, and attaches it exactly once to the Hypervisor's prepared upgrade
+decision. `serve()` owns only its listener; it never creates or shuts down the
+supplied Hypervisor.
 
-## Verification
+## Other server runtimes
 
-`deno task check:portability` follows every relative import in the root/core
-dependency closure and rejects Deno, Bun, Node builtin, Cloudflare-runtime, or
-`@std` dependencies. CI also imports the root and executes an in-process stream
-plus HTTP workload under supported Node versions.
+A server adapter follows the same sequence:
+
+1. Call `hypervisor.prepare(request)`.
+2. Return a normal response when `kind === "response"`.
+3. For `kind === "upgrade"`, negotiate `decision.protocol`.
+4. Adapt the native connection to `SocketConnection`.
+5. Call `decision.attach(connection, negotiatedProtocol)` exactly once.
+6. Call `decision.cancel(reason)` if native upgrade fails.
+
+`SocketConnection` is callback-based because some runtimes deliver WebSocket
+events at the server object rather than through a DOM `EventTarget`. The
+`adaptWebSocket`, `adaptSocketConnection`, `isSocketConnection`, and
+`expectSocketConnection` utilities cover standards-compatible and custom runtime
+sockets.
+
+`createFrameConnection` then normalizes callbacks to the bounded Web Stream
+contract. Lifecycle code sees only `FrameConnection`, `Frame`,
+`FrameSendOptions`, `FrameConnectionOptions`, and `ConnectionClose`.
+
+## Outbound Worker sockets
+
+Workers use their declarative `transport.config.url`. Advanced integrations may
+provide `transport.config.socket`, a `WorkerWebSocketFactory`, to acquire a
+provider token and create the native socket. The `WorkerWebSocketFactoryContext`
+contains a validated URL, exact protocol, and deadline signal.
+
+`connectWorkerWebSocket(ConnectWorkerWebSocketOptions)` is the lower-level WSS
+acquisition utility. It verifies URL policy, deadline, Open, and subprotocol.
+The public Worker factory normally owns this call.
+
+## In-process binding
+
+No runtime API is required. The Hypervisor transport declaration registers one
+same-realm addressed event fabric by `config.topic`; a Worker declaration
+rendezvous with that fabric. Local publications normalize to the same frame
+stream and run the same protocol kernel as WSS.
+
+The local path does not expose the internal binding. Hypervisor shutdown owns
+its unregistration. Avoid process-global implicit topics; choose an explicit
+unique name per embedded engine/session when isolation matters.
+
+## Core portability
+
+The root and execution core rely on web-platform primitives available in Deno,
+Node, Bun, browsers, and edge runtimes:
+
+- `Request`, `Response`, `Headers`, and `URL`;
+- `ReadableStream` and `Uint8Array`;
+- `AbortController` and `AbortSignal`;
+- `crypto.randomUUID()`; and
+- timers.
+
+Filesystem routing, static serving, CLI behavior, local credential files,
+`Deno.Command`, and `Deno.serve` live in explicit subpaths. Import only the
+adapter supported by the target runtime.
+
+## Ownership rule
+
+A component closes only resources it created. Injected Hypervisors, dispatchers,
+providers, listeners, and transports remain application-owned unless their
+contract explicitly transfers ownership. This rule is identical for embedded and
+server deployments.

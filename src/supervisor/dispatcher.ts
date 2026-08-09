@@ -41,6 +41,7 @@ export type AcceptanceCommit = Readonly<{
 export type WorkDispatcher = Readonly<{
   offer(
     input: Readonly<{
+      operationId?: string;
       workload: string;
       target?: WorkDispatchTarget;
       metadata?: JsonObject;
@@ -143,7 +144,7 @@ function withDispatch(
 export function createWorkDispatcher(
   options: Readonly<{
     sessions: SessionRegistry;
-    persistAcceptance(
+    commitAcceptedWork(
       commit: AcceptanceCommit,
     ): Promise<void>;
     clock?: () => number;
@@ -224,7 +225,10 @@ export function createWorkDispatcher(
   const offer = (
     input: Parameters<WorkDispatcher["offer"]>[0],
   ): WorkDispatch => {
-    const operationId = expectIdentifier(crypto.randomUUID(), "operationId");
+    const operationId = expectIdentifier(
+      input.operationId ?? crypto.randomUUID(),
+      "operationId",
+    );
     if (dispatches.has(operationId)) {
       return fail(
         "already_exists",
@@ -316,7 +320,7 @@ export function createWorkDispatcher(
    * Evicts a final rescheduling decision after the caller has externalized it.
    *
    * Retry remains available to orchestration layers that deliberately retain
-   * the in-memory entry. The Hypervisor uses discard because v0.20 exposes the
+   * the in-memory entry. The Hypervisor uses discard because the public API exposes the
    * final reschedulable result rather than an implicit retry loop.
    */
   const discard: WorkDispatcher["discard"] = (operationId) => {
@@ -435,7 +439,7 @@ export function createWorkDispatcher(
     const task = Promise.resolve().then(async (): Promise<WorkDispatch> => {
       try {
         try {
-          await options.persistAcceptance(commit);
+          await options.commitAcceptedWork(commit);
         } catch {
           const current = requireDispatch(operationId);
           if (
@@ -677,7 +681,9 @@ export function createWorkDispatcher(
     }
     if (terminal.type === "cancel") {
       const result = freeze({
-        code: "worker_cancelled",
+        code: terminal.reason === "deadline_exceeded"
+          ? "deadline_exceeded"
+          : "worker_cancelled",
         message: terminal.reason,
       });
       return finish(withDispatch(dispatch, {

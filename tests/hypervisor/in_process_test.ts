@@ -1,14 +1,116 @@
 import { assertEquals, assertRejects, assertStrictEquals } from "@std/assert";
 import {
-  createHypervisor,
+  createHypervisor as createPublicHypervisor,
   type Hypervisor,
+  type HypervisorConfig,
+  type HypervisorScheduler,
 } from "../../src/hypervisor/index.ts";
 import type { AcceptanceCommit } from "../../src/supervisor/index.ts";
 import {
-  createWorker,
+  createWorker as createPublicWorker,
   type Worker,
+  type WorkerBeforeReadyContext,
+  type WorkerSnapshot,
   type WorkerWorkHandler,
 } from "../../src/worker/index.ts";
+import type { InProcessTransport } from "../../src/transport/index.ts";
+
+const transports = new WeakMap<Hypervisor, InProcessTransport>();
+
+function createHypervisor(
+  options: Readonly<{
+    commitAcceptedWork(commit: AcceptanceCommit): Promise<void>;
+    config?: Partial<HypervisorConfig>;
+    clock?: () => number;
+    scheduler?: HypervisorScheduler;
+  }>,
+): Hypervisor {
+  const transport = Object.freeze({
+    type: "in-process" as const,
+    config: Object.freeze({ topic: `in-process-test-${crypto.randomUUID()}` }),
+  });
+  const hypervisor = createPublicHypervisor({
+    transports: [transport],
+    ...(options.config === undefined ? {} : { config: options.config }),
+    ...(options.clock === undefined ? {} : { clock: options.clock }),
+    ...(options.scheduler === undefined
+      ? {}
+      : { scheduler: options.scheduler }),
+  }, {
+    onWorkAccepted: async (context) => {
+      await options.commitAcceptedWork(Object.freeze({
+        operationId: context.operationId,
+        workload: context.workload,
+        metadata: context.metadata,
+        deliveryCount: 1,
+        assignment: Object.freeze({
+          fence: context.fence,
+          streamId: context.streamId,
+        }),
+        claimedAtMs: options.clock?.() ?? Date.now(),
+      }));
+    },
+  });
+  transports.set(hypervisor, transport);
+  return hypervisor;
+}
+
+function createWorker(
+  options: Readonly<{
+    id: string;
+    transport: InProcessTransport;
+    workloads: Readonly<Record<string, WorkerWorkHandler>>;
+    capacity?: number;
+    signal?: AbortSignal;
+    beforeReady?: (
+      context: WorkerBeforeReadyContext,
+    ) => void | Promise<void>;
+    onStateChange?: (snapshot: WorkerSnapshot) => void | Promise<void>;
+  }>,
+): Worker {
+  const worker = createPublicWorker({
+    id: options.id,
+    transport: options.transport,
+    workloads: options.workloads,
+    ...(options.capacity === undefined ? {} : { capacity: options.capacity }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options.beforeReady === undefined ? {} : {
+      handshake: (context) =>
+        options.beforeReady!({
+          bootstrap: context.bootstrap,
+          connectionId: context.connectionId,
+          signal: context.signal,
+          reconnecting: context.reconnecting,
+        }),
+    }),
+  });
+  if (options.onStateChange !== undefined) {
+    const reader = worker.events.getReader();
+    void (async () => {
+      try {
+        while (true) {
+          const next = await reader.read();
+          if (next.done) break;
+          if (next.value.type !== "state") continue;
+          try {
+            await options.onStateChange?.(next.value.snapshot);
+          } catch {
+            // Characterization observers never own Worker progress.
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    })();
+  }
+  return worker;
+}
+
+function transportFor(hypervisor: Hypervisor): InProcessTransport {
+  const transport = transports.get(hypervisor);
+  if (transport === undefined) throw new TypeError("unknown test Hypervisor");
+  return transport;
+}
 
 async function connectLocal(
   hypervisor: Hypervisor,
@@ -22,10 +124,10 @@ async function connectLocal(
     id: input.workerId,
     workloads: input.workloads,
     capacity: input.capacity,
-    transport: { type: "in-process", hypervisor },
+    transport: transportFor(hypervisor),
   });
-  void worker.run();
-  await worker.whenReady();
+  void worker.closed;
+  await worker.ready;
   return worker;
 }
 
@@ -56,7 +158,7 @@ Deno.test("in-process work starts only after durable acceptance commits", async 
   let accepted: AcceptanceCommit | undefined;
   let invoked = false;
   const hypervisor = createHypervisor({
-    persistAcceptance(commit) {
+    commitAcceptedWork(commit) {
       accepted = commit;
       return persistence.promise;
     },
@@ -75,17 +177,13 @@ Deno.test("in-process work starts only after durable acceptance commits", async 
   });
 
   try {
-    const handle = await hypervisor.dispatch({
+    const pendingHandle = hypervisor.dispatch({
       workload: "copilotz.turn",
       metadata: { conversationId: "conversation-1" },
     });
-    let started = false;
-    void handle.started.then(() => started = true);
-    await Promise.resolve();
-    await Promise.resolve();
+    await waitUntil(() => accepted !== undefined);
 
     assertEquals(invoked, false);
-    assertEquals(started, false);
     assertEquals(accepted?.metadata, {
       conversationId: "conversation-1",
     });
@@ -95,6 +193,7 @@ Deno.test("in-process work starts only after durable acceptance commits", async 
     );
 
     persistence.resolve();
+    const handle = await pendingHandle;
     await handle.started;
     assertEquals(invoked, true);
     assertEquals(await handle.metadata, { channel: "text" });
@@ -109,27 +208,24 @@ Deno.test("in-process work starts only after durable acceptance commits", async 
 Deno.test("in-process workers are not routable before initialization completes", async () => {
   const initialized = createDeferred<void>();
   const hypervisor = createHypervisor({
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const worker = createWorker({
     id: "initializing-worker",
-    transport: { type: "in-process", hypervisor },
+    transport: transportFor(hypervisor),
     workloads: { task: () => undefined },
     beforeReady: () => initialized.promise,
   });
-  const running = worker.run();
-  assertStrictEquals(worker.run(), running);
+  const running = worker.closed;
+  assertStrictEquals(worker.closed, running);
 
   try {
     await Promise.resolve();
-    assertEquals(
-      hypervisor.sessions.get("initializing-worker")?.phase,
-      "connected",
-    );
+    assertEquals(hypervisor.sessions.get("initializing-worker"), undefined);
     await assertRejects(() => hypervisor.dispatch({ workload: "task" }));
 
     initialized.resolve();
-    await worker.whenReady();
+    await worker.ready;
     assertEquals(
       hypervisor.sessions.get("initializing-worker")?.phase,
       "ready",
@@ -148,11 +244,11 @@ Deno.test("in-process workers are not routable before initialization completes",
 Deno.test("stopping an in-process Worker does not wait for a hung initializer", async () => {
   const entered = createDeferred<void>();
   const hypervisor = createHypervisor({
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const worker = createWorker({
     id: "hung-initializer",
-    transport: { type: "in-process", hypervisor },
+    transport: transportFor(hypervisor),
     workloads: { task: () => undefined },
     beforeReady: () => {
       entered.resolve();
@@ -162,7 +258,7 @@ Deno.test("stopping an in-process Worker does not wait for a hung initializer", 
       throw new Error("observer failure");
     },
   });
-  const running = worker.run();
+  const running = worker.closed;
 
   await entered.promise;
   await worker.stop("test_stop");
@@ -171,16 +267,16 @@ Deno.test("stopping an in-process Worker does not wait for a hung initializer", 
   await hypervisor.shutdown();
 });
 
-Deno.test("maintenance rebind never overlaps in-process initialization", async () => {
+Deno.test("maintenance drain cannot expose or duplicate a pre-ready Worker", async () => {
   const entered = createDeferred<void>();
   const release = createDeferred<void>();
   let calls = 0;
   const hypervisor = createHypervisor({
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const worker = createWorker({
     id: "serialized-initializer",
-    transport: { type: "in-process", hypervisor },
+    transport: transportFor(hypervisor),
     workloads: { task: () => undefined },
     beforeReady: () => {
       calls++;
@@ -188,12 +284,13 @@ Deno.test("maintenance rebind never overlaps in-process initialization", async (
       return release.promise;
     },
   });
-  const running = worker.run();
+  const running = worker.closed;
 
   try {
     await entered.promise;
     await hypervisor.drain("serialized-initializer");
-    await waitUntil(() => worker.snapshot().state === "reconnecting");
+    assertEquals(worker.snapshot().state, "handshaking");
+    assertEquals(hypervisor.sessions.get("serialized-initializer"), undefined);
     assertEquals(calls, 1);
 
     await worker.stop("test_complete");
@@ -213,21 +310,21 @@ Deno.test("in-process initialization is session-scoped across maintenance rebind
   > = [];
   const reinitialized = createDeferred<void>();
   const hypervisor = createHypervisor({
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const worker = createWorker({
     id: "reinitializing-worker",
-    transport: { type: "in-process", hypervisor },
+    transport: transportFor(hypervisor),
     workloads: { task: () => undefined },
     beforeReady(context) {
       contexts.push(context);
       if (context.reconnecting) reinitialized.resolve();
     },
   });
-  const running = worker.run();
+  const running = worker.closed;
 
   try {
-    await worker.whenReady();
+    await worker.ready;
     await hypervisor.drain("reinitializing-worker");
     await reinitialized.promise;
     await waitUntil(() => worker.snapshot().state === "ready");
@@ -246,10 +343,10 @@ Deno.test("in-process initialization is session-scoped across maintenance rebind
   }
 });
 
-Deno.test("in-process bindings use explicit liveness instead of heartbeat leases", async () => {
+Deno.test("in-process Workers use the canonical heartbeat lease", async () => {
   let now = 0;
   const hypervisor = createHypervisor({
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
     clock: () => now,
     config: {
       heartbeatIntervalMs: 20,
@@ -259,20 +356,17 @@ Deno.test("in-process bindings use explicit liveness instead of heartbeat leases
   });
   const worker = createWorker({
     id: "bound-worker",
-    transport: { type: "in-process", hypervisor },
+    transport: transportFor(hypervisor),
     workloads: { task: () => undefined },
   });
-  const running = worker.run();
+  const running = worker.closed;
 
   try {
-    await worker.whenReady();
-    assertEquals(
-      hypervisor.sessions.get("bound-worker")?.liveness,
-      "binding",
-    );
-    now = 10_000;
-    assertEquals(hypervisor.sessions.expireLeases(), []);
+    await worker.ready;
     assertEquals(hypervisor.sessions.get("bound-worker")?.phase, "ready");
+    now = 10_000;
+    assertEquals(hypervisor.sessions.expireLeases().length, 1);
+    assertEquals(hypervisor.sessions.get("bound-worker"), undefined);
   } finally {
     await worker.stop("test_complete");
     await running;
@@ -282,7 +376,7 @@ Deno.test("in-process bindings use explicit liveness instead of heartbeat leases
 
 Deno.test("in-process streams remain bidirectional and runtime-neutral", async () => {
   const hypervisor = createHypervisor({
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   await connectLocal(hypervisor, {
     workerId: "stream-worker",
@@ -324,7 +418,7 @@ Deno.test("in-process streams remain bidirectional and runtime-neutral", async (
 Deno.test("capacity and exact worker targeting apply in process", async () => {
   const firstRelease = createDeferred<void>();
   const hypervisor = createHypervisor({
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   await connectLocal(hypervisor, {
     workerId: "worker-a",
@@ -380,7 +474,7 @@ Deno.test("capacity and exact worker targeting apply in process", async () => {
 
 Deno.test("cancellation aborts an active in-process workload cooperatively", async () => {
   const hypervisor = createHypervisor({
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   await connectLocal(hypervisor, {
     workerId: "cancellable-worker",
@@ -399,7 +493,10 @@ Deno.test("cancellation aborts an active in-process workload cooperatively", asy
     await handle.started;
     const completed = await handle.cancel("caller left");
     assertEquals(completed.status, "cancelled");
-    assertEquals(completed.terminal?.message, "caller left");
+    assertEquals(completed.terminal, {
+      code: "caller_cancelled",
+      message: "caller left",
+    });
     await assertRejects(() => handle.metadata);
     await assertRejects(() => readText(handle.output));
     assertEquals(hypervisor.sessions.get("cancellable-worker")?.reserved, 0);
@@ -411,7 +508,7 @@ Deno.test("cancellation aborts an active in-process workload cooperatively", asy
 Deno.test("maintenance drain settles active work and rebinds the Worker", async () => {
   const release = createDeferred<void>();
   const hypervisor = createHypervisor({
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   const worker = await connectLocal(hypervisor, {
     workerId: "draining-worker",
@@ -437,6 +534,9 @@ Deno.test("maintenance drain settles active work and rebinds the Worker", async 
     await readText(handle.output);
     assertEquals((await handle.completed).status, "completed");
     await draining;
+    await waitUntil(() =>
+      hypervisor.sessions.get("draining-worker")?.phase === "ready"
+    );
     const replacement = hypervisor.sessions.get("draining-worker")!;
     assertEquals(replacement.phase, "ready");
     assertEquals(replacement.identity, original.identity);
@@ -457,10 +557,10 @@ Deno.test("maintenance drain settles active work and rebinds the Worker", async 
   }
 });
 
-Deno.test("unknown acceptance persistence never invokes in-process code", async () => {
+Deno.test("failed durable acceptance never starts or invokes in-process code", async () => {
   let invoked = false;
   const hypervisor = createHypervisor({
-    persistAcceptance: () => Promise.reject(new Error("store unavailable")),
+    commitAcceptedWork: () => Promise.reject(new Error("store unavailable")),
   });
   await connectLocal(hypervisor, {
     workerId: "durable-worker",
@@ -473,16 +573,13 @@ Deno.test("unknown acceptance persistence never invokes in-process code", async 
 
   try {
     const handle = await hypervisor.dispatch({ workload: "task" });
-    const terminal = await handle.completed;
-    assertEquals(terminal.status, "indeterminate");
-    assertEquals(
-      terminal.terminal?.code,
-      "acceptance_persistence_unknown",
+    await assertRejects(
+      () => handle.started,
+      Error,
+      "acceptance persistence did not confirm",
     );
+    assertEquals((await handle.completed).status, "indeterminate");
     assertEquals(invoked, false);
-    await assertRejects(() => handle.started);
-    await assertRejects(() => handle.metadata);
-    await assertRejects(() => readText(handle.output));
     assertEquals(hypervisor.sessions.get("durable-worker")?.reserved, 0);
   } finally {
     await hypervisor.shutdown();
@@ -492,7 +589,7 @@ Deno.test("unknown acceptance persistence never invokes in-process code", async 
 Deno.test("deadline cancellation reaches the active in-process handler", async () => {
   let aborted = false;
   const hypervisor = createHypervisor({
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   await connectLocal(hypervisor, {
     workerId: "deadline-worker",
@@ -515,7 +612,10 @@ Deno.test("deadline cancellation reaches the active in-process handler", async (
     await handle.started;
     const terminal = await handle.completed;
     assertEquals(terminal.status, "cancelled");
-    assertEquals(terminal.terminal?.message, "work deadline elapsed");
+    assertEquals(terminal.terminal, {
+      code: "deadline_exceeded",
+      message: "deadline_exceeded",
+    });
     assertEquals(aborted, true);
   } finally {
     await hypervisor.shutdown();
@@ -526,7 +626,7 @@ Deno.test("cancelling output propagates to the workload stream", async () => {
   let outputCancelled = false;
   let handlerAborted = false;
   const hypervisor = createHypervisor({
-    persistAcceptance: () => Promise.resolve(),
+    commitAcceptedWork: () => Promise.resolve(),
   });
   await connectLocal(hypervisor, {
     workerId: "output-worker",
@@ -556,7 +656,10 @@ Deno.test("cancelling output propagates to the workload stream", async () => {
     await handle.output.cancel("consumer stopped");
     const terminal = await handle.completed;
     assertEquals(terminal.status, "cancelled");
-    assertEquals(terminal.terminal?.message, "consumer stopped");
+    assertEquals(terminal.terminal, {
+      code: "caller_cancelled",
+      message: "consumer stopped",
+    });
     assertEquals(outputCancelled, true);
     assertEquals(handlerAborted, true);
   } finally {

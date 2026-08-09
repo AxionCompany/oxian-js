@@ -4,8 +4,12 @@ import type {
   WorkerCredential,
   WorkerIdentity,
 } from "../protocol/index.ts";
-import type { WorkerWebSocketFactory } from "../transport/types.ts";
-import type { Hypervisor } from "../hypervisor/types.ts";
+import type { WorkerTransport } from "../transport/declarations.ts";
+import type {
+  WorkerActivate,
+  WorkerHandshake,
+  WorkerRegister,
+} from "../lifecycle/types.ts";
 
 /**
  * Stream chunks are bounded to one v1 data payload (1 MiB). A direct
@@ -143,67 +147,30 @@ export type WorkerWebSocketLimits = Readonly<{
 
 export type WorkerResumeCredentialPersister = (
   update: WorkerResumeCredentialUpdate,
-  context: Readonly<{ signal: AbortSignal }>,
+  context: Readonly<{
+    signal: AbortSignal;
+    connectionId: string;
+    bootstrap: JsonObject;
+    reconnecting: boolean;
+  }>,
 ) => void | Promise<void>;
 
 type WorkerBaseOptions = Readonly<{
   workloads: Readonly<Record<string, WorkerWorkHandler>>;
   capacity?: number;
   signal?: AbortSignal;
-  beforeReady?: (
-    context: WorkerBeforeReadyContext,
-  ) => JsonObject | void | Promise<JsonObject | void>;
-  onStateChange?: (
-    snapshot: WorkerSnapshot,
-  ) => void | Promise<void>;
 }>;
 
-export type InProcessWorkerTransport = Readonly<{
-  type: "in-process";
-  hypervisor: Hypervisor;
-}>;
-
-export type WebSocketWorkerTransport = Readonly<{
-  type: "websocket";
-  url: string | URL;
-  allowInsecureLoopback?: boolean;
-  connectTimeoutMs?: number;
-  /** Provider-owned socket construction for transport-level authentication. */
-  socket?: WorkerWebSocketFactory;
-  limits?: WorkerWebSocketLimits;
-}>;
-
-export type WorkerTransport =
-  | InProcessWorkerTransport
-  | WebSocketWorkerTransport;
-
-export type InProcessWorkerOptions =
+export type WorkerOptions =
   & WorkerBaseOptions
   & Readonly<{
     id: string;
-    transport: InProcessWorkerTransport;
-    identity?: never;
-    credential?: never;
-    createHeartbeatMetadata?: never;
-  }>;
-
-type WebSocketWorkerBaseOptions =
-  & WorkerBaseOptions
-  & Readonly<{
-    transport: WebSocketWorkerTransport;
-    identity: WorkerIdentity;
-    credential: WorkerCredential;
+    transport: WorkerTransport;
+    activate?: WorkerActivate;
+    register?: WorkerRegister;
+    handshake?: WorkerHandshake;
     /**
-     * Supply the ID stored with a resume credential. A fresh ID is generated
-     * when omitted.
-     */
-    handshakeId?: string;
-    /**
-     * Required for locally checking a stored resume credential's expiry.
-     */
-    resumeExpiresAtMs?: number;
-    /**
-     * Bounds Hello-to-Welcome authentication and credential persistence.
+     * Bounds activation, registration, credential rotation, and Hello/Welcome.
      */
     handshakeTimeoutMs?: number;
     /**
@@ -228,45 +195,14 @@ type WebSocketWorkerBaseOptions =
     maxReconnectDelayMs?: number;
     createHandshakeId?: () => string;
     now?: () => number;
-    onReenrollmentRequired?: (error: unknown) => void | Promise<void>;
   }>;
-
-export type WorkerCredentialPersistence =
-  | Readonly<{
-    /**
-     * Durable is the default when a persister is supplied.
-     */
-    credentialPersistence?: "durable";
-    /**
-     * Called after Welcome and before bootstrap. Explicit failure before this
-     * hook resolves retries the unchanged prior credential and handshake ID.
-     * Once it resolves, bootstrap failures use the newly persisted resume.
-     * The Promise must resolve only after an atomic durable commit. Repeated
-     * calls with the same update must be idempotent, and compare-and-set via
-     * `replacesHandshakeId` must prevent an older completion from overwriting a
-     * later rotation. The signal is advisory: timeout, socket loss, or stop
-     * cannot cancel the returned Promise, and no later persistence call starts
-     * until it actually settles.
-     */
-    persistResumeCredential: WorkerResumeCredentialPersister;
-  }>
-  | Readonly<{
-    /**
-     * Explicit process-lifetime opt-in; resume state is lost on restart.
-     */
-    credentialPersistence: "ephemeral";
-    persistResumeCredential?: never;
-  }>;
-
-export type WebSocketWorkerOptions =
-  & WebSocketWorkerBaseOptions
-  & WorkerCredentialPersistence;
-
-export type WorkerOptions = InProcessWorkerOptions | WebSocketWorkerOptions;
 
 export type Worker = Readonly<{
-  run(): Promise<WorkerResult>;
-  whenReady(): Promise<WorkerSnapshot>;
+  readonly ready: Promise<WorkerSnapshot>;
+  readonly closed: Promise<WorkerResult>;
+  readonly events: ReadableStream<
+    import("../lifecycle/types.ts").WorkerLifecycleEvent
+  >;
   stop(reason?: string): Promise<void>;
   snapshot(): WorkerSnapshot;
 }>;

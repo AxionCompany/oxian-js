@@ -8,11 +8,11 @@ import {
   type ReadyFrame,
   WORKER_PROTOCOL,
 } from "../../src/protocol/index.ts";
+import type { WorkerResumeCredentialUpdate } from "../../src/worker/index.ts";
 import {
-  createWorker,
-  type WebSocketWorkerOptions,
-  type WorkerResumeCredentialUpdate,
-} from "../../src/worker/index.ts";
+  createProtocolTestWorker as createWorker,
+  type ProtocolTestWorkerOptions as WebSocketWorkerOptions,
+} from "./protocol_worker.ts";
 import {
   acceptTestHandshake,
   nextControl,
@@ -70,7 +70,7 @@ Deno.test("worker handshake persists, bootstraps, then advertises Ready metadata
       return { initializedRevision: "sandbox-r1" };
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -105,7 +105,7 @@ Deno.test("worker handshake persists, bootstraps, then advertises Ready metadata
     await connection.transport.sendControl(createReadyAckFrame({
       connectionId: welcome.connectionId,
     }));
-    assertEquals((await withTimeout(client.whenReady())).state, "ready");
+    assertEquals((await withTimeout(client.ready)).state, "ready");
 
     await connection.transport.sendControl(createShutdownFrame({
       connectionId: welcome.connectionId,
@@ -140,7 +140,7 @@ Deno.test("worker delegates provider authentication to its socket factory", asyn
     workloads: { echo: () => undefined },
     reconnectDelay: false,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -184,7 +184,7 @@ Deno.test("lost Ready acknowledgement reconnects without reporting a false ready
     reconnectDelay: () => 0,
     readyTimeoutMs: 40,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -219,7 +219,7 @@ Deno.test("lost Ready acknowledgement reconnects without reporting a false ready
     await second.transport.sendControl(createReadyAckFrame({
       connectionId: welcome.connectionId,
     }));
-    assertEquals((await withTimeout(client.whenReady())).state, "ready");
+    assertEquals((await withTimeout(client.ready)).state, "ready");
 
     await second.transport.sendControl(createShutdownFrame({
       connectionId: welcome.connectionId,
@@ -252,7 +252,7 @@ Deno.test("worker Ready initialization has an independent long-running timeout",
       return { restored: true };
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -308,7 +308,7 @@ Deno.test("persistence failure retries the exact prior credential and handshake"
       }
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -375,7 +375,7 @@ Deno.test("revoked resume credential surfaces re-enrollment without reconnecting
       notifications.push(error);
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -414,7 +414,7 @@ Deno.test("worker credentials are copied and stored resume expiry is mandatory",
     reconnectDelay: false,
   });
   mutableCredential.capability = "mutated-after-construction";
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -540,7 +540,7 @@ Deno.test("an unsettled pre-ready hook blocks reconnect but not stop", async () 
       return new Promise(() => undefined);
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -590,7 +590,7 @@ Deno.test("an unsettled durable persister blocks reconnect but not stop", async 
       return new Promise(() => undefined);
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -654,7 +654,7 @@ Deno.test("late durable completion is adopted before reconnect without overlappi
       }
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -755,7 +755,7 @@ Deno.test("late pre-ready completion serializes bootstrap across reconnects", as
       }
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -831,7 +831,7 @@ Deno.test("state observers cannot throw, hang, or reentrantly stop the lifecycle
       return new Promise<void>(() => undefined);
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     await withTimeout(hungObserverEntered.promise);
@@ -867,7 +867,7 @@ Deno.test("hung re-enrollment notification fires once without gating stop", asyn
     },
   });
 
-  const result = await withTimeout(client.run());
+  const result = await withTimeout(client.closed);
   assertEquals(result.reason, "reenrollment_required");
   await withTimeout(notificationEntered.promise);
   await withTimeout(client.stop("test_complete"));
@@ -895,7 +895,7 @@ Deno.test("hung reconnect delay is single-flight and cannot gate stop", async ()
       return new Promise<number | null>(() => undefined);
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();

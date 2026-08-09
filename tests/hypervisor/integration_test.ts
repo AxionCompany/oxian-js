@@ -6,28 +6,35 @@ import type {
   HypervisorError,
   HypervisorListener,
 } from "../../src/hypervisor/index.ts";
-import { createHypervisor } from "../../src/hypervisor/index.ts";
 import {
   parseControlFrame,
   type WorkerIdentity,
 } from "../../src/protocol/index.ts";
 import type { AcceptanceCommit } from "../../src/supervisor/index.ts";
 import {
-  createInMemoryRegistrationAuthority,
-  createInMemoryWorkerRepository,
+  createEphemeralCredentialLifecycle,
+  createEphemeralWorkerStore,
   createWorkerDefinition,
   fenceForSession,
 } from "../../src/supervisor/index.ts";
-import { createWorker } from "../../src/worker/index.ts";
+import { createWorker as createPublicWorker } from "../../src/worker/index.ts";
 import type {
-  WebSocketWorkerOptions,
-  WebSocketWorkerTransport,
   Worker,
   WorkerBeforeReadyContext,
   WorkerResult,
   WorkerSnapshot,
   WorkerWorkHandler,
 } from "../../src/worker/index.ts";
+import {
+  createProtocolTestWorker as createWorker,
+  type ProtocolTestWorkerOptions as WebSocketWorkerOptions,
+  type ProtocolTestWorkerTransport as WebSocketWorkerTransport,
+} from "../worker/protocol_worker.ts";
+import {
+  createProtocolTestHypervisor as createHypervisor,
+  localTransportFor,
+  TEST_WORKER_PATH,
+} from "./protocol_hypervisor.ts";
 
 const TEST_TIMEOUT_MS = 5_000;
 const encoder = new TextEncoder();
@@ -42,7 +49,7 @@ type TestHarness = Readonly<{
   hypervisor: Hypervisor;
   listener: HypervisorListener;
   worker: Worker;
-  workerRun: Promise<WorkerResult>;
+  workerClosed: Promise<WorkerResult>;
   identity: WorkerIdentity;
   close(): Promise<void>;
 }>;
@@ -179,7 +186,7 @@ async function startHarness(
   input: Readonly<{
     workloads: Readonly<Record<string, WorkerWorkHandler>>;
     capacity?: number;
-    persistAcceptance?(
+    commitAcceptedWork?(
       commit: AcceptanceCommit,
     ): Promise<void>;
     config?: Partial<HypervisorConfig>;
@@ -193,7 +200,7 @@ async function startHarness(
 ): Promise<TestHarness> {
   const capacity = input.capacity ?? 2;
   const workloadNames = Object.keys(input.workloads);
-  const repository = createInMemoryWorkerRepository();
+  const repository = createEphemeralWorkerStore();
   await repository.define(createWorkerDefinition({
     workerId: "worker-integration",
     providerId: "attached",
@@ -202,11 +209,11 @@ async function startHarness(
   }));
   const identity = (await repository.activate("worker-integration")).attempt
     .identity;
-  const authority = createInMemoryRegistrationAuthority();
+  const authority = createEphemeralCredentialLifecycle();
   const registration = await authority.issueRegistration(identity);
   const hypervisor = createHypervisor({
-    admission: { type: "registered", authority, repository },
-    persistAcceptance: input.persistAcceptance ??
+    control: { authority, repository },
+    commitAcceptedWork: input.commitAcceptedWork ??
       (() => Promise.resolve()),
     config: {
       heartbeatIntervalMs: 20,
@@ -227,7 +234,7 @@ async function startHarness(
   const worker = createWorker({
     transport: {
       type: "websocket",
-      url: workerUrl(listener, hypervisor.config.workerPath),
+      url: workerUrl(listener, TEST_WORKER_PATH),
       allowInsecureLoopback: true,
       connectTimeoutMs: 1_000,
       ...(input.socket === undefined ? {} : { socket: input.socket }),
@@ -251,10 +258,10 @@ async function startHarness(
       ? {}
       : { onReenrollmentRequired: input.onReenrollmentRequired }),
   });
-  const workerRun = worker.run();
+  const workerClosed = worker.closed;
 
   try {
-    await withTimeout(worker.whenReady(), TEST_TIMEOUT_MS, "worker not ready");
+    await withTimeout(worker.ready, TEST_TIMEOUT_MS, "worker not ready");
     await waitFor(
       () => hypervisor.sessions.get(identity.workerId)?.phase === "ready",
       "Hypervisor did not attach the ready worker session",
@@ -263,7 +270,7 @@ async function startHarness(
     await worker.stop("harness_start_failed").catch(() => undefined);
     await hypervisor.shutdown("harness_start_failed").catch(() => undefined);
     await listener.shutdown().catch(() => undefined);
-    await workerRun.catch(() => undefined);
+    await workerClosed.catch(() => undefined);
     throw error;
   }
 
@@ -274,7 +281,7 @@ async function startHarness(
       await hypervisor.shutdown("test_cleanup").catch(() => undefined);
       await worker.stop("test_cleanup").catch(() => undefined);
       await listener.shutdown().catch(() => undefined);
-      await withTimeout(workerRun, 2_000).catch(() => undefined);
+      await withTimeout(workerClosed, 2_000).catch(() => undefined);
     })();
     return closed;
   };
@@ -283,7 +290,7 @@ async function startHarness(
     hypervisor,
     listener,
     worker,
-    workerRun,
+    workerClosed,
     identity,
     close,
   });
@@ -304,18 +311,18 @@ Deno.test({
         },
       },
     });
-    const local = createWorker({
+    const local = createPublicWorker({
       id: "worker-local",
       capacity: 1,
-      transport: { type: "in-process", hypervisor: harness.hypervisor },
+      transport: localTransportFor(harness.hypervisor),
       workloads: {
         shared: () => ({ metadata: { worker: "in-process" } }),
       },
     });
-    const localRun = local.run();
+    const localRun = local.closed;
 
     try {
-      await local.whenReady();
+      await local.ready;
       const remote = await harness.hypervisor.dispatch({
         workload: "shared",
         target: { workerId: harness.identity.workerId },
@@ -371,7 +378,7 @@ Deno.test({
     let persistCalls = 0;
 
     const harness = await startHarness({
-      persistAcceptance: async (commit) => {
+      commitAcceptedWork: async (commit) => {
         persistCalls++;
         persistEntered.resolve(commit);
         await releasePersistence.promise;
@@ -472,7 +479,7 @@ Deno.test({
     let failNextPersistence = true;
     let handlerCalls = 0;
     const harness = await startHarness({
-      persistAcceptance: () => {
+      commitAcceptedWork: () => {
         if (failNextPersistence) {
           failNextPersistence = false;
           throw new Error("commit acknowledgement was lost");
@@ -545,7 +552,7 @@ Deno.test({
     const releasePersistence = createDeferred<void>();
     let handlerCalls = 0;
     const harness = await startHarness({
-      persistAcceptance: async () => {
+      commitAcceptedWork: async () => {
         persistEntered.resolve();
         await releasePersistence.promise;
       },
@@ -599,7 +606,7 @@ Deno.test({
   permissions: { net: ["127.0.0.1"] },
   async fn() {
     const states: WorkerSnapshot[] = [];
-    let workerRunSettled = false;
+    let workerClosedSettled = false;
     const harness = await startHarness({
       workloads: {
         "sandbox.command": () => undefined,
@@ -613,8 +620,8 @@ Deno.test({
         states.push(snapshot);
       },
     });
-    harness.workerRun.finally(() => {
-      workerRunSettled = true;
+    harness.workerClosed.finally(() => {
+      workerClosedSettled = true;
     });
 
     try {
@@ -634,7 +641,7 @@ Deno.test({
         "worker and Hypervisor did not converge on a ready replacement session",
       );
 
-      assertEquals(workerRunSettled, false);
+      assertEquals(workerClosedSettled, false);
       assertEquals(harness.worker.snapshot().state, "ready");
       assertEquals(
         states.some((snapshot) => snapshot.state === "draining"),
@@ -663,7 +670,7 @@ Deno.test({
     const states: WorkerSnapshot[] = [];
     let readyHooks = 0;
     let reenrollmentNotifications = 0;
-    let workerRunSettled = false;
+    let workerClosedSettled = false;
     const harness = await startHarness({
       workloads: {
         "sandbox.command": () => undefined,
@@ -678,8 +685,8 @@ Deno.test({
         states.push(snapshot);
       },
     });
-    void harness.workerRun.finally(() => {
-      workerRunSettled = true;
+    void harness.workerClosed.finally(() => {
+      workerClosedSettled = true;
     });
 
     try {
@@ -703,7 +710,7 @@ Deno.test({
         "maintenance drain did not reconnect the worker",
       );
 
-      assertEquals(workerRunSettled, false);
+      assertEquals(workerClosedSettled, false);
       assertEquals(readyHooks, 2);
       assertEquals(reenrollmentNotifications, 0);
       assertEquals(harness.hypervisor.snapshot().acceptingConnections, true);
@@ -719,7 +726,7 @@ Deno.test({
         "integration_worker_shutdown",
       );
       await withTimeout(Promise.all([finalRotation, terminalShutdown]));
-      assertEquals(await withTimeout(harness.workerRun), {
+      assertEquals(await withTimeout(harness.workerClosed), {
         reason: "shutdown",
       });
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -749,6 +756,7 @@ Deno.test({
     const releaseHeartbeat = createDeferred<void>();
     const heartbeatReturning = createDeferred<void>();
     const drainReceived = createDeferred<void>();
+    const shutdownReceived = createDeferred<void>();
     const drainedSendBlocked = createDeferred<void>();
     const drainedSent = createDeferred<void>();
     const handlerEntered = createDeferred<void>();
@@ -757,6 +765,8 @@ Deno.test({
     let blockSendAfterWorkEnd = false;
     let releaseBlockedSend = false;
     const states: WorkerSnapshot[] = [];
+    const socketCloses: string[] = [];
+    const wireEvents: string[] = [];
     const harness = await startHarness({
       workloads: {
         "sandbox.command": async () => {
@@ -776,18 +786,22 @@ Deno.test({
       },
       socket(context) {
         const socket = new WebSocket(context.url, context.protocol);
+        socket.addEventListener("close", (event) => {
+          socketCloses.push(`${event.code}:${event.reason}`);
+        });
         socket.addEventListener("message", (event) => {
-          if (
-            typeof event.data === "string" &&
-            parseControlFrame(event.data).type === "drain"
-          ) {
-            drainReceived.resolve();
+          if (typeof event.data === "string") {
+            const frame = parseControlFrame(event.data);
+            wireEvents.push(`in:${frame.type}`);
+            if (frame.type === "drain") drainReceived.resolve();
+            if (frame.type === "shutdown") shutdownReceived.resolve();
           }
         });
         return observeWebSocketSends(socket, {
           observeSend(data) {
             if (typeof data !== "string") return;
             const frame = parseControlFrame(data);
+            wireEvents.push(`out:${frame.type}`);
             if (frame.type === "work.end") {
               blockSendAfterWorkEnd = true;
             } else if (frame.type === "drained") {
@@ -808,12 +822,26 @@ Deno.test({
     });
 
     try {
-      await withTimeout(heartbeatEntered.promise);
-      const handle = await withTimeout(harness.hypervisor.dispatch({
-        workload: "sandbox.command",
-      }));
-      await withTimeout(handle.started);
-      await withTimeout(handlerEntered.promise);
+      await withTimeout(
+        heartbeatEntered.promise,
+        TEST_TIMEOUT_MS,
+        "heartbeat callback did not begin",
+      );
+      const handle = await withTimeout(
+        harness.hypervisor.dispatch({ workload: "sandbox.command" }),
+        TEST_TIMEOUT_MS,
+        "work dispatch did not open",
+      );
+      await withTimeout(
+        handle.started,
+        TEST_TIMEOUT_MS,
+        "work did not start",
+      );
+      await withTimeout(
+        handlerEntered.promise,
+        TEST_TIMEOUT_MS,
+        "workload handler did not begin",
+      );
 
       const shutdown = harness.hypervisor.shutdownWorker(
         harness.identity.workerId,
@@ -826,30 +854,84 @@ Deno.test({
         () => harness.worker.snapshot().state === "draining",
         "worker did not enter terminal drain",
       );
-      await withTimeout(drainReceived.promise);
+      await withTimeout(
+        drainReceived.promise,
+        TEST_TIMEOUT_MS,
+        "Worker did not receive Drain",
+      );
       assertEquals(shutdownSettled, false);
       assertEquals(harness.worker.snapshot().activeStreams, 1);
 
       releaseHandler.resolve();
-      assertEquals(await withTimeout(handle.metadata), {
-        completion: "normal",
-      });
       assertEquals(
-        await withTimeout(readAll(handle.output)),
+        await withTimeout(
+          handle.metadata,
+          TEST_TIMEOUT_MS,
+          "work metadata did not arrive",
+        ),
+        {
+          completion: "normal",
+        },
+      );
+      assertEquals(
+        await withTimeout(
+          readAll(handle.output),
+          TEST_TIMEOUT_MS,
+          "work output did not finish",
+        ),
         encoder.encode("completed-before-shutdown"),
       );
-      assertEquals((await withTimeout(handle.completed)).status, "completed");
-      await withTimeout(drainedSendBlocked.promise);
+      assertEquals(
+        (await withTimeout(
+          handle.completed,
+          TEST_TIMEOUT_MS,
+          "work completion did not settle",
+        )).status,
+        "completed",
+      );
+      await withTimeout(
+        drainedSendBlocked.promise,
+        TEST_TIMEOUT_MS,
+        "Drained send did not encounter physical backpressure",
+      );
       releaseHeartbeat.resolve();
-      await withTimeout(heartbeatReturning.promise);
+      await withTimeout(
+        heartbeatReturning.promise,
+        TEST_TIMEOUT_MS,
+        "heartbeat callback did not settle",
+      );
       await new Promise((resolve) => setTimeout(resolve, 0));
       releaseBlockedSend = true;
-      await withTimeout(drainedSent.promise);
-      await withTimeout(shutdown);
+      await withTimeout(
+        drainedSent.promise,
+        TEST_TIMEOUT_MS,
+        "Worker did not send Drained after backpressure cleared",
+      );
+      await withTimeout(
+        shutdownReceived.promise,
+        TEST_TIMEOUT_MS,
+        `Worker socket did not receive Shutdown; worker=${harness.worker.snapshot().state}; sessions=${harness.hypervisor.snapshot().sessions}; connections=${harness.hypervisor.snapshot().connections}; closes=${
+          socketCloses.join(",")
+        }; wire=${wireEvents.join(",")}`,
+      );
+      await withTimeout(
+        shutdown,
+        TEST_TIMEOUT_MS,
+        "terminal shutdown did not settle",
+      );
 
-      assertEquals(await withTimeout(harness.workerRun), {
-        reason: "shutdown",
-      });
+      assertEquals(
+        await withTimeout(
+          harness.workerClosed,
+          TEST_TIMEOUT_MS,
+          `Worker lifecycle did not close from ${harness.worker.snapshot().state}; states=${
+            states.map((value) => value.state).join(",")
+          }; closes=${socketCloses.join(",")}`,
+        ),
+        {
+          reason: "shutdown",
+        },
+      );
       assertEquals(
         states.some((snapshot) => snapshot.state === "drained"),
         true,
@@ -922,7 +1004,7 @@ Deno.test({
           "current_attempt_cleanup",
         ),
       );
-      assertEquals(await withTimeout(harness.workerRun), {
+      assertEquals(await withTimeout(harness.workerClosed), {
         reason: "shutdown",
       });
     } finally {
@@ -936,7 +1018,7 @@ Deno.test({
     "exact worker dispatch never spills while untargeted work still balances",
   permissions: { net: ["127.0.0.1"] },
   async fn() {
-    const repository = createInMemoryWorkerRepository();
+    const repository = createEphemeralWorkerStore();
     await repository.define(createWorkerDefinition({
       workerId: "worker-target-a",
       providerId: "attached",
@@ -953,12 +1035,12 @@ Deno.test({
       .identity;
     const identityB = (await repository.activate("worker-target-b")).attempt
       .identity;
-    const authority = createInMemoryRegistrationAuthority();
+    const authority = createEphemeralCredentialLifecycle();
     const registrationA = await authority.issueRegistration(identityA);
     const registrationB = await authority.issueRegistration(identityB);
     const hypervisor = createHypervisor({
-      admission: { type: "registered", authority, repository },
-      persistAcceptance: () => Promise.resolve(),
+      control: { authority, repository },
+      commitAcceptedWork: () => Promise.resolve(),
       config: {
         heartbeatIntervalMs: 20,
         leaseTimeoutMs: 500,
@@ -979,7 +1061,7 @@ Deno.test({
     const workerA = createWorker({
       transport: {
         type: "websocket",
-        url: workerUrl(listener, hypervisor.config.workerPath),
+        url: workerUrl(listener, TEST_WORKER_PATH),
         allowInsecureLoopback: true,
         connectTimeoutMs: 1_000,
       },
@@ -998,7 +1080,7 @@ Deno.test({
     const workerB = createWorker({
       transport: {
         type: "websocket",
-        url: workerUrl(listener, hypervisor.config.workerPath),
+        url: workerUrl(listener, TEST_WORKER_PATH),
         allowInsecureLoopback: true,
         connectTimeoutMs: 1_000,
       },
@@ -1019,13 +1101,13 @@ Deno.test({
       reconnectDelay: () => 0,
       handshakeTimeoutMs: 1_000,
     });
-    const workerARun = workerA.run();
-    const workerBRun = workerB.run();
+    const workerARun = workerA.closed;
+    const workerBRun = workerB.closed;
 
     try {
       await withTimeout(Promise.all([
-        workerA.whenReady(),
-        workerB.whenReady(),
+        workerA.ready,
+        workerB.ready,
       ]));
       await waitFor(
         () =>
@@ -1118,7 +1200,9 @@ Deno.test({
     });
 
     await withTimeout(harness.hypervisor.shutdown("integration_shutdown"));
-    assertEquals(await withTimeout(harness.workerRun), { reason: "shutdown" });
+    assertEquals(await withTimeout(harness.workerClosed), {
+      reason: "shutdown",
+    });
     assertEquals(
       states.some((snapshot) => snapshot.state === "draining"),
       true,

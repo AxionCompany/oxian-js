@@ -40,7 +40,7 @@ export function createDrainController(
       record.drainMode === "shutdown" &&
       record.transport !== undefined &&
       record.connectionId !== undefined &&
-      record.connection?.state === "open"
+      record.connection !== undefined
     ) {
       record.disconnectReason ??= "shutdown";
       try {

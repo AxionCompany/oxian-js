@@ -7,7 +7,7 @@ import type {
   WorkerHeartbeatContext,
   WorkerResult,
 } from "../../src/worker/index.ts";
-import { createWorker } from "../../src/worker/index.ts";
+import { createProtocolTestWorker as createWorker } from "./protocol_worker.ts";
 import {
   acceptTestHandshake,
   nextControl,
@@ -93,7 +93,7 @@ Deno.test("worker propagates heartbeat metadata from an immutable status context
       };
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -167,7 +167,7 @@ Deno.test("worker heartbeat metadata callback is single-flight and stop aborts a
       }
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -221,7 +221,7 @@ Deno.test("hung heartbeat metadata does not block remote shutdown", async () => 
       await hungGate.promise;
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -259,7 +259,7 @@ Deno.test("worker fail-closes a session when heartbeat metadata creation throws"
       throw new Error("status source failed");
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -292,7 +292,7 @@ Deno.test("worker fail-closes a session when heartbeat metadata is not valid JSO
       load: Number.NaN,
     }),
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -324,7 +324,7 @@ Deno.test("worker fail-closes a session when heartbeat metadata exceeds the cont
       status: "x".repeat(WORKER_PROTOCOL_LIMITS.maxControlFrameBytes),
     }),
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();

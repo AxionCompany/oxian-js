@@ -8,16 +8,18 @@ import {
   type WorkerIdentity,
 } from "../../src/protocol/index.ts";
 import {
+  adaptSocketConnection,
   connectWorkerWebSocket,
-  createWebSocketTransport,
-  type WebSocketTransport,
-  type WebSocketTransportMessage,
+  createFrameConnection,
+  createProtocolTransport,
+  type ProtocolTransport,
+  type ProtocolTransportMessage,
 } from "../../src/transport/index.ts";
 
 export type ControlledWorker = Readonly<{
   socket: WebSocket;
-  transport: WebSocketTransport;
-  iterator: AsyncIterator<WebSocketTransportMessage>;
+  transport: ProtocolTransport;
+  iterator: AsyncIterator<ProtocolTransportMessage>;
   welcome: WelcomeFrame;
   close(reason?: string): Promise<void>;
 }>;
@@ -48,7 +50,7 @@ function withTimeout<T>(
 export async function nextControlledMessage(
   worker: Pick<ControlledWorker, "iterator">,
   timeoutMs = 2_000,
-): Promise<WebSocketTransportMessage> {
+): Promise<ProtocolTransportMessage> {
   const next = await withTimeout(
     worker.iterator.next(),
     timeoutMs,
@@ -124,8 +126,11 @@ export async function connectControlledWorker(
     allowInsecureLoopback: true,
     timeoutMs,
   });
-  const transport = await createWebSocketTransport({
-    socket,
+  const connection = await createFrameConnection(
+    adaptSocketConnection(socket),
+  );
+  const transport = await createProtocolTransport({
+    connection,
     role: "worker",
   });
   const iterator = transport.messages()[Symbol.asyncIterator]();

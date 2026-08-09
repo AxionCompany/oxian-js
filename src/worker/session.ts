@@ -20,10 +20,10 @@ import {
   type WorkStreamTerminal,
 } from "../protocol/index.ts";
 import {
-  connectWorkerWebSocket,
-  createWebSocketTransport,
-  type WebSocketTransport,
-  type WebSocketTransportMessage,
+  createProtocolTransport,
+  type FrameConnection,
+  type ProtocolTransport,
+  type ProtocolTransportMessage,
 } from "../transport/index.ts";
 import { createBoundedExponentialBackoff } from "./backoff.ts";
 import {
@@ -62,7 +62,6 @@ import {
   terminalIsAbort,
 } from "./internal/work.ts";
 import type {
-  WebSocketWorkerOptions,
   Worker,
   WorkerBody,
   WorkerHeartbeatContext,
@@ -72,6 +71,7 @@ import type {
   WorkerState,
   WorkerWorkContext,
 } from "./types.ts";
+import type { WorkerSessionOptions } from "./internal/session-options.ts";
 
 const DEFAULT_CAPACITY = 1;
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 15_000;
@@ -134,14 +134,20 @@ type PendingHeartbeatMetadata = Readonly<{
 }>;
 
 /**
- * Creates a reconnecting WebSocket-backed worker. Construction is side-effect free;
- * `run()` owns the connection until stop, shutdown, or re-enrollment.
+ * Creates the canonical reconnecting protocol Worker over an injected physical
+ * connection. Construction starts the lifecycle immediately.
  */
-export function createWebSocketWorker(
-  options: WebSocketWorkerOptions,
+export function createWorkerSession(
+  options: WorkerSessionOptions,
 ): Worker {
-  if (options.transport?.type !== "websocket") {
-    throw new TypeError('transport.type must be "websocket"');
+  if (
+    options.transport?.type !== "websocket" &&
+    options.transport?.type !== "in-process"
+  ) {
+    throw new TypeError('transport.type must be "in-process" or "websocket"');
+  }
+  if (typeof options.transport.connect !== "function") {
+    throw new TypeError("transport connection must be a function");
   }
   const connection = options.transport;
   const identity = Object.freeze(createWorkerIdentity(options.identity));
@@ -270,13 +276,6 @@ export function createWebSocketWorker(
   ) {
     throw new TypeError("onReenrollmentRequired must be a function");
   }
-  if (
-    connection.socket !== undefined &&
-    typeof connection.socket !== "function"
-  ) {
-    throw new TypeError("transport.socket must be a function");
-  }
-
   const defaultReconnectDelay = createBoundedExponentialBackoff({
     initialDelayMs: Math.min(250, maxReconnectDelayMs),
     maxDelayMs: Math.min(30_000, maxReconnectDelayMs),
@@ -337,7 +336,7 @@ export function createWebSocketWorker(
     const credentialState = credentials.current();
     return Object.freeze({
       state,
-      transport: "websocket" as const,
+      transport: connection.type,
       identity,
       credentialKind: credentialState.credential.kind,
       handshakeId: credentialState.handshakeId,
@@ -353,7 +352,14 @@ export function createWebSocketWorker(
 
   const setState = (next: WorkerState): void => {
     state = next;
-    stateNotifications.publish(snapshot());
+    const value = snapshot();
+    stateNotifications.publish(value);
+    if ((eventController?.desiredSize ?? 0) > 0) {
+      eventController?.enqueue(Object.freeze({
+        type: "state" as const,
+        snapshot: value,
+      }));
+    }
   };
 
   const settleSerializedWorkBeforeConnect = async (): Promise<void> => {
@@ -409,8 +415,8 @@ export function createWebSocketWorker(
     const credentialAtConnect = credentials.current();
     const credentialAtHello = credentialAtConnect.credential;
     const handshakeAtHello = credentialAtConnect.handshakeId;
-    let transport: WebSocketTransport | undefined;
-    let socket: WebSocket | undefined;
+    let transport: ProtocolTransport | undefined;
+    let frameConnection: FrameConnection | undefined;
     let sessionConnectionId: string | undefined;
     let welcomed = false;
     let rotationRequested = false;
@@ -883,6 +889,9 @@ export function createWebSocketWorker(
       void (async () => {
         let returnedBody: WorkerBody | undefined;
         let outputStarted = false;
+        let completionOutcome: "completed" | "cancelled" | "failed" =
+          "completed";
+        let completionError: unknown;
         const cancelUnstartedOutput = (reason: unknown): void => {
           if (
             outputStarted ||
@@ -902,6 +911,18 @@ export function createWebSocketWorker(
           }
         };
         try {
+          await options.lifecycle?.onStart?.(Object.freeze({
+            stage: "start" as const,
+            stageId: `start:${stream.open.streamId}`,
+            callbackAttempt: 1,
+            signal: stream.abortController.signal,
+            identity,
+            connectionId: sessionConnectionId ?? "pending",
+            streamId: stream.open.streamId,
+            workload: stream.open.workload,
+            metadata: stream.open.metadata,
+            work: context,
+          }));
           const normalized = normalizeHandlerResult(await handler(context));
           returnedBody = normalized.body;
           if (returnedBody instanceof ReadableStream) {
@@ -943,6 +964,10 @@ export function createWebSocketWorker(
           }
           await sendLocalTerminal(stream, "end");
         } catch (error) {
+          completionError = error;
+          completionOutcome = stream.abortController.signal.aborted
+            ? "cancelled"
+            : "failed";
           cancelUnstartedOutput(error);
           if (
             stream.abortController.signal.aborted &&
@@ -960,6 +985,26 @@ export function createWebSocketWorker(
           try {
             await stream.outputCancellation;
           } finally {
+            try {
+              await options.lifecycle?.onComplete?.(Object.freeze({
+                stage: "complete" as const,
+                stageId:
+                  `complete:${stream.open.streamId}:${completionOutcome}`,
+                callbackAttempt: 1,
+                signal: stream.abortController.signal,
+                identity,
+                connectionId: sessionConnectionId ?? "pending",
+                streamId: stream.open.streamId,
+                workload: stream.open.workload,
+                metadata: stream.open.metadata,
+                outcome: completionOutcome,
+                ...(completionError === undefined
+                  ? {}
+                  : { error: completionError }),
+              }));
+            } catch {
+              // Completion is an observer and never rewrites the work terminal.
+            }
             reservation?.release();
             if (stream.reservation === reservation) {
               stream.reservation = undefined;
@@ -1068,7 +1113,7 @@ export function createWebSocketWorker(
     }
 
     const handleControl = async (
-      message: Extract<WebSocketTransportMessage, { kind: "control" }>,
+      message: Extract<ProtocolTransportMessage, { kind: "control" }>,
     ): Promise<void> => {
       if (
         stopController.signal.aborted ||
@@ -1107,6 +1152,17 @@ export function createWebSocketWorker(
           }
           stream.reservation = reservation;
           try {
+            await options.lifecycle?.onWorkAccepted?.(Object.freeze({
+              stage: "work_accepted" as const,
+              stageId: `work_accepted:${frame.streamId}`,
+              callbackAttempt: 1,
+              signal: stream.abortController.signal,
+              identity,
+              connectionId: sessionConnectionId ?? "pending",
+              streamId: frame.streamId,
+              workload: frame.workload,
+              metadata: frame.metadata,
+            }));
             await transport?.sendControl(
               createWorkAcceptedFrame({ streamId: frame.streamId }),
             );
@@ -1182,6 +1238,11 @@ export function createWebSocketWorker(
             : "error";
           stream.remoteTerminal = remoteTerminal;
           if (disposition === "deliver") {
+            if (frame.type === "work.cancel") {
+              // A reciprocal Cancel acknowledges the same causal reason.
+              // This keeps local and WebSocket sessions observationally equal.
+              stream.cancelReason = frame.reason;
+            }
             const error = frame.type === "work.cancel"
               ? createAbortError(frame.reason)
               : new Error(frame.message);
@@ -1264,7 +1325,7 @@ export function createWebSocketWorker(
     };
 
     const handleData = (
-      message: Extract<WebSocketTransportMessage, { kind: "data" }>,
+      message: Extract<ProtocolTransportMessage, { kind: "data" }>,
     ): void => {
       if (
         stopController.signal.aborted ||
@@ -1387,30 +1448,22 @@ export function createWebSocketWorker(
 
     try {
       setSessionState("connecting");
-      socket = await connectWorkerWebSocket({
-        url: connection.url,
-        signal: stopController.signal,
-        ...(connection.connectTimeoutMs === undefined
-          ? {}
-          : { timeoutMs: connection.connectTimeoutMs }),
-        ...(connection.allowInsecureLoopback === undefined
-          ? {}
-          : { allowInsecureLoopback: connection.allowInsecureLoopback }),
-        ...(connection.socket === undefined
-          ? {}
-          : { createWebSocket: connection.socket }),
-      });
-      transport = await createWebSocketTransport({
-        socket,
+      frameConnection = await connection.connect(stopController.signal);
+      transport = await createProtocolTransport({
+        connection: frameConnection,
         role: "worker",
         signal: stopController.signal,
-        ...connection.limits,
+        maxInboundMessages: connection.limits?.maxInboundMessages,
+        maxInboundBytes: connection.limits?.maxInboundBytes,
+        maxPendingSendMessages: connection.limits?.maxPendingSendMessages,
+        maxPendingSendBytes: connection.limits?.maxPendingSendBytes,
+        protocol: connection.limits?.protocol,
       });
       transport.closed.then((close) => {
         abortSession(
           createWorkerError(
             "connection_lost",
-            `Worker WebSocket closed (${close.code}: ${close.reason})`,
+            `Worker connection closed (${close.code}: ${close.reason})`,
           ),
         );
       });
@@ -1576,9 +1629,17 @@ export function createWebSocketWorker(
       }
       setSessionState("ready");
       reconnectAttempt = 0;
+      const readySnapshot = snapshot();
+      await options.lifecycle?.onReady?.(Object.freeze({
+        stage: "ready" as const,
+        stageId: `ready:${welcome.connectionId}`,
+        callbackAttempt: 1,
+        signal: sessionAbortController.signal,
+        snapshot: readySnapshot,
+      }));
       if (!everReady) {
         everReady = true;
-        readyDeferred.resolve(snapshot());
+        readyDeferred.resolve(readySnapshot);
       }
       void heartbeat(welcome);
       heartbeatTimer = setInterval(
@@ -1631,7 +1692,7 @@ export function createWebSocketWorker(
         reason: "connection_lost",
         error: createWorkerError(
           "connection_lost",
-          `Worker WebSocket closed (${close.code}: ${close.reason})`,
+          `Worker connection closed (${close.code}: ${close.reason})`,
         ),
       };
     } catch (error) {
@@ -1681,13 +1742,12 @@ export function createWebSocketWorker(
           timeoutMs: 1_000,
         }).catch(() => undefined);
       } else if (
-        socket !== undefined &&
-        socket.readyState !== WebSocket.CLOSED
+        frameConnection !== undefined
       ) {
         try {
-          socket.close(1000, "worker_session_ended");
+          frameConnection.close("worker_session_ended", 1000);
         } catch {
-          // Best effort for a socket that failed before transport creation.
+          // Best effort for a connection that failed before transport creation.
         }
       }
     }
@@ -1836,9 +1896,49 @@ export function createWebSocketWorker(
     }
   };
 
+  let eventController:
+    | ReadableStreamDefaultController<
+      import("../lifecycle/types.ts").WorkerLifecycleEvent
+    >
+    | undefined;
+  const events = new ReadableStream<
+    import("../lifecycle/types.ts").WorkerLifecycleEvent
+  >({
+    start(controller) {
+      eventController = controller;
+    },
+    cancel() {
+      eventController = undefined;
+    },
+  }, new CountQueuingStrategy({ highWaterMark: 64 }));
+  const closed = run();
+  closed.then(
+    (result) => {
+      if ((eventController?.desiredSize ?? 0) > 0) {
+        eventController?.enqueue(Object.freeze({
+          type: "closed" as const,
+          reason: result.reason,
+        }));
+      }
+      eventController?.close();
+      eventController = undefined;
+    },
+    (error) => {
+      if ((eventController?.desiredSize ?? 0) > 0) {
+        eventController?.enqueue(Object.freeze({
+          type: "closed" as const,
+          reason: error,
+        }));
+      }
+      eventController?.close();
+      eventController = undefined;
+    },
+  );
+
   return Object.freeze({
-    run,
-    whenReady: () => readyDeferred.promise,
+    ready: readyDeferred.promise,
+    closed,
+    events,
     stop,
     snapshot,
   });

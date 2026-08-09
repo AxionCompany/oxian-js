@@ -6,14 +6,17 @@ import {
 } from "@std/assert";
 import { join } from "@std/path";
 import { serve } from "../../src/adapters/deno/index.ts";
-import { createHypervisor } from "../../src/hypervisor/index.ts";
+import {
+  createProtocolTestHypervisor as createHypervisor,
+  TEST_WORKER_PATH,
+} from "../hypervisor/protocol_hypervisor.ts";
 import { createHttpGateway, HTTP_WORKLOAD } from "../../src/http/index.ts";
 import { loadWorkerManifest } from "../../src/local/worker_manifest.ts";
 import { createManifestWorkerRuntime } from "../../src/local/worker_runtime.ts";
 import type { ManifestWorkerRuntime } from "../../src/local/types.ts";
 import {
-  createInMemoryRegistrationAuthority,
-  createInMemoryWorkerRepository,
+  createEphemeralCredentialLifecycle,
+  createEphemeralWorkerStore,
   createWorkerDefinition,
 } from "../../src/supervisor/index.ts";
 
@@ -67,7 +70,7 @@ Deno.test({
   },
   async fn() {
     const root = await Deno.makeTempDir();
-    const repository = createInMemoryWorkerRepository();
+    const repository = createEphemeralWorkerStore();
     await repository.define(createWorkerDefinition({
       workerId: "manifest-worker-live",
       providerId: "externally-attached",
@@ -76,11 +79,11 @@ Deno.test({
     }));
     const identity = (await repository.activate("manifest-worker-live")).attempt
       .identity;
-    const authority = createInMemoryRegistrationAuthority();
+    const authority = createEphemeralCredentialLifecycle();
     const registration = await authority.issueRegistration(identity);
     const hypervisor = createHypervisor({
-      admission: { type: "registered", authority, repository },
-      persistAcceptance: () => Promise.resolve(),
+      control: { authority, repository },
+      commitAcceptedWork: () => Promise.resolve(),
       config: {
         heartbeatIntervalMs: 20,
         leaseTimeoutMs: 500,
@@ -148,7 +151,7 @@ export default defineApplicationFactory(({ router, basePath }) =>
 `,
       );
       const gatewayUrl = new URL(
-        hypervisor.config.workerPath,
+        TEST_WORKER_PATH,
         listener.url,
       );
       gatewayUrl.protocol = "ws:";

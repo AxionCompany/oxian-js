@@ -1,8 +1,8 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import {
-  createInMemoryRegistrationAuthority,
-  createRegistrationAuthority,
-} from "../../src/supervisor/registration.ts";
+  createCredentialLifecycle,
+  createEphemeralCredentialLifecycle,
+} from "../../src/supervisor/credentials.ts";
 import type { SupervisorError } from "../../src/supervisor/types.ts";
 
 const IDENTITY = {
@@ -17,7 +17,7 @@ function capabilityFactory() {
 }
 
 Deno.test("registration exchange replays only the exact lost-welcome handshake", async () => {
-  const authority = createInMemoryRegistrationAuthority({
+  const authority = createEphemeralCredentialLifecycle({
     clock: () => 100,
     createCapability: capabilityFactory(),
   });
@@ -78,7 +78,7 @@ Deno.test("registration exchange replays only the exact lost-welcome handshake",
 });
 
 Deno.test("concurrent exact handshake exchanges return one stable resume credential", async () => {
-  const authority = createInMemoryRegistrationAuthority({
+  const authority = createEphemeralCredentialLifecycle({
     clock: () => 100,
     createCapability: capabilityFactory(),
   });
@@ -108,7 +108,7 @@ Deno.test("concurrent exact handshake exchanges return one stable resume credent
 
 Deno.test("registration authority expires and revokes exact attempt credentials", async () => {
   let nowMs = 10;
-  const authority = createInMemoryRegistrationAuthority({
+  const authority = createEphemeralCredentialLifecycle({
     clock: () => nowMs,
     createCapability: capabilityFactory(),
     registrationTtlMs: 5,
@@ -138,7 +138,7 @@ Deno.test("registration authority expires and revokes exact attempt credentials"
 });
 
 Deno.test("pluggable registration authority cannot substitute identities or credential kinds", async () => {
-  const authority = createRegistrationAuthority({
+  const authority = createCredentialLifecycle({
     issueRegistration() {
       return {
         identity: { ...IDENTITY, attemptId: "attempt-other" },
@@ -189,7 +189,7 @@ Deno.test("pluggable registration authority cannot substitute identities or cred
 
 Deno.test("handshake replay is bounded and revocation removes a minted replay", async () => {
   let nowMs = 100;
-  const authority = createInMemoryRegistrationAuthority({
+  const authority = createEphemeralCredentialLifecycle({
     clock: () => nowMs,
     createCapability: capabilityFactory(),
     handshakeReplayTtlMs: 5,
@@ -236,7 +236,7 @@ Deno.test("handshake replay is bounded and revocation removes a minted replay", 
 
 Deno.test("authority namespace and mint sequence prevent suffix reuse", async () => {
   let nowMs = 100;
-  const authority = createInMemoryRegistrationAuthority({
+  const authority = createEphemeralCredentialLifecycle({
     clock: () => nowMs,
     createCapability: () => "repeated-capability",
     handshakeReplayTtlMs: 5,
@@ -261,7 +261,7 @@ Deno.test("authority namespace and mint sequence prevent suffix reuse", async ()
 });
 
 Deno.test("resume mint cannot reuse a repeated generator suffix", async () => {
-  const authority = createInMemoryRegistrationAuthority({
+  const authority = createEphemeralCredentialLifecycle({
     clock: () => 100,
     createCapability: () => "same-suffix",
   });
@@ -290,7 +290,7 @@ Deno.test("resume mint cannot reuse a repeated generator suffix", async () => {
 Deno.test("failed resume mint leaves current grant and predecessor replay intact", async () => {
   let calls = 0;
   let failMint = false;
-  const authority = createInMemoryRegistrationAuthority({
+  const authority = createEphemeralCredentialLifecycle({
     clock: () => 100,
     createCapability: () => {
       calls++;

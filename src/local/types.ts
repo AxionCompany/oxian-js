@@ -115,7 +115,7 @@ export type ManifestWorkerRuntimeRunning = Readonly<{
   router: FileRouter<unknown>;
   application: Application<unknown>;
   worker: Worker;
-  workerRun: Promise<WorkerResult>;
+  workerClosed: Promise<WorkerResult>;
 }>;
 
 export type ManifestWorkerRuntime = Readonly<{

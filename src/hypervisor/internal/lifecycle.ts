@@ -7,8 +7,8 @@ import type { HypervisorConfig } from "../config.ts";
 import type {
   HypervisorDisconnectReason,
   HypervisorScheduler,
-  HypervisorSessionLifecycle,
 } from "../types.ts";
+import type { HypervisorLifecycleCallbacks } from "../../lifecycle/index.ts";
 import type { AdmissionController } from "./admission.ts";
 import type { ConnectionDirectory } from "./directory.ts";
 import type { CloseRecord, ConnectionRecord } from "./model.ts";
@@ -48,7 +48,7 @@ export function createConnectionLifecycleController(
     dispatcher: WorkDispatcher;
     directory: ConnectionDirectory;
     admission: AdmissionController;
-    sessionLifecycle?: HypervisorSessionLifecycle;
+    callbacks: HypervisorLifecycleCallbacks;
     finishPending: WorkStreamController["finishPending"];
   }>,
 ): ConnectionLifecycleController {
@@ -124,11 +124,16 @@ export function createConnectionLifecycleController(
         record.fence !== undefined &&
         record.definition !== undefined &&
         disconnectPhase !== undefined &&
-        options.sessionLifecycle !== undefined
+        options.callbacks.onDisconnect !== undefined
       ) {
         try {
-          const observed: unknown = options.sessionLifecycle.onDisconnect(
+          const observed: unknown = options.callbacks.onDisconnect(
             Object.freeze({
+              stage: "disconnect" as const,
+              stageId:
+                `disconnect:${record.fence.connectionId}:${record.fence.sessionGeneration}`,
+              callbackAttempt: 1,
+              signal: record.abort.signal,
               fence: record.fence,
               definition: record.definition,
               phase: disconnectPhase,
@@ -166,14 +171,17 @@ export function createConnectionLifecycleController(
   ) => {
     record.disconnectReason ??= disconnectReason;
     const transport = record.transport;
-    if (
-      record.connection?.state === "connecting" ||
-      record.connection?.state === "open"
-    ) {
+    if (record.connection !== undefined) {
       try {
-        record.connection.close(code, wireReason);
+        record.connection.close(wireReason, code);
       } catch {
         // The cleanup path below remains authoritative.
+      }
+    } else if (record.socket !== undefined) {
+      try {
+        record.socket.close(code, wireReason);
+      } catch {
+        // Frame normalization may not have completed yet.
       }
     }
     // Cleanup fences and aborts in this turn before waiting for the handshake.
@@ -190,7 +198,7 @@ export function createConnectionLifecycleController(
   ) => {
     if (
       record.transport !== undefined &&
-      record.connection?.state === "open"
+      record.connection !== undefined
     ) {
       const frame: ControlFrame = {
         protocol: WORKER_PROTOCOL,

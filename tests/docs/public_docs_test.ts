@@ -33,7 +33,6 @@ const API_REFERENCE_MODULES = Object.freeze([
   "../../docs/api/protocol.md",
   "../../docs/api/providers.md",
   "../../docs/api/router.md",
-  "../../docs/api/supervisor.md",
   "../../docs/api/transport.md",
   "../../docs/api/work.md",
   "../../docs/api/worker.md",
@@ -52,6 +51,7 @@ const PUBLIC_DOCUMENTS = Object.freeze([
   "../../docs/api-reference.md",
   ...API_REFERENCE_MODULES,
   "../../docs/migration-0.20.md",
+  "../../docs/migration-0.21.md",
   "../../docs/worker-protocol-v1.md",
 ]);
 
@@ -256,11 +256,7 @@ Deno.test("worker documentation makes ReadyAck and durable replay authoritative"
     protocol.includes("durably commits and publishes the Ready transition"),
   );
   assert(protocol.includes("`ready_ack` is authoritative"));
-  assert(
-    /Only after `ready_ack`\s+does `worker\.whenReady\(\)` resolve/.test(
-      workers,
-    ),
-  );
+  assert(/Only after `ready_ack`\s+does `worker\.ready` resolve/.test(workers));
   assert(
     workers.includes("attemptId: crypto.randomUUID()") === false ||
       workers.indexOf("attemptId: crypto.randomUUID()") <

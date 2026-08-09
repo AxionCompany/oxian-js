@@ -18,7 +18,7 @@ import {
   createLocalRuntime,
   createManifestWorkerRuntime,
   loadWorkerManifest,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.7/local";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.1/local";
 ```
 
 Constructing either runtime is side-effect free. `start()` owns imports,
@@ -345,7 +345,7 @@ type ManifestWorkerRuntimeRunning = Readonly<{
   router: FileRouter<unknown>;
   application: Application<unknown>;
   worker: Worker;
-  workerRun: Promise<WorkerResult>;
+  workerClosed: Promise<WorkerResult>;
 }>;
 
 type ManifestWorkerRuntime = Readonly<{
