@@ -15,7 +15,7 @@ Hypervisor and Worker. Start locally so there is no network setup:
 import {
   createHypervisor,
   createWorker,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.4";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.5";
 
 const transport = {
   type: "in-process",

@@ -239,6 +239,7 @@ export function createLocalRuntime(
           withAvailabilityBoundary(gateway),
           options.config.gateway.edge,
           mode,
+          options.config.application.basePath,
         );
         const websocketPath = "/_oxian/workers/connect";
         const localTransport = Object.freeze({

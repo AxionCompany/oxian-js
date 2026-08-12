@@ -9,6 +9,7 @@ async function withStaticTree(
   const outside = `${temporary}/outside`;
   await Deno.mkdir(`${root}/docs`, { recursive: true });
   await Deno.mkdir(outside, { recursive: true });
+  await Deno.writeTextFile(`${root}/index.html`, "<h1>app shell</h1>");
   await Deno.writeTextFile(`${root}/hello.txt`, "hello static");
   await Deno.writeTextFile(`${root}/docs/index.html`, "<h1>docs</h1>");
   await Deno.writeTextFile(`${outside}/secret.txt`, "not public");
@@ -262,6 +263,114 @@ Deno.test("static adapter falls through misses and closes cancelled files", asyn
   });
 });
 
+Deno.test("static adapter falls through routes before an HTML navigation fallback", async () => {
+  await withStaticTree(async (root) => {
+    const handled: string[] = [];
+    const handler = createStaticAdapter({
+      root,
+      prefix: "/",
+      fallback: "index.html",
+    })((request) => {
+      const pathname = new URL(request.url).pathname;
+      handled.push(pathname);
+      return pathname === "/regular-route"
+        ? new Response("regular route")
+        : new Response("application miss", { status: 404 });
+    });
+
+    const exact = await handler(
+      new Request("https://example.test/hello.txt"),
+    );
+    assertEquals(await exact.text(), "hello static");
+    assertEquals(handled, []);
+
+    const regular = await handler(
+      new Request("https://example.test/regular-route", {
+        headers: {
+          accept: "text/html",
+          "sec-fetch-dest": "document",
+          "sec-fetch-mode": "navigate",
+        },
+      }),
+    );
+    assertEquals(await regular.text(), "regular route");
+
+    const navigation = await handler(
+      new Request("https://example.test/auth/google/callback?code=test", {
+        headers: {
+          accept: "text/html,application/xhtml+xml",
+          "sec-fetch-dest": "document",
+          "sec-fetch-mode": "navigate",
+        },
+      }),
+    );
+    assertEquals(navigation.status, 200);
+    assertEquals(
+      navigation.headers.get("content-type"),
+      "text/html; charset=utf-8",
+    );
+    assertEquals(await navigation.text(), "<h1>app shell</h1>");
+
+    const head = await handler(
+      new Request("https://example.test/client-route", {
+        method: "HEAD",
+        headers: {
+          accept: "text/html",
+          "sec-fetch-mode": "navigate",
+        },
+      }),
+    );
+    assertEquals(head.status, 200);
+    assertEquals(head.body, null);
+    assertEquals(head.headers.get("content-length"), "18");
+
+    const missingAsset = await handler(
+      new Request("https://example.test/missing.js", {
+        headers: {
+          accept: "*/*",
+          "sec-fetch-dest": "script",
+          "sec-fetch-mode": "no-cors",
+        },
+      }),
+    );
+    assertEquals(missingAsset.status, 404);
+    assertEquals(await missingAsset.text(), "application miss");
+
+    const post = await handler(
+      new Request("https://example.test/client-route", {
+        method: "POST",
+        headers: { accept: "text/html" },
+      }),
+    );
+    assertEquals(post.status, 404);
+    assertEquals(await post.text(), "application miss");
+  });
+});
+
+Deno.test("static navigation fallback never masks malformed or traversal paths", async () => {
+  await withStaticTree(async (root) => {
+    const handler = createStaticAdapter({
+      root,
+      prefix: "/",
+      fallback: "index.html",
+    })(() => new Response("application miss", { status: 404 }));
+    const navigationHeaders = {
+      accept: "text/html",
+      "sec-fetch-mode": "navigate",
+    };
+
+    for (const path of ["/%E0%A4%A", "/%2e%2e%2foutside%2fsecret.txt"]) {
+      const response = await handler(
+        new Request(`https://example.test${path}`, {
+          headers: navigationHeaders,
+        }),
+      );
+      assertEquals(response.status, 404);
+      assertEquals(await response.text(), "application miss");
+    }
+  });
+});
+
 Deno.test("static adapter validates its root, prefix, and index", async () => {
   await withStaticTree((root) => {
     assertThrows(
@@ -271,6 +380,11 @@ Deno.test("static adapter validates its root, prefix, and index", async () => {
     );
     assertThrows(
       () => createStaticAdapter({ root, index: "../secret" }),
+      TypeError,
+      "traversal",
+    );
+    assertThrows(
+      () => createStaticAdapter({ root, fallback: "../secret" }),
       TypeError,
       "traversal",
     );

@@ -43,6 +43,11 @@ export type StaticAdapterOptions = Readonly<{
   root: string | URL;
   prefix?: string;
   index?: string | readonly string[] | false;
+  /**
+   * Static file served after an exact-file miss, allowed fallthrough, and a
+   * final 404 for an HTML document navigation. Disabled when omitted.
+   */
+  fallback?: string;
   cacheControl?: string | StaticCacheControl;
   contentType?: StaticContentType;
   /**

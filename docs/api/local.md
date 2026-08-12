@@ -18,7 +18,7 @@ import {
   createLocalRuntime,
   createManifestWorkerRuntime,
   loadWorkerManifest,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.4/local";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.5/local";
 ```
 
 Constructing either runtime is side-effect free. `start()` owns imports,
@@ -153,6 +153,7 @@ function composeConfiguredEdge(
   handler: FetchHandler,
   edge: EdgeConfig | undefined,
   mode: LocalRuntimeMode,
+  applicationBasePath?: string,
 ): FetchHandler;
 ```
 
@@ -160,9 +161,16 @@ The function composes declarative edge adapters without changing the application
 or worker protocol. In incoming request order the wrappers are:
 
 1. CORS, when configured;
-2. static files, when configured;
-3. development proxy, only in `mode: "dev"`; then
-4. the supplied handler.
+2. the most-specific matching mount among the application, static files, and
+   development proxy;
+3. exact static files before an equal-mounted application;
+4. allowed static fallthrough before a configured navigation fallback.
+
+`applicationBasePath` defaults to `/`. A more-specific application mount, such
+as `/api` inside a root static or development-proxy mount, owns its path before
+the parent edge adapter. Matching uses segment boundaries, so `/apix` is not
+owned by `/api`. `createLocalRuntime()` supplies the configured
+`application.basePath` automatically.
 
 Adapter defaults and validation are defined by the `/edge` and `/config`
 subpaths. The returned handler is frozen.

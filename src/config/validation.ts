@@ -52,6 +52,7 @@ const STATIC_KEYS = new Set([
   "root",
   "prefix",
   "index",
+  "fallback",
   "cacheControl",
   "fallthrough",
 ]);
@@ -554,6 +555,15 @@ function normalizeStatic(
       "config.gateway.edge.static.prefix",
     ),
     index,
+    ...(record.fallback === undefined ? {} : {
+      fallback: normalizeRelativePath(
+        expectString(
+          record.fallback,
+          "config.gateway.edge.static.fallback",
+        ),
+        "config.gateway.edge.static.fallback",
+      ),
+    }),
     ...(cacheControl === undefined ? {} : { cacheControl }),
     fallthrough: expectBoolean(
       record.fallthrough,

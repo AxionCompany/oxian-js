@@ -58,6 +58,7 @@ type StaticConfiguration = Readonly<{
   root: string;
   prefix: string;
   index: readonly string[];
+  fallback?: string;
   cacheControl?: string | StaticCacheControl;
   contentType?: StaticAdapterOptions["contentType"];
   fallthrough: boolean;
@@ -397,6 +398,9 @@ function createConfiguration(
     root,
     prefix: normalizePrefix(options.prefix),
     index: normalizeIndex(options.index),
+    ...(options.fallback === undefined ? {} : {
+      fallback: normalizeRelativePath(options.fallback, "static fallback"),
+    }),
     cacheControl: options.cacheControl,
     contentType: options.contentType,
     fallthrough: options.fallthrough ?? true,
@@ -534,14 +538,61 @@ async function serveFile(
   }
 }
 
-function miss(
+function acceptsHtmlNavigation(request: Request): boolean {
+  const mode = request.headers.get("sec-fetch-mode")?.toLowerCase();
+  if (mode !== undefined && mode !== "navigate") return false;
+  const destination = request.headers.get("sec-fetch-dest")?.toLowerCase();
+  if (destination !== undefined && destination !== "document") return false;
+
+  const accept = request.headers.get("accept");
+  if (accept === null) return false;
+  return accept.split(",").some((candidate) => {
+    const [mediaType, ...parameters] = candidate.trim().toLowerCase().split(
+      ";",
+    );
+    if (mediaType !== "text/html" && mediaType !== "application/xhtml+xml") {
+      return false;
+    }
+    return !parameters.some((parameter) => parameter.trim() === "q=0");
+  });
+}
+
+async function navigationFallback(
+  request: Request,
+  config: StaticConfiguration,
+  response: Response,
+): Promise<Response> {
+  if (
+    response.status !== 404 ||
+    config.fallback === undefined ||
+    !acceptsHtmlNavigation(request)
+  ) {
+    return response;
+  }
+  const resolved = await resolveFile(config, config.fallback.split("/"));
+  if (resolved === null) return response;
+  const replacement = await serveFile(request, config, resolved);
+  if (replacement === null) return response;
+  try {
+    await response.body?.cancel("replaced by static navigation fallback");
+  } catch {
+    // The replacement is already independently opened and verified.
+  }
+  return replacement;
+}
+
+async function miss(
   request: Request,
   next: FetchHandler,
-  fallthrough: boolean,
-): Response | Promise<Response> {
-  return fallthrough
+  config: StaticConfiguration,
+  allowFallback = true,
+): Promise<Response> {
+  const response = config.fallthrough
     ? next(request)
     : new Response("Not Found", { status: 404 });
+  return allowFallback
+    ? await navigationFallback(request, config, await response)
+    : await response;
 }
 
 /**
@@ -565,7 +616,7 @@ export function createStaticAdapter(
       const pathname = decodePathname(encodedPathname);
       if (pathname === null) {
         return requestMatchesPrefix(encodedPathname, config.prefix)
-          ? await miss(request, next, config.fallthrough)
+          ? await miss(request, next, config, false)
           : await next(request);
       }
       if (!requestMatchesPrefix(pathname, config.prefix)) {
@@ -573,14 +624,14 @@ export function createStaticAdapter(
       }
       const segments = extractRelativePath(pathname, config.prefix);
       if (segments === null) {
-        return await miss(request, next, config.fallthrough);
+        return await miss(request, next, config, false);
       }
       const resolved = await resolveFile(config, segments);
       if (resolved === null) {
-        return await miss(request, next, config.fallthrough);
+        return await miss(request, next, config);
       }
       const response = await serveFile(request, config, resolved);
-      return response ?? await miss(request, next, config.fallthrough);
+      return response ?? await miss(request, next, config);
     };
   };
 }

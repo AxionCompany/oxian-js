@@ -80,6 +80,7 @@ export type StaticConfigInput = Readonly<{
   root: string;
   prefix?: string;
   index?: string | readonly string[] | false;
+  fallback?: string;
   cacheControl?: string;
   fallthrough?: boolean;
 }>;
@@ -88,6 +89,7 @@ export type StaticConfig = Readonly<{
   root: string;
   prefix: string;
   index: readonly string[];
+  fallback?: string;
   cacheControl?: string;
   fallthrough: boolean;
 }>;

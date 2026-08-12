@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.4/app`
+# `jsr:@oxian/oxian-js@0.21.0-rc.5/app`
 
 [Back to the API reference](../api-reference.md)
 
@@ -13,7 +13,7 @@ import {
   createApplication,
   createServerSentEvents,
   defineApplicationFactory,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.4/app";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.5/app";
 ```
 
 ## Export summary
@@ -61,8 +61,8 @@ supplied `FileRouter` is already a startup snapshot: route modules are not
 loaded by this function or during requests.
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.21.0-rc.4/app";
-import { createFileRouter } from "jsr:@oxian/oxian-js@0.21.0-rc.4/router";
+import { createApplication } from "jsr:@oxian/oxian-js@0.21.0-rc.5/app";
+import { createFileRouter } from "jsr:@oxian/oxian-js@0.21.0-rc.5/router";
 
 const router = await createFileRouter<{ startedAt: number }>({
   root: "./routes",
@@ -311,7 +311,7 @@ Cleanup failure never replaces the boundary validation error.
 import {
   createApplication,
   defineApplicationFactory,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.4/app";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.5/app";
 
 export default defineApplicationFactory(
   ({ router, basePath }) =>
@@ -438,7 +438,7 @@ Writes are serialized and honor stream backpressure:
 `options.retry` queues an initial retry field before later writes.
 
 ```ts
-import { createServerSentEvents } from "jsr:@oxian/oxian-js@0.21.0-rc.4/app";
+import { createServerSentEvents } from "jsr:@oxian/oxian-js@0.21.0-rc.5/app";
 
 const events = createServerSentEvents({
   signal: request.signal,

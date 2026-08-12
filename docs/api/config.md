@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.4/config`
+# `jsr:@oxian/oxian-js@0.21.0-rc.5/config`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   DEFAULT_OXIAN_CONFIG,
   defineConfig,
   loadConfig,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.4/config";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.5/config";
 ```
 
 Worker manifests, credentials, provider launch specifications, secrets, logging
@@ -53,7 +53,7 @@ function defineConfig(input: OxianConfigInput): OxianConfig;
 objects and arrays are new and recursively frozen.
 
 ```ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.4/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.5/config";
 
 export default defineConfig({
   application: {
@@ -274,6 +274,7 @@ type StaticConfigInput = Readonly<{
   root: string;
   prefix?: string;
   index?: string | readonly string[] | false;
+  fallback?: string;
   cacheControl?: string;
   fallthrough?: boolean;
 }>;
@@ -282,6 +283,7 @@ type StaticConfig = Readonly<{
   root: string;
   prefix: string;
   index: readonly string[];
+  fallback?: string;
   cacheControl?: string;
   fallthrough: boolean;
 }>;
@@ -296,12 +298,17 @@ created.
 | -------------- | ---------------- | ------------------------------------------------------- |
 | `prefix`       | `"/"`            | Absolute URL path; trailing slashes removed.            |
 | `index`        | `["index.html"]` | String becomes one item; `false` becomes `[]`; deduped. |
+| `fallback`     | absent           | Optional navigation fallback file under `root`.         |
 | `cacheControl` | absent           | Non-empty string without CR or LF.                      |
 | `fallthrough`  | `true`           | Must be boolean.                                        |
 
-Index entries must be non-empty relative paths with no backslashes, empty
-segments, `.` segments, or `..` segments. Prefixes must not contain queries,
-fragments, backslashes, null bytes, or traversal segments.
+Index and fallback entries must be non-empty relative paths with no backslashes,
+empty segments, `.` segments, or `..` segments. Prefixes must not contain
+queries, fragments, backslashes, null bytes, or traversal segments.
+
+The local runtime reserves `application.basePath` before parent static and
+development-proxy mounts. A configured fallback therefore does not mask misses
+inside a more-specific application mount such as `/api`.
 
 ### Development proxy
 
@@ -405,7 +412,7 @@ The module must have exactly one runtime export:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.4/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.5/config";
 
 export default defineConfig({
   application: { routesRoot: "./routes" },
@@ -416,7 +423,7 @@ The named form is equivalent:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.4/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.5/config";
 
 export const config = defineConfig({
   application: { routesRoot: "./routes" },

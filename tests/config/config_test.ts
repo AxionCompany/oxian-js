@@ -92,6 +92,7 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
           root: "./public",
           prefix: "/assets/",
           index: ["index.html", "index.html", "home.html"],
+          fallback: "app/index.html",
           cacheControl: "public, max-age=60",
           fallthrough: false,
         },
@@ -129,6 +130,7 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     root: "./public",
     prefix: "/assets",
     index: ["index.html", "home.html"],
+    fallback: "app/index.html",
     cacheControl: "public, max-age=60",
     fallthrough: false,
   });
@@ -185,6 +187,13 @@ Deno.test("v0.20 config rejects unknown keys at every owned boundary", () => {
         gateway: { edge: { static: { root: ".", contentType: () => "" } } },
       }),
     'config.gateway.edge.static contains unknown key "contentType"',
+  );
+  assertTypeErrorMessage(
+    () =>
+      defineUnknown({
+        gateway: { edge: { static: { root: ".", fallback: "../secret" } } },
+      }),
+    "config.gateway.edge.static.fallback must not contain empty or traversal segments",
   );
   assertTypeErrorMessage(
     () =>
