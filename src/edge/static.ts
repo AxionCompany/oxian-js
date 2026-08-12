@@ -14,6 +14,14 @@ import type {
 } from "./types.ts";
 
 const READ_CHUNK_BYTES = 64 * 1024;
+const HTML_DOCUMENT_DESTINATIONS = new Set([
+  "",
+  "document",
+  "empty",
+  "fencedframe",
+  "frame",
+  "iframe",
+]);
 const MIME_TYPES: Readonly<Record<string, string>> = Object.freeze({
   ".avif": "image/avif",
   ".bin": "application/octet-stream",
@@ -539,10 +547,16 @@ async function serveFile(
 }
 
 function acceptsHtmlNavigation(request: Request): boolean {
-  const mode = request.headers.get("sec-fetch-mode")?.toLowerCase();
-  if (mode !== undefined && mode !== "navigate") return false;
+  const pathname = decodePathname(new URL(request.url).pathname);
+  if (pathname === null || extname(pathname) !== "") return false;
+
   const destination = request.headers.get("sec-fetch-dest")?.toLowerCase();
-  if (destination !== undefined && destination !== "document") return false;
+  if (
+    destination !== undefined &&
+    !HTML_DOCUMENT_DESTINATIONS.has(destination)
+  ) {
+    return false;
+  }
 
   const accept = request.headers.get("accept");
   if (accept === null) return false;

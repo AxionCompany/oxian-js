@@ -18,7 +18,7 @@ import {
   createLocalRuntime,
   createManifestWorkerRuntime,
   loadWorkerManifest,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.5/local";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.6/local";
 ```
 
 Constructing either runtime is side-effect free. `start()` owns imports,
@@ -171,6 +171,10 @@ as `/api` inside a root static or development-proxy mount, owns its path before
 the parent edge adapter. Matching uses segment boundaries, so `/apix` is not
 owned by `/api`. `createLocalRuntime()` supplies the configured
 `application.basePath` automatically.
+
+The static fallback accepts extensionless HTML requests even when a browser or
+service worker reports `cors`/`empty` Fetch Metadata. Explicit asset
+destinations and paths with file extensions remain misses.
 
 Adapter defaults and validation are defined by the `/edge` and `/config`
 subpaths. The returned handler is frozen.

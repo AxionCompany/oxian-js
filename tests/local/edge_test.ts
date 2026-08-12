@@ -65,6 +65,21 @@ Deno.test("configured edge gives a more-specific application mount priority over
     assertEquals(callback.status, 200);
     assertEquals(await callback.text(), "<h1>compass shell</h1>");
 
+    const serviceWorkerCallback = await handler(
+      new Request("https://example.test/auth/google/callback", {
+        headers: {
+          accept: "text/html,application/xhtml+xml",
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+        },
+      }),
+    );
+    assertEquals(serviceWorkerCallback.status, 200);
+    assertEquals(
+      await serviceWorkerCallback.text(),
+      "<h1>compass shell</h1>",
+    );
+
     const asset = await handler(
       new Request("https://example.test/asset.js"),
     );

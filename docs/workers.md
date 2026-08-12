@@ -25,7 +25,7 @@ Use one visible declaration for both roles:
 import {
   createHypervisor,
   createWorker,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.5";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.6";
 
 const transport = {
   type: "in-process",
@@ -96,7 +96,7 @@ shutdown state machines.
 Only the physical transport and lifecycle integrations change:
 
 ```ts
-import { createWorker } from "jsr:@oxian/oxian-js@0.21.0-rc.5/worker";
+import { createWorker } from "jsr:@oxian/oxian-js@0.21.0-rc.6/worker";
 
 const worker = createWorker(
   {
@@ -195,7 +195,7 @@ buffered amount, and protocol admission. A `WorkerWebSocketFactory` and
 `WorkerWebSocketFactoryContext` may create an authenticated native socket:
 
 ```ts
-import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.21.0-rc.5/transport";
+import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.21.0-rc.6/transport";
 
 const socket: WorkerWebSocketFactory = async ({ url, protocol, signal }) => {
   const token = await identityToken(url, signal);

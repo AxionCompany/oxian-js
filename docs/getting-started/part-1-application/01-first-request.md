@@ -26,7 +26,7 @@ Create the Logwash project:
 ```bash
 mkdir logwash
 cd logwash
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.5/bin init
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.6/bin init
 ```
 
 `init` creates this small project:
@@ -76,7 +76,7 @@ There are no framework-specific request or response objects here. `Request`,
 Start the development server:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.5/bin dev
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.6/bin dev
 ```
 
 Leave that terminal running. It should report:

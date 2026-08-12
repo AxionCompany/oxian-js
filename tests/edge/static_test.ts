@@ -311,6 +311,21 @@ Deno.test("static adapter falls through routes before an HTML navigation fallbac
     );
     assertEquals(await navigation.text(), "<h1>app shell</h1>");
 
+    const serviceWorkerNavigation = await handler(
+      new Request("https://example.test/auth/session-transfer", {
+        headers: {
+          accept: "text/html,application/xhtml+xml",
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+        },
+      }),
+    );
+    assertEquals(serviceWorkerNavigation.status, 200);
+    assertEquals(
+      await serviceWorkerNavigation.text(),
+      "<h1>app shell</h1>",
+    );
+
     const head = await handler(
       new Request("https://example.test/client-route", {
         method: "HEAD",
@@ -335,6 +350,30 @@ Deno.test("static adapter falls through routes before an HTML navigation fallbac
     );
     assertEquals(missingAsset.status, 404);
     assertEquals(await missingAsset.text(), "application miss");
+
+    const ambiguousAsset = await handler(
+      new Request("https://example.test/missing.js", {
+        headers: {
+          accept: "text/html,application/xhtml+xml",
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+        },
+      }),
+    );
+    assertEquals(ambiguousAsset.status, 404);
+    assertEquals(await ambiguousAsset.text(), "application miss");
+
+    const extensionlessScript = await handler(
+      new Request("https://example.test/missing-bundle", {
+        headers: {
+          accept: "text/html,application/xhtml+xml",
+          "sec-fetch-dest": "script",
+          "sec-fetch-mode": "no-cors",
+        },
+      }),
+    );
+    assertEquals(extensionlessScript.status, 404);
+    assertEquals(await extensionlessScript.text(), "application miss");
 
     const post = await handler(
       new Request("https://example.test/client-route", {

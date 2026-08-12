@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.5/edge`
+# `jsr:@oxian/oxian-js@0.21.0-rc.6/edge`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   createCorsAdapter,
   createDevProxyAdapter,
   createStaticAdapter,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.5/edge";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.6/edge";
 ```
 
 ## Export summary
@@ -59,7 +59,7 @@ import {
   createCorsAdapter,
   createStaticAdapter,
   type FetchHandler,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.5/edge";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.6/edge";
 
 const application: FetchHandler = (request) =>
   new Response(`application: ${new URL(request.url).pathname}`);
@@ -165,7 +165,7 @@ CORS grants. Preflight responses merge `Origin`,
 `Vary` as applicable.
 
 ```ts
-import { createCorsAdapter } from "jsr:@oxian/oxian-js@0.21.0-rc.5/edge";
+import { createCorsAdapter } from "jsr:@oxian/oxian-js@0.21.0-rc.6/edge";
 
 const withCors = createCorsAdapter({
   origins: async (origin, request) =>
@@ -256,17 +256,20 @@ At request time:
 
 When `fallback` is configured, an exact-file miss delegates first when
 `fallthrough` is true. If the resulting response is still 404, Oxian serves the
-fallback only for a `GET` or `HEAD` request accepting HTML whose Fetch Metadata
-headers, when present, identify a document navigation. Asset requests,
-non-navigation fetches, non-404 application responses, malformed paths, and
-unsafe paths never receive the fallback.
+fallback only for a `GET` or `HEAD` request accepting HTML at an extensionless
+path. Fetch Metadata is treated as advisory because browsers and service workers
+do not preserve it consistently: an explicit asset destination still rejects the
+fallback, while an absent or `empty` destination may receive it. Asset paths
+with file extensions, non-404 application responses, malformed paths, and unsafe
+paths never receive the fallback. Put API applications at a more-specific mount
+so they retain priority over a parent SPA fallback.
 
 Malformed encoding, backslashes, null bytes, traversal, files outside the
 configured root, missing files, and unsafe filesystem targets are treated as
 inside-prefix misses.
 
 ```ts
-import { createStaticAdapter } from "jsr:@oxian/oxian-js@0.21.0-rc.5/edge";
+import { createStaticAdapter } from "jsr:@oxian/oxian-js@0.21.0-rc.6/edge";
 
 const withAssets = createStaticAdapter({
   root: new URL("../public/", import.meta.url),
@@ -376,7 +379,7 @@ The adapter:
 - removes response hop-by-hop and connection-specific headers.
 
 ```ts
-import { createDevProxyAdapter } from "jsr:@oxian/oxian-js@0.21.0-rc.5/edge";
+import { createDevProxyAdapter } from "jsr:@oxian/oxian-js@0.21.0-rc.6/edge";
 
 const withVite = createDevProxyAdapter({
   upstream: "http://127.0.0.1:5173",
