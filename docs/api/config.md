@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.3/config`
+# `jsr:@oxian/oxian-js@0.21.0-rc.4/config`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   DEFAULT_OXIAN_CONFIG,
   defineConfig,
   loadConfig,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.3/config";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.4/config";
 ```
 
 Worker manifests, credentials, provider launch specifications, secrets, logging
@@ -53,7 +53,7 @@ function defineConfig(input: OxianConfigInput): OxianConfig;
 objects and arrays are new and recursively frozen.
 
 ```ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.3/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.4/config";
 
 export default defineConfig({
   application: {
@@ -168,6 +168,7 @@ permits ephemeral binding.
 type GatewayConfigInput = Readonly<{
   listener?: HttpListenerConfigInput;
   workerTransport?: LocalWorkerTransport;
+  workerCapacity?: number;
   hypervisor?: Partial<HypervisorConfig>;
   edge?: EdgeConfigInput;
 }>;
@@ -175,6 +176,7 @@ type GatewayConfigInput = Readonly<{
 type GatewayConfig = Readonly<{
   listener: HttpListenerConfig;
   workerTransport: LocalWorkerTransport;
+  workerCapacity: number;
   hypervisor: HypervisorConfig;
   edge?: EdgeConfig;
 }>;
@@ -190,6 +192,16 @@ binds the HTTP Worker directly to its Hypervisor without a loopback socket.
 `"websocket"` preserves the outbound loopback worker topology for wire-protocol
 integration testing. This setting does not change separately deployed manifest
 workers, which continue to use WSS.
+
+`workerCapacity` bounds the local HTTP Worker's concurrent process-lifetime
+executions. It defaults to `32`, or to `gateway.hypervisor.maxWorkerCapacity`
+when that configured maximum is lower. It must be a positive safe integer no
+greater than the Hypervisor maximum. Capacity is admission accounting rather
+than preallocated compute: increase it to match the concurrent HTTP requests one
+process is expected to serve while respecting database and external-service
+limits. When all slots are occupied, the local `dev`/`start` HTTP boundary
+returns `503 Service Unavailable` with `Retry-After: 1` instead of leaking a
+dispatch exception as an opaque 500.
 
 `HypervisorConfig` is defined by the `/hypervisor` subpath. The input accepts a
 partial value, fills every omitted field from the Hypervisor defaults, and
@@ -336,6 +348,7 @@ The constant is deeply frozen. Its application, listener, and edge defaults are:
       port: 8_000,
     },
     workerTransport: "in-process",
+    workerCapacity: 32,
     // `hypervisor` contains every default listed below.
     // `edge` is absent.
   },
@@ -392,7 +405,7 @@ The module must have exactly one runtime export:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.3/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.4/config";
 
 export default defineConfig({
   application: { routesRoot: "./routes" },
@@ -403,7 +416,7 @@ The named form is equivalent:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.3/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.4/config";
 
 export const config = defineConfig({
   application: { routesRoot: "./routes" },

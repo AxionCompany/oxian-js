@@ -62,6 +62,50 @@ function listenerPort(value: number): number {
   return value;
 }
 
+function workerCapacity(value: number, maximum: number): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 1
+  ) {
+    throw new TypeError(
+      "local runtime capacity must be a positive safe integer",
+    );
+  }
+  if (value > maximum) {
+    throw new TypeError(
+      "local runtime capacity must not exceed the configured Hypervisor maximum Worker capacity",
+    );
+  }
+  return value;
+}
+
+function isUnavailableWorkerError(error: unknown): boolean {
+  return error instanceof Error &&
+    error.name === "HypervisorError" &&
+    "code" in error &&
+    (error.code === "worker_unavailable" || error.code === "shutting_down");
+}
+
+function withAvailabilityBoundary(
+  handler: (request: Request) => Response | Promise<Response>,
+): (request: Request) => Promise<Response> {
+  return async (request) => {
+    try {
+      return await handler(request);
+    } catch (error) {
+      if (!isUnavailableWorkerError(error)) throw error;
+      return new Response("Service Unavailable", {
+        status: 503,
+        headers: {
+          "cache-control": "no-store",
+          "retry-after": "1",
+        },
+      });
+    }
+  };
+}
+
 function localRuntimeError(result: WorkerResult): Error {
   const error = new Error(`local worker stopped: ${result.reason}`);
   error.name = "LocalRuntimeWorkerError";
@@ -96,7 +140,10 @@ export function createLocalRuntime(
     options.listener?.port ?? options.config.gateway.listener.port,
   );
   const workerId = options.workerId ?? "oxian-local-http";
-  const capacity = options.capacity ?? 1;
+  const capacity = workerCapacity(
+    options.capacity ?? options.config.gateway.workerCapacity,
+    options.config.gateway.hypervisor.maxWorkerCapacity,
+  );
   const workerTransport = options.workerTransport ??
     options.config.gateway.workerTransport;
   if (
@@ -189,7 +236,7 @@ export function createLocalRuntime(
           },
         });
         const fallback = composeConfiguredEdge(
-          gateway,
+          withAvailabilityBoundary(gateway),
           options.config.gateway.edge,
           mode,
         );

@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.3/protocol`
+# `jsr:@oxian/oxian-js@0.21.0-rc.4/protocol`
 
 [Back to the API reference](../api-reference.md)
 
@@ -14,7 +14,7 @@ import {
   decodeBinaryFrame,
   parseControlFrame,
   WORKER_PROTOCOL,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.3/protocol";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.4/protocol";
 ```
 
 The package version and protocol version evolve independently. Oxian 0.21 speaks

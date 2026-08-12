@@ -125,6 +125,11 @@ export type EdgeConfig = Readonly<{
 export type GatewayConfigInput = Readonly<{
   listener?: HttpListenerConfigInput;
   workerTransport?: LocalWorkerTransport;
+  /**
+   * Maximum concurrent HTTP executions admitted by the local Worker created
+   * by `oxian dev`, `oxian start`, or `createLocalRuntime()`.
+   */
+  workerCapacity?: number;
   hypervisor?: Partial<HypervisorConfig>;
   edge?: EdgeConfigInput;
 }>;
@@ -132,6 +137,7 @@ export type GatewayConfigInput = Readonly<{
 export type GatewayConfig = Readonly<{
   listener: HttpListenerConfig;
   workerTransport: LocalWorkerTransport;
+  workerCapacity: number;
   hypervisor: HypervisorConfig;
   edge?: EdgeConfig;
 }>;

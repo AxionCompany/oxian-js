@@ -42,6 +42,7 @@ Deno.test("v0.20 config exposes immutable, implemented-only defaults", () => {
     port: 8_000,
   });
   assertEquals(config.gateway.workerTransport, "in-process");
+  assertEquals(config.gateway.workerCapacity, 32);
   assertEquals(config.gateway.edge, undefined);
   assertDeepFrozen(config);
 
@@ -73,6 +74,7 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     gateway: {
       listener: { hostname: "localhost", port: 9_090 },
       workerTransport: "websocket",
+      workerCapacity: 80,
       hypervisor: {
         heartbeatIntervalMs: 2_000,
         leaseTimeoutMs: 8_000,
@@ -113,6 +115,7 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     port: 9_090,
   });
   assertEquals(config.gateway.workerTransport, "websocket");
+  assertEquals(config.gateway.workerCapacity, 80);
   assertEquals(config.gateway.hypervisor.heartbeatIntervalMs, 2_000);
   assertEquals(config.gateway.edge?.cors, {
     origins: ["https://example.com"],
@@ -206,6 +209,33 @@ Deno.test("v0.20 config rejects unknown local worker transports", () => {
         gateway: { workerTransport: "events" },
       }),
     'config.gateway.workerTransport must be "in-process" or "websocket"',
+  );
+});
+
+Deno.test("v0.21 config validates local Worker capacity", () => {
+  assertTypeErrorMessage(
+    () => defineUnknown({ gateway: { workerCapacity: 0 } }),
+    "config.gateway.workerCapacity must be a positive safe integer",
+  );
+  assertTypeErrorMessage(
+    () => defineUnknown({ gateway: { workerCapacity: 1.5 } }),
+    "config.gateway.workerCapacity must be a positive safe integer",
+  );
+  assertTypeErrorMessage(
+    () =>
+      defineUnknown({
+        gateway: {
+          workerCapacity: 3,
+          hypervisor: { maxWorkerCapacity: 2 },
+        },
+      }),
+    "config.gateway.workerCapacity must not exceed config.gateway.hypervisor.maxWorkerCapacity",
+  );
+  assertEquals(
+    defineConfig({
+      gateway: { hypervisor: { maxWorkerCapacity: 2 } },
+    }).gateway.workerCapacity,
+    2,
   );
 });
 

@@ -8,9 +8,9 @@ results, and cross-replica routing.
 ## Production composition
 
 ```ts
-import { createHttpGateway } from "jsr:@oxian/oxian-js@0.21.0-rc.3/http";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.3/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.3/adapters/deno";
+import { createHttpGateway } from "jsr:@oxian/oxian-js@0.21.0-rc.4/http";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.4/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.4/adapters/deno";
 
 const hypervisor = createHypervisor(
   {
@@ -178,8 +178,8 @@ Do not treat peer-provided close text as trusted lifecycle policy.
 ## Verification commands
 
 ```sh
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.3/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.3/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.4/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.4/bin routes --config oxian.config.ts
 ```
 
 Test crash points before dispatch, after acceptance ACK, during the durable

@@ -26,7 +26,7 @@ Create the Logwash project:
 ```bash
 mkdir logwash
 cd logwash
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.3/bin init
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.4/bin init
 ```
 
 `init` creates this small project:
@@ -47,6 +47,7 @@ export default {
     basePath: "/",
   },
   gateway: {
+    workerCapacity: 32,
     listener: {
       hostname: "127.0.0.1",
       port: 8000,
@@ -75,7 +76,7 @@ There are no framework-specific request or response objects here. `Request`,
 Start the development server:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.3/bin dev
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.4/bin dev
 ```
 
 Leave that terminal running. It should report:
@@ -116,6 +117,11 @@ Locally, the HTTP entrypoint and one worker run together. The request crosses
 the same workload, stream, capacity, cancellation, and acceptance boundaries as
 a separated worker, but direct in-process delivery avoids the loopback socket.
 You do not need to configure the WSS boundary yet.
+
+`workerCapacity` is the maximum number of concurrent HTTP executions admitted by
+this local Worker. It is accounting rather than preallocated threads. A
+production service should set it deliberately alongside its HTTP container
+concurrency and downstream database limits.
 
 Route files are loaded when the process starts. After changing one, stop `dev`
 with `Ctrl-C` and start it again.

@@ -23,7 +23,7 @@ Transport topology is plain data:
 import {
   createHypervisor,
   createWorker,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.3";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.4";
 
 const local = {
   type: "in-process",

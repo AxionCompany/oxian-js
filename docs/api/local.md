@@ -18,7 +18,7 @@ import {
   createLocalRuntime,
   createManifestWorkerRuntime,
   loadWorkerManifest,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.3/local";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.4/local";
 ```
 
 Constructing either runtime is side-effect free. `start()` owns imports,
@@ -58,7 +58,7 @@ type LocalRuntimeOptions = Readonly<{
     port?: number;
   }>;
   workerId?: string; // default: "oxian-local-http"
-  capacity?: number; // default: 1
+  capacity?: number; // default: config.gateway.workerCapacity
   workerTransport?: LocalWorkerTransport;
 }>;
 
@@ -97,8 +97,9 @@ type LocalRuntime = Readonly<{
 `listener.hostname`, `listener.port`, and `workerTransport` override the
 corresponding configuration for this run. Port `0` requests an ephemeral
 operating-system port; valid ports are integers from 0 through 65,535.
-`workerId` is validated as a supervisor identifier and `capacity` as a positive
-safe integer during startup.
+`workerId` is validated as a supervisor identifier. `capacity` overrides
+`config.gateway.workerCapacity` and must be a positive safe integer no greater
+than `config.gateway.hypervisor.maxWorkerCapacity`.
 
 ### `createLocalRuntime`
 
@@ -121,6 +122,10 @@ still uses the supervisor's fenced sessions, capacity reservations, exact
 targeting, and offer → claim → acceptance → start boundary. It is the preferred
 composition when Oxian is embedded in another application or when `dev` and
 `start` do not need transport integration coverage.
+
+The local server maps temporary Worker unavailability or shutdown during
+dispatch to `503 Service Unavailable` with `Retry-After: 1`. Other application
+and infrastructure failures retain their normal error behavior.
 
 `"websocket"` preserves the honest loopback protocol topology. Use it for
 end-to-end transport tests or when local behavior must reproduce a separated

@@ -24,12 +24,14 @@ const DEFAULT_CORS_METHODS = Object.freeze([
 const HTTP_TOKEN_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const WINDOWS_ABSOLUTE_PATH_PATTERN = /^[a-zA-Z]:[\\/]/;
 const URI_SCHEME_PATTERN = /^[a-zA-Z][a-zA-Z\d+.-]*:/;
+const DEFAULT_LOCAL_WORKER_CAPACITY = 32;
 
 const TOP_LEVEL_KEYS = new Set(["application", "gateway"]);
 const APPLICATION_KEYS = new Set(["routesRoot", "basePath", "factory"]);
 const GATEWAY_KEYS = new Set([
   "listener",
   "workerTransport",
+  "workerCapacity",
   "hypervisor",
   "edge",
 ]);
@@ -74,6 +76,30 @@ function normalizeWorkerTransport(
   throw new TypeError(
     'config.gateway.workerTransport must be "in-process" or "websocket"',
   );
+}
+
+function normalizeWorkerCapacity(
+  value: unknown,
+  maxWorkerCapacity: number,
+): number {
+  const selected = value === undefined
+    ? Math.min(DEFAULT_LOCAL_WORKER_CAPACITY, maxWorkerCapacity)
+    : value;
+  if (
+    typeof selected !== "number" ||
+    !Number.isSafeInteger(selected) ||
+    selected < 1
+  ) {
+    throw new TypeError(
+      "config.gateway.workerCapacity must be a positive safe integer",
+    );
+  }
+  if (selected > maxWorkerCapacity) {
+    throw new TypeError(
+      "config.gateway.workerCapacity must not exceed config.gateway.hypervisor.maxWorkerCapacity",
+    );
+  }
+  return selected;
 }
 
 function describe(value: unknown): string {
@@ -648,6 +674,7 @@ export function normalizeConfig(
       );
     }
   }
+  const normalizedHypervisor = createHypervisorConfig(hypervisor);
 
   const edge = normalizeEdge(gateway.edge, context.baseDirectory);
 
@@ -677,7 +704,11 @@ export function normalizeConfig(
         port: normalizePort(listener.port),
       }),
       workerTransport: normalizeWorkerTransport(gateway.workerTransport),
-      hypervisor: createHypervisorConfig(hypervisor),
+      workerCapacity: normalizeWorkerCapacity(
+        gateway.workerCapacity,
+        normalizedHypervisor.maxWorkerCapacity,
+      ),
+      hypervisor: normalizedHypervisor,
       ...(edge === undefined ? {} : { edge }),
     }),
   }) satisfies OxianConfig;

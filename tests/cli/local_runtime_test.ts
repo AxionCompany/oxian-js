@@ -156,6 +156,10 @@ Deno.test({
         running.hypervisor.sessions.get(running.identity.workerId)?.phase,
         "ready",
       );
+      assertEquals(
+        running.hypervisor.sessions.get(running.identity.workerId)?.capacity,
+        config.gateway.workerCapacity,
+      );
 
       const response = await fetch(new URL("/", running.listenerUrl));
       assertEquals(response.status, 200);
@@ -168,6 +172,134 @@ Deno.test({
     }
   },
 });
+
+for (const workerTransport of ["in-process", "websocket"] as const) {
+  Deno.test({
+    name:
+      `local ${workerTransport} HTTP worker admits configured concurrency and returns 503 beyond it`,
+    permissions: {
+      net: ["127.0.0.1"],
+      read: true,
+      write: true,
+    },
+    async fn() {
+      const root = await Deno.makeTempDir();
+      const routesRoot = join(root, "routes");
+      const releaseKey = `__oxian_release_${crypto.randomUUID()}`;
+      await Deno.mkdir(routesRoot);
+      await Deno.writeTextFile(
+        join(routesRoot, "index.ts"),
+        `const held = new Set<ReadableStreamDefaultController<Uint8Array>>();
+Reflect.set(globalThis, ${JSON.stringify(releaseKey)}, () => {
+  for (const controller of held) controller.close();
+  held.clear();
+});
+
+export function GET(request: Request): Response {
+  if (!new URL(request.url).searchParams.has("hold")) {
+    return new Response("completed");
+  }
+  return new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      held.add(controller);
+      controller.enqueue(new TextEncoder().encode("accepted"));
+    },
+  }));
+}
+`,
+      );
+      const config = defineConfig({
+        application: { routesRoot },
+        gateway: {
+          listener: { hostname: "127.0.0.1", port: 0 },
+          workerTransport,
+          workerCapacity: 2,
+          hypervisor: {
+            heartbeatIntervalMs: 20,
+            leaseTimeoutMs: 500,
+            leaseSweepIntervalMs: 10,
+            shutdownTimeoutMs: 500,
+            cancellationAckTimeoutMs: 250,
+            maxConnectionAgeMs: 60_000,
+            proactiveDrainMarginMs: 1_000,
+          },
+        },
+      });
+      const lifecycle = createLocalRuntime({ config });
+
+      try {
+        const running = await lifecycle.start();
+        assertEquals(
+          running.hypervisor.sessions.get(running.identity.workerId)?.capacity,
+          2,
+        );
+        const first = await withTimeout(
+          fetch(new URL("/?hold=first", running.listenerUrl)),
+          1_000,
+        );
+        const second = await withTimeout(
+          fetch(new URL("/?hold=second", running.listenerUrl)),
+          1_000,
+        );
+        assertEquals(first.status, 200);
+        assertEquals(second.status, 200);
+        assertEquals(
+          running.hypervisor.sessions.get(running.identity.workerId)?.reserved,
+          2,
+        );
+
+        const overloaded = await withTimeout(
+          fetch(new URL("/?hold=overloaded", running.listenerUrl)),
+          1_000,
+        );
+        assertEquals(overloaded.status, 503);
+        assertEquals(overloaded.headers.get("retry-after"), "1");
+        assertEquals(overloaded.headers.get("cache-control"), "no-store");
+        assertEquals(await overloaded.text(), "Service Unavailable");
+
+        const release = Reflect.get(globalThis, releaseKey);
+        if (typeof release !== "function") {
+          throw new Error("route did not publish its test release callback");
+        }
+        release();
+        assertEquals(await first.text(), "accepted");
+        assertEquals(await second.text(), "accepted");
+
+        let recovered: Response | undefined;
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          const candidate = await withTimeout(
+            fetch(new URL("/?request=recovered", running.listenerUrl)),
+            1_000,
+          );
+          if (candidate.status === 200) {
+            recovered = candidate;
+            break;
+          }
+          assertEquals(candidate.status, 503);
+          await candidate.body?.cancel("retry_capacity_probe");
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        assertEquals(recovered?.status, 200);
+        assertEquals(await recovered?.text(), "completed");
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          if (
+            running.hypervisor.sessions.get(running.identity.workerId)
+              ?.reserved === 0
+          ) break;
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        assertEquals(
+          running.hypervisor.sessions.get(running.identity.workerId)?.reserved,
+          0,
+        );
+      } finally {
+        Reflect.deleteProperty(globalThis, releaseKey);
+        await lifecycle.stop("test_cleanup").catch(() => undefined);
+        await Deno.remove(root, { recursive: true });
+      }
+    },
+  });
+}
 
 Deno.test({
   name:
