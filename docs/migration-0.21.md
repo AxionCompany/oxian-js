@@ -10,7 +10,7 @@ This is a breaking pre-1.0 release.
 import {
   createHypervisor,
   createWorker,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.2";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.3";
 ```
 
 ## Topology declarations

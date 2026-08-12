@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.2/adapters/deno`
+# `jsr:@oxian/oxian-js@0.21.0-rc.3/adapters/deno`
 
 This explicit runtime adapter owns Deno's native WebSocket upgrade and optional
 HTTP listener boundary. It never creates or shuts down an injected Hypervisor.
@@ -8,8 +8,8 @@ Exports: `handler`, `serve`, and `DenoServeOptions`.
 ## Compose a handler
 
 ```ts
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.2/hypervisor";
-import { handler } from "jsr:@oxian/oxian-js@0.21.0-rc.2/adapters/deno";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.3/hypervisor";
+import { handler } from "jsr:@oxian/oxian-js@0.21.0-rc.3/adapters/deno";
 
 const hypervisor = createHypervisor({
   transports: [{
@@ -29,7 +29,7 @@ socket, and attaches it once. Other requests use the Hypervisor fallback.
 ## Own a listener
 
 ```ts
-import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.2/adapters/deno";
+import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.3/adapters/deno";
 
 const listener = serve({ hypervisor, hostname: "0.0.0.0", port: 8080 });
 await listener.finished;

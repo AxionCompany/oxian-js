@@ -1,6 +1,6 @@
 # API reference
 
-This reference covers the public API of `@oxian/oxian-js` version `0.21.0-rc.2`.
+This reference covers the public API of `@oxian/oxian-js` version `0.21.0-rc.3`.
 Start with the [getting-started guide](getting-started.md) when learning Oxian;
 use these pages when composing a runtime, implementing a platform boundary, or
 checking an exact contract.
@@ -14,17 +14,17 @@ import {
   createApplication,
   createHypervisor,
   createWorker,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.2";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.3";
 ```
 
 Explicit subpaths make ownership clearer and keep the executable boundary out of
 application code:
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.21.0-rc.2/app";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.2/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.2/adapters/deno";
-import { createWorker } from "jsr:@oxian/oxian-js@0.21.0-rc.2/worker";
+import { createApplication } from "jsr:@oxian/oxian-js@0.21.0-rc.3/app";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.3/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.3/adapters/deno";
+import { createWorker } from "jsr:@oxian/oxian-js@0.21.0-rc.3/worker";
 ```
 
 The root excludes filesystem discovery, static files, local processes, local

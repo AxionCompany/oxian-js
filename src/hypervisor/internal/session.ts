@@ -298,23 +298,29 @@ export function createSessionProtocolController(
       ensureOpen(record);
       options.sessions.assertCurrent(record.fence);
       cancelConnectionTimer(options.scheduler, record, "readyTimer");
-      const readyDrainAfterMs = Math.max(
-        1,
-        options.config.maxConnectionAgeMs -
-          options.config.proactiveDrainMarginMs -
-          Math.max(0, options.clock() - record.connectedAtMs),
-      );
-      record.ageTimer = options.scheduler.schedule(() => {
-        void options.drainRecord(
-          record,
-          "connection_age",
-          "rotate",
-          Math.min(
-            options.config.shutdownTimeoutMs,
-            options.config.proactiveDrainMarginMs,
-          ),
+      // Connection-age rotation protects physical WebSocket infrastructure.
+      // An in-process event-fabric connection has no intermediary lifetime and
+      // may intentionally host a durable stream (for example a database
+      // session or realtime attachment) for the lifetime of its application.
+      if (record.transportType === "websocket") {
+        const readyDrainAfterMs = Math.max(
+          1,
+          options.config.maxConnectionAgeMs -
+            options.config.proactiveDrainMarginMs -
+            Math.max(0, options.clock() - record.connectedAtMs),
         );
-      }, Math.min(MAX_TIMER_MS, readyDrainAfterMs));
+        record.ageTimer = options.scheduler.schedule(() => {
+          void options.drainRecord(
+            record,
+            "connection_age",
+            "rotate",
+            Math.min(
+              options.config.shutdownTimeoutMs,
+              options.config.proactiveDrainMarginMs,
+            ),
+          );
+        }, Math.min(MAX_TIMER_MS, readyDrainAfterMs));
+      }
     } catch (error) {
       if (record.fence !== undefined) options.sessions.detach(record.fence);
       throw error;

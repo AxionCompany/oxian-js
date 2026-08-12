@@ -154,6 +154,48 @@ async function waitUntil(condition: () => boolean): Promise<void> {
   throw new Error("condition did not become true");
 }
 
+Deno.test("in-process connections do not arm WebSocket age rotation", async () => {
+  type ScheduledTimer = {
+    delayMs: number;
+    cancelled: boolean;
+  };
+  const timers: ScheduledTimer[] = [];
+  const scheduler: HypervisorScheduler = Object.freeze({
+    schedule(_callback, delayMs) {
+      const timer = { delayMs, cancelled: false };
+      timers.push(timer);
+      return timer;
+    },
+    cancel(handle) {
+      (handle as ScheduledTimer).cancelled = true;
+    },
+  });
+  const hypervisor = createHypervisor({
+    commitAcceptedWork: () => Promise.resolve(),
+    scheduler,
+    config: {
+      maxConnectionAgeMs: 60_000,
+      proactiveDrainMarginMs: 10_000,
+    },
+  });
+  const worker = await connectLocal(hypervisor, {
+    workerId: "durable-local-worker",
+    workloads: { "database.session": () => undefined },
+  });
+
+  try {
+    assertEquals(worker.snapshot().state, "ready");
+    assertEquals(
+      timers.some((timer) =>
+        !timer.cancelled && timer.delayMs > 40_000 && timer.delayMs < 60_000
+      ),
+      false,
+    );
+  } finally {
+    await hypervisor.shutdown();
+  }
+});
+
 Deno.test("in-process work starts only after durable acceptance commits", async () => {
   const persistence = createDeferred<void>();
   let accepted: AcceptanceCommit | undefined;

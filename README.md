@@ -6,8 +6,8 @@ authenticated outbound WebSocket over `oxian.worker.v1`; Workers never need to
 expose an HTTP listener.
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.2/bin init
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.2/bin dev
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.3/bin init
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.3/bin dev
 ```
 
 `init` creates `oxian.config.ts` and `routes/index.ts`. `dev` starts a local
@@ -47,15 +47,15 @@ local processes, listeners, and executable lifecycle require explicit
 runtime/capability subpaths:
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.21.0-rc.2/app";
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.2/config";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.2/hypervisor";
-import { createWorker } from "jsr:@oxian/oxian-js@0.21.0-rc.2/worker";
-import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.2/adapters/deno";
+import { createApplication } from "jsr:@oxian/oxian-js@0.21.0-rc.3/app";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.3/config";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.3/hypervisor";
+import { createWorker } from "jsr:@oxian/oxian-js@0.21.0-rc.3/worker";
+import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.3/adapters/deno";
 ```
 
-The executable is `jsr:@oxian/oxian-js@0.21.0-rc.2/bin`; the embeddable CLI API
-is `jsr:@oxian/oxian-js@0.21.0-rc.2/cli`.
+The executable is `jsr:@oxian/oxian-js@0.21.0-rc.3/bin`; the embeddable CLI API
+is `jsr:@oxian/oxian-js@0.21.0-rc.3/cli`.
 
 ## Verification
 

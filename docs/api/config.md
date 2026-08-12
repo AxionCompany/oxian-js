@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.2/config`
+# `jsr:@oxian/oxian-js@0.21.0-rc.3/config`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   DEFAULT_OXIAN_CONFIG,
   defineConfig,
   loadConfig,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.2/config";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.3/config";
 ```
 
 Worker manifests, credentials, provider launch specifications, secrets, logging
@@ -53,7 +53,7 @@ function defineConfig(input: OxianConfigInput): OxianConfig;
 objects and arrays are new and recursively frozen.
 
 ```ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.2/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.3/config";
 
 export default defineConfig({
   application: {
@@ -368,6 +368,10 @@ Its normalized Hypervisor fields are:
 | `maxDataPayloadBytes`                  | `1_048_576`  |
 | `maxReceiveCreditBytes`                | `16_777_216` |
 
+`maxConnectionAgeMs` and `proactiveDrainMarginMs` apply to WebSocket
+connections. In-process event-fabric connections remain open until explicit
+drain, Worker stop, Hypervisor shutdown, or another lifecycle failure.
+
 The `/hypervisor` reference defines the bounds and relationships among those
 fields.
 
@@ -388,7 +392,7 @@ The module must have exactly one runtime export:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.2/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.3/config";
 
 export default defineConfig({
   application: { routesRoot: "./routes" },
@@ -399,7 +403,7 @@ The named form is equivalent:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.2/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.3/config";
 
 export const config = defineConfig({
   application: { routesRoot: "./routes" },

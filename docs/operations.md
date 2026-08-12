@@ -8,9 +8,9 @@ results, and cross-replica routing.
 ## Production composition
 
 ```ts
-import { createHttpGateway } from "jsr:@oxian/oxian-js@0.21.0-rc.2/http";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.2/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.2/adapters/deno";
+import { createHttpGateway } from "jsr:@oxian/oxian-js@0.21.0-rc.3/http";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0-rc.3/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.21.0-rc.3/adapters/deno";
 
 const hypervisor = createHypervisor(
   {
@@ -143,6 +143,10 @@ subprotocol. Bound unauthenticated connections, authenticated connections,
 frame/message bytes, pending sends, native buffered amount, lifetime streams,
 capacity, acceptance commits, and connection age.
 
+Automatic connection-age rotation applies only to WebSocket connections.
+In-process event-fabric connections have no intermediary lifetime and remain
+available for durable application streams until explicitly drained or stopped.
+
 ## Drain and shutdown
 
 - `hypervisor.drain(workerId)` stops new assignment, waits for active streams,
@@ -174,8 +178,8 @@ Do not treat peer-provided close text as trusted lifecycle policy.
 ## Verification commands
 
 ```sh
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.2/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.2/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.3/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.0-rc.3/bin routes --config oxian.config.ts
 ```
 
 Test crash points before dispatch, after acceptance ACK, during the durable

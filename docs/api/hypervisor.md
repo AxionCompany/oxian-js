@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.2/hypervisor`
+# `jsr:@oxian/oxian-js@0.21.0-rc.3/hypervisor`
 
 The Hypervisor hosts declared Worker transports, admits fenced sessions, assigns
 work, and owns process-local drain/shutdown. It does not own a network listener
@@ -26,7 +26,7 @@ import {
   createHypervisor,
   type Hypervisor,
   type HypervisorOptions,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.2/hypervisor";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.3/hypervisor";
 
 const local = {
   type: "in-process",
@@ -110,9 +110,11 @@ to validate a `HypervisorConfig` directly, or pass `config` into
 `createHypervisor`.
 
 The config bounds handshake/Ready deadlines, heartbeat and lease timing,
-shutdown/cancellation, connection age, connection counts, acceptance commits,
-message/byte buffering, Worker capacity, lifetime streams, payload size, and
-credit. WebSocket path is not global configuration; it belongs to
+shutdown/cancellation, WebSocket connection age, connection counts, acceptance
+commits, message/byte buffering, Worker capacity, lifetime streams, payload
+size, and credit. Process-local event-fabric connections do not rotate by age:
+they have no intermediary socket lifetime and may carry application-lifetime
+streams. WebSocket path is not global configuration; it belongs to
 `transports[].config.path`.
 
 `HypervisorScheduler`, `HypervisorListenOptions`, and `HypervisorListener` are
