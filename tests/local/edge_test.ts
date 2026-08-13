@@ -68,7 +68,7 @@ Deno.test("configured edge gives a more-specific application mount priority over
     const serviceWorkerCallback = await handler(
       new Request("https://example.test/auth/google/callback", {
         headers: {
-          accept: "text/html,application/xhtml+xml",
+          accept: "*/*",
           "sec-fetch-dest": "empty",
           "sec-fetch-mode": "cors",
         },

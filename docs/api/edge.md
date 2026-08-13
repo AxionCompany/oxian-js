@@ -256,13 +256,14 @@ At request time:
 
 When `fallback` is configured, an exact-file miss delegates first when
 `fallthrough` is true. If the resulting response is still 404, Oxian serves the
-fallback only for a `GET` or `HEAD` request accepting HTML at an extensionless
-path. Fetch Metadata is treated as advisory because browsers and service workers
-do not preserve it consistently: an explicit asset destination still rejects the
-fallback, while an absent or `empty` destination may receive it. Asset paths
-with file extensions, non-404 application responses, malformed paths, and unsafe
-paths never receive the fallback. Put API applications at a more-specific mount
-so they retain priority over a parent SPA fallback.
+fallback only for a `GET` or `HEAD` request accepting HTML, text, or a wildcard
+media range at an extensionless path. Fetch Metadata is treated as advisory
+because browsers and service workers do not preserve it consistently: an
+explicit asset destination still rejects the fallback, while an absent or
+`empty` destination may receive it. JSON-only requests, asset paths with file
+extensions, non-404 application responses, malformed paths, and unsafe paths
+never receive the fallback. Put API applications at a more-specific mount so
+they retain priority over a parent SPA fallback.
 
 Malformed encoding, backslashes, null bytes, traversal, files outside the
 configured root, missing files, and unsafe filesystem targets are treated as

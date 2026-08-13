@@ -564,10 +564,18 @@ function acceptsHtmlNavigation(request: Request): boolean {
     const [mediaType, ...parameters] = candidate.trim().toLowerCase().split(
       ";",
     );
-    if (mediaType !== "text/html" && mediaType !== "application/xhtml+xml") {
+    if (
+      mediaType !== "text/html" &&
+      mediaType !== "application/xhtml+xml" &&
+      mediaType !== "text/*" &&
+      mediaType !== "*/*"
+    ) {
       return false;
     }
-    return !parameters.some((parameter) => parameter.trim() === "q=0");
+    return !parameters.some((parameter) => {
+      const match = /^q\s*=\s*(.+)$/.exec(parameter.trim());
+      return match !== null && Number(match[1]) === 0;
+    });
   });
 }
 

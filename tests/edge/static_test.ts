@@ -314,7 +314,7 @@ Deno.test("static adapter falls through routes before an HTML navigation fallbac
     const serviceWorkerNavigation = await handler(
       new Request("https://example.test/auth/session-transfer", {
         headers: {
-          accept: "text/html,application/xhtml+xml",
+          accept: "*/*",
           "sec-fetch-dest": "empty",
           "sec-fetch-mode": "cors",
         },
@@ -374,6 +374,18 @@ Deno.test("static adapter falls through routes before an HTML navigation fallbac
     );
     assertEquals(extensionlessScript.status, 404);
     assertEquals(await extensionlessScript.text(), "application miss");
+
+    const jsonFetch = await handler(
+      new Request("https://example.test/missing-record", {
+        headers: {
+          accept: "application/json",
+          "sec-fetch-dest": "empty",
+          "sec-fetch-mode": "cors",
+        },
+      }),
+    );
+    assertEquals(jsonFetch.status, 404);
+    assertEquals(await jsonFetch.text(), "application miss");
 
     const post = await handler(
       new Request("https://example.test/client-route", {
