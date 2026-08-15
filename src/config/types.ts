@@ -1,7 +1,7 @@
 import type { HypervisorConfig } from "../hypervisor/config.ts";
 
 /**
- * Code-first Oxian 0.20 configuration.
+ * Code-first Oxian 0.21 configuration.
  *
  * This contract deliberately contains only application and gateway behavior
  * owned by the 0.20 runtime. Worker definitions, bootstrap manifests,
@@ -48,7 +48,7 @@ export type HttpListenerConfig = Readonly<{
  * In-process delivery is the lightweight default. Worker WebSocket preserves
  * the full loopback protocol topology for transport integration testing.
  */
-export type LocalWorkerTransport = "in-process" | "worker-websocket";
+export type LocalWorkerTransport = "in-process" | "websocket";
 
 /**
  * Data-only subset of the CORS adapter options. Predicate functions are
@@ -80,6 +80,7 @@ export type StaticConfigInput = Readonly<{
   root: string;
   prefix?: string;
   index?: string | readonly string[] | false;
+  fallback?: string;
   cacheControl?: string;
   fallthrough?: boolean;
 }>;
@@ -88,6 +89,7 @@ export type StaticConfig = Readonly<{
   root: string;
   prefix: string;
   index: readonly string[];
+  fallback?: string;
   cacheControl?: string;
   fallthrough: boolean;
 }>;
@@ -125,6 +127,11 @@ export type EdgeConfig = Readonly<{
 export type GatewayConfigInput = Readonly<{
   listener?: HttpListenerConfigInput;
   workerTransport?: LocalWorkerTransport;
+  /**
+   * Maximum concurrent HTTP executions admitted by the local Worker created
+   * by `oxian dev`, `oxian start`, or `createLocalRuntime()`.
+   */
+  workerCapacity?: number;
   hypervisor?: Partial<HypervisorConfig>;
   edge?: EdgeConfigInput;
 }>;
@@ -132,6 +139,7 @@ export type GatewayConfigInput = Readonly<{
 export type GatewayConfig = Readonly<{
   listener: HttpListenerConfig;
   workerTransport: LocalWorkerTransport;
+  workerCapacity: number;
   hypervisor: HypervisorConfig;
   edge?: EdgeConfig;
 }>;

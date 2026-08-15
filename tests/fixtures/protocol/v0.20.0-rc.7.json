@@ -1,0 +1,84 @@
+{
+  "sourceVersion": "0.20.0-rc.7",
+  "protocol": "oxian.worker.v1",
+  "control": [
+    {
+      "type": "hello",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"hello\",\"handshakeId\":\"handshake-1\",\"identity\":{\"workerId\":\"worker-1\",\"attemptId\":\"attempt-1\",\"epoch\":1},\"credential\":{\"kind\":\"registration\",\"capability\":\"registration-capability\"},\"workloads\":[\"echo\",\"stream\"],\"capacity\":2}"
+    },
+    {
+      "type": "welcome",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"welcome\",\"connectionId\":\"connection-1\",\"heartbeatIntervalMs\":30000,\"leaseTimeoutMs\":120000,\"resumeCapability\":\"resume-capability\",\"resumeExpiresAtMs\":4102444800000,\"bootstrap\":{\"region\":\"test\"}}"
+    },
+    {
+      "type": "ready",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"ready\",\"connectionId\":\"connection-1\",\"capacity\":2,\"metadata\":{\"runtime\":\"deno\"}}"
+    },
+    {
+      "type": "ready_ack",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"ready_ack\",\"connectionId\":\"connection-1\"}"
+    },
+    {
+      "type": "heartbeat",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"heartbeat\",\"connectionId\":\"connection-1\",\"sequence\":0,\"inflight\":0,\"availableCapacity\":2,\"metadata\":{\"healthy\":true}}"
+    },
+    {
+      "type": "work.open",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"work.open\",\"streamId\":\"11111111-2222-3333-4444-555555555555\",\"workload\":\"echo\",\"metadata\":{\"correlationId\":\"corr-1\"},\"deadlineAtMs\":4102444800000}"
+    },
+    {
+      "type": "work.accepted",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"work.accepted\",\"streamId\":\"11111111-2222-3333-4444-555555555555\"}"
+    },
+    {
+      "type": "work.start",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"work.start\",\"streamId\":\"11111111-2222-3333-4444-555555555555\"}"
+    },
+    {
+      "type": "work.credit",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"work.credit\",\"streamId\":\"11111111-2222-3333-4444-555555555555\",\"bytes\":65536}"
+    },
+    {
+      "type": "work.metadata",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"work.metadata\",\"streamId\":\"11111111-2222-3333-4444-555555555555\",\"metadata\":{\"status\":201}}"
+    },
+    {
+      "type": "work.end",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"work.end\",\"streamId\":\"11111111-2222-3333-4444-555555555555\"}"
+    },
+    {
+      "type": "work.cancel",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"work.cancel\",\"streamId\":\"11111111-2222-3333-4444-555555555555\",\"reason\":\"caller_cancelled\"}"
+    },
+    {
+      "type": "work.error",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"work.error\",\"streamId\":\"11111111-2222-3333-4444-555555555555\",\"code\":\"handler_failed\",\"message\":\"fixture failure\",\"details\":{\"retryable\":false}}"
+    },
+    {
+      "type": "drain",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"drain\",\"connectionId\":\"connection-1\",\"reason\":\"maintenance\",\"deadlineAtMs\":4102444800000}"
+    },
+    {
+      "type": "drained",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"drained\",\"connectionId\":\"connection-1\"}"
+    },
+    {
+      "type": "shutdown",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"shutdown\",\"connectionId\":\"connection-1\",\"reason\":\"deployment\"}"
+    },
+    {
+      "type": "protocol_error",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"protocol_error\",\"code\":\"invalid_state\",\"message\":\"fixture protocol failure\",\"connectionId\":\"connection-1\"}"
+    },
+    {
+      "type": "hello",
+      "encoded": "{\"protocol\":\"oxian.worker.v1\",\"type\":\"hello\",\"handshakeId\":\"handshake-2\",\"identity\":{\"workerId\":\"worker-1\",\"attemptId\":\"attempt-1\",\"epoch\":1},\"credential\":{\"kind\":\"resume\",\"capability\":\"resume-capability\"},\"workloads\":[\"echo\",\"stream\"],\"capacity\":2}"
+    }
+  ],
+  "binary": {
+    "streamId": "11111111-2222-3333-4444-555555555555",
+    "sequence": 7,
+    "payloadHex": "0001027f80feff",
+    "encodedHex": "4f584e420101000011111111222233334444555555555555000000070001027f80feff"
+  }
+}

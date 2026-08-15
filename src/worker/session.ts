@@ -20,10 +20,10 @@ import {
   type WorkStreamTerminal,
 } from "../protocol/index.ts";
 import {
-  connectWorkerWebSocket,
-  createWebSocketTransport,
-  type WebSocketTransport,
-  type WebSocketTransportMessage,
+  createProtocolTransport,
+  type FrameConnection,
+  type ProtocolTransport,
+  type ProtocolTransportMessage,
 } from "../transport/index.ts";
 import { createBoundedExponentialBackoff } from "./backoff.ts";
 import {
@@ -37,8 +37,8 @@ import {
 import { createCredentialRotationCoordinator } from "./internal/credentials.ts";
 import {
   createAbortError,
-  createWorkerClientError,
-  isWorkerClientError,
+  createWorkerError,
+  isWorkerError,
   safeErrorMessage,
 } from "./internal/errors.ts";
 import {
@@ -62,16 +62,16 @@ import {
   terminalIsAbort,
 } from "./internal/work.ts";
 import type {
+  Worker,
   WorkerBody,
-  WorkerClient,
-  WorkerClientOptions,
-  WorkerClientResult,
-  WorkerClientSnapshot,
-  WorkerClientState,
   WorkerHeartbeatContext,
   WorkerReconnectDelay,
+  WorkerResult,
+  WorkerSnapshot,
+  WorkerState,
   WorkerWorkContext,
 } from "./types.ts";
+import type { WorkerSessionOptions } from "./internal/session-options.ts";
 
 const DEFAULT_CAPACITY = 1;
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 15_000;
@@ -134,12 +134,22 @@ type PendingHeartbeatMetadata = Readonly<{
 }>;
 
 /**
- * Creates a reconnecting outbound worker. Construction is side-effect free;
- * `run()` owns the connection until stop, shutdown, or re-enrollment.
+ * Creates the canonical reconnecting protocol Worker over an injected physical
+ * connection. Construction starts the lifecycle immediately.
  */
-export function createWorkerClient(
-  options: WorkerClientOptions,
-): WorkerClient {
+export function createWorkerSession(
+  options: WorkerSessionOptions,
+): Worker {
+  if (
+    options.transport?.type !== "websocket" &&
+    options.transport?.type !== "in-process"
+  ) {
+    throw new TypeError('transport.type must be "in-process" or "websocket"');
+  }
+  if (typeof options.transport.connect !== "function") {
+    throw new TypeError("transport connection must be a function");
+  }
+  const connection = options.transport;
   const identity = Object.freeze(createWorkerIdentity(options.identity));
   const workloadEntries = Object.entries(options.workloads);
   if (workloadEntries.length === 0) {
@@ -249,12 +259,23 @@ export function createWorkerClient(
     throw new TypeError("createHeartbeatMetadata must be a function");
   }
   if (
-    options.createWebSocket !== undefined &&
-    typeof options.createWebSocket !== "function"
+    options.beforeReady !== undefined &&
+    typeof options.beforeReady !== "function"
   ) {
-    throw new TypeError("createWebSocket must be a function");
+    throw new TypeError("beforeReady must be a function");
   }
-
+  if (
+    options.onStateChange !== undefined &&
+    typeof options.onStateChange !== "function"
+  ) {
+    throw new TypeError("onStateChange must be a function");
+  }
+  if (
+    options.onReenrollmentRequired !== undefined &&
+    typeof options.onReenrollmentRequired !== "function"
+  ) {
+    throw new TypeError("onReenrollmentRequired must be a function");
+  }
   const defaultReconnectDelay = createBoundedExponentialBackoff({
     initialDelayMs: Math.min(250, maxReconnectDelayMs),
     maxDelayMs: Math.min(30_000, maxReconnectDelayMs),
@@ -284,7 +305,7 @@ export function createWorkerClient(
     handshakeTimeoutMs,
     createHandshakeId,
   });
-  const readyDeferred = createDeferred<WorkerClientSnapshot>();
+  const readyDeferred = createDeferred<WorkerSnapshot>();
   // A caller may choose not to await readiness; keep that from becoming an
   // unhandled rejection when startup terminates early.
   readyDeferred.promise.catch(() => undefined);
@@ -299,21 +320,24 @@ export function createWorkerClient(
   const reconnectDelayInvoker = reconnectDelay === false
     ? undefined
     : createSingleFlightInvoker(reconnectDelay, stopController.signal);
-  let state: WorkerClientState = "idle";
+  let state: WorkerState = "idle";
   let connectionId: string | undefined;
   let activeStreams = 0;
   let reconnectAttempt = 0;
   let runStarted = false;
   let runFinished = false;
+  let runTask: Promise<WorkerResult> | undefined;
   let everReady = false;
   let stopReason = "worker_stopped";
   let pendingInitialization: PendingInitialization | undefined;
   let pendingHeartbeatMetadata: PendingHeartbeatMetadata | undefined;
 
-  const snapshot = (): WorkerClientSnapshot => {
+  const snapshot = (): WorkerSnapshot => {
     const credentialState = credentials.current();
     return Object.freeze({
       state,
+      transport: connection.type,
+      identity,
       credentialKind: credentialState.credential.kind,
       handshakeId: credentialState.handshakeId,
       ...(credentialState.resumeExpiresAtMs === undefined
@@ -326,9 +350,16 @@ export function createWorkerClient(
     });
   };
 
-  const setState = (next: WorkerClientState): void => {
+  const setState = (next: WorkerState): void => {
     state = next;
-    stateNotifications.publish(snapshot());
+    const value = snapshot();
+    stateNotifications.publish(value);
+    if ((eventController?.desiredSize ?? 0) > 0) {
+      eventController?.enqueue(Object.freeze({
+        type: "state" as const,
+        snapshot: value,
+      }));
+    }
   };
 
   const settleSerializedWorkBeforeConnect = async (): Promise<void> => {
@@ -384,8 +415,8 @@ export function createWorkerClient(
     const credentialAtConnect = credentials.current();
     const credentialAtHello = credentialAtConnect.credential;
     const handshakeAtHello = credentialAtConnect.handshakeId;
-    let transport: WebSocketTransport | undefined;
-    let socket: WebSocket | undefined;
+    let transport: ProtocolTransport | undefined;
+    let frameConnection: FrameConnection | undefined;
     let sessionConnectionId: string | undefined;
     let welcomed = false;
     let rotationRequested = false;
@@ -411,7 +442,7 @@ export function createWorkerClient(
       if (isCurrentSession()) activeStreams = streams.size;
     };
 
-    const setSessionState = (next: WorkerClientState): void => {
+    const setSessionState = (next: WorkerState): void => {
       if (isCurrentSession()) setState(next);
     };
 
@@ -586,7 +617,7 @@ export function createWorkerClient(
       }
       const operation = (async () => {
         if (transport === undefined) {
-          throw createWorkerClientError(
+          throw createWorkerError(
             "connection_lost",
             "Cannot terminate work on a closed connection",
           );
@@ -721,7 +752,7 @@ export function createWorkerClient(
       body: WorkerBody,
     ): Promise<void> => {
       if (transport === undefined) {
-        throw createWorkerClientError(
+        throw createWorkerError(
           "connection_lost",
           "Cannot write work output on a closed connection",
         );
@@ -803,7 +834,7 @@ export function createWorkerClient(
       }
       if (transport === undefined) {
         return Promise.reject(
-          createWorkerClientError(
+          createWorkerError(
             "connection_lost",
             "Cannot write work metadata on a closed connection",
           ),
@@ -858,6 +889,9 @@ export function createWorkerClient(
       void (async () => {
         let returnedBody: WorkerBody | undefined;
         let outputStarted = false;
+        let completionOutcome: "completed" | "cancelled" | "failed" =
+          "completed";
+        let completionError: unknown;
         const cancelUnstartedOutput = (reason: unknown): void => {
           if (
             outputStarted ||
@@ -877,6 +911,18 @@ export function createWorkerClient(
           }
         };
         try {
+          await options.lifecycle?.onStart?.(Object.freeze({
+            stage: "start" as const,
+            stageId: `start:${stream.open.streamId}`,
+            callbackAttempt: 1,
+            signal: stream.abortController.signal,
+            identity,
+            connectionId: sessionConnectionId ?? "pending",
+            streamId: stream.open.streamId,
+            workload: stream.open.workload,
+            metadata: stream.open.metadata,
+            work: context,
+          }));
           const normalized = normalizeHandlerResult(await handler(context));
           returnedBody = normalized.body;
           if (returnedBody instanceof ReadableStream) {
@@ -918,6 +964,10 @@ export function createWorkerClient(
           }
           await sendLocalTerminal(stream, "end");
         } catch (error) {
+          completionError = error;
+          completionOutcome = stream.abortController.signal.aborted
+            ? "cancelled"
+            : "failed";
           cancelUnstartedOutput(error);
           if (
             stream.abortController.signal.aborted &&
@@ -935,6 +985,26 @@ export function createWorkerClient(
           try {
             await stream.outputCancellation;
           } finally {
+            try {
+              await options.lifecycle?.onComplete?.(Object.freeze({
+                stage: "complete" as const,
+                stageId:
+                  `complete:${stream.open.streamId}:${completionOutcome}`,
+                callbackAttempt: 1,
+                signal: stream.abortController.signal,
+                identity,
+                connectionId: sessionConnectionId ?? "pending",
+                streamId: stream.open.streamId,
+                workload: stream.open.workload,
+                metadata: stream.open.metadata,
+                outcome: completionOutcome,
+                ...(completionError === undefined
+                  ? {}
+                  : { error: completionError }),
+              }));
+            } catch {
+              // Completion is an observer and never rewrites the work terminal.
+            }
             reservation?.release();
             if (stream.reservation === reservation) {
               stream.reservation = undefined;
@@ -1043,7 +1113,7 @@ export function createWorkerClient(
     }
 
     const handleControl = async (
-      message: Extract<WebSocketTransportMessage, { kind: "control" }>,
+      message: Extract<ProtocolTransportMessage, { kind: "control" }>,
     ): Promise<void> => {
       if (
         stopController.signal.aborted ||
@@ -1082,6 +1152,17 @@ export function createWorkerClient(
           }
           stream.reservation = reservation;
           try {
+            await options.lifecycle?.onWorkAccepted?.(Object.freeze({
+              stage: "work_accepted" as const,
+              stageId: `work_accepted:${frame.streamId}`,
+              callbackAttempt: 1,
+              signal: stream.abortController.signal,
+              identity,
+              connectionId: sessionConnectionId ?? "pending",
+              streamId: frame.streamId,
+              workload: frame.workload,
+              metadata: frame.metadata,
+            }));
             await transport?.sendControl(
               createWorkAcceptedFrame({ streamId: frame.streamId }),
             );
@@ -1157,6 +1238,11 @@ export function createWorkerClient(
             : "error";
           stream.remoteTerminal = remoteTerminal;
           if (disposition === "deliver") {
+            if (frame.type === "work.cancel") {
+              // A reciprocal Cancel acknowledges the same causal reason.
+              // This keeps local and WebSocket sessions observationally equal.
+              stream.cancelReason = frame.reason;
+            }
             const error = frame.type === "work.cancel"
               ? createAbortError(frame.reason)
               : new Error(frame.message);
@@ -1218,7 +1304,7 @@ export function createWorkerClient(
 
         case "protocol_error": {
           failSession(
-            createWorkerClientError(
+            createWorkerError(
               "invalid_server_message",
               `Hypervisor protocol error: ${frame.code}`,
             ),
@@ -1230,7 +1316,7 @@ export function createWorkerClient(
           // Welcome is consumed by the handshake. All worker-originated frame
           // types are rejected by the protocol validator before this point.
           failSession(
-            createWorkerClientError(
+            createWorkerError(
               "invalid_server_message",
               `Unexpected server frame ${frame.type}`,
             ),
@@ -1239,7 +1325,7 @@ export function createWorkerClient(
     };
 
     const handleData = (
-      message: Extract<WebSocketTransportMessage, { kind: "data" }>,
+      message: Extract<ProtocolTransportMessage, { kind: "data" }>,
     ): void => {
       if (
         stopController.signal.aborted ||
@@ -1253,7 +1339,7 @@ export function createWorkerClient(
       stream.outstandingInputCredit -= frame.payload.byteLength;
       if (stream.outstandingInputCredit < 0) {
         failSession(
-          createWorkerClientError(
+          createWorkerError(
             "invalid_server_message",
             "Input credit accounting became negative",
           ),
@@ -1362,30 +1448,22 @@ export function createWorkerClient(
 
     try {
       setSessionState("connecting");
-      socket = await connectWorkerWebSocket({
-        url: options.url,
-        signal: stopController.signal,
-        ...(options.connectTimeoutMs === undefined
-          ? {}
-          : { timeoutMs: options.connectTimeoutMs }),
-        ...(options.allowInsecureLoopback === undefined
-          ? {}
-          : { allowInsecureLoopback: options.allowInsecureLoopback }),
-        ...(options.createWebSocket === undefined
-          ? {}
-          : { createWebSocket: options.createWebSocket }),
-      });
-      transport = await createWebSocketTransport({
-        socket,
+      frameConnection = await connection.connect(stopController.signal);
+      transport = await createProtocolTransport({
+        connection: frameConnection,
         role: "worker",
         signal: stopController.signal,
-        ...options.transport,
+        maxInboundMessages: connection.limits?.maxInboundMessages,
+        maxInboundBytes: connection.limits?.maxInboundBytes,
+        maxPendingSendMessages: connection.limits?.maxPendingSendMessages,
+        maxPendingSendBytes: connection.limits?.maxPendingSendBytes,
+        protocol: connection.limits?.protocol,
       });
       transport.closed.then((close) => {
         abortSession(
-          createWorkerClientError(
+          createWorkerError(
             "connection_lost",
-            `Worker WebSocket closed (${close.code}: ${close.reason})`,
+            `Worker connection closed (${close.code}: ${close.reason})`,
           ),
         );
       });
@@ -1411,12 +1489,12 @@ export function createWorkerClient(
       ) {
         const protocolError = first.value.acceptance.frame;
         if (PERMANENT_AUTH_ERROR_CODES.has(protocolError.code)) {
-          throw createWorkerClientError(
+          throw createWorkerError(
             "credential_rejected",
             `Worker credential requires re-enrollment: ${protocolError.code}`,
           );
         }
-        throw createWorkerClientError(
+        throw createWorkerError(
           "handshake_failed",
           `Hypervisor rejected worker handshake: ${protocolError.code}`,
         );
@@ -1426,7 +1504,7 @@ export function createWorkerClient(
         first.value.kind !== "control" ||
         first.value.acceptance.frame.type !== "welcome"
       ) {
-        throw createWorkerClientError(
+        throw createWorkerError(
           "handshake_failed",
           "Hypervisor did not send Welcome as its first frame",
         );
@@ -1434,7 +1512,7 @@ export function createWorkerClient(
       const welcome = first.value.acceptance.frame;
       welcomed = true;
       if (welcome.resumeExpiresAtMs <= now()) {
-        throw createWorkerClientError(
+        throw createWorkerError(
           "credential_expired",
           "Hypervisor issued an already-expired resume credential",
         );
@@ -1456,12 +1534,12 @@ export function createWorkerClient(
         let metadata: JsonObject | void = undefined;
         if (options.beforeReady !== undefined) {
           const task = Promise.resolve().then(() =>
-            options.beforeReady!({
+            options.beforeReady!(Object.freeze({
               bootstrap: welcome.bootstrap,
               connectionId: welcome.connectionId,
               signal: sessionAbortController.signal,
               reconnecting: credentialAtHello.kind === "resume",
-            })
+            }))
           );
           const initialization = Object.freeze({ task });
           pendingInitialization = initialization;
@@ -1499,7 +1577,7 @@ export function createWorkerClient(
         } catch {
           // Connection failure still prevents Ready and triggers reconnect.
         }
-        throw createWorkerClientError(
+        throw createWorkerError(
           "initialization_failed",
           "Worker pre-ready initialization failed",
           error,
@@ -1520,12 +1598,12 @@ export function createWorkerClient(
       ) {
         const protocolError = acknowledgement.value.acceptance.frame;
         if (PERMANENT_AUTH_ERROR_CODES.has(protocolError.code)) {
-          throw createWorkerClientError(
+          throw createWorkerError(
             "credential_rejected",
             `Worker credential requires re-enrollment: ${protocolError.code}`,
           );
         }
-        throw createWorkerClientError(
+        throw createWorkerError(
           "handshake_failed",
           `Hypervisor rejected worker readiness: ${protocolError.code}`,
         );
@@ -1535,7 +1613,7 @@ export function createWorkerClient(
         acknowledgement.value.kind !== "control" ||
         acknowledgement.value.acceptance.frame.type !== "ready_ack"
       ) {
-        throw createWorkerClientError(
+        throw createWorkerError(
           "handshake_failed",
           "Hypervisor did not acknowledge worker readiness",
         );
@@ -1544,16 +1622,24 @@ export function createWorkerClient(
         acknowledgement.value.acceptance.frame.connectionId !==
           welcome.connectionId
       ) {
-        throw createWorkerClientError(
+        throw createWorkerError(
           "handshake_failed",
           "Hypervisor acknowledged a stale worker connection",
         );
       }
       setSessionState("ready");
       reconnectAttempt = 0;
+      const readySnapshot = snapshot();
+      await options.lifecycle?.onReady?.(Object.freeze({
+        stage: "ready" as const,
+        stageId: `ready:${welcome.connectionId}`,
+        callbackAttempt: 1,
+        signal: sessionAbortController.signal,
+        snapshot: readySnapshot,
+      }));
       if (!everReady) {
         everReady = true;
-        readyDeferred.resolve(snapshot());
+        readyDeferred.resolve(readySnapshot);
       }
       void heartbeat(welcome);
       heartbeatTimer = setInterval(
@@ -1604,16 +1690,16 @@ export function createWorkerClient(
       const close = await transport.closed;
       return {
         reason: "connection_lost",
-        error: createWorkerClientError(
+        error: createWorkerError(
           "connection_lost",
-          `Worker WebSocket closed (${close.code}: ${close.reason})`,
+          `Worker connection closed (${close.code}: ${close.reason})`,
         ),
       };
     } catch (error) {
       if (stopController.signal.aborted) throw error;
       return {
         reason: "connection_lost",
-        error: isWorkerClientError(error) ? error : createWorkerClientError(
+        error: isWorkerError(error) ? error : createWorkerError(
           welcomed ? "connection_lost" : "handshake_failed",
           welcomed ? "Worker connection failed" : "Worker handshake failed",
           error,
@@ -1628,7 +1714,7 @@ export function createWorkerClient(
         stream.cancelDeadline?.();
         abortWork(
           stream,
-          createWorkerClientError(
+          createWorkerError(
             "connection_lost",
             "Work connection was lost; stream will not be replayed",
           ),
@@ -1638,7 +1724,7 @@ export function createWorkerClient(
       streams.clear();
       syncActiveStreams();
       abortSession(
-        createWorkerClientError(
+        createWorkerError(
           "connection_lost",
           "Worker session ended",
         ),
@@ -1656,13 +1742,12 @@ export function createWorkerClient(
           timeoutMs: 1_000,
         }).catch(() => undefined);
       } else if (
-        socket !== undefined &&
-        socket.readyState !== WebSocket.CLOSED
+        frameConnection !== undefined
       ) {
         try {
-          socket.close(1000, "worker_session_ended");
+          frameConnection.close("worker_session_ended", 1000);
         } catch {
-          // Best effort for a socket that failed before transport creation.
+          // Best effort for a connection that failed before transport creation.
         }
       }
     }
@@ -1683,12 +1768,9 @@ export function createWorkerClient(
     return reconnectDelayInvoker.run(context);
   };
 
-  const run = async (): Promise<WorkerClientResult> => {
-    if (runStarted) {
-      throw new TypeError("Worker client run() may only be called once");
-    }
+  const runLifecycle = async (): Promise<WorkerResult> => {
     runStarted = true;
-    let lastError: unknown = createWorkerClientError(
+    let lastError: unknown = createWorkerError(
       "connection_lost",
       "Worker has not connected",
     );
@@ -1701,7 +1783,7 @@ export function createWorkerClient(
           credentialState.resumeExpiresAtMs !== undefined &&
           credentialState.resumeExpiresAtMs <= now()
         ) {
-          const error = createWorkerClientError(
+          const error = createWorkerError(
             "credential_expired",
             "Worker resume credential expired; re-enrollment is required",
           );
@@ -1720,13 +1802,13 @@ export function createWorkerClient(
         }
         lastError = result.reason === "connection_lost"
           ? result.error
-          : createWorkerClientError(
+          : createWorkerError(
             "connection_lost",
             "Rotating worker resume credential",
           );
 
         if (
-          isWorkerClientError(lastError) &&
+          isWorkerError(lastError) &&
           (lastError.code === "credential_expired" ||
             lastError.code === "credential_rejected")
         ) {
@@ -1779,7 +1861,7 @@ export function createWorkerClient(
       options.signal?.removeEventListener("abort", stopFromExternalSignal);
       if (!everReady) {
         readyDeferred.reject(
-          isWorkerClientError(lastError) ? lastError : createWorkerClientError(
+          isWorkerError(lastError) ? lastError : createWorkerError(
             "worker_stopped",
             "Worker stopped before becoming ready",
             lastError,
@@ -1788,6 +1870,11 @@ export function createWorkerClient(
       }
       runDone.resolve();
     }
+  };
+
+  const run = (): Promise<WorkerResult> => {
+    runTask ??= runLifecycle();
+    return runTask;
   };
 
   const stop = async (reason = "worker_stopped"): Promise<void> => {
@@ -1801,7 +1888,7 @@ export function createWorkerClient(
     if (!runStarted) {
       setState("stopped");
       readyDeferred.reject(
-        createWorkerClientError(
+        createWorkerError(
           "worker_stopped",
           `Worker stopped before run: ${stopReason}`,
         ),
@@ -1809,9 +1896,49 @@ export function createWorkerClient(
     }
   };
 
+  let eventController:
+    | ReadableStreamDefaultController<
+      import("../lifecycle/types.ts").WorkerLifecycleEvent
+    >
+    | undefined;
+  const events = new ReadableStream<
+    import("../lifecycle/types.ts").WorkerLifecycleEvent
+  >({
+    start(controller) {
+      eventController = controller;
+    },
+    cancel() {
+      eventController = undefined;
+    },
+  }, new CountQueuingStrategy({ highWaterMark: 64 }));
+  const closed = run();
+  closed.then(
+    (result) => {
+      if ((eventController?.desiredSize ?? 0) > 0) {
+        eventController?.enqueue(Object.freeze({
+          type: "closed" as const,
+          reason: result.reason,
+        }));
+      }
+      eventController?.close();
+      eventController = undefined;
+    },
+    (error) => {
+      if ((eventController?.desiredSize ?? 0) > 0) {
+        eventController?.enqueue(Object.freeze({
+          type: "closed" as const,
+          reason: error,
+        }));
+      }
+      eventController?.close();
+      eventController = undefined;
+    },
+  );
+
   return Object.freeze({
-    run,
-    whenReady: () => readyDeferred.promise,
+    ready: readyDeferred.promise,
+    closed,
+    events,
     stop,
     snapshot,
   });

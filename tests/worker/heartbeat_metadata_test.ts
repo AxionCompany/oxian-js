@@ -3,11 +3,11 @@ import {
   createShutdownFrame,
   WORKER_PROTOCOL_LIMITS,
 } from "../../src/protocol/index.ts";
-import {
-  createWorkerClient,
-  type WorkerClientResult,
-  type WorkerHeartbeatContext,
+import type {
+  WorkerHeartbeatContext,
+  WorkerResult,
 } from "../../src/worker/index.ts";
+import { createProtocolTestWorker as createWorker } from "./protocol_worker.ts";
 import {
   acceptTestHandshake,
   nextControl,
@@ -47,21 +47,24 @@ function waitUntil(predicate: () => boolean): Promise<void> {
   );
 }
 
-function assertReconnectExhausted(result: WorkerClientResult): void {
+function assertReconnectExhausted(result: WorkerResult): void {
   assertEquals(result.reason, "reconnect_exhausted");
 }
 
 Deno.test("worker propagates heartbeat metadata from an immutable status context", async () => {
   const peer = await startTestPeer();
   let context: WorkerHeartbeatContext | undefined;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
     capacity: 2,
-    allowInsecureLoopback: true,
     reconnectDelay: false,
     createHeartbeatMetadata: (next) => {
       context = next;
@@ -90,7 +93,7 @@ Deno.test("worker propagates heartbeat metadata from an immutable status context
       };
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -140,13 +143,16 @@ Deno.test("worker heartbeat metadata callback is single-flight and stop aborts a
   const contexts: WorkerHeartbeatContext[] = [];
   let active = 0;
   let maximumActive = 0;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: false,
     createHeartbeatMetadata: async (context) => {
       contexts.push(context);
@@ -161,7 +167,7 @@ Deno.test("worker heartbeat metadata callback is single-flight and stop aborts a
       }
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -199,20 +205,23 @@ Deno.test("hung heartbeat metadata does not block remote shutdown", async () => 
   const peer = await startTestPeer();
   const hungGate = deferred();
   let context: WorkerHeartbeatContext | undefined;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: false,
     createHeartbeatMetadata: async (next) => {
       context = next;
       await hungGate.promise;
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -234,20 +243,23 @@ Deno.test("hung heartbeat metadata does not block remote shutdown", async () => 
 Deno.test("worker fail-closes a session when heartbeat metadata creation throws", async () => {
   const peer = await startTestPeer();
   let signal: AbortSignal | undefined;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: false,
     createHeartbeatMetadata: (context) => {
       signal = context.signal;
       throw new Error("status source failed");
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -265,19 +277,22 @@ Deno.test("worker fail-closes a session when heartbeat metadata creation throws"
 
 Deno.test("worker fail-closes a session when heartbeat metadata is not valid JSON", async () => {
   const peer = await startTestPeer();
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: false,
     createHeartbeatMetadata: () => ({
       load: Number.NaN,
     }),
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -294,19 +309,22 @@ Deno.test("worker fail-closes a session when heartbeat metadata is not valid JSO
 
 Deno.test("worker fail-closes a session when heartbeat metadata exceeds the control bound", async () => {
   const peer = await startTestPeer();
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: false,
     createHeartbeatMetadata: () => ({
       status: "x".repeat(WORKER_PROTOCOL_LIMITS.maxControlFrameBytes),
     }),
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();

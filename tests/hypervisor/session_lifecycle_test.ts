@@ -1,15 +1,17 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
-import {
-  createDenoHypervisor,
-  type DenoHypervisor,
-} from "../../src/adapters/deno/index.ts";
+import { serve } from "../../src/adapters/deno/index.ts";
 import type {
+  Hypervisor,
   HypervisorDisconnectEvent,
-  HypervisorHeartbeatCommitContext,
+  HypervisorHeartbeatContext,
   HypervisorListener,
-  HypervisorReadyCommitContext,
-  HypervisorSessionLifecycle,
+  HypervisorReadyContext,
 } from "../../src/hypervisor/index.ts";
+import {
+  createProtocolTestHypervisor as createHypervisor,
+  type SessionLifecycleCallbacks,
+  TEST_WORKER_PATH,
+} from "./protocol_hypervisor.ts";
 import {
   createHeartbeatFrame,
   createHelloFrame,
@@ -20,18 +22,20 @@ import {
   type WorkerIdentity,
 } from "../../src/protocol/index.ts";
 import {
-  createInMemoryRegistrationAuthority,
-  createInMemoryWorkerRepository,
+  createEphemeralCredentialLifecycle,
+  createEphemeralWorkerStore,
   createWorkerDefinition,
-  type RegistrationAuthority,
+  type CredentialLifecycle,
   type RegistrationGrant,
   type WorkerDefinition,
 } from "../../src/supervisor/index.ts";
 import {
+  adaptSocketConnection,
   connectWorkerWebSocket,
-  createWebSocketTransport,
-  type WebSocketTransport,
-  type WebSocketTransportMessage,
+  createFrameConnection,
+  createProtocolTransport,
+  type ProtocolTransport,
+  type ProtocolTransportMessage,
 } from "../../src/transport/index.ts";
 import { nextControlledControl } from "./controlled_worker.ts";
 
@@ -46,14 +50,14 @@ type Deferred<T> = Readonly<{
 }>;
 
 type LifecycleWorker = Readonly<{
-  transport: WebSocketTransport;
-  iterator: AsyncIterator<WebSocketTransportMessage>;
+  transport: ProtocolTransport;
+  iterator: AsyncIterator<ProtocolTransportMessage>;
   welcome: WelcomeFrame;
   close(reason?: string): Promise<void>;
 }>;
 
 type LifecycleHarness = Readonly<{
-  hypervisor: DenoHypervisor;
+  hypervisor: Hypervisor;
   listener: HypervisorListener;
   definition: WorkerDefinition;
   identity: WorkerIdentity;
@@ -122,15 +126,15 @@ function workerUrl(listener: HypervisorListener, path: string): URL {
 }
 
 async function createLifecycleHarness(
-  sessionLifecycle: HypervisorSessionLifecycle,
+  sessionCallbacks: SessionLifecycleCallbacks,
   options: Readonly<{
     clock?: () => number;
     wrapAuthority?: (
-      authority: RegistrationAuthority,
-    ) => RegistrationAuthority;
+      authority: CredentialLifecycle,
+    ) => CredentialLifecycle;
   }> = {},
 ): Promise<LifecycleHarness> {
-  const repository = createInMemoryWorkerRepository({
+  const repository = createEphemeralWorkerStore({
     clock: options.clock,
   });
   const definition = await repository.define(createWorkerDefinition({
@@ -143,17 +147,16 @@ async function createLifecycleHarness(
   }));
   const identity = (await repository.activate(definition.workerId)).attempt
     .identity;
-  const registrationAuthority = createInMemoryRegistrationAuthority({
+  const registrationAuthority = createEphemeralCredentialLifecycle({
     clock: options.clock,
   });
   const registration = await registrationAuthority.issueRegistration(identity);
   const authority = options.wrapAuthority?.(registrationAuthority) ??
     registrationAuthority;
-  const hypervisor = createDenoHypervisor({
-    authority,
-    repository,
-    persistAcceptance: () => Promise.resolve(),
-    sessionLifecycle,
+  const hypervisor = createHypervisor({
+    control: { authority, repository },
+    commitAcceptedWork: () => Promise.resolve(),
+    sessionCallbacks,
     clock: options.clock,
     config: {
       heartbeatIntervalMs: 100,
@@ -166,11 +169,12 @@ async function createLifecycleHarness(
       proactiveDrainMarginMs: 1_000,
     },
   });
-  const listener = hypervisor.listen({
+  const listener = serve({
+    hypervisor,
     hostname: "127.0.0.1",
     port: 0,
   });
-  const url = workerUrl(listener, hypervisor.config.workerPath);
+  const url = workerUrl(listener, TEST_WORKER_PATH);
   const workers = new Set<LifecycleWorker>();
 
   const connect: LifecycleHarness["connect"] = async (input) => {
@@ -179,8 +183,11 @@ async function createLifecycleHarness(
       allowInsecureLoopback: true,
       timeoutMs: 1_000,
     });
-    const transport = await createWebSocketTransport({
-      socket,
+    const connection = await createFrameConnection(
+      adaptSocketConnection(socket),
+    );
+    const transport = await createProtocolTransport({
+      connection,
       role: "worker",
     });
     const iterator = transport.messages()[Symbol.asyncIterator]();
@@ -257,15 +264,15 @@ Deno.test({
   name: "session lifecycle Ready commit gates process-local routability",
   permissions: { net: ["127.0.0.1"] },
   async fn() {
-    const entered = createDeferred<HypervisorReadyCommitContext>();
+    const entered = createDeferred<HypervisorReadyContext>();
     const release = createDeferred<void>();
     const metadata = { environment: "local", status: { booted: true } };
     const harness = await createLifecycleHarness({
-      commitReady(context) {
+      onReady(context) {
         entered.resolve(context);
         return release.promise;
       },
-      commitHeartbeat() {},
+      onHeartbeat() {},
       onDisconnect() {},
     });
     let worker: LifecycleWorker | undefined;
@@ -295,7 +302,7 @@ Deno.test({
       await assertRejects(
         () => harness.hypervisor.dispatch({ workload: WORKLOAD }),
         Error,
-        "no ready session",
+        "no ready Worker has capacity",
       );
 
       release.resolve();
@@ -324,14 +331,14 @@ Deno.test({
 
 Deno.test({
   name:
-    "snapshot retains adapter admission while a closed handshake hook is unsettled",
+    "snapshot retains an unsettled admission operation after its connection closes",
   permissions: { net: ["127.0.0.1"] },
   async fn() {
     const exchangeEntered = createDeferred<void>();
     const releaseExchange = createDeferred<void>();
     const harness = await createLifecycleHarness({
-      commitReady() {},
-      commitHeartbeat() {},
+      onReady() {},
+      onHeartbeat() {},
       onDisconnect() {},
     }, {
       wrapAuthority(authority) {
@@ -358,7 +365,7 @@ Deno.test({
       const connected = harness.hypervisor.snapshot();
       assertEquals(connected.connections, 1);
       assertEquals(connected.unauthenticatedConnections, 1);
-      assertEquals(connected.authenticatedConnections, 1);
+      assertEquals(connected.authenticatedConnections, 0);
       assertEquals(connected.handshakeOperations, 1);
       assertEquals(connected.readyOperations, 0);
 
@@ -378,7 +385,7 @@ Deno.test({
       const closed = harness.hypervisor.snapshot();
       assertEquals(closed.connections, 0);
       assertEquals(closed.unauthenticatedConnections, 1);
-      assertEquals(closed.authenticatedConnections, 1);
+      assertEquals(closed.authenticatedConnections, 0);
       assertEquals(closed.handshakeOperations, 1);
       assertEquals(closed.readyOperations, 0);
 
@@ -405,17 +412,17 @@ Deno.test({
     "late Ready completion from a replaced generation cannot publish or detach the newer session",
   permissions: { net: ["127.0.0.1"] },
   async fn() {
-    const oldEntered = createDeferred<HypervisorReadyCommitContext>();
+    const oldEntered = createDeferred<HypervisorReadyContext>();
     const releaseOld = createDeferred<void>();
     const disconnects: HypervisorDisconnectEvent[] = [];
     const harness = await createLifecycleHarness({
-      commitReady(context) {
+      onReady(context) {
         if (context.fence.sessionGeneration === 1) {
           oldEntered.resolve(context);
           return releaseOld.promise;
         }
       },
-      commitHeartbeat() {},
+      onHeartbeat() {},
       onDisconnect(event) {
         disconnects.push(event);
       },
@@ -494,14 +501,14 @@ Deno.test({
   async fn() {
     let nowMs = 1_000;
     const heartbeatEntered = createDeferred<
-      HypervisorHeartbeatCommitContext
+      HypervisorHeartbeatContext
     >();
     const releaseHeartbeat = createDeferred<void>();
-    const heartbeatContexts: HypervisorHeartbeatCommitContext[] = [];
+    const heartbeatContexts: HypervisorHeartbeatContext[] = [];
     const disconnects: HypervisorDisconnectEvent[] = [];
     const harness = await createLifecycleHarness({
-      commitReady() {},
-      commitHeartbeat(context) {
+      onReady() {},
+      onHeartbeat(context) {
         heartbeatContexts.push(context);
         if (context.sequence === 0) {
           heartbeatEntered.resolve(context);
@@ -601,7 +608,7 @@ Deno.test({
     "a monotonic disconnect tombstone prevents a late Ready commit from resurrecting durable presence",
   permissions: { net: ["127.0.0.1"] },
   async fn() {
-    const readyEntered = createDeferred<HypervisorReadyCommitContext>();
+    const readyEntered = createDeferred<HypervisorReadyContext>();
     const releaseReady = createDeferred<void>();
     const lateReadySettled = createDeferred<void>();
     const disconnectObserved = createDeferred<HypervisorDisconnectEvent>();
@@ -609,7 +616,7 @@ Deno.test({
     const disconnects: HypervisorDisconnectEvent[] = [];
     let durableState: "starting" | "ready" | "disconnected" = "starting";
     const fenceKey = (
-      fence: HypervisorReadyCommitContext["fence"],
+      fence: HypervisorReadyContext["fence"],
     ): string =>
       [
         fence.identity.workerId,
@@ -619,7 +626,7 @@ Deno.test({
         fence.connectionId,
       ].join("/");
     const harness = await createLifecycleHarness({
-      commitReady(context) {
+      onReady(context) {
         readyEntered.resolve(context);
         return releaseReady.promise.then(() => {
           if (!disconnectedFences.has(fenceKey(context.fence))) {
@@ -628,7 +635,7 @@ Deno.test({
           lateReadySettled.resolve();
         });
       },
-      commitHeartbeat() {},
+      onHeartbeat() {},
       onDisconnect(event) {
         disconnectedFences.add(fenceKey(event.fence));
         durableState = "disconnected";
@@ -702,8 +709,8 @@ Deno.test({
   async fn() {
     const disconnects: HypervisorDisconnectEvent[] = [];
     const harness = await createLifecycleHarness({
-      commitReady() {},
-      commitHeartbeat() {},
+      onReady() {},
+      onHeartbeat() {},
       onDisconnect(event) {
         disconnects.push(event);
         if (disconnects.length === 1) {

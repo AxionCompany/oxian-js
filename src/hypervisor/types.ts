@@ -1,41 +1,29 @@
 import type { JsonObject, WorkerIdentity } from "../protocol/types.ts";
 import type {
-  WorkerHostDispatchInput,
-  WorkerHostInputBody,
-  WorkerHostWorkHandle,
-} from "../host/types.ts";
-import type {
-  AcceptanceCommit,
-  RegistrationAuthority,
-  RegistrationExchange,
   SessionRegistry,
   WorkDispatchStatus,
   WorkerDefinition,
-  WorkerRepository,
 } from "../supervisor/index.ts";
 import type { SessionFence } from "../supervisor/types.ts";
-import type { WorkerWireConnection } from "../transport/types.ts";
+import type { SocketConnection } from "../transport/types.ts";
+import type { WorkHandle, WorkInput } from "../work/types.ts";
+import type { HypervisorAdmit, HypervisorAssign } from "../lifecycle/types.ts";
+import type { HypervisorTransport } from "../transport/declarations.ts";
 import type { HypervisorConfig } from "./config.ts";
-
-export type HypervisorWorkInputBody = WorkerHostInputBody;
-
-export type HypervisorDispatchInput = WorkerHostDispatchInput;
-
-export type HypervisorWorkHandle = WorkerHostWorkHandle;
 
 export type HypervisorScheduler = Readonly<{
   schedule(callback: () => void, delayMs: number): unknown;
   cancel(handle: unknown): void;
 }>;
 
-export type HypervisorReadyCommitContext = Readonly<{
+export type HypervisorReadyContext = Readonly<{
   fence: SessionFence;
   definition: WorkerDefinition;
   metadata: JsonObject;
   signal: AbortSignal;
 }>;
 
-export type HypervisorHeartbeatCommitContext = Readonly<{
+export type HypervisorHeartbeatContext = Readonly<{
   fence: SessionFence;
   definition: WorkerDefinition;
   sequence: number;
@@ -96,87 +84,11 @@ export type HypervisorDisconnectEvent = Readonly<{
   disconnectedAtMs: number;
 }>;
 
-/**
- * Durable-consumer seam for worker presence and opaque workload status.
- *
- * Ready and heartbeat commits are fail-closed gates. Implementations must use
- * the complete fence as an idempotent compare-and-set key. Durable state must
- * also retain a monotonic per-fence disconnect tombstone or high-watermark:
- * because AbortSignal is advisory, a late Ready commit must never resurrect a
- * fence after its disconnect was observed.
- *
- * Commit hooks execute inside that connection's ordered frame loop. They must
- * not await `dispatch()`, `drain()`, or another operation whose completion
- * requires frames from the same worker. Follow-on orchestration belongs on a
- * separate queue.
- *
- * `onDisconnect` is an exactly-once, nonblocking observer. It must enqueue any
- * durable work and return immediately; observer completion never owns socket
- * cleanup or Hypervisor shutdown.
- */
-export type HypervisorSessionLifecycle = Readonly<{
-  commitReady(
-    context: HypervisorReadyCommitContext,
-  ): void | Promise<void>;
-  commitHeartbeat(
-    context: HypervisorHeartbeatCommitContext,
-  ): void | Promise<void>;
-  onDisconnect(event: HypervisorDisconnectEvent): void;
-}>;
-
-/**
- * Read-only worker state required to admit a WebSocket session.
- *
- * Provisioning and attempt mutation remain orchestration concerns and are not
- * required by the Hypervisor data plane.
- */
-export type WorkerAdmissionRepository = Pick<
-  WorkerRepository,
-  "getDefinition" | "assertCurrent"
->;
-
-/**
- * Registration exchange required to admit a WebSocket session.
- *
- * Issuing registrations and revoking attempts remain Control-plane concerns
- * and are deliberately absent from the Hypervisor data-plane seam.
- */
-export type WorkerAdmissionAuthority = Pick<RegistrationAuthority, "exchange">;
-
 export type HypervisorOptions = Readonly<{
-  authority: WorkerAdmissionAuthority;
-  repository: WorkerAdmissionRepository;
-  persistAcceptance(
-    commit: AcceptanceCommit,
-  ): Promise<void>;
-  createBootstrap?(
-    input: Readonly<{
-      identity: WorkerIdentity;
-      definition: WorkerDefinition;
-      exchange: RegistrationExchange;
-      signal: AbortSignal;
-    }>,
-  ): JsonObject | Promise<JsonObject>;
-  /**
-   * Purely validates workload-owned Ready metadata before routing begins.
-   *
-   * This hook must have no durable or externally visible side effects. Its
-   * AbortSignal is advisory and an older validation Promise may settle after
-   * replacement; only the Hypervisor's later durable lifecycle gate followed
-   * by fenced `markReady` publishes routable readiness.
-   */
-  validateReady?(
-    input: Readonly<{
-      identity: WorkerIdentity;
-      definition: WorkerDefinition;
-      exchange: RegistrationExchange;
-      sessionGeneration: number;
-      connectionId: string;
-      metadata: JsonObject;
-      signal: AbortSignal;
-    }>,
-  ): void | Promise<void>;
-  sessionLifecycle?: HypervisorSessionLifecycle;
+  transports: readonly HypervisorTransport[];
+  admit?: HypervisorAdmit;
+  assign?: HypervisorAssign;
+  signal?: AbortSignal;
   config?: Partial<HypervisorConfig>;
   sessions?: SessionRegistry;
   fallback?: (
@@ -209,6 +121,7 @@ export type HypervisorSnapshot = Readonly<{
   handshakeOperations: number;
   readyOperations: number;
   sessions: number;
+  inProcessWorkers: number;
   pendingAcceptanceCommits: number;
   pendingAcceptanceCommitsByWorker: readonly Readonly<{
     workerId: string;
@@ -231,7 +144,7 @@ export type HypervisorRequestDecision =
      * expose the selected subprotocol itself.
      */
     attach(
-      connection: WorkerWireConnection,
+      connection: SocketConnection,
       negotiatedProtocol?: string,
     ): void;
     /** Releases the reserved admission slot when a runtime upgrade fails. */
@@ -244,19 +157,19 @@ export type Hypervisor = Readonly<{
    * admission. A server adapter owns the native handshake and listener.
    */
   prepare(request: Request): HypervisorRequestDecision;
-  dispatch(input: HypervisorDispatchInput): Promise<HypervisorWorkHandle>;
+  dispatch(input: WorkInput): Promise<WorkHandle>;
   /**
-   * Gracefully drains one ready worker connection, then closes it so the
-   * WorkerClient reconnects with its resume credential.
+   * Gracefully drains one ready Worker connection, then lets the Worker
+   * establish its next session.
    *
    * This is a maintenance/rotation primitive, not a terminal worker stop.
    * It is a no-op when the worker has no active ready session.
    */
   drain(workerId: string, reason?: string): Promise<void>;
   /**
-   * Gracefully drains one ready worker connection, sends the protocol
-   * `Shutdown` frame, and closes it. A conforming WorkerClient settles
-   * `run()` with `reason: "shutdown"` instead of reconnecting.
+   * Gracefully drains one ready Worker session, sends the protocol `Shutdown`
+   * frame and closes it. The Worker's `closed` promise settles with
+   * `reason: "shutdown"` instead of reconnecting.
    *
    * This does not revoke durable worker authority or stop provider compute;
    * those remain application/provider orchestration concerns. An in-flight

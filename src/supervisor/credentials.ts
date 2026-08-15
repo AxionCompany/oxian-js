@@ -8,12 +8,38 @@ import {
   freeze,
   sameIdentity,
 } from "./internal.ts";
-import type {
-  RegistrationAuthority,
-  RegistrationAuthorityHooks,
-  RegistrationExchange,
-  RegistrationGrant,
-} from "./types.ts";
+import type { RegistrationExchange, RegistrationGrant } from "./types.ts";
+
+/** Internal state-owning credential operations used by local defaults and tests. */
+export type CredentialLifecycle = Readonly<{
+  issueRegistration(
+    identity: WorkerIdentity,
+    options?: Readonly<{ ttlMs?: number }>,
+  ): Promise<RegistrationGrant>;
+  exchange(
+    input: Readonly<{
+      identity: WorkerIdentity;
+      credential: WorkerCredential;
+      handshakeId: string;
+    }>,
+  ): Promise<RegistrationExchange>;
+  revoke(identity: WorkerIdentity): Promise<void>;
+}>;
+
+export type CredentialLifecycleOperations = Readonly<{
+  issueRegistration(
+    identity: WorkerIdentity,
+    options?: Readonly<{ ttlMs?: number }>,
+  ): RegistrationGrant | Promise<RegistrationGrant>;
+  exchange(
+    input: Readonly<{
+      identity: WorkerIdentity;
+      credential: WorkerCredential;
+      handshakeId: string;
+    }>,
+  ): RegistrationExchange | Promise<RegistrationExchange>;
+  revoke(identity: WorkerIdentity): void | Promise<void>;
+}>;
 
 const MAX_CAPABILITY_LENGTH = 16_384;
 const DEFAULT_REGISTRATION_TTL_MS = 5 * 60_000;
@@ -93,9 +119,9 @@ function copyExchange(exchange: RegistrationExchange): RegistrationExchange {
  * treats capability contents as opaque so applications can use database-backed,
  * signed, or hardware-bound credentials without changing the worker protocol.
  */
-export function createRegistrationAuthority(
-  hooks: RegistrationAuthorityHooks,
-): RegistrationAuthority {
+export function createCredentialLifecycle(
+  hooks: CredentialLifecycleOperations,
+): CredentialLifecycle {
   return Object.freeze({
     async issueRegistration(identity, options) {
       const requestedIdentity = copyIdentity(identity);
@@ -158,7 +184,7 @@ type StoredReplay = Readonly<{
   expiresAtMs: number;
 }>;
 
-export function createInMemoryRegistrationAuthority(
+export function createEphemeralCredentialLifecycle(
   options: Readonly<{
     clock?: () => number;
     createCapability?: (
@@ -169,7 +195,7 @@ export function createInMemoryRegistrationAuthority(
     resumeTtlMs?: number;
     handshakeReplayTtlMs?: number;
   }> = {},
-): RegistrationAuthority {
+): CredentialLifecycle {
   const clock = options.clock ?? Date.now;
   const createCapability = options.createCapability ??
     ((kind: WorkerCredential["kind"]) => `${kind}:${crypto.randomUUID()}`);
@@ -284,7 +310,7 @@ export function createInMemoryRegistrationAuthority(
     }
   };
 
-  return createRegistrationAuthority({
+  return createCredentialLifecycle({
     issueRegistration(identity, issueOptions) {
       revoke(identity);
       const ttlMs = issueOptions?.ttlMs === undefined

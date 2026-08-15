@@ -18,7 +18,7 @@ import {
   encodeControlFrame,
   type HelloFrame,
 } from "../../src/protocol/index.ts";
-import { createWorkerClient } from "../../src/worker/index.ts";
+import { createProtocolTestWorker as createWorker } from "./protocol_worker.ts";
 import {
   acceptTestHandshake,
   nextControl,
@@ -65,8 +65,12 @@ async function shutdown(
 
 Deno.test("worker multiplexes concurrent credited streams", async () => {
   const peer = await startTestPeer();
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
@@ -74,10 +78,9 @@ Deno.test("worker multiplexes concurrent credited streams", async () => {
       echo: ({ streamId }) => new TextEncoder().encode(`response:${streamId}`),
     },
     capacity: 2,
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -150,17 +153,20 @@ Deno.test("worker multiplexes concurrent credited streams", async () => {
 Deno.test("ignored request body stops at credit while response finishes promptly", async () => {
   const peer = await startTestPeer();
   const response = new Uint8Array(128 * 1024).fill(7);
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => response },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
     inputBufferBytes: 64 * 1024,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -246,8 +252,12 @@ Deno.test("slow output reader applies credit backpressure to native stream", asy
   const chunkBytes = 32 * 1024;
   const chunkCount = 6;
   let produced = 0;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
@@ -264,10 +274,9 @@ Deno.test("slow output reader applies credit backpressure to native stream", asy
           },
         }),
     },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -319,8 +328,12 @@ Deno.test("slow output reader applies credit backpressure to native stream", asy
 Deno.test("remote cancel aborts handler and receives directional acknowledgement", async () => {
   const peer = await startTestPeer();
   let aborted = false;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
@@ -333,10 +346,9 @@ Deno.test("remote cancel aborts handler and receives directional acknowledgement
           }, { once: true });
         }),
     },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -371,8 +383,12 @@ Deno.test("remote cancel aborts handler and receives directional acknowledgement
 Deno.test("deadline rejection discards a crossed Start after Accepted", async () => {
   const peer = await startTestPeer();
   let invocations = 0;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
@@ -381,10 +397,9 @@ Deno.test("deadline rejection discards a crossed Start after Accepted", async ()
         invocations++;
       },
     },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -430,8 +445,12 @@ Deno.test("loss before Start never invokes; loss after Start aborts without repl
   const peer = await startTestPeer();
   let invocations = 0;
   let aborts = 0;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
@@ -446,10 +465,9 @@ Deno.test("loss before Start never invokes; loss after Start aborts without repl
         });
       },
     },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const beforeStart = await peer.nextConnection();
@@ -501,16 +519,19 @@ Deno.test("loss before Start never invokes; loss after Start aborts without repl
 
 Deno.test("drained waits: peer close reconnects, explicit Shutdown stops", async () => {
   const peer = await startTestPeer();
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -556,8 +577,12 @@ Deno.test("drained waits: peer close reconnects, explicit Shutdown stops", async
 Deno.test("resume rotation rejects racing Open as retryable before acceptance", async () => {
   const peer = await startTestPeer();
   let invocations = 0;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
@@ -574,11 +599,10 @@ Deno.test("resume rotation rejects racing Open as retryable before acceptance", 
       },
     },
     capacity: 2,
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
     resumeExpirySkewMs: 400,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -647,8 +671,12 @@ Deno.test("resume rotation rejects racing Open as retryable before acceptance", 
 Deno.test("hung execution keeps process capacity across cancel and reconnect", async () => {
   const peer = await startTestPeer();
   let invocations = 0;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
@@ -659,10 +687,9 @@ Deno.test("hung execution keeps process capacity across cancel and reconnect", a
       },
     },
     capacity: 1,
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -742,8 +769,12 @@ Deno.test("deferred output cancellation holds capacity and Drain until source se
   const peer = await startTestPeer();
   const output = deferredCancellationOutput();
   let invocations = 0;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
@@ -754,10 +785,9 @@ Deno.test("deferred output cancellation holds capacity and Drain until source se
       },
     },
     capacity: 1,
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -828,8 +858,12 @@ Deno.test("deferred output cancellation keeps replacement-session capacity occup
   const peer = await startTestPeer();
   const output = deferredCancellationOutput();
   let invocations = 0;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
@@ -840,10 +874,9 @@ Deno.test("deferred output cancellation keeps replacement-session capacity occup
       },
     },
     capacity: 1,
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -919,17 +952,20 @@ Deno.test("deferred output cancellation keeps replacement-session capacity occup
 Deno.test("run waits for deferred output cancellation after terminal connection loss", async () => {
   const peer = await startTestPeer();
   const output = deferredCancellationOutput();
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => output.body },
     capacity: 1,
-    allowInsecureLoopback: true,
     reconnectDelay: false,
   });
-  const run = client.run();
+  const run = client.closed;
   let runSettled = false;
   void run.then(() => {
     runSettled = true;
@@ -970,8 +1006,12 @@ Deno.test("late zombie failure cannot terminate the replacement session", async 
   const zombie = new Promise<void>((_resolve, reject) => {
     rejectZombie = reject;
   });
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
@@ -982,10 +1022,9 @@ Deno.test("late zombie failure cannot terminate the replacement session", async 
       },
     },
     capacity: 1,
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -1056,8 +1095,12 @@ Deno.test("crossed pre-start cancel stays stream-local on a multiplexed worker",
   const healthyGate = new Promise<void>((resolve) => {
     finishHealthy = resolve;
   });
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
@@ -1068,10 +1111,9 @@ Deno.test("crossed pre-start cancel stays stream-local on a multiplexed worker",
       },
     },
     capacity: 2,
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();

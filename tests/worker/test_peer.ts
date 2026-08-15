@@ -8,15 +8,17 @@ import {
   WORKER_PROTOCOL,
 } from "../../src/protocol/index.ts";
 import {
-  createWebSocketTransport,
-  type WebSocketTransport,
-  type WebSocketTransportMessage,
+  adaptSocketConnection,
+  createFrameConnection,
+  createProtocolTransport,
+  type ProtocolTransport,
+  type ProtocolTransportMessage,
 } from "../../src/transport/index.ts";
 
 export type TestPeerConnection = Readonly<{
   socket: WebSocket;
-  transport: WebSocketTransport;
-  iterator: AsyncIterator<WebSocketTransportMessage>;
+  transport: ProtocolTransport;
+  iterator: AsyncIterator<ProtocolTransportMessage>;
 }>;
 
 export type TestPeer = Readonly<{
@@ -64,7 +66,7 @@ export function startTestPeer(): Promise<TestPeer> {
   const abortController = new AbortController();
   const pending: TestPeerConnection[] = [];
   const waiters: Waiter[] = [];
-  const transports = new Set<WebSocketTransport>();
+  const transports = new Set<ProtocolTransport>();
   let terminalError: unknown;
   let connectionCount = 0;
 
@@ -102,11 +104,14 @@ export function startTestPeer(): Promise<TestPeer> {
       protocol: WORKER_PROTOCOL,
     });
     socket.addEventListener("open", () => {
-      void createWebSocketTransport({
-        socket,
-        role: "hypervisor",
+      void createFrameConnection(adaptSocketConnection(socket), {
         negotiatedProtocol: WORKER_PROTOCOL,
-      }).then((transport) => {
+      }).then((connection) =>
+        Promise.resolve(createProtocolTransport({
+          connection,
+          role: "hypervisor",
+        }))
+      ).then((transport) => {
         transports.add(transport);
         transport.closed.then(() => transports.delete(transport));
         deliver({
@@ -168,14 +173,17 @@ export function startTestPeer(): Promise<TestPeer> {
 export async function nextMessage(
   connection: TestPeerConnection,
   timeoutMs = 2_000,
-): Promise<WebSocketTransportMessage> {
+): Promise<ProtocolTransportMessage> {
   const result = await withTimeout(
     connection.iterator.next(),
     timeoutMs,
     "worker message timed out",
   );
   if (result.done) {
-    throw new TypeError("worker connection ended before its next message");
+    const close = await connection.transport.closed;
+    throw new TypeError(
+      `worker connection ended before its next message (${close.code}: ${close.reason})`,
+    );
   }
   return result.value;
 }
@@ -184,7 +192,7 @@ export async function nextControl(
   connection: TestPeerConnection,
   type?: string,
   timeoutMs = 2_000,
-): Promise<Extract<WebSocketTransportMessage, { kind: "control" }>> {
+): Promise<Extract<ProtocolTransportMessage, { kind: "control" }>> {
   while (true) {
     const message = await nextMessage(connection, timeoutMs);
     if (message.kind !== "control") continue;

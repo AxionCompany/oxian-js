@@ -6,6 +6,7 @@ import type {
   ProtocolStateSnapshot,
   WorkDataFrame,
 } from "../protocol/index.ts";
+import type { ConnectionClose, FrameConnection } from "./frame.ts";
 
 export type TransportSendOptions = Readonly<{
   signal?: AbortSignal;
@@ -17,13 +18,7 @@ export type TransportCloseOptions = Readonly<{
   timeoutMs?: number;
 }>;
 
-export type WebSocketTransportClose = Readonly<{
-  code: number;
-  reason: string;
-  wasClean: boolean;
-}>;
-
-export type WebSocketTransportMessage =
+export type ProtocolTransportMessage =
   | Readonly<{
     kind: "control";
     acceptance: ProtocolFrameAcceptance<ControlFrame>;
@@ -36,28 +31,28 @@ export type WebSocketTransportMessage =
   }>;
 
 /** Runtime-neutral lifecycle state for one worker wire connection. */
-export type WorkerWireConnectionState =
+export type SocketConnectionState =
   | "connecting"
   | "open"
   | "closing"
   | "closed";
 
-export type WorkerWireMessageData =
+export type SocketMessage =
   | string
   | ArrayBuffer
   | ArrayBufferView
   | Blob;
 
-export type WorkerWireClose = Readonly<{
+export type SocketClose = Readonly<{
   code: number;
   reason: string;
   wasClean: boolean;
 }>;
 
-export type WorkerWireObserver = Readonly<{
+export type SocketObserver = Readonly<{
   open?(): void;
-  message?(data: WorkerWireMessageData): void;
-  close?(event: WorkerWireClose): void;
+  message?(data: SocketMessage): void;
+  close?(event: SocketClose): void;
   error?(error?: unknown): void;
 }>;
 
@@ -68,42 +63,30 @@ export type WorkerWireObserver = Readonly<{
  * WebSocket events through server/object-level callbacks instead of per-socket
  * DOM events.
  */
-export type WorkerWireConnection = Readonly<{
+export type SocketConnection = Readonly<{
   readonly protocol: string;
-  readonly state: WorkerWireConnectionState;
+  readonly state: SocketConnectionState;
   readonly bufferedAmount: number;
   send(data: string | Uint8Array): void;
   close(code?: number, reason?: string): void;
-  subscribe(observer: WorkerWireObserver): () => void;
+  subscribe(observer: SocketObserver): () => void;
 }>;
 
-export type WebSocketTransportOptions = Readonly<{
-  /**
-   * Native client WebSockets remain accepted for compatibility. Server
-   * adapters should pass an explicit WorkerWireConnection.
-   */
-  socket: WebSocket | WorkerWireConnection;
+export type ProtocolTransportOptions = Readonly<{
+  connection: FrameConnection;
   role: ProtocolRole;
-  /**
-   * Server adapters may supply the exact protocol they selected when their
-   * WebSocket implementation does not expose it on `socket.protocol`.
-   */
-  negotiatedProtocol?: string;
   signal?: AbortSignal;
   maxInboundMessages?: number;
   maxInboundBytes?: number;
   maxPendingSendMessages?: number;
   maxPendingSendBytes?: number;
-  maxBufferedAmountBytes?: number;
-  bufferedAmountLowWaterBytes?: number;
-  bufferedAmountPollMs?: number;
   /**
    * Optional connection-local admission limits. Wire hard limits still apply.
    */
   protocol?: Omit<ProtocolOrderValidatorOptions, "role">;
 }>;
 
-export type WebSocketTransport = Readonly<{
+export type ProtocolTransport = Readonly<{
   sendControl(
     frame: ControlFrame,
     options?: TransportSendOptions,
@@ -115,10 +98,10 @@ export type WebSocketTransport = Readonly<{
   /**
    * Returns the single-consumer inbound message iterable.
    */
-  messages(): AsyncIterable<WebSocketTransportMessage>;
+  messages(): AsyncIterable<ProtocolTransportMessage>;
   snapshot(): ProtocolStateSnapshot;
   close(options?: TransportCloseOptions): Promise<void>;
-  readonly closed: Promise<WebSocketTransportClose>;
+  readonly closed: Promise<ConnectionClose>;
 }>;
 
 export type WorkerWebSocketFactoryContext = Readonly<{

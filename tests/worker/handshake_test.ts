@@ -8,11 +8,11 @@ import {
   type ReadyFrame,
   WORKER_PROTOCOL,
 } from "../../src/protocol/index.ts";
+import type { WorkerResumeCredentialUpdate } from "../../src/worker/index.ts";
 import {
-  createWorkerClient,
-  type WorkerClientOptions,
-  type WorkerResumeCredentialUpdate,
-} from "../../src/worker/index.ts";
+  createProtocolTestWorker as createWorker,
+  type ProtocolTestWorkerOptions as WebSocketWorkerOptions,
+} from "./protocol_worker.ts";
 import {
   acceptTestHandshake,
   nextControl,
@@ -46,13 +46,16 @@ Deno.test("worker handshake persists, bootstraps, then advertises Ready metadata
   const prepareGate = deferred();
   const prepareEntered = deferred();
   const events: string[] = [];
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     handshakeId: "handshake-registration",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
     persistResumeCredential: async () => {
       events.push("persist");
@@ -67,7 +70,7 @@ Deno.test("worker handshake persists, bootstraps, then advertises Ready metadata
       return { initializedRevision: "sandbox-r1" };
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -102,7 +105,7 @@ Deno.test("worker handshake persists, bootstraps, then advertises Ready metadata
     await connection.transport.sendControl(createReadyAckFrame({
       connectionId: welcome.connectionId,
     }));
-    assertEquals((await withTimeout(client.whenReady())).state, "ready");
+    assertEquals((await withTimeout(client.ready)).state, "ready");
 
     await connection.transport.sendControl(createShutdownFrame({
       connectionId: welcome.connectionId,
@@ -118,23 +121,26 @@ Deno.test("worker handshake persists, bootstraps, then advertises Ready metadata
 Deno.test("worker delegates provider authentication to its socket factory", async () => {
   const peer = await startTestPeer();
   let factoryCalls = 0;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+      socket(context) {
+        factoryCalls++;
+        assertEquals(context.url.href, peer.url);
+        assertEquals(context.protocol, WORKER_PROTOCOL);
+        assertEquals(context.signal.aborted, false);
+        return new WebSocket(context.url, context.protocol);
+      },
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: false,
-    createWebSocket(context) {
-      factoryCalls++;
-      assertEquals(context.url.href, peer.url);
-      assertEquals(context.protocol, WORKER_PROTOCOL);
-      assertEquals(context.signal.aborted, false);
-      return new WebSocket(context.url, context.protocol);
-    },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -165,17 +171,20 @@ Deno.test("worker delegates provider authentication to its socket factory", asyn
 
 Deno.test("lost Ready acknowledgement reconnects without reporting a false ready state", async () => {
   const peer = await startTestPeer();
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
     readyTimeoutMs: 40,
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -210,7 +219,7 @@ Deno.test("lost Ready acknowledgement reconnects without reporting a false ready
     await second.transport.sendControl(createReadyAckFrame({
       connectionId: welcome.connectionId,
     }));
-    assertEquals((await withTimeout(client.whenReady())).state, "ready");
+    assertEquals((await withTimeout(client.ready)).state, "ready");
 
     await second.transport.sendControl(createShutdownFrame({
       connectionId: welcome.connectionId,
@@ -225,13 +234,16 @@ Deno.test("lost Ready acknowledgement reconnects without reporting a false ready
 
 Deno.test("worker Ready initialization has an independent long-running timeout", async () => {
   const peer = await startTestPeer();
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: false,
     handshakeTimeoutMs: 20,
     readyTimeoutMs: 250,
@@ -240,7 +252,7 @@ Deno.test("worker Ready initialization has an independent long-running timeout",
       return { restored: true };
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -276,13 +288,16 @@ Deno.test("persistence failure retries the exact prior credential and handshake"
   let persistenceAttempt = 0;
   let handshakeSequence = 0;
   const updates: WorkerResumeCredentialUpdate[] = [];
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     handshakeId: "registration-exchange-1",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
     createHandshakeId: () => `resume-exchange-${++handshakeSequence}`,
     persistResumeCredential: (update) => {
@@ -293,7 +308,7 @@ Deno.test("persistence failure retries the exact prior credential and handshake"
       }
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -341,15 +356,18 @@ Deno.test("persistence failure retries the exact prior credential and handshake"
 Deno.test("revoked resume credential surfaces re-enrollment without reconnecting", async () => {
   const peer = await startTestPeer();
   const notifications: unknown[] = [];
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "resume", capability: "revoked-resume" },
     credentialPersistence: "ephemeral",
     handshakeId: "resume-exchange-1",
     resumeExpiresAtMs: Date.now() + 60_000,
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: () => {
       throw new Error("permanent auth failure must not reconnect");
     },
@@ -357,7 +375,7 @@ Deno.test("revoked resume credential surfaces re-enrollment without reconnecting
       notifications.push(error);
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -382,18 +400,21 @@ Deno.test("worker credentials are copied and stored resume expiry is mandatory",
     kind: "registration" as const,
     capability: "original-registration",
   };
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: mutableCredential,
     credentialPersistence: "ephemeral",
     handshakeId: "registration-exchange-1",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: false,
   });
   mutableCredential.capability = "mutated-after-construction";
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();
@@ -412,20 +433,26 @@ Deno.test("worker credentials are copied and stored resume expiry is mandatory",
 
   assertThrows(
     () =>
-      createWorkerClient({
-        url: "wss://example.test/workers",
+      createWorker({
+        transport: {
+          type: "websocket",
+          url: "wss://example.test/workers",
+        },
         identity: IDENTITY,
         credential: { kind: "resume", capability: "resume-1" },
         credentialPersistence: "ephemeral",
         workloads: { echo: () => undefined },
-      } as unknown as WorkerClientOptions),
+      } as unknown as WebSocketWorkerOptions),
     TypeError,
     "resumeExpiresAtMs",
   );
   assertThrows(
     () =>
-      createWorkerClient({
-        url: "wss://example.test/workers",
+      createWorker({
+        transport: {
+          type: "websocket",
+          url: "wss://example.test/workers",
+        },
         identity: IDENTITY,
         credential: { kind: "registration", capability: "registration-1" },
         credentialPersistence: "ephemeral",
@@ -437,22 +464,28 @@ Deno.test("worker credentials are copied and stored resume expiry is mandatory",
   );
   assertThrows(
     () =>
-      createWorkerClient({
-        url: "wss://example.test/workers",
+      createWorker({
+        transport: {
+          type: "websocket",
+          url: "wss://example.test/workers",
+        },
         identity: IDENTITY,
         credential: {
           kind: "registration",
           capability: "registration-1",
         },
         workloads: { echo: () => undefined },
-      } as unknown as WorkerClientOptions),
+      } as unknown as WebSocketWorkerOptions),
     TypeError,
     "persistResumeCredential",
   );
   assertThrows(
     () =>
-      createWorkerClient({
-        url: "wss://example.test/workers",
+      createWorker({
+        transport: {
+          type: "websocket",
+          url: "wss://example.test/workers",
+        },
         identity: IDENTITY,
         credential: {
           kind: "registration",
@@ -467,8 +500,12 @@ Deno.test("worker credentials are copied and stored resume expiry is mandatory",
   );
   assertThrows(
     () =>
-      createWorkerClient({
-        url: "wss://example.test/workers",
+      createWorker({
+        transport: {
+          type: "websocket",
+          url: "wss://example.test/workers",
+          socket: 42,
+        },
         identity: IDENTITY,
         credential: {
           kind: "registration",
@@ -476,23 +513,25 @@ Deno.test("worker credentials are copied and stored resume expiry is mandatory",
         },
         credentialPersistence: "ephemeral",
         workloads: { echo: () => undefined },
-        createWebSocket: 42,
-      } as unknown as WorkerClientOptions),
+      } as unknown as WebSocketWorkerOptions),
     TypeError,
-    "createWebSocket",
+    "transport.socket",
   );
 });
 
 Deno.test("an unsettled pre-ready hook blocks reconnect but not stop", async () => {
   const peer = await startTestPeer();
   const entered = deferred();
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
     handshakeTimeoutMs: 50,
     readyTimeoutMs: 50,
@@ -501,7 +540,7 @@ Deno.test("an unsettled pre-ready hook blocks reconnect but not stop", async () 
       return new Promise(() => undefined);
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -531,13 +570,16 @@ Deno.test("an unsettled durable persister blocks reconnect but not stop", async 
   const peer = await startTestPeer();
   const entered = deferred();
   let persistenceSignalAborted = false;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     handshakeId: "registration-exchange-hanging",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
     handshakeTimeoutMs: 50,
     persistResumeCredential: (_update, { signal }) => {
@@ -548,7 +590,7 @@ Deno.test("an unsettled durable persister blocks reconnect but not stop", async 
       return new Promise(() => undefined);
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -582,13 +624,16 @@ Deno.test("late durable completion is adopted before reconnect without overlappi
   let activePersistence = 0;
   let maximumActivePersistence = 0;
   let handshakeSequence = 0;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     handshakeId: "registration-exchange-late",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
     handshakeTimeoutMs: 50,
     createHandshakeId: () => `resume-exchange-${++handshakeSequence}`,
@@ -609,7 +654,7 @@ Deno.test("late durable completion is adopted before reconnect without overlappi
       }
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -678,13 +723,16 @@ Deno.test("late pre-ready completion serializes bootstrap across reconnects", as
   let initializationAttempt = 0;
   let activeInitialization = 0;
   let maximumActiveInitialization = 0;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
     handshakeTimeoutMs: 50,
     readyTimeoutMs: 50,
@@ -707,7 +755,7 @@ Deno.test("late pre-ready completion serializes bootstrap across reconnects", as
       }
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const first = await peer.nextConnection();
@@ -761,13 +809,16 @@ Deno.test("state observers cannot throw, hang, or reentrantly stop the lifecycle
   const peer = await startTestPeer();
   const hungObserverEntered = deferred();
   let observerCalls = 0;
-  const client: ReturnType<typeof createWorkerClient> = createWorkerClient({
-    url: peer.url,
+  const client: ReturnType<typeof createWorker> = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: () => 0,
     onStateChange: () => {
       observerCalls++;
@@ -780,7 +831,7 @@ Deno.test("state observers cannot throw, hang, or reentrantly stop the lifecycle
       return new Promise<void>(() => undefined);
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     await withTimeout(hungObserverEntered.promise);
@@ -796,15 +847,18 @@ Deno.test("state observers cannot throw, hang, or reentrantly stop the lifecycle
 Deno.test("hung re-enrollment notification fires once without gating stop", async () => {
   const notificationEntered = deferred();
   let notifications = 0;
-  const client = createWorkerClient({
-    url: "ws://127.0.0.1:1/workers",
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: "ws://127.0.0.1:1/workers",
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "resume", capability: "expired-resume" },
     credentialPersistence: "ephemeral",
     handshakeId: "expired-resume-handshake",
     resumeExpiresAtMs: Date.now() - 1,
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: false,
     onReenrollmentRequired: () => {
       notifications++;
@@ -813,7 +867,7 @@ Deno.test("hung re-enrollment notification fires once without gating stop", asyn
     },
   });
 
-  const result = await withTimeout(client.run());
+  const result = await withTimeout(client.closed);
   assertEquals(result.reason, "reenrollment_required");
   await withTimeout(notificationEntered.promise);
   await withTimeout(client.stop("test_complete"));
@@ -825,20 +879,23 @@ Deno.test("hung reconnect delay is single-flight and cannot gate stop", async ()
   const peer = await startTestPeer();
   const delayEntered = deferred();
   let delayCalls = 0;
-  const client = createWorkerClient({
-    url: peer.url,
+  const client = createWorker({
+    transport: {
+      type: "websocket",
+      url: peer.url,
+      allowInsecureLoopback: true,
+    },
     identity: IDENTITY,
     credential: { kind: "registration", capability: "registration-1" },
     credentialPersistence: "ephemeral",
     workloads: { echo: () => undefined },
-    allowInsecureLoopback: true,
     reconnectDelay: () => {
       delayCalls++;
       delayEntered.resolve();
       return new Promise<number | null>(() => undefined);
     },
   });
-  const run = client.run();
+  const run = client.closed;
 
   try {
     const connection = await peer.nextConnection();

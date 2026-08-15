@@ -6,10 +6,10 @@
  */
 export * from "./app/core.ts";
 export * from "./http/index.ts";
-export * from "./host/index.ts";
 export * from "./hypervisor/index.ts";
+export type * from "./lifecycle/index.ts";
 export * from "./protocol/index.ts";
 export * from "./providers/core.ts";
-export * from "./supervisor/index.ts";
-export * from "./transport/index.ts";
+export type * from "./transport/declarations.ts";
+export * from "./work/index.ts";
 export * from "./worker/index.ts";

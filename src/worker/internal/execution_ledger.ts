@@ -9,7 +9,7 @@ export type ExecutionLedger = Readonly<{
 }>;
 
 /**
- * Process-lifetime capacity accounting. A reservation outlives any WebSocket
+ * Process-lifetime capacity accounting. A reservation outlives any physical
  * session and is released only by the execution path that owns it.
  */
 export function createExecutionLedger(capacity: number): ExecutionLedger {

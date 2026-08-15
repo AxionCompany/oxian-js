@@ -1,10 +1,10 @@
 import type {
-  WorkerWireConnection,
-  WorkerWireConnectionState,
-  WorkerWireObserver,
+  SocketConnection,
+  SocketConnectionState,
+  SocketObserver,
 } from "./types.ts";
 
-function stateOf(socket: WebSocket): WorkerWireConnectionState {
+function stateOf(socket: WebSocket): SocketConnectionState {
   switch (socket.readyState) {
     case WebSocket.CONNECTING:
       return "connecting";
@@ -20,9 +20,9 @@ function stateOf(socket: WebSocket): WorkerWireConnectionState {
 }
 
 /** Adapts a standards-compatible WebSocket to Oxian's wire contract. */
-export function createWebSocketWireConnection(
+export function adaptWebSocket(
   socket: WebSocket,
-): WorkerWireConnection {
+): SocketConnection {
   if (
     socket === null ||
     typeof socket !== "object" ||
@@ -41,7 +41,7 @@ export function createWebSocketWireConnection(
     });
   }
 
-  const connection: WorkerWireConnection = {
+  const connection: SocketConnection = {
     get protocol() {
       return socket.protocol;
     },
@@ -57,7 +57,7 @@ export function createWebSocketWireConnection(
     close(code, reason) {
       socket.close(code, reason);
     },
-    subscribe(observer: WorkerWireObserver): () => void {
+    subscribe(observer: SocketObserver): () => void {
       if (observer === null || typeof observer !== "object") {
         throw new TypeError("wire observer must be an object");
       }
@@ -89,11 +89,11 @@ export function createWebSocketWireConnection(
   return Object.freeze(connection);
 }
 
-export function isWorkerWireConnection(
+export function isSocketConnection(
   value: unknown,
-): value is WorkerWireConnection {
+): value is SocketConnection {
   if (value === null || typeof value !== "object") return false;
-  const candidate = value as Partial<WorkerWireConnection>;
+  const candidate = value as Partial<SocketConnection>;
   return typeof candidate.protocol === "string" &&
     (candidate.state === "connecting" ||
       candidate.state === "open" ||
@@ -105,19 +105,17 @@ export function isWorkerWireConnection(
     typeof candidate.subscribe === "function";
 }
 
-export function expectWorkerWireConnection(
+export function expectSocketConnection(
   value: unknown,
-): WorkerWireConnection {
-  if (!isWorkerWireConnection(value)) {
-    throw new TypeError("connection must implement WorkerWireConnection");
+): SocketConnection {
+  if (!isSocketConnection(value)) {
+    throw new TypeError("connection must implement SocketConnection");
   }
   return value;
 }
 
-export function toWorkerWireConnection(
-  value: WebSocket | WorkerWireConnection,
-): WorkerWireConnection {
-  return isWorkerWireConnection(value)
-    ? value
-    : createWebSocketWireConnection(value);
+export function adaptSocketConnection(
+  value: WebSocket | SocketConnection,
+): SocketConnection {
+  return isSocketConnection(value) ? value : adaptWebSocket(value);
 }

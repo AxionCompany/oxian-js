@@ -1,6 +1,6 @@
-import type { HypervisorWorkHandle } from "../../src/hypervisor/types.ts";
 import type { JsonObject } from "../../src/protocol/types.ts";
 import type { WorkDispatch } from "../../src/supervisor/index.ts";
+import type { WorkHandle } from "../../src/work/types.ts";
 
 export type Deferred<T> = Readonly<{
   promise: Promise<T>;
@@ -77,7 +77,7 @@ export function createHandle(
     output?: ReadableStream<Uint8Array>;
     cancel?(reason?: string): void;
   }>,
-): HypervisorWorkHandle {
+): WorkHandle {
   const completed = Object.freeze({
     operationId: "operation-http",
     status: "completed",

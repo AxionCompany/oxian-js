@@ -1,15 +1,10 @@
 import type {
   Hypervisor,
-  HypervisorListener,
   HypervisorListenOptions,
-  HypervisorOptions,
 } from "../../hypervisor/types.ts";
 
-export type DenoHypervisorOptions = HypervisorOptions;
-
-export type DenoHypervisor =
-  & Hypervisor
+export type DenoServeOptions =
   & Readonly<{
-    fetch(request: Request): Response | Promise<Response>;
-    listen(options?: HypervisorListenOptions): HypervisorListener;
-  }>;
+    hypervisor: Hypervisor;
+  }>
+  & HypervisorListenOptions;

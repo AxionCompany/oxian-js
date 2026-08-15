@@ -22,7 +22,7 @@ export type WorkerActivation = Readonly<{
   created: boolean;
 }>;
 
-export type WorkerRepository = Readonly<{
+export type WorkerStore = Readonly<{
   define(definition: WorkerDefinition): Promise<WorkerDefinition>;
   getDefinition(workerId: string): Promise<WorkerDefinition | undefined>;
   listDefinitions(): Promise<readonly WorkerDefinition[]>;
@@ -48,12 +48,12 @@ export type WorkerRepository = Readonly<{
  * This in-memory implementation mutates its closures before returning each
  * promise, preserving those semantics across concurrent calls in one process.
  */
-export function createInMemoryWorkerRepository(
+export function createEphemeralWorkerStore(
   options: Readonly<{
     clock?: () => number;
     createAttemptId?: () => string;
   }> = {},
-): WorkerRepository {
+): WorkerStore {
   const clock = options.clock ?? Date.now;
   const createAttemptId = options.createAttemptId ??
     (() => crypto.randomUUID());

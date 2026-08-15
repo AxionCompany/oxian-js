@@ -1,19 +1,28 @@
-import type { WorkDispatcher } from "../../supervisor/index.ts";
-import type { Hypervisor, HypervisorWorkHandle } from "../types.ts";
-import type { ConnectionDirectory } from "./directory.ts";
-import type { ConnectionRecord, PendingOpenInput } from "./model.ts";
+import {
+  fenceForSession,
+  type SessionRegistry,
+  type WorkDispatch,
+  type WorkDispatcher,
+} from "../../supervisor/index.ts";
+import type {
+  HypervisorAssign,
+  HypervisorWorkAssignedContext,
+} from "../../lifecycle/index.ts";
+import type { WorkHandle, WorkInput } from "../../work/types.ts";
+import type { Hypervisor } from "../types.ts";
 import { createHypervisorError } from "./primitives.ts";
 
 export function createDispatch(
   options: Readonly<{
     dispatcher: WorkDispatcher;
-    directory: ConnectionDirectory;
-    openPending(
-      record: ConnectionRecord,
-      operationId: string,
-      payload: PendingOpenInput,
-      signal: AbortSignal | undefined,
-    ): HypervisorWorkHandle;
+    sessions: SessionRegistry;
+    assign?: HypervisorAssign;
+    onWorkAssigned?: (
+      context: HypervisorWorkAssignedContext,
+    ) => void | Promise<void>;
+    clock: () => number;
+    signal: AbortSignal;
+    open(dispatch: WorkDispatch, input: WorkInput): WorkHandle;
   }>,
 ): Hypervisor["dispatch"] {
   return async (input) => {
@@ -27,43 +36,102 @@ export function createDispatch(
         "dispatch body must be a Uint8Array or ReadableStream<Uint8Array>",
       );
     }
-    const offered = options.dispatcher.offer({
-      workload: input.workload,
-      ...(input.target === undefined ? {} : { target: input.target }),
-      metadata: input.metadata,
-      ...(input.deadlineAtMs === undefined
-        ? {}
-        : { deadlineAtMs: input.deadlineAtMs }),
-    });
-    const assignment = offered.assignment!;
+    let offered: WorkDispatch;
     try {
-      const record = options.directory.get(assignment.fence.connectionId);
-      if (record === undefined) {
+      const operationId = crypto.randomUUID();
+      let target = input.target;
+      if (options.assign !== undefined) {
+        const available = options.sessions.list().filter((session) =>
+          session.phase === "ready" &&
+          session.workloads.includes(input.workload) &&
+          session.reserved < session.capacity &&
+          (input.target === undefined ||
+            input.target.workerId === session.identity.workerId)
+        ).map(fenceForSession);
+        const selected = await options.assign(Object.freeze({
+          stage: "assign" as const,
+          stageId: `assign:${operationId}`,
+          callbackAttempt: 1,
+          signal: input.signal ?? options.signal,
+          operationId,
+          workload: input.workload,
+          metadata: input.metadata ?? {},
+          ...(input.target === undefined ? {} : { target: input.target }),
+          available: Object.freeze(available),
+        }));
+        if (selected !== undefined) {
+          const candidate = available.find((fence) =>
+            fence.connectionId === selected.connectionId &&
+            fence.sessionGeneration === selected.sessionGeneration &&
+            fence.identity.workerId === selected.identity.workerId &&
+            fence.identity.attemptId === selected.identity.attemptId &&
+            fence.identity.epoch === selected.identity.epoch
+          );
+          if (candidate === undefined) {
+            throw new TypeError(
+              "assign must return one of the available current session fences",
+            );
+          }
+          target = Object.freeze({ workerId: candidate.identity.workerId });
+        }
+      }
+      offered = options.dispatcher.offer({
+        operationId,
+        workload: input.workload,
+        ...(target === undefined ? {} : { target }),
+        metadata: input.metadata,
+        ...(input.deadlineAtMs === undefined
+          ? {}
+          : { deadlineAtMs: input.deadlineAtMs }),
+      });
+    } catch (cause) {
+      if (
+        cause instanceof Error &&
+        "code" in cause &&
+        cause.code === "capacity_exhausted"
+      ) {
         throw createHypervisorError(
           "worker_unavailable",
-          "assigned worker connection is unavailable",
-          {
-            identity: assignment.fence.identity,
-            operationId: offered.operationId,
-          },
+          "no ready Worker has capacity for this workload",
+          { cause },
         );
       }
-      return await Promise.resolve(
-        options.openPending(
-          record,
-          offered.operationId,
-          Object.freeze({
-            streamId: assignment.streamId,
-            workload: offered.workload,
-            metadata: offered.metadata,
-            ...(input.body === undefined ? {} : { body: input.body }),
-            ...(input.deadlineAtMs === undefined
-              ? {}
-              : { deadlineAtMs: input.deadlineAtMs }),
-          }),
-          input.signal,
-        ),
+      throw cause;
+    }
+    const assignment = offered.assignment!;
+    try {
+      await options.onWorkAssigned?.(Object.freeze({
+        stage: "work_assigned" as const,
+        stageId: `work_assigned:${offered.operationId}:${assignment.streamId}`,
+        callbackAttempt: 1,
+        signal: input.signal ?? options.signal,
+        operationId: offered.operationId,
+        workload: offered.workload,
+        ...(offered.target === undefined ? {} : { target: offered.target }),
+        metadata: offered.metadata,
+        ...(offered.deadlineAtMs === undefined
+          ? {}
+          : { deadlineAtMs: offered.deadlineAtMs }),
+        deliveryCount: offered.deliveryCount,
+        assignment,
+        assignedAtMs: options.clock(),
+      }));
+    } catch (cause) {
+      options.dispatcher.withdrawOffer(
+        offered.operationId,
+        assignment.fence,
+        assignment.streamId,
+        {
+          code: "work_assignment_rejected",
+          message: cause instanceof Error
+            ? cause.message
+            : "work assignment callback failed",
+        },
       );
+      throw cause;
+    }
+    try {
+      return await Promise.resolve(options.open(offered, input));
     } catch (cause) {
       const current = options.dispatcher.get(offered.operationId);
       if (current?.status === "offered") {

@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.6/edge`
+# `jsr:@oxian/oxian-js@0.21.0-rc.6/edge`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   createCorsAdapter,
   createDevProxyAdapter,
   createStaticAdapter,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/edge";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.6/edge";
 ```
 
 ## Export summary
@@ -59,7 +59,7 @@ import {
   createCorsAdapter,
   createStaticAdapter,
   type FetchHandler,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/edge";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.6/edge";
 
 const application: FetchHandler = (request) =>
   new Response(`application: ${new URL(request.url).pathname}`);
@@ -165,7 +165,7 @@ CORS grants. Preflight responses merge `Origin`,
 `Vary` as applicable.
 
 ```ts
-import { createCorsAdapter } from "jsr:@oxian/oxian-js@0.20.0-rc.6/edge";
+import { createCorsAdapter } from "jsr:@oxian/oxian-js@0.21.0-rc.6/edge";
 
 const withCors = createCorsAdapter({
   origins: async (origin, request) =>
@@ -203,6 +203,7 @@ type StaticAdapterOptions = Readonly<{
   root: string | URL;
   prefix?: string;
   index?: string | readonly string[] | false;
+  fallback?: string;
   cacheControl?: string | StaticCacheControl;
   contentType?: StaticContentType;
   fallthrough?: boolean;
@@ -219,13 +220,15 @@ omits that header.
 | `root`         | required         | Existing local directory path or `file:` URL.      |
 | `prefix`       | `"/"`            | Absolute URL path; trailing slashes removed.       |
 | `index`        | `["index.html"]` | String, ordered list, or `false` to disable.       |
+| `fallback`     | absent           | Navigation fallback file under `root`.             |
 | `cacheControl` | absent           | Fixed string or per-file callback.                 |
 | `contentType`  | built-in map     | Optional per-file callback with built-in fallback. |
 | `fallthrough`  | `true`           | Delegate misses instead of returning 404.          |
 
 Prefixes reject queries, fragments, backslashes, null bytes, and `.` or `..`
-segments. Index entries must be non-empty relative paths without backslashes,
-empty segments, or traversal segments; duplicates are removed.
+segments. Index and fallback entries must be non-empty relative paths without
+backslashes, empty segments, or traversal segments; index duplicates are
+removed.
 
 ### `createStaticAdapter`
 
@@ -251,12 +254,23 @@ At request time:
 - missing or unsafe candidates inside the prefix delegate when `fallthrough` is
   true, otherwise return `404 Not Found`.
 
+When `fallback` is configured, an exact-file miss delegates first when
+`fallthrough` is true. If the resulting response is still 404, Oxian serves the
+fallback only for a `GET` or `HEAD` request accepting HTML, text, or a wildcard
+media range at an extensionless path. Fetch Metadata is treated as advisory
+because browsers and service workers do not preserve it consistently: an
+explicit asset destination still rejects the fallback, while an absent or
+`empty` destination may receive it. JSON-only requests, asset paths with file
+extensions, non-404 application responses, malformed paths, and unsafe paths
+never receive the fallback. Put API applications at a more-specific mount so
+they retain priority over a parent SPA fallback.
+
 Malformed encoding, backslashes, null bytes, traversal, files outside the
 configured root, missing files, and unsafe filesystem targets are treated as
 inside-prefix misses.
 
 ```ts
-import { createStaticAdapter } from "jsr:@oxian/oxian-js@0.20.0-rc.6/edge";
+import { createStaticAdapter } from "jsr:@oxian/oxian-js@0.21.0-rc.6/edge";
 
 const withAssets = createStaticAdapter({
   root: new URL("../public/", import.meta.url),
@@ -366,7 +380,7 @@ The adapter:
 - removes response hop-by-hop and connection-specific headers.
 
 ```ts
-import { createDevProxyAdapter } from "jsr:@oxian/oxian-js@0.20.0-rc.6/edge";
+import { createDevProxyAdapter } from "jsr:@oxian/oxian-js@0.21.0-rc.6/edge";
 
 const withVite = createDevProxyAdapter({
   upstream: "http://127.0.0.1:5173",

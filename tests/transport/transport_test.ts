@@ -1,16 +1,20 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import {
+  BINARY_PROTOCOL,
   createHelloFrame,
   encodeControlFrame,
   WORKER_PROTOCOL,
 } from "../../src/protocol/index.ts";
 import { createBoundedAsyncQueue } from "../../src/transport/queue.ts";
 import {
+  adaptSocketConnection,
   connectWorkerWebSocket,
-  createWebSocketTransport,
-  type WorkerWireClose,
-  type WorkerWireConnection,
-  type WorkerWireObserver,
+  createFrameConnection,
+  createProtocolTransport,
+  type ProtocolTransportOptions,
+  type SocketClose,
+  type SocketConnection,
+  type SocketObserver,
 } from "../../src/transport/index.ts";
 import {
   nextControl,
@@ -33,15 +37,65 @@ const HELLO = createHelloFrame({
   capacity: 1,
 });
 
+type TestTransportOptions =
+  & Omit<ProtocolTransportOptions, "connection">
+  & Readonly<{
+    socket: WebSocket | SocketConnection;
+    negotiatedProtocol?: string;
+    maxBufferedAmountBytes?: number;
+    bufferedAmountLowWaterBytes?: number;
+    bufferedAmountPollMs?: number;
+  }>;
+
+async function createTestTransport(
+  options: TestTransportOptions,
+) {
+  const maxDataPayloadBytes = options.protocol?.maxDataPayloadBytes;
+  if (
+    options.maxBufferedAmountBytes !== undefined &&
+    maxDataPayloadBytes !== undefined &&
+    options.maxBufferedAmountBytes <
+      maxDataPayloadBytes + BINARY_PROTOCOL.headerBytes
+  ) {
+    throw new TypeError(
+      "maxBufferedAmountBytes must accommodate one maximum-sized binary frame",
+    );
+  }
+  const connection = await createFrameConnection(
+    adaptSocketConnection(options.socket),
+    {
+      negotiatedProtocol: options.negotiatedProtocol,
+      signal: options.signal,
+      maxInboundFrames: options.maxInboundMessages,
+      maxInboundBytes: options.maxInboundBytes,
+      maxPendingSendFrames: options.maxPendingSendMessages,
+      maxPendingSendBytes: options.maxPendingSendBytes,
+      maxBufferedAmountBytes: options.maxBufferedAmountBytes,
+      bufferedAmountLowWaterBytes: options.bufferedAmountLowWaterBytes,
+      bufferedAmountPollMs: options.bufferedAmountPollMs,
+    },
+  );
+  return await createProtocolTransport({
+    connection,
+    role: options.role,
+    signal: options.signal,
+    maxInboundMessages: options.maxInboundMessages,
+    maxInboundBytes: options.maxInboundBytes,
+    maxPendingSendMessages: options.maxPendingSendMessages,
+    maxPendingSendBytes: options.maxPendingSendBytes,
+    protocol: options.protocol,
+  });
+}
+
 function createCallbackWireConnection(): Readonly<{
-  connection: WorkerWireConnection;
+  connection: SocketConnection;
   sent: readonly (string | Uint8Array)[];
-  close(event?: Partial<WorkerWireClose>): void;
+  close(event?: Partial<SocketClose>): void;
 }> {
-  const observers = new Set<WorkerWireObserver>();
+  const observers = new Set<SocketObserver>();
   const sent: (string | Uint8Array)[] = [];
-  let state: WorkerWireConnection["state"] = "open";
-  const connection: WorkerWireConnection = Object.freeze({
+  let state: SocketConnection["state"] = "open";
+  const connection: SocketConnection = Object.freeze({
     protocol: WORKER_PROTOCOL,
     get state() {
       return state;
@@ -81,7 +135,7 @@ function createCallbackWireConnection(): Readonly<{
 
 Deno.test("transport accepts a callback-based runtime wire connection", async () => {
   const wire = createCallbackWireConnection();
-  const transport = await createWebSocketTransport({
+  const transport = await createTestTransport({
     socket: wire.connection,
     role: "worker",
   });
@@ -96,9 +150,9 @@ Deno.test("transport accepts a callback-based runtime wire connection", async ()
 });
 
 Deno.test("transport safely handles synchronous wire open subscription", async () => {
-  const observers = new Set<WorkerWireObserver>();
-  let state: WorkerWireConnection["state"] = "connecting";
-  const connection: WorkerWireConnection = Object.freeze({
+  const observers = new Set<SocketObserver>();
+  let state: SocketConnection["state"] = "connecting";
+  const connection: SocketConnection = Object.freeze({
     protocol: WORKER_PROTOCOL,
     get state() {
       return state;
@@ -127,7 +181,7 @@ Deno.test("transport safely handles synchronous wire open subscription", async (
     },
   });
 
-  const transport = await createWebSocketTransport({
+  const transport = await createTestTransport({
     socket: connection,
     role: "worker",
   });
@@ -212,14 +266,14 @@ function createFakeSocket(
 Deno.test("real transport closes an invalid protocol peer with stable 4xxx code", async () => {
   const peer = await startTestPeer();
   let worker:
-    | Awaited<ReturnType<typeof createWebSocketTransport>>
+    | Awaited<ReturnType<typeof createTestTransport>>
     | undefined;
   try {
     const socket = await connectWorkerWebSocket({
       url: peer.url,
       allowInsecureLoopback: true,
     });
-    worker = await createWebSocketTransport({ socket, role: "worker" });
+    worker = await createTestTransport({ socket, role: "worker" });
     const hypervisor = await peer.nextConnection();
     await worker.sendControl(HELLO);
     await nextControl(hypervisor, "hello");
@@ -329,7 +383,7 @@ Deno.test("fatal queue close discards retained values", async () => {
 Deno.test("send failure poisons advanced protocol state deterministically", async () => {
   const sendFailure = new Error("native send failed");
   const fake = createFakeSocket({ sendError: sendFailure });
-  const transport = await createWebSocketTransport({
+  const transport = await createTestTransport({
     socket: fake.socket,
     role: "worker",
   });
@@ -353,7 +407,7 @@ Deno.test("send failure poisons advanced protocol state deterministically", asyn
 
 Deno.test("transport drains a received terminal frame before peer close", async () => {
   const fake = createFakeSocket();
-  const transport = await createWebSocketTransport({
+  const transport = await createTestTransport({
     socket: fake.socket,
     role: "hypervisor",
   });
@@ -381,7 +435,7 @@ Deno.test("transport drains a received terminal frame before peer close", async 
 Deno.test("socket error settles closed and pending sends are bounded", async () => {
   const abortController = new AbortController();
   const fake = createFakeSocket({ bufferedAmount: 2 * 1024 * 1024 });
-  const transport = await createWebSocketTransport({
+  const transport = await createTestTransport({
     socket: fake.socket,
     role: "worker",
     signal: abortController.signal,
@@ -401,7 +455,7 @@ Deno.test("socket error settles closed and pending sends are bounded", async () 
   await transport.closed;
 
   const errored = createFakeSocket();
-  const erroredTransport = await createWebSocketTransport({
+  const erroredTransport = await createTestTransport({
     socket: errored.socket,
     role: "worker",
   });
@@ -415,7 +469,7 @@ Deno.test("socket error settles closed and pending sends are bounded", async () 
 
 Deno.test("transport enforces admission, buffer relation, and close wire bounds", async () => {
   const fake = createFakeSocket();
-  const transport = await createWebSocketTransport({
+  const transport = await createTestTransport({
     socket: fake.socket,
     role: "worker",
     protocol: {
@@ -440,7 +494,7 @@ Deno.test("transport enforces admission, buffer relation, and close wire bounds"
 
   await assertRejects(
     () =>
-      createWebSocketTransport({
+      createTestTransport({
         socket: createFakeSocket().socket,
         role: "worker",
         protocol: { maxDataPayloadBytes: 64 },

@@ -1,12 +1,11 @@
 import type { Application } from "../app/types.ts";
 import type { LocalWorkerTransport, OxianConfig } from "../config/types.ts";
-import type { InProcessWorker, WorkerHost } from "../host/types.ts";
 import type { Hypervisor } from "../hypervisor/types.ts";
 import type { WorkerCredential, WorkerIdentity } from "../protocol/types.ts";
 import type { FileRouter } from "../router/types.ts";
 import type {
-  WorkerClient,
-  WorkerClientResult,
+  Worker,
+  WorkerResult,
   WorkerResumeCredentialPersister,
 } from "../worker/types.ts";
 
@@ -51,22 +50,11 @@ type LocalRuntimeRunningBase = Readonly<{
 
 export type LocalRuntimeRunning =
   & LocalRuntimeRunningBase
-  & (
-    | Readonly<{
-      workerTransport: "in-process";
-      host: WorkerHost;
-      inProcessWorker: InProcessWorker;
-      workerUrl?: never;
-      worker?: never;
-    }>
-    | Readonly<{
-      workerTransport: "worker-websocket";
-      workerUrl: URL;
-      worker: WorkerClient;
-      host?: never;
-      inProcessWorker?: never;
-    }>
-  );
+  & Readonly<{
+    workerTransport: LocalWorkerTransport;
+    worker: Worker;
+    workerUrl?: URL;
+  }>;
 
 export type LocalRuntime = Readonly<{
   start(): Promise<LocalRuntimeRunning>;
@@ -126,8 +114,8 @@ export type ManifestWorkerRuntimeOptions = Readonly<{
 export type ManifestWorkerRuntimeRunning = Readonly<{
   router: FileRouter<unknown>;
   application: Application<unknown>;
-  worker: WorkerClient;
-  workerRun: Promise<WorkerClientResult>;
+  worker: Worker;
+  workerClosed: Promise<WorkerResult>;
 }>;
 
 export type ManifestWorkerRuntime = Readonly<{
@@ -136,6 +124,6 @@ export type ManifestWorkerRuntime = Readonly<{
   readonly finished: Promise<void>;
   snapshot(): Readonly<{
     state: LocalRuntimeState;
-    worker?: ReturnType<WorkerClient["snapshot"]>;
+    worker?: ReturnType<Worker["snapshot"]>;
   }>;
 }>;

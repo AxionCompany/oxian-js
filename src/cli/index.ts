@@ -14,7 +14,7 @@ import {
 import { isCliInputError, parseCliArgs } from "./parser.ts";
 import type { CliDependencies, CliIo, ParsedCli } from "./types.ts";
 
-export const CLI_USAGE = `Oxian 0.20
+export const CLI_USAGE = `Oxian 0.21
 
 Usage:
   oxian init [--root PATH] [--force]
@@ -26,8 +26,8 @@ Usage:
 
 Commands:
   init     Write a minimal oxian.config.ts and routes/index.ts
-  dev      Run the local HTTP gateway and worker host with dev edges
-  start    Run the local HTTP gateway and worker host
+  dev      Run the local Hypervisor and Worker with dev edges
+  start    Run the local Hypervisor and Worker
   worker   Attach a manifest-defined HTTP worker to a WebSocket gateway
   routes   Compile and print the immutable route table
   check    Strictly validate config, application entry, and all routes
@@ -63,7 +63,7 @@ async function execute(
 }
 
 /**
- * Executes one v0.20 CLI invocation and returns a process exit code.
+ * Executes one v0.21 CLI invocation and returns a process exit code.
  *
  * The library never calls `Deno.exit()` and never installs signal handlers.
  * An executable entrypoint may supply `waitForLifecycle` to own signal policy.

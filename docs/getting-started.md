@@ -47,8 +47,8 @@ boundary onto WSS.
 - [Chapter 6: Run it on another machine](getting-started/part-2-workers/06-another-machine.md)
   — use WSS, durable credentials, and outbound-only connectivity.
 
-Part 2 is for developers deploying workers or building a local worker client.
-The Logwash application does not change when its execution moves.
+Part 2 is for developers deploying Workers or running one separately. The
+Logwash application does not change when its execution moves.
 
 ### Part 3 — Operate the platform
 

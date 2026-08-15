@@ -42,10 +42,7 @@ Deno.test("v0.20 config exposes immutable, implemented-only defaults", () => {
     port: 8_000,
   });
   assertEquals(config.gateway.workerTransport, "in-process");
-  assertEquals(
-    config.gateway.hypervisor.workerPath,
-    "/_oxian/workers/connect",
-  );
+  assertEquals(config.gateway.workerCapacity, 32);
   assertEquals(config.gateway.edge, undefined);
   assertDeepFrozen(config);
 
@@ -76,9 +73,9 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     },
     gateway: {
       listener: { hostname: "localhost", port: 9_090 },
-      workerTransport: "worker-websocket",
+      workerTransport: "websocket",
+      workerCapacity: 80,
       hypervisor: {
-        workerPath: "/workers/connect",
         heartbeatIntervalMs: 2_000,
         leaseTimeoutMs: 8_000,
       },
@@ -95,6 +92,7 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
           root: "./public",
           prefix: "/assets/",
           index: ["index.html", "index.html", "home.html"],
+          fallback: "app/index.html",
           cacheControl: "public, max-age=60",
           fallthrough: false,
         },
@@ -117,8 +115,8 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     hostname: "localhost",
     port: 9_090,
   });
-  assertEquals(config.gateway.workerTransport, "worker-websocket");
-  assertEquals(config.gateway.hypervisor.workerPath, "/workers/connect");
+  assertEquals(config.gateway.workerTransport, "websocket");
+  assertEquals(config.gateway.workerCapacity, 80);
   assertEquals(config.gateway.hypervisor.heartbeatIntervalMs, 2_000);
   assertEquals(config.gateway.edge?.cors, {
     origins: ["https://example.com"],
@@ -132,6 +130,7 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     root: "./public",
     prefix: "/assets",
     index: ["index.html", "home.html"],
+    fallback: "app/index.html",
     cacheControl: "public, max-age=60",
     fallthrough: false,
   });
@@ -192,6 +191,13 @@ Deno.test("v0.20 config rejects unknown keys at every owned boundary", () => {
   assertTypeErrorMessage(
     () =>
       defineUnknown({
+        gateway: { edge: { static: { root: ".", fallback: "../secret" } } },
+      }),
+    "config.gateway.edge.static.fallback must not contain empty or traversal segments",
+  );
+  assertTypeErrorMessage(
+    () =>
+      defineUnknown({
         gateway: {
           edge: {
             devProxy: {
@@ -211,7 +217,34 @@ Deno.test("v0.20 config rejects unknown local worker transports", () => {
       defineUnknown({
         gateway: { workerTransport: "events" },
       }),
-    'config.gateway.workerTransport must be "in-process" or "worker-websocket"',
+    'config.gateway.workerTransport must be "in-process" or "websocket"',
+  );
+});
+
+Deno.test("v0.21 config validates local Worker capacity", () => {
+  assertTypeErrorMessage(
+    () => defineUnknown({ gateway: { workerCapacity: 0 } }),
+    "config.gateway.workerCapacity must be a positive safe integer",
+  );
+  assertTypeErrorMessage(
+    () => defineUnknown({ gateway: { workerCapacity: 1.5 } }),
+    "config.gateway.workerCapacity must be a positive safe integer",
+  );
+  assertTypeErrorMessage(
+    () =>
+      defineUnknown({
+        gateway: {
+          workerCapacity: 3,
+          hypervisor: { maxWorkerCapacity: 2 },
+        },
+      }),
+    "config.gateway.workerCapacity must not exceed config.gateway.hypervisor.maxWorkerCapacity",
+  );
+  assertEquals(
+    defineConfig({
+      gateway: { hypervisor: { maxWorkerCapacity: 2 } },
+    }).gateway.workerCapacity,
+    2,
   );
 });
 
@@ -399,7 +432,7 @@ Deno.test("v0.20 config rejects invalid paths, ports, hosts, and URLs", () => {
   );
 });
 
-Deno.test("v0.20 config delegates Hypervisor bounds and relationships", () => {
+Deno.test("v0.21 config delegates Hypervisor bounds and relationships", () => {
   assertTypeErrorMessage(
     () =>
       defineUnknown({
@@ -416,19 +449,10 @@ Deno.test("v0.20 config delegates Hypervisor bounds and relationships", () => {
     () =>
       defineUnknown({
         gateway: {
-          hypervisor: { workerPath: "/workers/" },
+          hypervisor: { path: "/workers/connect" },
         },
       }),
-    "workerPath must be an absolute path without a trailing slash, query, fragment, or backslash, and must be URL-canonical without dot segments or an authority",
-  );
-  assertTypeErrorMessage(
-    () =>
-      defineUnknown({
-        gateway: {
-          hypervisor: { workerPath: null },
-        },
-      }),
-    "config.gateway.hypervisor.workerPath must not be null",
+    'config.gateway.hypervisor contains unknown key "path"',
   );
 });
 

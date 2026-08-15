@@ -58,7 +58,7 @@ Deno.test({
           },
           gateway: {
             edge: {
-              static: { root: "../public" },
+              static: { root: "../public", fallback: "index.html" },
               devProxy: { upstream: "http://localhost:5173" }
             }
           }
@@ -80,6 +80,7 @@ Deno.test({
           config.gateway.edge?.static?.root,
           resolve(directory, "../public"),
         );
+        assertEquals(config.gateway.edge?.static?.fallback, "index.html");
         assertEquals(
           config.gateway.edge?.devProxy?.upstream,
           "http://localhost:5173/",

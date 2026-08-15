@@ -18,7 +18,7 @@ import {
   createLocalRuntime,
   createManifestWorkerRuntime,
   loadWorkerManifest,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/local";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.6/local";
 ```
 
 Constructing either runtime is side-effect free. `start()` owns imports,
@@ -58,7 +58,7 @@ type LocalRuntimeOptions = Readonly<{
     port?: number;
   }>;
   workerId?: string; // default: "oxian-local-http"
-  capacity?: number; // default: 1
+  capacity?: number; // default: config.gateway.workerCapacity
   workerTransport?: LocalWorkerTransport;
 }>;
 
@@ -80,18 +80,11 @@ type LocalRuntimeRunningBase = Readonly<{
 
 type LocalRuntimeRunning =
   & LocalRuntimeRunningBase
-  & (
-    | Readonly<{
-      workerTransport: "in-process";
-      host: WorkerHost;
-      inProcessWorker: InProcessWorker;
-    }>
-    | Readonly<{
-      workerTransport: "worker-websocket";
-      workerUrl: URL;
-      worker: WorkerClient;
-    }>
-  );
+  & Readonly<{
+    workerTransport: LocalWorkerTransport;
+    worker: Worker;
+    workerUrl?: URL;
+  }>;
 
 type LocalRuntime = Readonly<{
   start(): Promise<LocalRuntimeRunning>;
@@ -104,8 +97,9 @@ type LocalRuntime = Readonly<{
 `listener.hostname`, `listener.port`, and `workerTransport` override the
 corresponding configuration for this run. Port `0` requests an ephemeral
 operating-system port; valid ports are integers from 0 through 65,535.
-`workerId` is validated as a supervisor identifier and `capacity` as a positive
-safe integer during startup.
+`workerId` is validated as a supervisor identifier. `capacity` overrides
+`config.gateway.workerCapacity` and must be a positive safe integer no greater
+than `config.gateway.hypervisor.maxWorkerCapacity`.
 
 ### `createLocalRuntime`
 
@@ -118,11 +112,9 @@ On `start()`, the runtime:
 1. compiles the configured router and creates the configured application;
 2. wraps it as the built-in HTTP workload;
 3. creates a Hypervisor and binds its HTTP/WebSocket listener;
-4. for `"in-process"`, creates a `WorkerHost`, directly attaches the HTTP
-   workload, and routes the HTTP gateway to that host; or
-5. for `"worker-websocket"`, creates an in-memory authority and repository,
-   connects an ephemeral-credential worker back to the Hypervisor, and waits for
-   protocol readiness.
+4. creates a Worker with either an in-process or WebSocket transport descriptor;
+   and
+5. waits for the same Worker readiness boundary in both placements.
 
 The default `"in-process"` path avoids loopback serialization, protocol frames,
 socket buffers, authentication, heartbeats over the wire, and reconnect work. It
@@ -131,22 +123,24 @@ targeting, and offer → claim → acceptance → start boundary. It is the pref
 composition when Oxian is embedded in another application or when `dev` and
 `start` do not need transport integration coverage.
 
-`"worker-websocket"` preserves the honest loopback protocol topology. Use it for
+The local server maps temporary Worker unavailability or shutdown during
+dispatch to `503 Service Unavailable` with `Retry-After: 1`. Other application
+and infrastructure failures retain their normal error behavior.
+
+`"websocket"` preserves the honest loopback protocol topology. Use it for
 end-to-end transport tests or when local behavior must reproduce a separated
 worker process. Its repository, credential authority, and acceptance decision
 are process-local and not durable. Production durability remains an application
 concern in both modes.
 
 `mode: "dev"` enables a configured development proxy. Both modes apply
-configured CORS and static-file edges. `workerUrl` and `worker` exist only in
-the `"worker-websocket"` result. That URL is derived from the actual bound
-listener and Hypervisor worker path, using `ws:` for HTTP and `wss:` for HTTPS.
-The `"in-process"` result instead exposes `host` and `inProcessWorker` for
-embedding and process-local inspection.
+configured CORS and static-file edges. `worker` exists in both results;
+`workerUrl` exists only for `"websocket"` and is derived from the bound listener
+and Hypervisor Worker path, using `ws:` for HTTP and `wss:` for HTTPS.
 
 Repeated `start()` calls return the same promise. `stop(reason)` is idempotent,
-may preempt an in-progress startup, shuts down the host or worker, Hypervisor,
-listener, and application, and prevents restart. Its default reason is
+may preempt an in-progress startup, shuts down the Worker, Hypervisor, listener,
+and application, and prevents restart. Its default reason is
 `"local_runtime_stopped"`. `finished` resolves after an orderly stop and rejects
 on a runtime failure. An unexpected worker result creates an error named
 `LocalRuntimeWorkerError`. `snapshot()` is a frozen point-in-time value; URLs
@@ -159,6 +153,7 @@ function composeConfiguredEdge(
   handler: FetchHandler,
   edge: EdgeConfig | undefined,
   mode: LocalRuntimeMode,
+  applicationBasePath?: string,
 ): FetchHandler;
 ```
 
@@ -166,9 +161,20 @@ The function composes declarative edge adapters without changing the application
 or worker protocol. In incoming request order the wrappers are:
 
 1. CORS, when configured;
-2. static files, when configured;
-3. development proxy, only in `mode: "dev"`; then
-4. the supplied handler.
+2. the most-specific matching mount among the application, static files, and
+   development proxy;
+3. exact static files before an equal-mounted application;
+4. allowed static fallthrough before a configured navigation fallback.
+
+`applicationBasePath` defaults to `/`. A more-specific application mount, such
+as `/api` inside a root static or development-proxy mount, owns its path before
+the parent edge adapter. Matching uses segment boundaries, so `/apix` is not
+owned by `/api`. `createLocalRuntime()` supplies the configured
+`application.basePath` automatically.
+
+The static fallback accepts extensionless HTML requests even when a browser or
+service worker reports `cors`/`empty` Fetch Metadata. Explicit asset
+destinations and paths with file extensions remain misses.
 
 Adapter defaults and validation are defined by the `/edge` and `/config`
 subpaths. The returned handler is frozen.
@@ -355,8 +361,8 @@ type ManifestWorkerRuntimeOptions = Readonly<{
 type ManifestWorkerRuntimeRunning = Readonly<{
   router: FileRouter<unknown>;
   application: Application<unknown>;
-  worker: WorkerClient;
-  workerRun: Promise<WorkerClientResult>;
+  worker: Worker;
+  workerClosed: Promise<WorkerResult>;
 }>;
 
 type ManifestWorkerRuntime = Readonly<{
@@ -365,7 +371,7 @@ type ManifestWorkerRuntime = Readonly<{
   readonly finished: Promise<void>;
   snapshot(): Readonly<{
     state: LocalRuntimeState;
-    worker?: ReturnType<WorkerClient["snapshot"]>;
+    worker?: ReturnType<Worker["snapshot"]>;
   }>;
 }>;
 ```
@@ -382,12 +388,13 @@ This factory accepts an already validated `WorkerManifest`; use
 `loadWorkerManifest` at an untrusted module boundary.
 
 On `start()`, the runtime loads the manifest's application configuration,
-creates its configured application and HTTP workload, then connects a
-`WorkerClient` to `gatewayUrl`. With a durable store it first loads any current
-resume credential and supplies the store's compare-and-set persister to the
-client. With an ephemeral store, credential rotation is kept only in memory.
-Insecure WebSocket transport is enabled only for a manifest URL already
-validated as loopback. `start()` resolves after the worker reaches ready.
+creates its configured application and HTTP workload, then connects a Worker
+with a WebSocket transport pointing at `gatewayUrl`. With a durable store it
+first loads any current resume credential and supplies the store's
+compare-and-set persister to the client. With an ephemeral store, credential
+rotation is kept only in memory. Insecure WebSocket transport is enabled only
+for a manifest URL already validated as loopback. `start()` resolves after the
+worker reaches ready.
 
 Repeated starts share one promise. `stop(reason)` aborts connection attempts,
 stops the worker, disposes the application, closes the credential store, and is

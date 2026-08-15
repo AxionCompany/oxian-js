@@ -5,14 +5,18 @@ import {
   assertRejects,
 } from "@std/assert";
 import { join } from "@std/path";
-import { createDenoHypervisor } from "../../src/adapters/deno/index.ts";
+import { serve } from "../../src/adapters/deno/index.ts";
+import {
+  createProtocolTestHypervisor as createHypervisor,
+  TEST_WORKER_PATH,
+} from "../hypervisor/protocol_hypervisor.ts";
 import { createHttpGateway, HTTP_WORKLOAD } from "../../src/http/index.ts";
 import { loadWorkerManifest } from "../../src/local/worker_manifest.ts";
 import { createManifestWorkerRuntime } from "../../src/local/worker_runtime.ts";
 import type { ManifestWorkerRuntime } from "../../src/local/types.ts";
 import {
-  createInMemoryRegistrationAuthority,
-  createInMemoryWorkerRepository,
+  createEphemeralCredentialLifecycle,
+  createEphemeralWorkerStore,
   createWorkerDefinition,
 } from "../../src/supervisor/index.ts";
 
@@ -66,7 +70,7 @@ Deno.test({
   },
   async fn() {
     const root = await Deno.makeTempDir();
-    const repository = createInMemoryWorkerRepository();
+    const repository = createEphemeralWorkerStore();
     await repository.define(createWorkerDefinition({
       workerId: "manifest-worker-live",
       providerId: "externally-attached",
@@ -75,12 +79,11 @@ Deno.test({
     }));
     const identity = (await repository.activate("manifest-worker-live")).attempt
       .identity;
-    const authority = createInMemoryRegistrationAuthority();
+    const authority = createEphemeralCredentialLifecycle();
     const registration = await authority.issueRegistration(identity);
-    const hypervisor = createDenoHypervisor({
-      authority,
-      repository,
-      persistAcceptance: () => Promise.resolve(),
+    const hypervisor = createHypervisor({
+      control: { authority, repository },
+      commitAcceptedWork: () => Promise.resolve(),
       config: {
         heartbeatIntervalMs: 20,
         leaseTimeoutMs: 500,
@@ -91,7 +94,8 @@ Deno.test({
         proactiveDrainMarginMs: 1_000,
       },
     });
-    const listener = hypervisor.listen({
+    const listener = serve({
+      hypervisor,
       hostname: "127.0.0.1",
       port: 0,
     });
@@ -147,7 +151,7 @@ export default defineApplicationFactory(({ router, basePath }) =>
 `,
       );
       const gatewayUrl = new URL(
-        hypervisor.config.workerPath,
+        TEST_WORKER_PATH,
         listener.url,
       );
       gatewayUrl.protocol = "ws:";

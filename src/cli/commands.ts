@@ -10,6 +10,7 @@ const CONFIG_TEMPLATE = `export default {
   },
   gateway: {
     workerTransport: "in-process",
+    workerCapacity: 32,
     listener: {
       hostname: "127.0.0.1",
       port: 8000,

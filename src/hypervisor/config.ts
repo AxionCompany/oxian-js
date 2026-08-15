@@ -8,7 +8,6 @@ const MAX_INBOUND_BYTES = 256 * 1_024 * 1_024;
 const MAX_BUFFERED_AMOUNT_BYTES = 64 * 1_024 * 1_024;
 
 export type HypervisorConfig = Readonly<{
-  workerPath: string;
   handshakeTimeoutMs: number;
   readyTimeoutMs: number;
   heartbeatIntervalMs: number;
@@ -34,7 +33,6 @@ export type HypervisorConfig = Readonly<{
 
 export const DEFAULT_HYPERVISOR_CONFIG: HypervisorConfig = Object
   .freeze({
-    workerPath: "/_oxian/workers/connect",
     handshakeTimeoutMs: 10_000,
     readyTimeoutMs: 5 * 60_000,
     heartbeatIntervalMs: 10_000,
@@ -109,44 +107,11 @@ function expectBoundedInteger(
   return value;
 }
 
-function expectWorkerPath(value: unknown): string {
-  let canonical = false;
-  if (typeof value === "string") {
-    try {
-      const base = new URL("https://oxian.invalid/");
-      const parsed = new URL(value, base);
-      canonical = parsed.origin === base.origin && parsed.pathname === value &&
-        parsed.search === "" && parsed.hash === "";
-    } catch {
-      canonical = false;
-    }
-  }
-  if (
-    typeof value !== "string" ||
-    value.length < 2 ||
-    value[0] !== "/" ||
-    value.startsWith("//") ||
-    value.endsWith("/") ||
-    value.includes("?") ||
-    value.includes("#") ||
-    value.includes("\\") ||
-    !canonical
-  ) {
-    throw new TypeError(
-      "workerPath must be an absolute path without a trailing slash, query, fragment, or backslash, and must be URL-canonical without dot segments or an authority",
-    );
-  }
-  return value;
-}
-
 export function createHypervisorConfig(
   input: Partial<HypervisorConfig> = {},
 ): HypervisorConfig {
   const defaults = DEFAULT_HYPERVISOR_CONFIG;
   const config = {
-    workerPath: expectWorkerPath(
-      input.workerPath ?? defaults.workerPath,
-    ),
     handshakeTimeoutMs: expectTimer(
       input.handshakeTimeoutMs ??
         defaults.handshakeTimeoutMs,

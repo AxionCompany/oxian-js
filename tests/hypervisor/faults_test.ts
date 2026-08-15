@@ -1,14 +1,16 @@
 import { assertEquals, assertRejects } from "@std/assert";
-import {
-  createDenoHypervisor,
-  type DenoHypervisor,
-} from "../../src/adapters/deno/index.ts";
+import { serve } from "../../src/adapters/deno/index.ts";
 import type {
+  Hypervisor,
   HypervisorConfig,
   HypervisorListener,
   HypervisorScheduler,
-  HypervisorWorkHandle,
 } from "../../src/hypervisor/index.ts";
+import {
+  createProtocolTestHypervisor as createHypervisor,
+  TEST_WORKER_PATH,
+} from "./protocol_hypervisor.ts";
+import type { WorkHandle } from "../../src/work/index.ts";
 import {
   createDrainedFrame,
   createHeartbeatFrame,
@@ -24,8 +26,8 @@ import {
 } from "../../src/protocol/index.ts";
 import type { AcceptanceCommit } from "../../src/supervisor/index.ts";
 import {
-  createInMemoryRegistrationAuthority,
-  createInMemoryWorkerRepository,
+  createEphemeralCredentialLifecycle,
+  createEphemeralWorkerStore,
   createWorkerDefinition,
 } from "../../src/supervisor/index.ts";
 import {
@@ -46,7 +48,7 @@ type Deferred<T> = Readonly<{
 }>;
 
 type ControlledHarness = Readonly<{
-  hypervisor: DenoHypervisor;
+  hypervisor: Hypervisor;
   listener: HypervisorListener;
   identity: WorkerIdentity;
   worker: ControlledWorker;
@@ -152,7 +154,7 @@ function observeSettlement<T>(
   return Object.freeze({ settled: () => value });
 }
 
-async function expectRejectedHandle(handle: HypervisorWorkHandle) {
+async function expectRejectedHandle(handle: WorkHandle) {
   await assertRejects(() => handle.started, Error);
   await assertRejects(() => handle.metadata, Error);
   await assertRejects(() => readAll(handle.output), Error);
@@ -186,7 +188,7 @@ async function receiveRequestEnd(
 
 async function startControlledHarness(
   input: Readonly<{
-    persistAcceptance(commit: AcceptanceCommit): Promise<void>;
+    commitAcceptedWork(commit: AcceptanceCommit): Promise<void>;
     capacity?: number;
     config?: Partial<HypervisorConfig>;
     scheduler?: HypervisorScheduler;
@@ -195,7 +197,7 @@ async function startControlledHarness(
   }>,
 ): Promise<ControlledHarness> {
   const capacity = input.capacity ?? 4;
-  const repository = createInMemoryWorkerRepository();
+  const repository = createEphemeralWorkerStore();
   await repository.define(createWorkerDefinition({
     workerId: "controlled-worker",
     providerId: "attached",
@@ -204,12 +206,11 @@ async function startControlledHarness(
   }));
   const identity = (await repository.activate("controlled-worker")).attempt
     .identity;
-  const authority = createInMemoryRegistrationAuthority();
+  const authority = createEphemeralCredentialLifecycle();
   const registration = await authority.issueRegistration(identity);
-  const hypervisor = createDenoHypervisor({
-    authority,
-    repository,
-    persistAcceptance: input.persistAcceptance,
+  const hypervisor = createHypervisor({
+    control: { authority, repository },
+    commitAcceptedWork: input.commitAcceptedWork,
     ...(input.scheduler === undefined ? {} : { scheduler: input.scheduler }),
     ...(input.clock === undefined ? {} : { clock: input.clock }),
     ...(input.createConnectionId === undefined
@@ -226,11 +227,12 @@ async function startControlledHarness(
       ...input.config,
     },
   });
-  const listener = hypervisor.listen({
+  const listener = serve({
+    hypervisor,
     hostname: "127.0.0.1",
     port: 0,
   });
-  const url = websocketUrl(listener, hypervisor.config.workerPath);
+  const url = websocketUrl(listener, TEST_WORKER_PATH);
   const workers = new Set<ControlledWorker>();
   let handshakeSequence = 0;
 
@@ -315,7 +317,7 @@ Deno.test({
       },
     }, { highWaterMark: 0 });
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
     });
 
     try {
@@ -377,7 +379,7 @@ Deno.test({
   permissions: { net: ["127.0.0.1"] },
   async fn() {
     const harness = await startControlledHarness({
-      persistAcceptance: () =>
+      commitAcceptedWork: () =>
         Promise.reject(new Error("commit outcome unavailable")),
     });
 
@@ -437,7 +439,7 @@ Deno.test({
   async fn() {
     let persistenceCalls = 0;
     const harness = await startControlledHarness({
-      persistAcceptance: () => {
+      commitAcceptedWork: () => {
         persistenceCalls++;
         return Promise.resolve();
       },
@@ -488,7 +490,7 @@ Deno.test({
     const releasePersistence = createDeferred<void>();
     let persistenceCalls = 0;
     const harness = await startControlledHarness({
-      persistAcceptance: async () => {
+      commitAcceptedWork: async () => {
         persistenceCalls++;
         persistEntered.resolve();
         await releasePersistence.promise;
@@ -581,7 +583,7 @@ Deno.test({
     const persistEntered = createDeferred<void>();
     const releasePersistence = createDeferred<void>();
     const harness = await startControlledHarness({
-      persistAcceptance: async () => {
+      commitAcceptedWork: async () => {
         persistEntered.resolve();
         await releasePersistence.promise;
       },
@@ -644,7 +646,7 @@ Deno.test({
     const persistEntered = createDeferred<void>();
     const releasePersistence = createDeferred<void>();
     const harness = await startControlledHarness({
-      persistAcceptance: async () => {
+      commitAcceptedWork: async () => {
         persistEntered.resolve();
         await releasePersistence.promise;
       },
@@ -705,7 +707,7 @@ Deno.test({
   async fn() {
     let persistenceCalls = 0;
     const harness = await startControlledHarness({
-      persistAcceptance: () => {
+      commitAcceptedWork: () => {
         persistenceCalls++;
         return Promise.resolve();
       },
@@ -738,7 +740,7 @@ Deno.test({
   async fn() {
     let persistenceCalls = 0;
     const harness = await startControlledHarness({
-      persistAcceptance: () => {
+      commitAcceptedWork: () => {
         persistenceCalls++;
         return Promise.resolve();
       },
@@ -786,7 +788,7 @@ Deno.test({
   permissions: { net: ["127.0.0.1"] },
   async fn() {
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
     });
 
     try {
@@ -829,7 +831,7 @@ Deno.test({
   permissions: { net: ["127.0.0.1"] },
   async fn() {
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
     });
 
     try {
@@ -919,7 +921,7 @@ Deno.test({
   permissions: { net: ["127.0.0.1"] },
   async fn() {
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
     });
 
     try {
@@ -1030,7 +1032,7 @@ Deno.test({
       },
     }, { highWaterMark: 0 });
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
     });
 
     try {
@@ -1126,7 +1128,7 @@ Deno.test({
   permissions: { net: ["127.0.0.1"] },
   async fn() {
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
     });
 
     try {
@@ -1239,7 +1241,7 @@ Deno.test({
   permissions: { net: ["127.0.0.1"] },
   async fn() {
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
     });
     const abort = new AbortController();
     abort.abort(new DOMException("already_gone", "AbortError"));
@@ -1272,7 +1274,7 @@ Deno.test({
   permissions: { net: ["127.0.0.1"] },
   async fn() {
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
     });
 
     try {
@@ -1356,7 +1358,7 @@ Deno.test({
       },
     });
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
       scheduler,
     });
 
@@ -1389,7 +1391,7 @@ Deno.test({
             workload: "sandbox.command",
           }),
         Error,
-        "no ready session",
+        "no ready Worker has capacity",
       );
     } finally {
       await harness.close();
@@ -1402,7 +1404,7 @@ Deno.test({
   permissions: { net: ["127.0.0.1"] },
   async fn() {
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
     });
 
     try {
@@ -1509,7 +1511,7 @@ Deno.test({
     let nowMs = 1_000;
     const reusedConnectionId = "reused-connection";
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
       scheduler,
       clock: () => nowMs,
       createConnectionId: () => reusedConnectionId,
@@ -1584,7 +1586,7 @@ Deno.test({
   permissions: { net: ["127.0.0.1"] },
   async fn() {
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
     });
 
     try {
@@ -1621,7 +1623,7 @@ Deno.test({
   permissions: { net: ["127.0.0.1"] },
   async fn() {
     const harness = await startControlledHarness({
-      persistAcceptance: () => Promise.resolve(),
+      commitAcceptedWork: () => Promise.resolve(),
       config: { shutdownTimeoutMs: 80 },
     });
 

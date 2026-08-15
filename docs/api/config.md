@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.20.0-rc.6/config`
+# `jsr:@oxian/oxian-js@0.21.0-rc.6/config`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   DEFAULT_OXIAN_CONFIG,
   defineConfig,
   loadConfig,
-} from "jsr:@oxian/oxian-js@0.20.0-rc.6/config";
+} from "jsr:@oxian/oxian-js@0.21.0-rc.6/config";
 ```
 
 Worker manifests, credentials, provider launch specifications, secrets, logging
@@ -53,7 +53,7 @@ function defineConfig(input: OxianConfigInput): OxianConfig;
 objects and arrays are new and recursively frozen.
 
 ```ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.6/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.6/config";
 
 export default defineConfig({
   application: {
@@ -168,6 +168,7 @@ permits ephemeral binding.
 type GatewayConfigInput = Readonly<{
   listener?: HttpListenerConfigInput;
   workerTransport?: LocalWorkerTransport;
+  workerCapacity?: number;
   hypervisor?: Partial<HypervisorConfig>;
   edge?: EdgeConfigInput;
 }>;
@@ -175,21 +176,32 @@ type GatewayConfigInput = Readonly<{
 type GatewayConfig = Readonly<{
   listener: HttpListenerConfig;
   workerTransport: LocalWorkerTransport;
+  workerCapacity: number;
   hypervisor: HypervisorConfig;
   edge?: EdgeConfig;
 }>;
 ```
 
 ```ts
-type LocalWorkerTransport = "in-process" | "worker-websocket";
+type LocalWorkerTransport = "in-process" | "websocket";
 ```
 
 `workerTransport` controls the local worker created by `oxian dev`,
 `oxian start`, and `createLocalRuntime`. It defaults to `"in-process"`, which
-attaches the HTTP workload directly to an embeddable `WorkerHost` without a
-loopback socket. `"worker-websocket"` preserves the previous outbound loopback
-worker topology for wire-protocol integration testing. This setting does not
-change separately deployed manifest workers, which continue to use WSS.
+binds the HTTP Worker directly to its Hypervisor without a loopback socket.
+`"websocket"` preserves the outbound loopback worker topology for wire-protocol
+integration testing. This setting does not change separately deployed manifest
+workers, which continue to use WSS.
+
+`workerCapacity` bounds the local HTTP Worker's concurrent process-lifetime
+executions. It defaults to `32`, or to `gateway.hypervisor.maxWorkerCapacity`
+when that configured maximum is lower. It must be a positive safe integer no
+greater than the Hypervisor maximum. Capacity is admission accounting rather
+than preallocated compute: increase it to match the concurrent HTTP requests one
+process is expected to serve while respecting database and external-service
+limits. When all slots are occupied, the local `dev`/`start` HTTP boundary
+returns `503 Service Unavailable` with `Retry-After: 1` instead of leaking a
+dispatch exception as an opaque 500.
 
 `HypervisorConfig` is defined by the `/hypervisor` subpath. The input accepts a
 partial value, fills every omitted field from the Hypervisor defaults, and
@@ -262,6 +274,7 @@ type StaticConfigInput = Readonly<{
   root: string;
   prefix?: string;
   index?: string | readonly string[] | false;
+  fallback?: string;
   cacheControl?: string;
   fallthrough?: boolean;
 }>;
@@ -270,6 +283,7 @@ type StaticConfig = Readonly<{
   root: string;
   prefix: string;
   index: readonly string[];
+  fallback?: string;
   cacheControl?: string;
   fallthrough: boolean;
 }>;
@@ -284,12 +298,17 @@ created.
 | -------------- | ---------------- | ------------------------------------------------------- |
 | `prefix`       | `"/"`            | Absolute URL path; trailing slashes removed.            |
 | `index`        | `["index.html"]` | String becomes one item; `false` becomes `[]`; deduped. |
+| `fallback`     | absent           | Optional navigation fallback file under `root`.         |
 | `cacheControl` | absent           | Non-empty string without CR or LF.                      |
 | `fallthrough`  | `true`           | Must be boolean.                                        |
 
-Index entries must be non-empty relative paths with no backslashes, empty
-segments, `.` segments, or `..` segments. Prefixes must not contain queries,
-fragments, backslashes, null bytes, or traversal segments.
+Index and fallback entries must be non-empty relative paths with no backslashes,
+empty segments, `.` segments, or `..` segments. Prefixes must not contain
+queries, fragments, backslashes, null bytes, or traversal segments.
+
+The local runtime reserves `application.basePath` before parent static and
+development-proxy mounts. A configured fallback therefore does not mask misses
+inside a more-specific application mount such as `/api`.
 
 ### Development proxy
 
@@ -336,6 +355,7 @@ The constant is deeply frozen. Its application, listener, and edge defaults are:
       port: 8_000,
     },
     workerTransport: "in-process",
+    workerCapacity: 32,
     // `hypervisor` contains every default listed below.
     // `edge` is absent.
   },
@@ -344,30 +364,33 @@ The constant is deeply frozen. Its application, listener, and edge defaults are:
 
 Its normalized Hypervisor fields are:
 
-| Field                                  | Default                     |
-| -------------------------------------- | --------------------------- |
-| `workerPath`                           | `"/_oxian/workers/connect"` |
-| `handshakeTimeoutMs`                   | `10_000`                    |
-| `readyTimeoutMs`                       | `300_000`                   |
-| `heartbeatIntervalMs`                  | `10_000`                    |
-| `leaseTimeoutMs`                       | `30_000`                    |
-| `leaseSweepIntervalMs`                 | `1_000`                     |
-| `shutdownTimeoutMs`                    | `30_000`                    |
-| `cancellationAckTimeoutMs`             | `10_000`                    |
-| `maxConnectionAgeMs`                   | `3_000_000`                 |
-| `proactiveDrainMarginMs`               | `60_000`                    |
-| `maxConnections`                       | `10_000`                    |
-| `maxUnauthenticatedConnections`        | `128`                       |
-| `maxAuthenticatedConnections`          | `10_000`                    |
-| `maxPendingAcceptanceCommits`          | `1_024`                     |
-| `maxPendingAcceptanceCommitsPerWorker` | `64`                        |
-| `maxInboundMessages`                   | `256`                       |
-| `maxInboundBytes`                      | `16_777_216`                |
-| `maxBufferedAmountBytes`               | `4_194_304`                 |
-| `maxWorkerCapacity`                    | `1_024`                     |
-| `maxLifetimeStreams`                   | `65_536`                    |
-| `maxDataPayloadBytes`                  | `1_048_576`                 |
-| `maxReceiveCreditBytes`                | `16_777_216`                |
+| Field                                  | Default      |
+| -------------------------------------- | ------------ |
+| `handshakeTimeoutMs`                   | `10_000`     |
+| `readyTimeoutMs`                       | `300_000`    |
+| `heartbeatIntervalMs`                  | `10_000`     |
+| `leaseTimeoutMs`                       | `30_000`     |
+| `leaseSweepIntervalMs`                 | `1_000`      |
+| `shutdownTimeoutMs`                    | `30_000`     |
+| `cancellationAckTimeoutMs`             | `10_000`     |
+| `maxConnectionAgeMs`                   | `3_000_000`  |
+| `proactiveDrainMarginMs`               | `60_000`     |
+| `maxConnections`                       | `10_000`     |
+| `maxUnauthenticatedConnections`        | `128`        |
+| `maxAuthenticatedConnections`          | `10_000`     |
+| `maxPendingAcceptanceCommits`          | `1_024`      |
+| `maxPendingAcceptanceCommitsPerWorker` | `64`         |
+| `maxInboundMessages`                   | `256`        |
+| `maxInboundBytes`                      | `16_777_216` |
+| `maxBufferedAmountBytes`               | `4_194_304`  |
+| `maxWorkerCapacity`                    | `1_024`      |
+| `maxLifetimeStreams`                   | `65_536`     |
+| `maxDataPayloadBytes`                  | `1_048_576`  |
+| `maxReceiveCreditBytes`                | `16_777_216` |
+
+`maxConnectionAgeMs` and `proactiveDrainMarginMs` apply to WebSocket
+connections. In-process event-fabric connections remain open until explicit
+drain, Worker stop, Hypervisor shutdown, or another lifecycle failure.
 
 The `/hypervisor` reference defines the bounds and relationships among those
 fields.
@@ -389,7 +412,7 @@ The module must have exactly one runtime export:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.6/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.6/config";
 
 export default defineConfig({
   application: { routesRoot: "./routes" },
@@ -400,7 +423,7 @@ The named form is equivalent:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.20.0-rc.6/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.6/config";
 
 export const config = defineConfig({
   application: { routesRoot: "./routes" },

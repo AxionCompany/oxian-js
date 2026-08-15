@@ -13,8 +13,8 @@ import type {
   HypervisorError,
   HypervisorErrorCode,
   HypervisorScheduler,
-  HypervisorWorkHandle,
 } from "../types.ts";
+import type { WorkHandle } from "../../work/types.ts";
 import type {
   AcceptanceAdmissionState,
   CloseRecord,
@@ -23,6 +23,7 @@ import type {
   PendingOpenInput,
   PendingWork,
 } from "./model.ts";
+import type { HypervisorLifecycleCallbacks } from "../../lifecycle/index.ts";
 import {
   assertCurrentFrame,
   createDeferred,
@@ -54,7 +55,7 @@ export type WorkStreamController = Readonly<{
     operationId: string,
     payload: PendingOpenInput,
     signal: AbortSignal | undefined,
-  ): HypervisorWorkHandle;
+  ): WorkHandle;
 }>;
 
 /**
@@ -71,6 +72,7 @@ export function createWorkStreamController(
     scheduler: HypervisorScheduler;
     sessions: SessionRegistry;
     dispatcher: WorkDispatcher;
+    callbacks: HypervisorLifecycleCallbacks;
     acceptanceAdmission: AcceptanceAdmissionState;
     closeRecord: CloseRecord;
     drainRecord: DrainRecord;
@@ -227,7 +229,9 @@ export function createWorkStreamController(
     }
     if (current.status !== "cancelling") {
       dispatcher.cancel(pending.operationId, {
-        code: "caller_cancelled",
+        code: reason === "deadline_exceeded"
+          ? "deadline_exceeded"
+          : "caller_cancelled",
         message: reason,
       });
     }
@@ -479,6 +483,20 @@ export function createWorkStreamController(
       ) {
         return;
       }
+      const dispatch = dispatcher.get(pending.operationId)!;
+      await options.callbacks.onStart?.(Object.freeze({
+        stage: "start" as const,
+        stageId: `start:${pending.operationId}:${pending.streamId}`,
+        callbackAttempt: 1,
+        signal: pending.record.abort.signal,
+        identity: pending.fence.identity,
+        connectionId: pending.fence.connectionId,
+        operationId: pending.operationId,
+        streamId: pending.streamId,
+        workload: dispatch.workload,
+        metadata: dispatch.metadata,
+        fence: pending.fence,
+      }));
       await pending.record.transport!.sendControl({
         protocol: WORKER_PROTOCOL,
         type: "work.start",
@@ -631,6 +649,25 @@ export function createWorkStreamController(
         pending.fence,
         pending.streamId,
       );
+      try {
+        await options.callbacks.onComplete?.(Object.freeze({
+          stage: "complete" as const,
+          stageId:
+            `complete:${pending.operationId}:${pending.streamId}:completed`,
+          callbackAttempt: 1,
+          signal: record.abort.signal,
+          identity: pending.fence.identity,
+          connectionId: pending.fence.connectionId,
+          operationId: pending.operationId,
+          streamId: pending.streamId,
+          workload: completed.workload,
+          metadata: completed.metadata,
+          fence: pending.fence,
+          outcome: "completed" as const,
+        }));
+      } catch {
+        // Completion observes an authoritative terminal and cannot rewrite it.
+      }
       finishPending(pending, completed);
       return true;
     }
@@ -658,9 +695,6 @@ export function createWorkStreamController(
         pending.operationId,
         pending.fence,
         pending.streamId,
-        frame.type === "work.cancel"
-          ? { code: "worker_cancelled", message: frame.reason }
-          : { code: frame.code, message: frame.message },
       )
       : dispatcher.settlePeerTerminal(
         pending.operationId,
@@ -670,6 +704,34 @@ export function createWorkStreamController(
           ? { type: "cancel", reason: frame.reason }
           : { type: "error", code: frame.code, message: frame.message },
       );
+    if (terminal.status !== "committing") {
+      try {
+        await options.callbacks.onComplete?.(Object.freeze({
+          stage: "complete" as const,
+          stageId:
+            `complete:${pending.operationId}:${pending.streamId}:${terminal.status}`,
+          callbackAttempt: 1,
+          signal: record.abort.signal,
+          identity: pending.fence.identity,
+          connectionId: pending.fence.connectionId,
+          operationId: pending.operationId,
+          streamId: pending.streamId,
+          workload: terminal.workload,
+          metadata: terminal.metadata,
+          fence: pending.fence,
+          outcome: terminal.status === "indeterminate"
+            ? "indeterminate" as const
+            : terminal.status === "cancelled"
+            ? "cancelled" as const
+            : "failed" as const,
+          ...(terminal.terminal === undefined
+            ? {}
+            : { error: terminal.terminal }),
+        }));
+      } catch {
+        // Completion observes an authoritative terminal and cannot rewrite it.
+      }
+    }
     if (terminal.status !== "committing") {
       finishPending(
         pending,
@@ -748,7 +810,7 @@ export function createWorkStreamController(
   };
 
   const bindCallerCancellation = (
-    handle: HypervisorWorkHandle,
+    handle: WorkHandle,
     signal: AbortSignal | undefined,
   ): void => {
     if (signal === undefined) return;
@@ -774,7 +836,7 @@ export function createWorkStreamController(
     operationId: string,
     payload: PendingOpenInput,
     signal: AbortSignal | undefined,
-  ): HypervisorWorkHandle => {
+  ): WorkHandle => {
     assertCurrentFrame(record, sessions);
     if (record.fence === undefined || record.transport === undefined) {
       throw createHypervisorError(
@@ -855,7 +917,7 @@ export function createWorkStreamController(
       completed,
       outputController,
     };
-    const handle: HypervisorWorkHandle = Object.freeze({
+    const handle: WorkHandle = Object.freeze({
       operationId,
       streamId: payload.streamId,
       metadata: metadata.promise,

@@ -1,19 +1,21 @@
 import { assertEquals } from "@std/assert";
-import { createDenoHypervisor } from "../../src/adapters/deno/index.ts";
+import { handler } from "../../src/adapters/deno/index.ts";
 import {
   createHttpGateway,
   createHttpWorkload,
   HTTP_WORKLOAD,
 } from "../../src/http/index.ts";
 import {
-  createInMemoryRegistrationAuthority,
-  createInMemoryWorkerRepository,
+  createEphemeralCredentialLifecycle,
+  createEphemeralWorkerStore,
   createWorkerDefinition,
 } from "../../src/supervisor/index.ts";
+import type { WorkerResult } from "../../src/worker/index.ts";
 import {
-  createWorkerClient,
-  type WorkerClientResult,
-} from "../../src/worker/index.ts";
+  createProtocolTestHypervisor as createHypervisor,
+  TEST_WORKER_PATH,
+} from "../hypervisor/protocol_hypervisor.ts";
+import { createProtocolTestWorker as createWorker } from "../worker/protocol_worker.ts";
 
 /**
  * This test intentionally relies on certificate validation. Run it with:
@@ -63,10 +65,10 @@ async function waitFor(
 
 function workerUrl(
   address: Readonly<{ port: number }>,
-  workerPath: string,
+  websocketPath: string,
 ): URL {
   const url = new URL(
-    workerPath,
+    websocketPath,
     `https://127.0.0.1:${address.port}`,
   );
   url.protocol = "wss:";
@@ -94,7 +96,7 @@ Deno.test({
       Deno.readTextFile(new URL("server.pem", TLS_FIXTURE_DIRECTORY)),
       Deno.readTextFile(new URL("server.key", TLS_FIXTURE_DIRECTORY)),
     ]);
-    const repository = createInMemoryWorkerRepository();
+    const repository = createEphemeralWorkerStore();
     await repository.define(createWorkerDefinition({
       workerId: "http-tls-wss-worker",
       providerId: "attached",
@@ -103,12 +105,11 @@ Deno.test({
     }));
     const identity = (await repository.activate("http-tls-wss-worker"))
       .attempt.identity;
-    const authority = createInMemoryRegistrationAuthority();
+    const authority = createEphemeralCredentialLifecycle();
     const registration = await authority.issueRegistration(identity);
-    const hypervisor = createDenoHypervisor({
-      authority,
-      repository,
-      persistAcceptance: () => Promise.resolve(),
+    const hypervisor = createHypervisor({
+      control: { authority, repository },
+      commitAcceptedWork: () => Promise.resolve(),
       config: {
         heartbeatIntervalMs: 20,
         leaseTimeoutMs: 500,
@@ -125,11 +126,15 @@ Deno.test({
       cert: certificate,
       key: privateKey,
       onListen() {},
-    }, hypervisor.fetch);
-    const url = workerUrl(server.addr, hypervisor.config.workerPath);
+    }, handler(hypervisor));
+    const url = workerUrl(server.addr, TEST_WORKER_PATH);
     assertEquals(url.protocol, "wss:");
-    const worker = createWorkerClient({
-      url,
+    const worker = createWorker({
+      transport: {
+        type: "websocket",
+        url,
+        connectTimeoutMs: 1_000,
+      },
       identity,
       credential: registration.credential,
       credentialPersistence: "ephemeral",
@@ -155,15 +160,14 @@ Deno.test({
       },
       capacity: 1,
       reconnectDelay: false,
-      connectTimeoutMs: 1_000,
       handshakeTimeoutMs: 1_000,
     });
-    let workerRun: Promise<WorkerClientResult> | undefined;
+    let workerClosed: Promise<WorkerResult> | undefined;
 
     try {
-      workerRun = worker.run();
+      workerClosed = worker.closed;
       await withTimeout(
-        worker.whenReady(),
+        worker.ready,
         "TLS WSS worker did not become ready",
       );
       await waitFor(
@@ -198,7 +202,7 @@ Deno.test({
       await hypervisor.shutdown("test_cleanup").catch(() => undefined);
       await worker.stop("test_cleanup").catch(() => undefined);
       await server.shutdown().catch(() => undefined);
-      await workerRun?.catch(() => undefined);
+      await workerClosed?.catch(() => undefined);
     }
   },
 });

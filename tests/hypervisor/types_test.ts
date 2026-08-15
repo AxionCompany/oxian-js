@@ -1,21 +1,26 @@
 import { assertEquals, assertThrows } from "@std/assert";
 import {
   createHypervisor,
-  type WorkerAdmissionAuthority,
-  type WorkerAdmissionRepository,
-} from "../../src/hypervisor/index.ts";
-import {
-  createInMemoryRegistrationAuthority,
-  createInMemoryWorkerRepository,
-} from "../../src/supervisor/index.ts";
+  type HypervisorAdmit,
+  type HypervisorTransport,
+} from "../../src/mod.ts";
 
-Deno.test("portable Hypervisor prepares responses and cancellable upgrade admissions", async () => {
-  const authority = createInMemoryRegistrationAuthority();
-  const repository = createInMemoryWorkerRepository();
+const path = "/workers/connect";
+
+const rejectUnknownWorker: HypervisorAdmit = () => {
+  throw Object.assign(new Error("unknown Worker"), {
+    code: "authentication_failed",
+  });
+};
+
+Deno.test("portable Hypervisor prepares only its declared WebSocket paths", async () => {
+  const websocket = {
+    type: "websocket",
+    config: { path },
+  } as const satisfies HypervisorTransport;
   const hypervisor = createHypervisor({
-    authority,
-    repository,
-    persistAcceptance: () => Promise.resolve(),
+    transports: [websocket],
+    admit: rejectUnknownWorker,
     fallback: () => new Response("fallback", { status: 202 }),
   });
 
@@ -30,15 +35,12 @@ Deno.test("portable Hypervisor prepares responses and cancellable upgrade admiss
   assertEquals(await response.text(), "fallback");
 
   const admission = hypervisor.prepare(
-    new Request(
-      "https://example.test/_oxian/workers/connect",
-      {
-        headers: {
-          upgrade: "websocket",
-          "sec-websocket-protocol": "oxian.worker.v1",
-        },
+    new Request(`https://example.test${path}`, {
+      headers: {
+        upgrade: "websocket",
+        "sec-websocket-protocol": "oxian.worker.v1",
       },
-    ),
+    }),
   );
   if (admission.kind !== "upgrade") {
     throw new Error("expected a WebSocket upgrade decision");
@@ -50,71 +52,79 @@ Deno.test("portable Hypervisor prepares responses and cancellable upgrade admiss
   await hypervisor.shutdown();
 });
 
-Deno.test("Hypervisor admission accepts exchange-only authority and read-only repository projections", () => {
-  const authority = createInMemoryRegistrationAuthority();
-  const repository = createInMemoryWorkerRepository();
-  const admissionAuthority: WorkerAdmissionAuthority = Object.freeze({
-    exchange: authority.exchange,
-  });
-  const admissionRepository: WorkerAdmissionRepository = Object.freeze({
-    getDefinition: repository.getDefinition,
-    assertCurrent: repository.assertCurrent,
-  });
-  const hypervisor = createHypervisor({
-    authority: admissionAuthority,
-    repository: admissionRepository,
-    persistAcceptance: () => Promise.resolve(),
-  });
-
-  assertEquals(Object.keys(admissionAuthority), ["exchange"]);
-  assertEquals(Object.keys(admissionRepository).sort(), [
-    "assertCurrent",
-    "getDefinition",
-  ]);
+Deno.test("Hypervisor accepts plain admission and lifecycle functions", async () => {
+  let assigned = false;
+  const hypervisor = createHypervisor(
+    {
+      transports: [{
+        type: "in-process",
+        config: { topic: `types-${crypto.randomUUID()}` },
+      }],
+      admit: rejectUnknownWorker,
+    },
+    {
+      onWorkAssigned() {
+        assigned = true;
+      },
+    },
+  );
   assertEquals(hypervisor.snapshot().connections, 0);
+  assertEquals(assigned, false);
+  await hypervisor.shutdown();
 });
 
-Deno.test("Hypervisor rejects malformed admission seams during construction", () => {
-  const authority = createInMemoryRegistrationAuthority();
-  const repository = createInMemoryWorkerRepository();
-  const valid = {
-    authority: { exchange: authority.exchange },
-    repository: {
-      getDefinition: repository.getDefinition,
-      assertCurrent: repository.assertCurrent,
-    },
-    persistAcceptance: () => Promise.resolve(),
-  };
-
+Deno.test("Hypervisor validates declarative transports and functions", () => {
   assertThrows(
-    () =>
-      createHypervisor({
-        ...valid,
-        authority: {} as WorkerAdmissionAuthority,
-      }),
+    () => createHypervisor({ transports: [] }),
     TypeError,
-    "authority.exchange",
+    "at least one",
   );
   assertThrows(
     () =>
       createHypervisor({
-        ...valid,
-        repository: {
-          assertCurrent: repository.assertCurrent,
-        } as WorkerAdmissionRepository,
+        transports: [{
+          type: "websocket",
+          config: { path: "relative" },
+        }],
+        admit: rejectUnknownWorker,
       }),
     TypeError,
-    "repository.getDefinition",
+    "config.path",
   );
   assertThrows(
     () =>
       createHypervisor({
-        ...valid,
-        repository: {
-          getDefinition: repository.getDefinition,
-        } as WorkerAdmissionRepository,
+        transports: [{
+          type: "websocket",
+          config: { path },
+        }],
       }),
     TypeError,
-    "repository.assertCurrent",
+    "admit",
+  );
+  assertThrows(
+    () =>
+      createHypervisor({
+        transports: [
+          { type: "in-process", config: { topic: "duplicate" } },
+          { type: "in-process", config: { topic: "duplicate" } },
+        ],
+      }),
+    TypeError,
+    "unique",
+  );
+  assertThrows(
+    () =>
+      createHypervisor(
+        {
+          transports: [{
+            type: "in-process",
+            config: { topic: `callback-${crypto.randomUUID()}` },
+          }],
+        },
+        { onReady: 42 } as never,
+      ),
+    TypeError,
+    "onReady",
   );
 });

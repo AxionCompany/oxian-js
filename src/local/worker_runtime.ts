@@ -3,8 +3,8 @@ import type { Application } from "../app/types.ts";
 import { loadConfig } from "../config/config.ts";
 import { createHttpWorkload } from "../http/workload.ts";
 import { HTTP_WORKLOAD } from "../http/types.ts";
-import { createWorkerClient } from "../worker/client.ts";
-import type { WorkerClient, WorkerClientResult } from "../worker/types.ts";
+import { createWorker } from "../worker/worker.ts";
+import type { Worker, WorkerResult } from "../worker/types.ts";
 import { createAtomicResumeCredentialStore } from "./credential_store.ts";
 import type {
   AtomicResumeCredentialStore,
@@ -30,7 +30,7 @@ function createDeferred<T>(): Deferred<T> {
   return Object.freeze({ promise, resolve, reject });
 }
 
-function workerStoppedError(result: WorkerClientResult): Error {
+function workerStoppedError(result: WorkerResult): Error {
   const error = new Error(`worker stopped: ${result.reason}`);
   error.name = "ManifestWorkerRuntimeError";
   if ("error" in result) {
@@ -64,8 +64,8 @@ export function createManifestWorkerRuntime(
 
   let state: LocalRuntimeState = "idle";
   let application: Application<unknown> | undefined;
-  let worker: WorkerClient | undefined;
-  let workerRun: Promise<WorkerClientResult> | undefined;
+  let worker: Worker | undefined;
+  let workerClosed: Promise<WorkerResult> | undefined;
   let credentialStore: AtomicResumeCredentialStore | undefined;
   let running: ManifestWorkerRuntimeRunning | undefined;
   let startTask: Promise<ManifestWorkerRuntimeRunning> | undefined;
@@ -83,7 +83,7 @@ export function createManifestWorkerRuntime(
   const cleanupResources = async (reason: string): Promise<void> => {
     if (!lifecycleAbort.signal.aborted) lifecycleAbort.abort(reason);
     await worker?.stop(reason).catch(() => undefined);
-    await workerRun?.catch(() => undefined);
+    await workerClosed?.catch(() => undefined);
     await application?.dispose(reason).catch(() => undefined);
     await credentialStore?.close().catch(() => undefined);
   };
@@ -106,7 +106,7 @@ export function createManifestWorkerRuntime(
     });
   };
 
-  const finishWorkerRun = (result: WorkerClientResult): void => {
+  const finishWorkerRun = (result: WorkerResult): void => {
     if (stopRequested) return;
     if (result.reason !== "shutdown" && result.reason !== "stopped") {
       fail(workerStoppedError(result));
@@ -167,29 +167,44 @@ export function createManifestWorkerRuntime(
           }
         }
 
-        worker = createWorkerClient({
-          url: manifest.gatewayUrl,
-          identity: manifest.identity,
-          credential,
-          handshakeId,
-          ...(resumeExpiresAtMs === undefined ? {} : { resumeExpiresAtMs }),
+        worker = createWorker({
+          id: manifest.identity.workerId,
+          transport: {
+            type: "websocket",
+            config: {
+              url: manifest.gatewayUrl,
+              allowInsecureLoopback: isLoopbackWebSocket(manifest.gatewayUrl),
+            },
+          },
+          activate: () => manifest.identity,
+          register: () => ({
+            credential,
+            handshakeId,
+            expiresAtMs: credential.kind === "resume"
+              ? resumeExpiresAtMs!
+              : Date.now() + 5 * 60_000,
+            ...(resumeExpiresAtMs === undefined ? {} : { resumeExpiresAtMs }),
+          }),
+          ...(credentialStore === undefined ? {} : {
+            handshake: (context) =>
+              credentialStore!.persist(context.rotation, {
+                signal: context.signal,
+                connectionId: context.connectionId,
+                bootstrap: context.bootstrap,
+                reconnecting: context.reconnecting,
+              }),
+          }),
           workloads: { [HTTP_WORKLOAD]: workload },
           capacity: manifest.capacity,
           signal: lifecycleAbort.signal,
-          allowInsecureLoopback: isLoopbackWebSocket(manifest.gatewayUrl),
-          ...(credentialStore === undefined
-            ? { credentialPersistence: "ephemeral" as const }
-            : {
-              credentialPersistence: "durable" as const,
-              persistResumeCredential: credentialStore.persist,
-            }),
         });
-        workerRun = worker.run();
-        workerRun.then(
+        workerClosed = worker.closed;
+        const runningWorker = workerClosed;
+        runningWorker.then(
           finishWorkerRun,
           fail,
         );
-        await worker.whenReady();
+        await worker.ready;
         if (stopRequested || state !== "starting") {
           throw new DOMException(
             "worker runtime stopped during startup",
@@ -200,7 +215,7 @@ export function createManifestWorkerRuntime(
           router,
           application,
           worker,
-          workerRun,
+          workerClosed: runningWorker,
         });
         state = "running";
         return running;

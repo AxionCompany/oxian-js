@@ -1,12 +1,12 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import type { SupervisorError } from "../../src/supervisor/types.ts";
-import { createInMemoryWorkerRepository } from "../../src/supervisor/repository.ts";
+import { createEphemeralWorkerStore } from "../../src/supervisor/store.ts";
 import { createWorkerDefinition } from "../../src/supervisor/state.ts";
 
 async function createRepository() {
   let nowMs = 100;
   let attemptNumber = 0;
-  const repository = createInMemoryWorkerRepository({
+  const repository = createEphemeralWorkerStore({
     clock: () => nowMs++,
     createAttemptId: () => `attempt-${++attemptNumber}`,
   });
@@ -99,7 +99,7 @@ Deno.test("repository keeps definitions and attempts semantically separate", asy
 });
 
 Deno.test("repository normalizes definitions instead of trusting caller objects", async () => {
-  const repository = createInMemoryWorkerRepository();
+  const repository = createEphemeralWorkerStore();
   const callerOwned = {
     workerId: "worker-raw",
     providerId: "local",

@@ -1,190 +1,221 @@
 # Workers
 
-Workers can attach directly to an embeddable `WorkerHost` or connect outbound to
-a Hypervisor over `ws:` loopback or `wss:`. Both paths expose the same workload
-handler, metadata, byte-stream, cancellation, capacity, targeting, acceptance,
-and drain semantics.
-
-## Embedded in-process worker
-
-Use the in-process host when a library or application owns both dispatch and
-execution. It avoids socket and wire-protocol overhead while preserving the
-worker lifecycle boundary.
+A Worker is always the client that connects to a Hypervisor and executes named
+workloads. `createWorker(options, callbacks)` starts immediately and returns a
+frozen `Worker` capability:
 
 ```ts
-import { createWorkerHost } from "jsr:@oxian/oxian-js@0.20.0-rc.6/host";
-
-const host = createWorkerHost({
-  persistAcceptance: () => Promise.resolve(),
-});
-
-const engine = host.attachInProcessWorker({
-  workerId: "copilotz-engine",
-  capacity: 4,
-  workloads: {
-    "agent.turn.v1": async ({ input, signal, sendMetadata }) => {
-      signal.throwIfAborted();
-      await sendMetadata({ channel: "audio" });
-      return { body: input };
-    },
-  },
-});
-
-const turn = await host.dispatch({
-  workload: "agent.turn.v1",
-  body: microphoneStream,
-});
-await turn.output.pipeTo(speakerStream);
-await turn.completed;
-
-await engine.drain();
-await host.shutdown();
+type Worker = Readonly<{
+  ready: Promise<WorkerSnapshot>;
+  closed: Promise<WorkerResult>;
+  events: ReadableStream<WorkerLifecycleEvent>;
+  stop(reason?: string): Promise<void>;
+  snapshot(): WorkerSnapshot;
+}>;
 ```
 
-Direct attachment schedules handlers on the same JavaScript event loop. It is
-lighter than loopback WSS but does not isolate CPU, memory, crashes, or security
-boundaries. The handler must cooperate with `AbortSignal`; JavaScript events
-cannot forcibly interrupt an arbitrary promise. Live Web Streams are used for
-the operation data plane instead of `EventTarget` payload events, preserving
-backpressure and stream cancellation across runtimes that implement standard Web
-APIs.
+There is no separate start method. Observe `ready`, `closed`, or `events`, and
+use `stop()` for explicit ownership cleanup.
 
-## Remote worker client
+## In-process Worker
 
-A remote worker offers `oxian.worker.v1`. It receives work only after its
-credential is exchanged, its resume credential is persisted, and it sends
-`ready`.
-
-### Direct worker client
-
-`createWorkerClient` accepts workload functions keyed by workload name. A
-workload receives immutable metadata, a `ReadableStream<Uint8Array>` input, an
-`AbortSignal`, and `sendMetadata` for its one response metadata frame.
+Use one visible declaration for both roles:
 
 ```ts
-import { createWorkerClient } from "jsr:@oxian/oxian-js@0.20.0-rc.6/worker";
+import {
+  createHypervisor,
+  createWorker,
+} from "jsr:@oxian/oxian-js@0.21.0-rc.6";
 
-const worker = createWorkerClient({
-  url: "ws://127.0.0.1:8000/_oxian/workers/connect",
-  allowInsecureLoopback: true,
-  identity: {
-    workerId: "thumbnail-worker",
-    attemptId: crypto.randomUUID(),
-    epoch: 1,
-  },
-  credential: { kind: "registration", capability: "issued-by-your-authority" },
-  credentialPersistence: "ephemeral",
-  workloads: {
-    "thumbnail.v1": async ({ input, sendMetadata }) => {
-      await sendMetadata({ schema: "thumbnail.response.v1" });
-      return { body: input };
+const transport = {
+  type: "in-process",
+  config: { topic: "example.echo" },
+} as const;
+
+const hypervisor = createHypervisor(
+  { transports: [transport] },
+  {
+    async onWorkAssigned(context) {
+      // Optionally persist assignment intent before work.open.
+      console.log(context.operationId, context.assignment.fence.identity);
+    },
+    async onWorkAccepted(context) {
+      // Persist the post-ACK no-replay boundary before work.start.
+      await acceptedOperations.put(context.operationId, context.stageId);
     },
   },
-  capacity: 2,
+);
+
+const worker = createWorker(
+  {
+    id: "echo-worker",
+    transport,
+    workloads: {
+      "echo.upper": async ({ input }) => {
+        const bytes = await new Response(input).bytes();
+        return new TextEncoder().encode(
+          new TextDecoder().decode(bytes).toUpperCase(),
+        );
+      },
+    },
+  },
+  {
+    onStart(context) {
+      console.log("starting", context.streamId);
+    },
+  },
+);
+
+await worker.ready;
+
+const work = await hypervisor.dispatch({
+  workload: "echo.upper",
+  body: new TextEncoder().encode("hello"),
 });
 
-const running = worker.run();
-await worker.whenReady();
-// await worker.stop("service_shutdown");
-await running;
+console.log(await new Response(work.output).text());
+await work.done;
+
+await worker.stop();
+await hypervisor.shutdown();
 ```
 
-An indefinitely running worker should use `credentialPersistence: "durable"`
-with an atomic `persistResumeCredential` function. Persist the credential,
-replacement handshake ID, and expiry together. `ephemeral` deliberately loses
-resume state at process exit.
+When lifecycle operations are omitted for an in-process declaration, the
+Hypervisor supplies process-lifetime activation, credential rotation, and
+admission. This is convenient for embedded/private ownership. Durable or shared
+applications should provide their own `activate`, `register`, `admit`, and
+`handshake` functions even locally.
 
-### Authenticated socket factory
+The topic is an event-fabric namespace. Frames are addressed by connection and
+direction; it does not broadcast work. Local execution uses the complete v1
+handshake, Ready, heartbeat, acceptance, Start, credit, terminal, drain, and
+shutdown state machines.
 
-`createWebSocket` lets a worker obtain provider authentication before Oxian owns
-the connection. It receives the already validated gateway `url`, the exact
-`oxian.worker.v1` `protocol`, and a `signal` that covers both caller
-cancellation and the connection deadline.
+## WebSocket Worker
+
+Only the physical transport and lifecycle integrations change:
 
 ```ts
-import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.20.0-rc.6/transport";
+import { createWorker } from "jsr:@oxian/oxian-js@0.21.0-rc.6/worker";
 
-const createWebSocket: WorkerWebSocketFactory = async (
-  { url, protocol, signal },
-) => {
-  signal.throwIfAborted();
-  // Obtain provider-owned authentication here when the socket implementation
-  // supports it, then return the unaffiliated WebSocket instance.
-  return new WebSocket(url, protocol);
+const worker = createWorker(
+  {
+    id: "echo-worker",
+    transport: {
+      type: "websocket",
+      config: {
+        url: "wss://control.example.com/_oxian/workers/connect",
+      },
+    },
+    workloads,
+    activate: ({ workerId }) => attempts.activate(workerId),
+    register: ({ identity }) => credentials.issue(identity),
+    handshake: ({ rotation, bootstrap }) =>
+      workerState.persistRotationAndBootstrap(rotation, bootstrap),
+  },
+  {
+    onReady: ({ snapshot }) => console.log("ready", snapshot.connectionId),
+    onWorkAccepted: ({ stageId }) => reservations.confirm(stageId),
+    onStart: ({ work }) => audit.started(work.streamId),
+  },
+);
+
+await worker.ready;
+const result = await worker.closed;
+```
+
+A WebSocket Worker requires `activate` and `register`. The returned full
+`WorkerIdentity` contains `workerId`, `attemptId`, and `epoch`; do not mint a
+new attempt during reconnect. `register` may return either a one-use
+registration credential or an already stored resume credential.
+
+The `handshake` function runs after Welcome and before Ready. Persist
+`context.rotation` atomically. Its `replacesHandshakeId` is the compare-and-set
+predecessor; repeated calls for the same `stageId` must be idempotent. A process
+restart reuses that stored handshake ID with its resume credential.
+
+## Ready semantics
+
+Provider compute, socket Open, Welcome, and a sent Ready frame are not proof
+that the Worker is routable. The Hypervisor first runs its fenced `onReady`
+gate, publishes the session, and sends `ready_ack` in order before any
+`work.open`. Only after `ready_ack` does `worker.ready` resolve.
+
+The Worker-side `onReady` callback runs after the ACK but before queued work is
+processed and before the public promise resolves. It runs again after a
+successful reconnect; the `ready` promise itself resolves only once.
+
+## Workload contract
+
+`WorkerOptions.workloads` is a record of `WorkerWorkHandler` functions. Each
+receives a frozen `WorkerWorkContext`:
+
+```ts
+type WorkerWorkContext = Readonly<{
+  streamId: string;
+  workload: string;
+  metadata: JsonObject;
+  input: ReadableStream<Uint8Array>;
+  signal: AbortSignal;
+  sendMetadata(metadata: JsonObject): Promise<void>;
+}>;
+```
+
+A handler returns `WorkerWorkResult`: nothing, a `WorkerBody`
+(`Uint8Array | ReadableStream<Uint8Array>`), or `{ metadata, body }`. Input and
+output are credited streams. Respect `signal`; cancellation may cross already
+queued terminal frames.
+
+`onWorkAccepted` runs after capacity is reserved and before the Worker sends
+`work.accepted`. The handler cannot run until a validated `work.start` arrives
+and Worker `onStart` resolves. `onComplete` runs after the terminal result and
+before process-lifetime execution capacity is released.
+
+## Capacity and reconnect
+
+`capacity` bounds concurrent process-lifetime executions. A lost socket does not
+release a handler or output source that is still settling. This prevents a
+replacement session from oversubscribing the process.
+
+`WorkerReconnectDelay` receives a `WorkerReconnectContext`; use
+`createBoundedExponentialBackoff(BoundedExponentialBackoffOptions)` for a
+bounded default policy. Set `reconnectDelay: false` to stop after a lost
+session. `WorkerResult` distinguishes `shutdown`, `stopped`,
+`reenrollment_required`, and `reconnect_exhausted`.
+
+`WorkerSnapshot` reports `WorkerState`, identity, credential kind, handshake,
+connection, active protocol streams, occupied executions, and reconnect count.
+The `WorkerLifecycleEvent` stream emits snapshots and terminal closure without
+requiring polling.
+
+## WebSocket controls
+
+`WorkerWebSocketLimits` bounds inbound messages/bytes, pending sends, native
+buffered amount, and protocol admission. A `WorkerWebSocketFactory` and
+`WorkerWebSocketFactoryContext` may create an authenticated native socket:
+
+```ts
+import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.21.0-rc.6/transport";
+
+const socket: WorkerWebSocketFactory = async ({ url, protocol, signal }) => {
+  const token = await identityToken(url, signal);
+  return runtimeWebSocket(url, protocol, {
+    headers: { authorization: `Bearer ${token}` },
+  });
 };
 ```
 
-Pass it to `createWorkerClient({ createWebSocket, ... })`. The factory owns only
-authentication and socket construction. Oxian owns the deadline, waits for
-`open`, verifies the negotiated subprotocol, and closes the socket after it is
-returned; the factory must not retain lifecycle ownership of that socket.
+Pass it as `transport.config.socket`. Oxian owns the connect deadline,
+subprotocol check, bounded frame adaptation, and protocol lifecycle.
 
-### HTTP worker manifest
+## Manifest Worker runtime
 
-The CLI `worker` command runs an HTTP application as an outbound worker. Its
-manifest is a strict module with one `default` or `manifest` export.
+The `/local` manifest runtime stores a complete identity, initial credential,
+handshake ID, capacity, gateway URL, application config, and credential-store
+policy. Durable mode atomically persists every `WorkerResumeCredentialUpdate`
+through `WorkerResumeCredentialPersister`. `WorkerBeforeReadyContext` and
+`WorkerHeartbeatContext` remain the runtime-neutral initialization/status
+contexts used by those lower-level local integrations.
 
-```ts
-// oxian.worker.ts
-const attemptId = Deno.env.get("OXIAN_ATTEMPT_ID");
-const initialHandshakeId = Deno.env.get("OXIAN_INITIAL_HANDSHAKE_ID");
-if (!attemptId || !initialHandshakeId) {
-  throw new Error("Oxian worker identity must be provisioned before startup");
-}
-
-export default {
-  gatewayUrl: "wss://gateway.example.com/_oxian/workers/connect",
-  identity: {
-    workerId: "orders-worker",
-    attemptId,
-    epoch: 1,
-  },
-  credential: {
-    kind: "registration",
-    capability: Deno.env.get("OXIAN_REGISTRATION_CAPABILITY")!,
-  },
-  handshakeId: initialHandshakeId,
-  capacity: 4,
-  applicationConfig: "./oxian.config.ts",
-  credentialStore: {
-    mode: "durable",
-    path: "./var/oxian-worker-resume.json",
-  },
-} as const;
-```
-
-`attemptId` is a provisioned, durable identity for one Control-plane worker
-attempt: do not generate it on process startup. Keep it stable across process
-restarts for the complete attempt and change it only when the control plane
-starts a new attempt. Likewise, the initial handshake ID is provisioned once.
-When `credentialStore.mode` is `"durable"`, the store is authoritative after the
-first successful rotation: it retains the resume capability and its replacement
-handshake ID together, so a restart reuses that stored handshake ID for a
-lost-Welcome replay rather than generating a new one.
-
-Start it with:
-
-```bash
-deno run -A jsr:@oxian/oxian-js@0.20.0-rc.6/bin worker --manifest oxian.worker.ts
-```
-
-The manifest uses the application's route and factory configuration. It does not
-describe an HTTP target for the worker.
-
-### Remote lifecycle
-
-1. Worker sends `hello` with identity, workload names, capacity, and a
-   registration or resume capability.
-2. Hypervisor sends `welcome` with a rotated resume capability and opaque
-   bootstrap data.
-3. Worker persists the rotation, applies optional `beforeReady` work, and sends
-   `ready`.
-4. Hypervisor durably commits and publishes readiness, then sends `ready_ack`.
-   Only after `ready_ack` does `worker.whenReady()` resolve and the worker send
-   heartbeats or accept work.
-5. During `drain`, it rejects new work, settles active streams, and sends
-   `drained`. `shutdown` stops reconnecting.
-
-Capacity is reserved by `work.accepted`; workload code runs only after
-`work.start`. See the [normative protocol](worker-protocol-v1.md) for the exact
-frame and settlement rules.
+See [architecture](architecture.md), [operations](operations.md), and the
+[normative v1 protocol](worker-protocol-v1.md).

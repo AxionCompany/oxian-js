@@ -9,14 +9,16 @@ import type {
   WorkDispatch,
   WorkerDefinition,
 } from "../../supervisor/index.ts";
-import type { WebSocketTransport } from "../../transport/index.ts";
-import type { WorkerWireConnection } from "../../transport/types.ts";
+import type {
+  FrameConnection,
+  ProtocolTransport,
+} from "../../transport/index.ts";
+import type { SocketConnection } from "../../transport/types.ts";
+import type { WorkBody, WorkHandle } from "../../work/types.ts";
 import type {
   HypervisorDisconnectPhase,
   HypervisorDisconnectReason,
   HypervisorPeerClose,
-  HypervisorWorkHandle,
-  HypervisorWorkInputBody,
 } from "../types.ts";
 
 export type ConnectionPhase =
@@ -27,8 +29,10 @@ export type ConnectionPhase =
   | "closed";
 
 export type ConnectionRecord = {
-  connection?: WorkerWireConnection;
-  transport?: WebSocketTransport;
+  transportType: "in-process" | "websocket";
+  socket?: SocketConnection;
+  connection?: FrameConnection;
+  transport?: ProtocolTransport;
   phase: ConnectionPhase;
   connectedAtMs: number;
   acceptingWork: boolean;
@@ -92,14 +96,14 @@ export type PendingWork = {
   completed: Deferred<WorkDispatch>;
   deadlineTimer?: unknown;
   cancellationTimer?: unknown;
-  handle?: HypervisorWorkHandle;
+  handle?: WorkHandle;
 };
 
 export type PendingOpenInput = Readonly<{
   streamId: string;
   workload: string;
   metadata: JsonObject;
-  body?: HypervisorWorkInputBody;
+  body?: WorkBody;
   deadlineAtMs?: number;
 }>;
 

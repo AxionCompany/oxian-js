@@ -92,36 +92,6 @@ export type RegistrationExchange = Readonly<{
   resume: RegistrationGrant;
 }>;
 
-export type RegistrationAuthority = Readonly<{
-  issueRegistration(
-    identity: WorkerIdentity,
-    options?: Readonly<{ ttlMs?: number }>,
-  ): Promise<RegistrationGrant>;
-  exchange(
-    input: Readonly<{
-      identity: WorkerIdentity;
-      credential: WorkerCredential;
-      handshakeId: string;
-    }>,
-  ): Promise<RegistrationExchange>;
-  revoke(identity: WorkerIdentity): Promise<void>;
-}>;
-
-export type RegistrationAuthorityHooks = Readonly<{
-  issueRegistration(
-    identity: WorkerIdentity,
-    options?: Readonly<{ ttlMs?: number }>,
-  ): RegistrationGrant | Promise<RegistrationGrant>;
-  exchange(
-    input: Readonly<{
-      identity: WorkerIdentity;
-      credential: WorkerCredential;
-      handshakeId: string;
-    }>,
-  ): RegistrationExchange | Promise<RegistrationExchange>;
-  revoke(identity: WorkerIdentity): void | Promise<void>;
-}>;
-
 export type WorkDispatchStatus =
   | "offered"
   | "claimed"
