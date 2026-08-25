@@ -67,7 +67,7 @@ Create `application.ts` beside it:
 import {
   createApplication,
   defineApplicationFactory,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.6/app";
+} from "jsr:@oxian/oxian-js@0.21.0/app";
 import { createLogwashState, type LogwashState } from "./logwash.ts";
 
 export default defineApplicationFactory<LogwashState>(
@@ -125,7 +125,7 @@ export default {
 Add root route middleware in `routes/_middleware.ts`:
 
 ```ts
-import type { RouteMiddleware } from "jsr:@oxian/oxian-js@0.21.0-rc.6/router";
+import type { RouteMiddleware } from "jsr:@oxian/oxian-js@0.21.0/router";
 import type { LogwashState } from "../logwash.ts";
 
 export const middleware: RouteMiddleware<LogwashState> = async (
@@ -161,7 +161,7 @@ Finally, replace `routes/redactions/[profile].ts` so it consumes the prepared
 state:
 
 ```ts
-import type { RouteContext } from "jsr:@oxian/oxian-js@0.21.0-rc.6/router";
+import type { RouteContext } from "jsr:@oxian/oxian-js@0.21.0/router";
 import { asProfile, type LogwashState } from "../../logwash.ts";
 
 type Context = RouteContext<LogwashState>;
@@ -240,8 +240,8 @@ logwash/
 Check it, then start it:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.6/bin check
-deno run -A jsr:@oxian/oxian-js@0.21.0-rc.6/bin dev
+deno run -A jsr:@oxian/oxian-js@0.21.0/bin check
+deno run -A jsr:@oxian/oxian-js@0.21.0/bin dev
 ```
 
 `check` validates the factory module's shape but deliberately does not invoke

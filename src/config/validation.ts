@@ -15,6 +15,7 @@ import type {
 const DEFAULT_CORS_METHODS = Object.freeze([
   "GET",
   "HEAD",
+  "QUERY",
   "POST",
   "PUT",
   "PATCH",

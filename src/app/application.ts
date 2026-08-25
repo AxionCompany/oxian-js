@@ -19,6 +19,7 @@ import type {
 const METHOD_ORDER: readonly HttpMethod[] = Object.freeze([
   "GET",
   "HEAD",
+  "QUERY",
   "POST",
   "PUT",
   "PATCH",

@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.6/app`
+# `jsr:@oxian/oxian-js@0.21.0/app`
 
 [Back to the API reference](../api-reference.md)
 
@@ -6,14 +6,14 @@ The `/app` subpath creates Fetch-native applications, composes their middleware
 and lifecycle, loads explicit application factories, and creates server-sent
 event streams.
 
-All examples on this page pin the 0.20 release candidate:
+All examples on this page pin the 0.21 release:
 
 ```ts
 import {
   createApplication,
   createServerSentEvents,
   defineApplicationFactory,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.6/app";
+} from "jsr:@oxian/oxian-js@0.21.0/app";
 ```
 
 ## Export summary
@@ -61,8 +61,8 @@ supplied `FileRouter` is already a startup snapshot: route modules are not
 loaded by this function or during requests.
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.21.0-rc.6/app";
-import { createFileRouter } from "jsr:@oxian/oxian-js@0.21.0-rc.6/router";
+import { createApplication } from "jsr:@oxian/oxian-js@0.21.0/app";
+import { createFileRouter } from "jsr:@oxian/oxian-js@0.21.0/router";
 
 const router = await createFileRouter<{ startedAt: number }>({
   root: "./routes",
@@ -162,9 +162,9 @@ The built-in HTTP outcomes are:
 | Application has begun disposal                  | `503 Service Unavailable`                  |
 | Unhandled application error                     | `onError`, or a generic `500`              |
 
-`Allow` is ordered as `GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS`, excluding
-unsupported methods. `HEAD` is implied by `GET`, and `OPTIONS` is always
-available.
+`Allow` is ordered as `GET, HEAD, QUERY, POST, PUT, PATCH, DELETE, OPTIONS`,
+excluding unsupported methods. `HEAD` is implied by `GET`, and `OPTIONS` is
+always available.
 
 The active-request counter includes response streaming, not just handler
 execution. If a caller never consumes a response body, disposal aborts that body
@@ -311,7 +311,7 @@ Cleanup failure never replaces the boundary validation error.
 import {
   createApplication,
   defineApplicationFactory,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.6/app";
+} from "jsr:@oxian/oxian-js@0.21.0/app";
 
 export default defineApplicationFactory(
   ({ router, basePath }) =>
@@ -438,7 +438,7 @@ Writes are serialized and honor stream backpressure:
 `options.retry` queues an initial retry field before later writes.
 
 ```ts
-import { createServerSentEvents } from "jsr:@oxian/oxian-js@0.21.0-rc.6/app";
+import { createServerSentEvents } from "jsr:@oxian/oxian-js@0.21.0/app";
 
 const events = createServerSentEvents({
   signal: request.signal,

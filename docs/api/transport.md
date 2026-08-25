@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.6/transport`
+# `jsr:@oxian/oxian-js@0.21.0/transport`
 
 Most applications use plain transport declarations through `createWorker` and
 `createHypervisor`. This subpath also exposes the advanced runtime socket and
@@ -38,7 +38,7 @@ import {
   adaptWebSocket,
   expectSocketConnection,
   isSocketConnection,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.6/transport";
+} from "jsr:@oxian/oxian-js@0.21.0/transport";
 ```
 
 `adaptWebSocket(socket)` handles a standards-compatible native WebSocket.
@@ -80,7 +80,7 @@ import {
   type ConnectWorkerWebSocketOptions,
   type WorkerWebSocketFactory,
   type WorkerWebSocketFactoryContext,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.6/transport";
+} from "jsr:@oxian/oxian-js@0.21.0/transport";
 ```
 
 `connectWorkerWebSocket(options)` validates URL policy, owns the deadline, waits

@@ -7,11 +7,16 @@ This is a breaking pre-1.0 release.
 ## Install
 
 ```ts
-import {
-  createHypervisor,
-  createWorker,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.6";
+import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.21.0";
 ```
+
+## Application routes
+
+Route modules may export `QUERY` alongside `GET`, `POST`, `PUT`, `PATCH`,
+`DELETE`, `HEAD`, and `OPTIONS`. Oxian dispatches `QUERY` request bodies,
+includes the method in generated `Allow` headers, and permits it in the default
+CORS method policy. Other unsupported uppercase method exports still fail during
+route compilation.
 
 ## Topology declarations
 

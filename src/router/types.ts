@@ -10,6 +10,7 @@ export const HTTP_METHODS: readonly [
   "PUT",
   "PATCH",
   "DELETE",
+  "QUERY",
   "HEAD",
   "OPTIONS",
 ] = Object.freeze(
@@ -19,6 +20,7 @@ export const HTTP_METHODS: readonly [
     "PUT",
     "PATCH",
     "DELETE",
+    "QUERY",
     "HEAD",
     "OPTIONS",
   ] as const,

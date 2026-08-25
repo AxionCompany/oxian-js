@@ -105,6 +105,27 @@ Deno.test("cors handles valid preflight without invoking the application", async
   );
 });
 
+Deno.test("cors permits QUERY by default", async () => {
+  const handler = createCorsAdapter({ origins: "*" })(
+    () => new Response("unreachable"),
+  );
+  const response = await handler(
+    new Request("https://api.example/items", {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://compass.example",
+        "access-control-request-method": "QUERY",
+      },
+    }),
+  );
+
+  assertEquals(response.status, 204);
+  assertEquals(
+    response.headers.get("access-control-allow-methods"),
+    "GET, HEAD, QUERY, POST, PUT, PATCH, DELETE, OPTIONS",
+  );
+});
+
 Deno.test("cors rejects denied preflights and never reflects wildcard credentials", async () => {
   const handler = createCorsAdapter({
     origins: ["https://compass.example"],

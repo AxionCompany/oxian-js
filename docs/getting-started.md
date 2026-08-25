@@ -70,8 +70,8 @@ boundaries.
 No database, container runtime, or cloud account is needed for Part 1.
 
 Commands and imports pin the package version documented by this checkout. That
-keeps local `deno.json` links and pre-release testing on 0.20 instead of
-silently resolving an older published release.
+keeps local `deno.json` links and development builds on 0.21 instead of silently
+resolving an older published release.
 
 Start with
 [Chapter 1: Your first request](getting-started/part-1-application/01-first-request.md).

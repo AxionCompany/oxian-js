@@ -7,6 +7,7 @@ import type {
 const DEFAULT_METHODS = Object.freeze([
   "GET",
   "HEAD",
+  "QUERY",
   "POST",
   "PUT",
   "PATCH",

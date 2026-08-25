@@ -252,6 +252,7 @@ Deno.test("application implements 404, 405/Allow, HEAD, and OPTIONS", async () =
       );
     },
     POST: () => new Response("posted"),
+    QUERY: async (request) => new Response(await request.text()),
   });
   const application = await createApplication({ router });
 
@@ -274,13 +275,27 @@ Deno.test("application implements 404, 405/Allow, HEAD, and OPTIONS", async () =
     new Request("https://example.test/items/1", { method: "OPTIONS" }),
   );
   assertEquals(options.status, 204);
-  assertEquals(options.headers.get("allow"), "GET, HEAD, POST, OPTIONS");
+  assertEquals(
+    options.headers.get("allow"),
+    "GET, HEAD, QUERY, POST, OPTIONS",
+  );
+
+  const queried = await application.fetch(
+    new Request("https://example.test/items/1", {
+      method: "QUERY",
+      body: "query body",
+    }),
+  );
+  assertEquals(await queried.text(), "query body");
 
   const rejected = await application.fetch(
     new Request("https://example.test/items/1", { method: "DELETE" }),
   );
   assertEquals(rejected.status, 405);
-  assertEquals(rejected.headers.get("allow"), "GET, HEAD, POST, OPTIONS");
+  assertEquals(
+    rejected.headers.get("allow"),
+    "GET, HEAD, QUERY, POST, OPTIONS",
+  );
   await rejected.body?.cancel();
   await application.dispose();
 });

@@ -21,7 +21,7 @@ status: active
 
 ## Purpose
 
-Oxian 0.20 provides a file router, a Fetch-native application runtime, an HTTP
+Oxian 0.21 provides a file router, a Fetch-native application runtime, an HTTP
 workload, a Hypervisor host, and Workers placed through declarative in-process
 or WebSocket transports. It is a library; application policy, durable worker
 state, provider implementation, and secrets remain at their owning boundaries.
@@ -48,8 +48,8 @@ state, provider implementation, and secrets remain at their owning boundaries.
 - `src/worker/`, `src/transport/`, `src/protocol/`: one Worker lifecycle,
   low-level WebSocket transport, and versioned wire contract.
 - `src/local/`, `src/edge/`: local composition and HTTP edge adapters.
-- `docs/`: public 0.20 documentation. `v0.20-implementation-plan.md` is an
-  internal implementation ledger and is not published.
+- `docs/`: public 0.21 documentation. Historical implementation plans are
+  internal ledgers and are not published.
 
 Oxian deliberately owns only the sessions connected to one Hypervisor process.
 Durable cross-replica routing is application infrastructure; Sandbox keeps its

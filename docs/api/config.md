@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0-rc.6/config`
+# `jsr:@oxian/oxian-js@0.21.0/config`
 
 [Back to the API reference](../api-reference.md)
 
@@ -11,7 +11,7 @@ import {
   DEFAULT_OXIAN_CONFIG,
   defineConfig,
   loadConfig,
-} from "jsr:@oxian/oxian-js@0.21.0-rc.6/config";
+} from "jsr:@oxian/oxian-js@0.21.0/config";
 ```
 
 Worker manifests, credentials, provider launch specifications, secrets, logging
@@ -53,7 +53,7 @@ function defineConfig(input: OxianConfigInput): OxianConfig;
 objects and arrays are new and recursively frozen.
 
 ```ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.6/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0/config";
 
 export default defineConfig({
   application: {
@@ -257,13 +257,13 @@ type CorsConfig = Readonly<{
 `https://example.com`, or the serialized opaque origin `"null"`. Paths, queries,
 and fragments are not origins. Duplicate entries are removed.
 
-| Field           | Default                                        | Normalization                          |
-| --------------- | ---------------------------------------------- | -------------------------------------- |
-| `methods`       | `GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS` | Valid HTTP tokens, uppercase, deduped. |
-| `headers`       | `[]`                                           | Valid HTTP tokens, lowercase, deduped. |
-| `exposeHeaders` | `[]`                                           | Valid HTTP tokens, lowercase, deduped. |
-| `credentials`   | `false`                                        | Must be boolean.                       |
-| `maxAgeSeconds` | absent                                         | Non-negative safe integer.             |
+| Field           | Default                                               | Normalization                          |
+| --------------- | ----------------------------------------------------- | -------------------------------------- |
+| `methods`       | `GET, HEAD, QUERY, POST, PUT, PATCH, DELETE, OPTIONS` | Valid HTTP tokens, uppercase, deduped. |
+| `headers`       | `[]`                                                  | Valid HTTP tokens, lowercase, deduped. |
+| `exposeHeaders` | `[]`                                                  | Valid HTTP tokens, lowercase, deduped. |
+| `credentials`   | `false`                                               | Must be boolean.                       |
+| `maxAgeSeconds` | absent                                                | Non-negative safe integer.             |
 
 Wildcard origins cannot be combined with credentials.
 
@@ -412,7 +412,7 @@ The module must have exactly one runtime export:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.6/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0/config";
 
 export default defineConfig({
   application: { routesRoot: "./routes" },
@@ -423,7 +423,7 @@ The named form is equivalent:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0-rc.6/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.21.0/config";
 
 export const config = defineConfig({
   application: { routesRoot: "./routes" },

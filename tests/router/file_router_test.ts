@@ -92,6 +92,7 @@ Deno.test("v0.20 file router compiles index routes and immutable method maps", a
       "index.ts": `
         export const GET = () => new Response("root");
         export const POST = () => new Response("posted");
+        export const QUERY = () => new Response("queried");
         export const description = "auxiliary exports are allowed";
       `,
       "projects/index.ts": GET_ROUTE,
@@ -107,9 +108,14 @@ Deno.test("v0.20 file router compiles index routes and immutable method maps", a
 
       const rootMatch = router.match("/");
       assert(rootMatch);
-      assertEquals(Object.keys(rootMatch.route.methods), ["GET", "POST"]);
+      assertEquals(Object.keys(rootMatch.route.methods), [
+        "GET",
+        "POST",
+        "QUERY",
+      ]);
       assert(typeof rootMatch.route.methods.GET === "function");
       assert(typeof rootMatch.route.methods.POST === "function");
+      assert(typeof rootMatch.route.methods.QUERY === "function");
 
       const projectMatch = router.match("/projects/p-123/");
       assert(projectMatch);
