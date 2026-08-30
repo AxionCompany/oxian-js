@@ -137,6 +137,26 @@ Deno.test("session heartbeat extends the lease and expiry removes readiness", ()
   assertEquals(registry.get("worker-1"), undefined);
 });
 
+Deno.test("in-process sessions retain readiness across an overdue heartbeat sweep", () => {
+  let nowMs = 0;
+  const registry = createSessionRegistry({ clock: () => nowMs });
+  const session = registry.attach({
+    identity: IDENTITY,
+    connectionId: "in-process-connection",
+    sessionGeneration: 1,
+    transportType: "in-process",
+    workloads: ["sandbox.command"],
+    capacity: 2,
+    leaseTimeoutMs: 100,
+  }).session;
+  const fence = fenceForSession(session);
+  registry.markReady(fence);
+
+  nowMs = 10_000;
+  assertEquals(registry.expireLeases(), []);
+  assertEquals(registry.assertCurrent(fence).phase, "ready");
+});
+
 Deno.test("connected sessions use the Ready deadline and start their lease when published", () => {
   let nowMs = 0;
   const registry = createSessionRegistry({ clock: () => nowMs });

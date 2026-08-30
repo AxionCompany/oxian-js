@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.0/router`
+# `jsr:@oxian/oxian-js@0.21.1/router`
 
 [Back to the API reference](../api-reference.md)
 
@@ -10,7 +10,7 @@ synchronous request-path matching. Route handlers use native `Request`,
 import {
   createFileRouter,
   HTTP_METHODS,
-} from "jsr:@oxian/oxian-js@0.21.0/router";
+} from "jsr:@oxian/oxian-js@0.21.1/router";
 ```
 
 ## Export summary
@@ -96,7 +96,7 @@ represent the same logical path, such as `users.ts` and `users.js`.
 
 ```ts
 // routes/users/[id].ts
-import type { RouteHandler } from "jsr:@oxian/oxian-js@0.21.0/router";
+import type { RouteHandler } from "jsr:@oxian/oxian-js@0.21.1/router";
 
 export const GET: RouteHandler<AppState> = (_request, context) =>
   Response.json({
@@ -128,7 +128,7 @@ validated as native `Response` objects when the application executes them.
 
 ```ts
 // routes/users/_middleware.ts
-import type { RouteMiddleware } from "jsr:@oxian/oxian-js@0.21.0/router";
+import type { RouteMiddleware } from "jsr:@oxian/oxian-js@0.21.1/router";
 
 export const middleware: RouteMiddleware<AppState> = async (
   request,
@@ -161,7 +161,7 @@ function createFileRouter<State = unknown>(
 current working directory. Other URL protocols throw `TypeError`.
 
 ```ts
-import { createFileRouter } from "jsr:@oxian/oxian-js@0.21.0/router";
+import { createFileRouter } from "jsr:@oxian/oxian-js@0.21.1/router";
 
 const router = await createFileRouter<AppState>({
   root: new URL("./routes/", import.meta.url),

@@ -45,8 +45,8 @@ Start the migration with a clean local project and move one route tree at a
 time:
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.21.0/bin init --root ./new-service
-deno run -A jsr:@oxian/oxian-js@0.21.0/bin check --config ./new-service/oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.1/bin init --root ./new-service
+deno run -A jsr:@oxian/oxian-js@0.21.1/bin check --config ./new-service/oxian.config.ts
 ```
 
 Then choose an [embedded in-process worker](workers.md#in-process-worker), a

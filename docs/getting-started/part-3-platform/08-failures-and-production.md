@@ -12,7 +12,7 @@ Persist lifecycle boundaries by stable stage/operation IDs and classify failure
 according to the last confirmed transition.
 
 ```ts
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0/hypervisor";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.1/hypervisor";
 
 const hypervisor = createHypervisor(
   { transports, admit },

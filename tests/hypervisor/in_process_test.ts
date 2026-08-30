@@ -398,11 +398,28 @@ Deno.test("in-process initialization is session-scoped across maintenance rebind
   }
 });
 
-Deno.test("in-process Workers use the canonical heartbeat lease", async () => {
+Deno.test("an overdue in-process lease sweep does not fence a live Worker", async () => {
+  type ScheduledTimer = {
+    callback: () => void;
+    delayMs: number;
+    cancelled: boolean;
+  };
   let now = 0;
+  const timers: ScheduledTimer[] = [];
+  const scheduler: HypervisorScheduler = Object.freeze({
+    schedule(callback, delayMs) {
+      const timer = { callback, delayMs, cancelled: false };
+      timers.push(timer);
+      return timer;
+    },
+    cancel(handle) {
+      (handle as ScheduledTimer).cancelled = true;
+    },
+  });
   const hypervisor = createHypervisor({
     commitAcceptedWork: () => Promise.resolve(),
     clock: () => now,
+    scheduler,
     config: {
       heartbeatIntervalMs: 20,
       leaseTimeoutMs: 500,
@@ -419,9 +436,22 @@ Deno.test("in-process Workers use the canonical heartbeat lease", async () => {
   try {
     await worker.ready;
     assertEquals(hypervisor.sessions.get("bound-worker")?.phase, "ready");
+
+    // A request-scoped CPU pause makes the local heartbeat and lease sweep
+    // overdue together. Resuming must not self-fence the live session.
     now = 10_000;
-    assertEquals(hypervisor.sessions.expireLeases().length, 1);
-    assertEquals(hypervisor.sessions.get("bound-worker"), undefined);
+    const overdueSweep = timers.find((timer) =>
+      !timer.cancelled && timer.delayMs === 10
+    );
+    if (overdueSweep === undefined) {
+      throw new Error("expected the Hypervisor lease sweep to be scheduled");
+    }
+    overdueSweep.callback();
+    assertEquals(hypervisor.sessions.get("bound-worker")?.phase, "ready");
+
+    const handle = await hypervisor.dispatch({ workload: "task" });
+    await readText(handle.output);
+    assertEquals((await handle.completed).status, "completed");
   } finally {
     await worker.stop("test_complete");
     await running;

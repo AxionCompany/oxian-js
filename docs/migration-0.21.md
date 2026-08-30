@@ -7,7 +7,7 @@ This is a breaking pre-1.0 release.
 ## Install
 
 ```ts
-import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.21.0";
+import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.21.1";
 ```
 
 ## Application routes

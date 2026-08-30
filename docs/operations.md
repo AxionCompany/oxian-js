@@ -8,9 +8,9 @@ results, and cross-replica routing.
 ## Production composition
 
 ```ts
-import { createHttpGateway } from "jsr:@oxian/oxian-js@0.21.0/http";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.0/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.21.0/adapters/deno";
+import { createHttpGateway } from "jsr:@oxian/oxian-js@0.21.1/http";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.1/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.21.1/adapters/deno";
 
 const hypervisor = createHypervisor(
   {
@@ -146,6 +146,10 @@ capacity, acceptance commits, and connection age.
 Automatic connection-age rotation applies only to WebSocket connections.
 In-process event-fabric connections have no intermediary lifetime and remain
 available for durable application streams until explicitly drained or stopped.
+Likewise, heartbeat lease expiry applies only to WebSocket sessions. An
+in-process Worker shares the Hypervisor's event loop, so an elapsed-time sweep
+cannot distinguish a suspended process from a lost local Worker; event-fabric
+closure is the liveness signal for that topology.
 
 ## Drain and shutdown
 
@@ -178,8 +182,8 @@ Do not treat peer-provided close text as trusted lifecycle policy.
 ## Verification commands
 
 ```sh
-deno run -A jsr:@oxian/oxian-js@0.21.0/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.21.0/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.1/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.1/bin routes --config oxian.config.ts
 ```
 
 Test crash points before dispatch, after acceptance ACK, during the durable

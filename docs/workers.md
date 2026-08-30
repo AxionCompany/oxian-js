@@ -22,7 +22,7 @@ use `stop()` for explicit ownership cleanup.
 Use one visible declaration for both roles:
 
 ```ts
-import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.21.0";
+import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.21.1";
 
 const transport = {
   type: "in-process",
@@ -86,14 +86,17 @@ applications should provide their own `activate`, `register`, `admit`, and
 The topic is an event-fabric namespace. Frames are addressed by connection and
 direction; it does not broadcast work. Local execution uses the complete v1
 handshake, Ready, heartbeat, acceptance, Start, credit, terminal, drain, and
-shutdown state machines.
+shutdown state machines. Heartbeats still carry bounded status, but an
+in-process session is not expired by elapsed wall-clock time: a paused event
+loop delays the Worker and Hypervisor together. Event-fabric closure, explicit
+drain, and shutdown remain authoritative.
 
 ## WebSocket Worker
 
 Only the physical transport and lifecycle integrations change:
 
 ```ts
-import { createWorker } from "jsr:@oxian/oxian-js@0.21.0/worker";
+import { createWorker } from "jsr:@oxian/oxian-js@0.21.1/worker";
 
 const worker = createWorker(
   {
@@ -192,7 +195,7 @@ buffered amount, and protocol admission. A `WorkerWebSocketFactory` and
 `WorkerWebSocketFactoryContext` may create an authenticated native socket:
 
 ```ts
-import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.21.0/transport";
+import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.21.1/transport";
 
 const socket: WorkerWebSocketFactory = async ({ url, protocol, signal }) => {
   const token = await identityToken(url, signal);

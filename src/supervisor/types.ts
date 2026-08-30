@@ -64,6 +64,13 @@ export type WorkerSession = Readonly<{
    * Authority-issued monotonic fence within this worker attempt.
    */
   sessionGeneration: number;
+  /**
+   * Physical transport that owns this session's liveness boundary.
+   *
+   * An in-process connection shares the Hypervisor's event loop, so transport
+   * close—not a wall-clock heartbeat—is authoritative for its liveness.
+   */
+  transportType: "in-process" | "websocket";
   workloads: readonly string[];
   capacity: number;
   phase: WorkerSessionPhase;

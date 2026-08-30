@@ -242,6 +242,7 @@ export function createSessionProtocolController(
         identity: record.hello.identity,
         connectionId: record.fence.connectionId,
         sessionGeneration: record.exchange.sessionGeneration,
+        transportType: record.transportType,
         workloads: record.hello.workloads,
         capacity: record.hello.capacity,
         leaseTimeoutMs: options.config.leaseTimeoutMs,

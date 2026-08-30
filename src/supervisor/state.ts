@@ -188,6 +188,7 @@ export function createWorkerSession(
     identity: WorkerIdentity;
     connectionId: string;
     sessionGeneration: number;
+    transportType?: "in-process" | "websocket";
     workloads: readonly string[];
     capacity: number;
     connectedAtMs: number;
@@ -214,6 +215,7 @@ export function createWorkerSession(
       input.sessionGeneration,
       "sessionGeneration",
     ),
+    transportType: input.transportType ?? "websocket",
     workloads: copyUniqueWorkloads(input.workloads),
     capacity: expectPositiveInteger(input.capacity, "capacity"),
     phase: "connected",

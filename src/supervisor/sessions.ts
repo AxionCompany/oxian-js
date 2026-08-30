@@ -42,6 +42,7 @@ export type SessionRegistry = Readonly<{
       identity: WorkerIdentity;
       connectionId: string;
       sessionGeneration: number;
+      transportType?: "in-process" | "websocket";
       workloads: readonly string[];
       capacity: number;
       leaseTimeoutMs: number;
@@ -136,6 +137,12 @@ export function createSessionRegistry(
     // routable yet. Its Ready handshake timer, owned by the Hypervisor, is the
     // sole startup deadline. The heartbeat lease begins only at markReady().
     if (session.phase === "connected") return undefined;
+    // An in-process Worker shares the Hypervisor's process and event loop.
+    // When that loop is suspended, both its heartbeat and this sweep become
+    // overdue together; wall-clock fencing would therefore disconnect a live
+    // local session as soon as the process resumes. Its event-fabric close is
+    // authoritative instead. WebSocket Workers remain heartbeat-leased.
+    if (session.transportType === "in-process") return undefined;
     if (currentTime < session.leaseExpiresAtMs) return undefined;
     const expired = remove(session, "expired");
     expiredEvents.push(expired);
