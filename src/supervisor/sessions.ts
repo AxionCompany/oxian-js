@@ -37,6 +37,8 @@ export type SessionReservationInput = Readonly<{
 }>;
 
 export type SessionRegistry = Readonly<{
+  /** Synchronous change observer; must not mutate the registry. Errors are ignored. */
+  subscribe?(listener: (session: WorkerSession) => void): () => void;
   attach(
     input: Readonly<{
       identity: WorkerIdentity;
@@ -102,6 +104,16 @@ export function createSessionRegistry(
 ): SessionRegistry {
   const clock = options.clock ?? Date.now;
   const sessions = new Map<string, WorkerSession>();
+  const listeners = new Set<(session: WorkerSession) => void>();
+  const notify = (session: WorkerSession): void => {
+    for (const listener of listeners) {
+      try {
+        listener(session);
+      } catch {
+        // Observers cannot roll back a session mutation or strand a reservation.
+      }
+    }
+  };
   const connectionOwners = new Map<string, string>();
   const expiredEvents: WorkerSession[] = [];
   const highWatermarks = new Map<
@@ -126,7 +138,9 @@ export function createSessionRegistry(
     ) {
       connectionOwners.delete(session.connectionId);
     }
-    return closeSession(session, phase);
+    const closed = closeSession(session, phase);
+    notify(closed);
+    return closed;
   };
 
   const expireOne = (
@@ -283,6 +297,7 @@ export function createSessionRegistry(
         sessionGeneration: incoming.sessionGeneration,
       }),
     );
+    notify(incoming);
     return freeze({
       session: incoming,
       ...(replaced === undefined ? {} : { replaced }),
@@ -296,6 +311,7 @@ export function createSessionRegistry(
     const previous = assertCurrent(fence);
     const next = update(previous);
     sessions.set(previous.identity.workerId, next);
+    notify(next);
     return next;
   };
 
@@ -474,6 +490,7 @@ export function createSessionRegistry(
     }
     const next = withSession(selected, { reserved: selected.reserved + 1 });
     sessions.set(selected.identity.workerId, next);
+    notify(next);
     return next;
   };
 
@@ -496,6 +513,12 @@ export function createSessionRegistry(
   };
 
   return Object.freeze({
+    subscribe(listener: (session: WorkerSession) => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     attach,
     markReady,
     heartbeat,

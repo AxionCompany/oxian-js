@@ -22,7 +22,7 @@ use `stop()` for explicit ownership cleanup.
 Use one visible declaration for both roles:
 
 ```ts
-import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.21.1";
+import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.21.2";
 
 const transport = {
   type: "in-process",
@@ -96,7 +96,7 @@ drain, and shutdown remain authoritative.
 Only the physical transport and lifecycle integrations change:
 
 ```ts
-import { createWorker } from "jsr:@oxian/oxian-js@0.21.1/worker";
+import { createWorker } from "jsr:@oxian/oxian-js@0.21.2/worker";
 
 const worker = createWorker(
   {
@@ -168,8 +168,16 @@ queued terminal frames.
 
 `onWorkAccepted` runs after capacity is reserved and before the Worker sends
 `work.accepted`. The handler cannot run until a validated `work.start` arrives
-and Worker `onStart` resolves. `onComplete` runs after the terminal result and
-before process-lifetime execution capacity is released.
+and Worker `onStart` resolves. For normal completion and handler failure, the
+Worker settles its output source, awaits `onComplete` with the local execution
+outcome, releases process-lifetime execution capacity, and then sends the
+terminal frame. This ordering lets a Hypervisor reuse capacity safely on receipt
+of End or a handler-error terminal. Hook failure does not rewrite the outcome; a
+hook must not await remote completion of that same operation.
+
+Early cancellation acknowledgements can precede local execution settlement. They
+do not promise that an uncooperative handler or output source has stopped, and
+the execution ledger continues to reserve its slot until it settles.
 
 ## Capacity and reconnect
 
@@ -188,6 +196,11 @@ connection, active protocol streams, occupied executions, and reconnect count.
 The `WorkerLifecycleEvent` stream emits snapshots and terminal closure without
 requiring polling.
 
+Hypervisors can opt into bounded dispatch waiting during capacity pressure or
+Worker reconnect using `maxQueuedDispatches` and `dispatchQueueTimeoutMs`.
+Waiting requests have not yet been offered and do not occupy Worker capacity.
+See [operations](operations.md#bounded-dispatch-waiting).
+
 ## WebSocket controls
 
 `WorkerWebSocketLimits` bounds inbound messages/bytes, pending sends, native
@@ -195,7 +208,7 @@ buffered amount, and protocol admission. A `WorkerWebSocketFactory` and
 `WorkerWebSocketFactoryContext` may create an authenticated native socket:
 
 ```ts
-import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.21.1/transport";
+import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.21.2/transport";
 
 const socket: WorkerWebSocketFactory = async ({ url, protocol, signal }) => {
   const token = await identityToken(url, signal);

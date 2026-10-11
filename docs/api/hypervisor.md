@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.1/hypervisor`
+# `jsr:@oxian/oxian-js@0.21.2/hypervisor`
 
 The Hypervisor hosts declared Worker transports, admits fenced sessions, assigns
 work, and owns process-local drain/shutdown. It does not own a network listener
@@ -26,7 +26,7 @@ import {
   createHypervisor,
   type Hypervisor,
   type HypervisorOptions,
-} from "jsr:@oxian/oxian-js@0.21.1/hypervisor";
+} from "jsr:@oxian/oxian-js@0.21.2/hypervisor";
 
 const local = {
   type: "in-process",
@@ -78,6 +78,39 @@ A `HypervisorRequestDecision` is either a normal response or a one-shot upgrade
 capability with `attach()` and `cancel()`. Runtime adapters attach a
 `SocketConnection` only after negotiating the exact protocol.
 
+## Dispatch waiting
+
+`dispatch(input)` returns a `Promise<WorkHandle>`. Enable bounded pre-offer
+waiting with `config.maxQueuedDispatches > 0`; its default `0` preserves
+immediate `worker_unavailable` when capacity or a target is unavailable. The
+queue limit is an integer from 0 to 1,000,000. `dispatchQueueTimeoutMs` defaults
+to 30,000 and accepts positive integers up to 2,147,483,647.
+
+The effective queue deadline is the earlier of `input.deadlineAtMs` and arrival
+plus `dispatchQueueTimeoutMs`. Absent targets may reconnect until that deadline;
+untargeted requests also wait. The configured timeout ends at reservation and
+does not impose a work execution timeout. Explicit targets have independent FIFO
+lanes; untargeted requests have separate FIFO lanes per workload. Busy targets
+never block other targets using the same workload. Runnable lane heads compete
+in arrival order for available slots; asynchronous assignment owns no slot until
+reservation, and there is no cross-class FIFO guarantee.
+
+While queued, a request has no offer and its body is untouched. Rejection uses
+`dispatch_queue_full`, `deadline_exceeded`, `dispatch_aborted`, `shutting_down`,
+or `worker_draining`. The caller's abort reason is retained as `cause`. The
+queue limit includes async assignment calls and applies globally. `assign` may
+run again after a capacity or fence race, with stable stage ID, incremented
+callback attempt, and a signal aborted by queue cancellation. Returned fences
+are revalidated before reservation. Existing offered and accepted work is never
+automatically replayed by this queue.
+
+Drain and Worker shutdown reject queued explicit targets, including absent ones;
+untargeted requests may use other Workers. New requests to a draining session
+reject, but after detach they may wait for a replacement. Hypervisor shutdown
+rejects all queued and future requests. See
+[operations](../operations.md#bounded-dispatch-waiting) for usage and body
+ownership.
+
 ## Lifecycle
 
 The second argument is `HypervisorLifecycleCallbacks` (exported by the package
@@ -124,7 +157,10 @@ explicit `/adapters/deno` subpath.
 ## Snapshots and errors
 
 `HypervisorSnapshot` reports connection/admission/session counts, ready local
-Workers, pending acceptance commits, and work counts by status.
+Workers, pending acceptance commits, and work counts by status. It also exposes
+`queuedDispatches` and immutable `queuedDispatchesByLane` groups containing
+`workload`, optional `workerId`, and `count`. Queue entries are unoffered and
+are not part of `WorkDispatchStatus`.
 
 Runtime failures use `HypervisorError` with `HypervisorErrorCode`:
 authentication, connection loss, timeout, indeterminate acceptance, invalid

@@ -892,6 +892,7 @@ export function createWorkerSession(
         let completionOutcome: "completed" | "cancelled" | "failed" =
           "completed";
         let completionError: unknown;
+        let executionTerminal: "end" | "error" | undefined;
         const cancelUnstartedOutput = (reason: unknown): void => {
           if (
             outputStarted ||
@@ -962,7 +963,7 @@ export function createWorkerSession(
           ) {
             return;
           }
-          await sendLocalTerminal(stream, "end");
+          executionTerminal = "end";
         } catch (error) {
           completionError = error;
           completionOutcome = stream.abortController.signal.aborted
@@ -976,11 +977,7 @@ export function createWorkerSession(
             return;
           }
           abortWork(stream, error);
-          try {
-            await sendLocalTerminal(stream, "error", error);
-          } catch (sendError) {
-            failSession(sendError);
-          }
+          executionTerminal = "error";
         } finally {
           try {
             await stream.outputCancellation;
@@ -1012,6 +1009,22 @@ export function createWorkerSession(
             executionSettlement.resolve(undefined);
             if (stream.executionSettlement === executionSettlement) {
               stream.executionSettlement = undefined;
+            }
+            // End (and handler failure) authorizes the Hypervisor to release
+            // its reservation. Publish it only after the output source and
+            // completion hook settle and our execution slot is actually free.
+            // Early deadline/peer-cancellation acknowledgements remain prompt:
+            // they do not promise that an uncooperative execution has stopped.
+            if (executionTerminal !== undefined) {
+              try {
+                await sendLocalTerminal(
+                  stream,
+                  executionTerminal,
+                  completionError,
+                );
+              } catch (sendError) {
+                failSession(sendError);
+              }
             }
             if (isCurrentSession() && draining) {
               void completeDrainIfIdle();

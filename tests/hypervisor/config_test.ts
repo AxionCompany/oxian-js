@@ -124,3 +124,28 @@ Deno.test("v0.21 hypervisor config cannot exceed wire hard limits", () => {
     "maxPendingAcceptanceCommits",
   );
 });
+
+Deno.test("Hypervisor dispatch queue limits are opt-in and bounded", () => {
+  assertEquals(createHypervisorConfig().maxQueuedDispatches, 0);
+  assertEquals(createHypervisorConfig().dispatchQueueTimeoutMs, 30_000);
+  assertEquals(
+    createHypervisorConfig({ maxQueuedDispatches: 100 }).maxQueuedDispatches,
+    100,
+  );
+  for (const maxQueuedDispatches of [-1, 0.5, NaN, Infinity, 1_000_001]) {
+    assertThrows(
+      () => createHypervisorConfig({ maxQueuedDispatches }),
+      TypeError,
+      "maxQueuedDispatches",
+    );
+  }
+  for (
+    const dispatchQueueTimeoutMs of [0, -1, 0.5, NaN, Infinity, 0x8000_0000]
+  ) {
+    assertThrows(
+      () => createHypervisorConfig({ dispatchQueueTimeoutMs }),
+      TypeError,
+      "dispatchQueueTimeoutMs",
+    );
+  }
+});

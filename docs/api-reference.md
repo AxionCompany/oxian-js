@@ -1,6 +1,6 @@
 # API reference
 
-This reference covers the public API of `@oxian/oxian-js` version `0.21.1`.
+This reference covers the public API of `@oxian/oxian-js` version `0.21.2`.
 Start with the [getting-started guide](getting-started.md) when learning Oxian;
 use these pages when composing a runtime, implementing a platform boundary, or
 checking an exact contract.
@@ -14,17 +14,17 @@ import {
   createApplication,
   createHypervisor,
   createWorker,
-} from "jsr:@oxian/oxian-js@0.21.1";
+} from "jsr:@oxian/oxian-js@0.21.2";
 ```
 
 Explicit subpaths make ownership clearer and keep the executable boundary out of
 application code:
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.21.1/app";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.1/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.21.1/adapters/deno";
-import { createWorker } from "jsr:@oxian/oxian-js@0.21.1/worker";
+import { createApplication } from "jsr:@oxian/oxian-js@0.21.2/app";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.2/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.21.2/adapters/deno";
+import { createWorker } from "jsr:@oxian/oxian-js@0.21.2/worker";
 ```
 
 The root excludes filesystem discovery, static files, local processes, local
@@ -59,6 +59,16 @@ subpaths only when the target runtime provides the required capability.
 | [`/providers`](api/providers.md)         | Provision, inspect, and terminate compute without coupling compute presence to transport readiness.                                                       |
 | [`/local`](api/local.md)                 | Compose the development runtime, run manifest-defined workers, and store local credentials.                                                               |
 | [`/cli`](api/cli.md)                     | Parse or execute the six Oxian commands without terminating the host process. The same page documents the [`/bin`](api/cli.md#executable-bin) entrypoint. |
+
+## Dispatch capacity
+
+Hypervisor dispatch supports opt-in bounded waiting via
+`HypervisorConfig.maxQueuedDispatches` and `dispatchQueueTimeoutMs`. Waiting
+covers full capacity and absent/reconnecting targets, with FIFO scheduling,
+deadline/abort handling, queue-full backpressure, and queue counts in
+`HypervisorSnapshot`. The default queue limit is zero for 0.21 compatibility.
+See the [Hypervisor API](api/hypervisor.md#dispatch-waiting) and
+[operations guide](operations.md#bounded-dispatch-waiting).
 
 ## Shared conventions
 

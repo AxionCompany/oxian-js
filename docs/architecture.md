@@ -20,7 +20,7 @@ between local and remote deployments.
 Transport topology is plain data:
 
 ```ts
-import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.21.1";
+import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.21.2";
 
 const local = {
   type: "in-process",
@@ -208,20 +208,21 @@ protocol knows them.
 
 ## Callback behavior
 
-| Callback                   | Side       | Blocking behavior                                                                      | Failure outcome                                      |
-| -------------------------- | ---------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `onActivate`, `onRegister` | Worker     | Awaited before the next bootstrap stage                                                | Worker startup fails                                 |
-| `onHandshake`              | Worker     | Awaited before Ready; persist rotation idempotently                                    | Session reconnects with the correct credential state |
-| `onReady`                  | Hypervisor | Awaited before publishing Ready and `ready_ack`                                        | Connection fails closed                              |
-| `onReady`                  | Worker     | Awaited after `ready_ack`, before queued work is processed and public `ready` resolves | Session fails and reconnect policy applies           |
-| `onHeartbeat`              | Hypervisor | Awaited before lease mutation                                                          | Connection fails closed                              |
-| `onWorkAssigned`           | Hypervisor | Awaited before `work.open`                                                             | Offer is withdrawn; no Worker saw it                 |
-| `onWorkAccepted`           | Worker     | Awaited before `work.accepted`                                                         | Stream/session fails closed before Start             |
-| `onWorkAccepted`           | Hypervisor | Awaited after ACK, before `work.start`                                                 | Acceptance is indeterminate; never auto-replayed     |
-| `onStart`                  | both       | Awaited immediately around the Start boundary                                          | Work fails closed                                    |
-| `onComplete`               | both       | Awaited before local settlement/capacity release                                       | Terminal result remains authoritative                |
-| `onDisconnect`             | Hypervisor | Nonblocking, exactly once per fenced connection                                        | Observer failure is ignored                          |
-| `onDisconnect`             | Worker     | Awaited when the Worker capability terminates                                          | Does not change the terminal Worker result           |
+| Callback                   | Side       | Blocking behavior                                                                           | Failure outcome                                      |
+| -------------------------- | ---------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `onActivate`, `onRegister` | Worker     | Awaited before the next bootstrap stage                                                     | Worker startup fails                                 |
+| `onHandshake`              | Worker     | Awaited before Ready; persist rotation idempotently                                         | Session reconnects with the correct credential state |
+| `onReady`                  | Hypervisor | Awaited before publishing Ready and `ready_ack`                                             | Connection fails closed                              |
+| `onReady`                  | Worker     | Awaited after `ready_ack`, before queued work is processed and public `ready` resolves      | Session fails and reconnect policy applies           |
+| `onHeartbeat`              | Hypervisor | Awaited before lease mutation                                                               | Connection fails closed                              |
+| `onWorkAssigned`           | Hypervisor | Awaited before `work.open`                                                                  | Offer is withdrawn; no Worker saw it                 |
+| `onWorkAccepted`           | Worker     | Awaited before `work.accepted`                                                              | Stream/session fails closed before Start             |
+| `onWorkAccepted`           | Hypervisor | Awaited after ACK, before `work.start`                                                      | Acceptance is indeterminate; never auto-replayed     |
+| `onStart`                  | both       | Awaited immediately around the Start boundary                                               | Work fails closed                                    |
+| `onComplete`               | Worker     | Awaited after output settlement, before capacity release and normal/error terminal delivery | Observer failure does not rewrite execution outcome  |
+| `onComplete`               | Hypervisor | Awaited after receiving the terminal, before local handle settlement                        | Terminal result remains authoritative                |
+| `onDisconnect`             | Hypervisor | Nonblocking, exactly once per fenced connection                                             | Observer failure is ignored                          |
+| `onDisconnect`             | Worker     | Awaited when the Worker capability terminates                                               | Does not change the terminal Worker result           |
 
 Blocking callbacks must be idempotent by `stageId`. Their `AbortSignal` is
 advisory; a durable transaction must still settle atomically after cancellation.
@@ -251,3 +252,10 @@ A Hypervisor is process-local connection authority, not a distributed queue.
 Applications own cross-replica routing, durable work records, credential stores,
 and provider resources. Complete attempt and session fences prevent stale
 connections or cleanup from acting on replacements.
+
+With bounded dispatch waiting enabled, the Hypervisor retains unoffered intent
+in a finite process-local queue. Those entries have no stream or reservation and
+are separate from the supervisor's `WorkDispatchStatus` ledger. Successful
+reservation transfers ownership to the existing `offered` lifecycle; queue
+cancellation and reconnect waiting never replay offered or accepted work. See
+[operations](operations.md#bounded-dispatch-waiting) for fairness and limits.

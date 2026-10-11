@@ -8,6 +8,10 @@ const MAX_INBOUND_BYTES = 256 * 1_024 * 1_024;
 const MAX_BUFFERED_AMOUNT_BYTES = 64 * 1_024 * 1_024;
 
 export type HypervisorConfig = Readonly<{
+  /** Zero preserves immediate rejection; positive values enable bounded waiting. */
+  maxQueuedDispatches: number;
+  /** Maximum pre-offer wait, also used when WorkInput has no deadline. */
+  dispatchQueueTimeoutMs: number;
   handshakeTimeoutMs: number;
   readyTimeoutMs: number;
   heartbeatIntervalMs: number;
@@ -33,6 +37,8 @@ export type HypervisorConfig = Readonly<{
 
 export const DEFAULT_HYPERVISOR_CONFIG: HypervisorConfig = Object
   .freeze({
+    maxQueuedDispatches: 0,
+    dispatchQueueTimeoutMs: 30_000,
     handshakeTimeoutMs: 10_000,
     readyTimeoutMs: 5 * 60_000,
     heartbeatIntervalMs: 10_000,
@@ -111,7 +117,22 @@ export function createHypervisorConfig(
   input: Partial<HypervisorConfig> = {},
 ): HypervisorConfig {
   const defaults = DEFAULT_HYPERVISOR_CONFIG;
+  const maxQueuedDispatches = input.maxQueuedDispatches ??
+    defaults.maxQueuedDispatches;
+  if (
+    !Number.isSafeInteger(maxQueuedDispatches) || maxQueuedDispatches < 0 ||
+    maxQueuedDispatches > MAX_CONNECTIONS
+  ) {
+    throw new TypeError(
+      `maxQueuedDispatches must be an integer between 0 and ${MAX_CONNECTIONS}`,
+    );
+  }
   const config = {
+    maxQueuedDispatches,
+    dispatchQueueTimeoutMs: expectTimer(
+      input.dispatchQueueTimeoutMs ?? defaults.dispatchQueueTimeoutMs,
+      "dispatchQueueTimeoutMs",
+    ),
     handshakeTimeoutMs: expectTimer(
       input.handshakeTimeoutMs ??
         defaults.handshakeTimeoutMs,

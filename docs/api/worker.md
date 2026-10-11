@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.1/worker`
+# `jsr:@oxian/oxian-js@0.21.2/worker`
 
 This subpath creates auto-starting functional Workers and defines workload,
 stream, snapshot, reconnect, and error contracts.
@@ -26,7 +26,7 @@ import {
   createWorker,
   type Worker,
   type WorkerOptions,
-} from "jsr:@oxian/oxian-js@0.21.1/worker";
+} from "jsr:@oxian/oxian-js@0.21.2/worker";
 
 const worker = createWorker(
   {
@@ -112,3 +112,11 @@ Lifecycle operation/callback types such as `WorkerActivate`, `WorkerRegister`,
 root.
 
 See the full [Worker guide](../workers.md).
+
+For normal completion or handler failure, Worker `onComplete` observes the local
+execution outcome after output settlement and before execution-slot release and
+terminal delivery. It must not await remote completion of the same operation.
+Observer failure does not rewrite the outcome. Early cancellation
+acknowledgement can precede settlement; an uncooperative execution still
+occupies capacity. See
+[capacity and reconnect](../workers.md#capacity-and-reconnect).

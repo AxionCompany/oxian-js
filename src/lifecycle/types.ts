@@ -124,6 +124,11 @@ export type HypervisorAssignContext =
     available: readonly SessionFence[];
   }>;
 
+/**
+ * Selects a current candidate. With dispatch waiting enabled this may be retried
+ * after a capacity/fence race, using the same stageId and a higher callbackAttempt.
+ * Queue expiry, caller abort, drain, and shutdown abort the advisory signal.
+ */
 export type HypervisorAssign = (
   context: HypervisorAssignContext,
 ) => SessionFence | undefined | Promise<SessionFence | undefined>;
@@ -229,6 +234,12 @@ export type WorkerLifecycleCallbacks = Readonly<{
   ): void | Promise<void>;
   onWorkAccepted?(context: WorkerWorkAcceptedContext): void | Promise<void>;
   onStart?(context: WorkerStartContext): void | Promise<void>;
+  /**
+   * Observes the local execution outcome after output settlement. For normal
+   * completion/handler failure this precedes slot release and wire terminal
+   * delivery; do not await remote completion of this same operation here.
+   * Early cancellation may already have been acknowledged. Failure is ignored.
+   */
   onComplete?(context: WorkerCompleteContext): void | Promise<void>;
   onDisconnect?(
     context:

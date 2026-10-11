@@ -324,7 +324,9 @@ export function createHypervisor(
     throw error;
   }
 
-  const dispatch = createDispatch({
+  const dispatchController = createDispatch({
+    config,
+    scheduler,
     dispatcher,
     sessions,
     assign: options.assign,
@@ -361,6 +363,8 @@ export function createHypervisor(
     },
   });
 
+  const dispatch = dispatchController.dispatch;
+
   const prepare: Hypervisor["prepare"] = (request) => {
     const path = new URL(request.url).pathname;
     if (!websocketPaths.has(path)) {
@@ -385,6 +389,7 @@ export function createHypervisor(
     workerId: string,
     reason = "requested",
   ): Promise<void> => {
+    dispatchController.drainWorker(workerId);
     const session = sessions.get(workerId);
     if (session === undefined) return;
     const record = directory.get(session.connectionId);
@@ -397,6 +402,7 @@ export function createHypervisor(
     workerId: string,
     reason = "worker_shutdown",
   ): Promise<void> => {
+    dispatchController.drainWorker(workerId);
     const session = sessions.get(workerId);
     if (session === undefined) return;
     const record = directory.get(session.connectionId);
@@ -418,6 +424,7 @@ export function createHypervisor(
       record.fence.sessionGeneration !== fence.sessionGeneration ||
       record.fence.connectionId !== fence.connectionId
     ) return;
+    dispatchController.drainWorker(fence.identity.workerId);
     await drainRecord(record, reason, "shutdown");
   };
 
@@ -488,6 +495,7 @@ export function createHypervisor(
     for (const operation of dispatcher.list()) work[operation.status]++;
     return Object.freeze({
       acceptingConnections,
+      ...dispatchController.snapshot(),
       connections: records.size,
       unauthenticatedConnections: admissionSnapshot.unauthenticatedConnections,
       authenticatedConnections: admissionSnapshot.authenticatedConnections,

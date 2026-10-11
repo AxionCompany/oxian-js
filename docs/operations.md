@@ -8,9 +8,9 @@ results, and cross-replica routing.
 ## Production composition
 
 ```ts
-import { createHttpGateway } from "jsr:@oxian/oxian-js@0.21.1/http";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.1/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.21.1/adapters/deno";
+import { createHttpGateway } from "jsr:@oxian/oxian-js@0.21.2/http";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.2/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.21.2/adapters/deno";
 
 const hypervisor = createHypervisor(
   {
@@ -127,6 +127,92 @@ separate live socket-owner directory. Forward work to the owning replica or use
 an application queue. Do not serialize closures or physical socket identities as
 durable Worker definitions.
 
+## Bounded dispatch waiting
+
+Capacity rejection remains the 0.21 default. Enable the process-local queue on
+shards that should absorb bursts or brief Worker reconnects:
+
+```ts
+const hypervisor = createHypervisor({
+  transports,
+  admit,
+  config: {
+    maxQueuedDispatches: 1_024,
+    dispatchQueueTimeoutMs: 30_000,
+  },
+});
+
+const work = await hypervisor.dispatch({
+  workload,
+  target: { workerId },
+  body,
+  deadlineAtMs: Date.now() + 10_000,
+  signal,
+});
+```
+
+With a positive `maxQueuedDispatches`, both targeted and untargeted dispatch
+wait for ready capacity. A missing target may reconnect within the wait bound;
+Oxian never substitutes a different logical Worker for an explicit target.
+Waiting ends at the earlier of the supplied deadline and arrival plus
+`dispatchQueueTimeoutMs` (default 30 seconds). The configured timeout applies
+only before offering; an explicit deadline also bounds the subsequent work.
+Setting `maxQueuedDispatches: 0` restores immediate `worker_unavailable`.
+
+Explicitly targeted requests are FIFO per target; untargeted requests are FIFO
+per workload in separate lanes. A busy or absent computer cannot block work for
+other computers exposing the same workload, or untargeted work that can use
+another Worker. The scheduler scans arrival order among runnable lane heads.
+Targeted and untargeted heads compete for actual reservations; an asynchronous
+assignment holds no slot and can lose a race to another lane. There is no FIFO
+guarantee between these two classes. Async `assign` calls count against the
+queue limit and may be repeated after a capacity/fence race, with stable
+operation/stage IDs and increasing `callbackAttempt`. In queue mode they run
+only when candidates exist. Honor the callback signal and keep assignment policy
+idempotent.
+
+| Pre-offer error code  | Meaning                                                          |
+| --------------------- | ---------------------------------------------------------------- |
+| `dispatch_queue_full` | Global request-count limit reached; apply upstream backpressure. |
+| `deadline_exceeded`   | Explicit deadline or configured queue timeout elapsed.           |
+| `dispatch_aborted`    | Caller cancelled; `cause` retains the signal reason.             |
+| `shutting_down`       | Hypervisor shutdown rejected queued or new dispatch.             |
+| `worker_draining`     | An explicit target was drained or shut down.                     |
+
+Drain rejects currently queued requests naming that Worker, even if it is
+absent. Requests targeting an attached draining session also reject. Once it is
+detached, new requests can wait for its replacement. Untargeted requests remain
+eligible for other Workers. Stale `shutdownSession` calls remain no-ops.
+
+The queue owns no reservation, dispatcher record, or wire stream. Rejection
+before offering is safe to retry under application policy. Once offered, the
+existing protocol lifecycle applies; the queue does not retry Open failures or
+reschedulable/accepted work. Acceptance and no-replay rules are unchanged.
+
+The queue retains body references without reading, locking, or cancelling them.
+Callers own body cleanup when dispatch rejects. The bound counts requests, not
+bytes, and is global even for independent lanes; size it alongside upstream body
+limits. Nothing in the queue survives a Hypervisor process restart.
+
+`snapshot().queuedDispatches` reports the total; `queuedDispatchesByLane`
+contains `{ workload, workerId?, count }` groups. Queued requests do not appear
+in `snapshot().work` until offered. Built-in session changes wake the queue
+without polling. Custom injected registries may implement `subscribe`; otherwise
+waiting requests use a 25 ms polling fallback.
+
+On an updated Worker, normal End and handler-error terminals are sent only after
+output settlement, Worker `onComplete`, and execution-slot release. This keeps
+Hypervisor reservation release aligned with actual capacity. Completion hooks
+must not await the Hypervisor's completion of the same operation. Deploy the
+Worker update too: unmodified 0.21.2 Workers can report End while still holding
+their execution slot, even when queueing is disabled.
+
+Early cancellation acknowledgements and connection loss remain separate from
+execution settlement. An uncooperative handler or output source can continue
+holding Worker capacity after cancellation or across reconnect, and new Open may
+still receive a pre-acceptance `worker_capacity` rejection in that case. The
+queue never replays accepted work to hide that condition.
+
 ## Transport operations
 
 ### In process
@@ -158,8 +244,9 @@ closure is the liveness signal for that topology.
 - `shutdownWorker(workerId)` performs terminal Worker shutdown.
 - `shutdownSession(fence)` affects only that exact generation, so stale cleanup
   cannot stop a replacement.
-- `hypervisor.shutdown()` stops new connections, closes transport bindings,
-  drains active sessions, and releases process resources.
+- `hypervisor.shutdown()` rejects queued/new dispatch, stops new connections,
+  closes transport bindings, drains active sessions, and releases process
+  resources.
 - `worker.stop()` stops only that Worker capability.
 
 Injected listeners, dispatchers, providers, or Hypervisors remain app-owned. A
@@ -182,8 +269,8 @@ Do not treat peer-provided close text as trusted lifecycle policy.
 ## Verification commands
 
 ```sh
-deno run -A jsr:@oxian/oxian-js@0.21.1/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.21.1/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.2/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.21.2/bin routes --config oxian.config.ts
 ```
 
 Test crash points before dispatch, after acceptance ACK, during the durable

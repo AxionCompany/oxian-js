@@ -103,6 +103,11 @@ and their later frames are ignored.
 The Hypervisor creates a unique lowercase UUID stream ID and sends `work.open`
 for a workload declared in `hello`.
 
+A Hypervisor may queue bounded, unoffered intent before reserving a session.
+Such entries have no stream ID on wire and can expire or be cancelled locally.
+This scheduling policy adds no frames and never automatically replays work once
+it enters the offer/acceptance lifecycle.
+
 Work authorization is deliberately two-phase:
 
 1. The worker reserves capacity and replies `work.accepted`. It must not invoke
@@ -123,6 +128,14 @@ rotation rejects it before acceptance with
 "worker_draining"`. Because no `work.accepted` boundary
 was crossed, the Hypervisor treats that stable reason as retryable on another
 ready connection.
+
+For normal completion and handler failure, the Worker settles its output source
+and completion hook, then releases its execution slot before sending the
+terminal. The Hypervisor may reuse its reservation upon receiving that terminal.
+Early cancellation acknowledgements do not certify execution settlement: a
+handler that ignores cancellation keeps its process-lifetime slot, including
+across reconnect. `worker_capacity` rejects Open before `work.accepted`; it is
+not evidence that any accepted operation is safe to replay.
 
 Control-frame direction is:
 

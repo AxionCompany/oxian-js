@@ -9,11 +9,21 @@ import type {
   HypervisorWorkAssignedContext,
 } from "../../lifecycle/index.ts";
 import type { WorkHandle, WorkInput } from "../../work/types.ts";
-import type { Hypervisor } from "../types.ts";
+import type { Hypervisor, HypervisorScheduler } from "../types.ts";
+import type { HypervisorConfig } from "../config.ts";
+import {
+  copyJsonObject,
+  expectFiniteTimestamp,
+  expectWorkload,
+} from "../../supervisor/internal.ts";
+import { createWorkDispatchTarget } from "../../supervisor/state.ts";
+import { createDispatchQueue, type QueueAttempt } from "./dispatch-queue.ts";
 import { createHypervisorError } from "./primitives.ts";
 
 export function createDispatch(
   options: Readonly<{
+    config: HypervisorConfig;
+    scheduler: HypervisorScheduler;
     dispatcher: WorkDispatcher;
     sessions: SessionRegistry;
     assign?: HypervisorAssign;
@@ -24,9 +34,28 @@ export function createDispatch(
     signal: AbortSignal;
     open(dispatch: WorkDispatch, input: WorkInput): WorkHandle;
   }>,
-): Hypervisor["dispatch"] {
-  return async (input) => {
-    input.signal?.throwIfAborted();
+) {
+  const queue = createDispatchQueue(options);
+  const waiting = options.config.maxQueuedDispatches > 0;
+  const dispatch: Hypervisor["dispatch"] = async (original) => {
+    if (options.signal.aborted) {
+      throw createHypervisorError(
+        "shutting_down",
+        "Hypervisor is shutting down",
+      );
+    }
+    if (!waiting) original.signal?.throwIfAborted();
+    const input: WorkInput = Object.freeze({
+      ...original,
+      workload: expectWorkload(original.workload, "workload"),
+      target: original.target === undefined
+        ? undefined
+        : createWorkDispatchTarget(original.target),
+      metadata: copyJsonObject(original.metadata),
+      deadlineAtMs: original.deadlineAtMs === undefined
+        ? undefined
+        : expectFiniteTimestamp(original.deadlineAtMs, "deadlineAtMs"),
+    });
     if (
       input.body !== undefined &&
       !(input.body instanceof Uint8Array) &&
@@ -39,51 +68,83 @@ export function createDispatch(
     let offered: WorkDispatch;
     try {
       const operationId = crypto.randomUUID();
-      let target = input.target;
-      if (options.assign !== undefined) {
-        const available = options.sessions.list().filter((session) =>
-          session.phase === "ready" &&
-          session.workloads.includes(input.workload) &&
-          session.reserved < session.capacity &&
-          (input.target === undefined ||
-            input.target.workerId === session.identity.workerId)
-        ).map(fenceForSession);
-        const selected = await options.assign(Object.freeze({
-          stage: "assign" as const,
-          stageId: `assign:${operationId}`,
-          callbackAttempt: 1,
-          signal: input.signal ?? options.signal,
-          operationId,
-          workload: input.workload,
-          metadata: input.metadata ?? {},
-          ...(input.target === undefined ? {} : { target: input.target }),
-          available: Object.freeze(available),
-        }));
-        if (selected !== undefined) {
-          const candidate = available.find((fence) =>
-            fence.connectionId === selected.connectionId &&
-            fence.sessionGeneration === selected.sessionGeneration &&
-            fence.identity.workerId === selected.identity.workerId &&
-            fence.identity.attemptId === selected.identity.attemptId &&
-            fence.identity.epoch === selected.identity.epoch
-          );
-          if (candidate === undefined) {
-            throw new TypeError(
-              "assign must return one of the available current session fences",
-            );
+      const offer = (
+        attempt?: QueueAttempt,
+      ): WorkDispatch | undefined | Promise<WorkDispatch | undefined> => {
+        let target = input.target;
+        const reserve = (): WorkDispatch | undefined => {
+          attempt?.assertActive();
+          try {
+            const offered = options.dispatcher.offer({
+              operationId,
+              workload: input.workload,
+              ...(target === undefined ? {} : { target }),
+              metadata: input.metadata,
+              ...(input.deadlineAtMs === undefined
+                ? {}
+                : { deadlineAtMs: input.deadlineAtMs }),
+            });
+            // Leave the queue in the same turn that reserves capacity. An abort
+            // between an async assign continuation and its promise settlement
+            // must never strand an offered reservation.
+            attempt?.offered(offered);
+            return offered;
+          } catch (error) {
+            if (
+              waiting && error instanceof Error && "code" in error &&
+              error.code === "capacity_exhausted"
+            ) return undefined;
+            throw error;
           }
-          target = Object.freeze({ workerId: candidate.identity.workerId });
+        };
+        if (options.assign !== undefined) {
+          const available = options.sessions.list().filter((session) =>
+            session.phase === "ready" &&
+            session.workloads.includes(input.workload) &&
+            session.reserved < session.capacity &&
+            (input.target === undefined ||
+              input.target.workerId === session.identity.workerId)
+          ).map(fenceForSession);
+          const selection = options.assign(Object.freeze({
+            stage: "assign" as const,
+            stageId: `assign:${operationId}`,
+            callbackAttempt: attempt?.callbackAttempt ?? 1,
+            signal: attempt?.signal ?? input.signal ?? options.signal,
+            operationId,
+            workload: input.workload,
+            metadata: input.metadata ?? {},
+            ...(input.target === undefined ? {} : { target: input.target }),
+            available: Object.freeze(available),
+          }));
+          const selectedOffer = (
+            selected: Awaited<ReturnType<HypervisorAssign>>,
+          ): WorkDispatch | undefined => {
+            attempt?.assertActive();
+            if (selected !== undefined) {
+              const candidate = available.find((fence) =>
+                fence.connectionId === selected.connectionId &&
+                fence.sessionGeneration === selected.sessionGeneration &&
+                fence.identity.workerId === selected.identity.workerId &&
+                fence.identity.attemptId === selected.identity.attemptId &&
+                fence.identity.epoch === selected.identity.epoch
+              );
+              if (candidate === undefined) {
+                throw new TypeError(
+                  "assign must return one of the available current session fences",
+                );
+              }
+              if (waiting && !options.sessions.isCurrent(candidate)) {
+                return undefined;
+              }
+              target = Object.freeze({ workerId: candidate.identity.workerId });
+            }
+            return reserve();
+          };
+          return Promise.resolve(selection).then(selectedOffer);
         }
-      }
-      offered = options.dispatcher.offer({
-        operationId,
-        workload: input.workload,
-        ...(target === undefined ? {} : { target }),
-        metadata: input.metadata,
-        ...(input.deadlineAtMs === undefined
-          ? {}
-          : { deadlineAtMs: input.deadlineAtMs }),
-      });
+        return reserve();
+      };
+      offered = waiting ? await queue.enqueue(input, offer) : (await offer())!;
     } catch (cause) {
       if (
         cause instanceof Error &&
@@ -159,4 +220,9 @@ export function createDispatch(
       );
     }
   };
+  return Object.freeze({
+    dispatch,
+    snapshot: queue.snapshot,
+    drainWorker: queue.drainWorker,
+  });
 }

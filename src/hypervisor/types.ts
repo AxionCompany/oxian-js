@@ -122,6 +122,13 @@ export type HypervisorSnapshot = Readonly<{
   readyOperations: number;
   sessions: number;
   inProcessWorkers: number;
+  /** Requests still waiting before any offer or reservation. */
+  queuedDispatches: number;
+  queuedDispatchesByLane: readonly Readonly<{
+    workload: string;
+    workerId?: string;
+    count: number;
+  }>[];
   pendingAcceptanceCommits: number;
   pendingAcceptanceCommitsByWorker: readonly Readonly<{
     workerId: string;
@@ -157,13 +164,14 @@ export type Hypervisor = Readonly<{
    * admission. A server adapter owns the native handshake and listener.
    */
   prepare(request: Request): HypervisorRequestDecision;
+  /** Optionally waits for capacity under config.maxQueuedDispatches and dispatchQueueTimeoutMs. */
   dispatch(input: WorkInput): Promise<WorkHandle>;
   /**
    * Gracefully drains one ready Worker connection, then lets the Worker
    * establish its next session.
    *
    * This is a maintenance/rotation primitive, not a terminal worker stop.
-   * It is a no-op when the worker has no active ready session.
+   * It also rejects queued explicit targets, even without an active session.
    */
   drain(workerId: string, reason?: string): Promise<void>;
   /**
@@ -174,7 +182,7 @@ export type Hypervisor = Readonly<{
    * This does not revoke durable worker authority or stop provider compute;
    * those remain application/provider orchestration concerns. An in-flight
    * maintenance drain is upgraded to terminal shutdown. The call is a no-op
-   * when the worker has no active session.
+   * for sessions when none is active; queued explicit targets still reject.
    */
   shutdownWorker(workerId: string, reason?: string): Promise<void>;
   /**
@@ -198,6 +206,10 @@ export type HypervisorErrorCode =
   | "indeterminate"
   | "invalid_state"
   | "worker_unavailable"
+  | "dispatch_queue_full"
+  | "deadline_exceeded"
+  | "dispatch_aborted"
+  | "worker_draining"
   | "reschedulable"
   | "shutting_down"
   | "work_failed";
