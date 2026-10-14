@@ -57,9 +57,11 @@ subpaths only when the target runtime provides the required capability.
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`/adapters/deno`](api/adapters/deno.md) | Add Deno WebSocket upgrade and optional `Deno.serve` listener ownership around the portable Hypervisor core.                                              |
 | [`/adapters/node`](api/adapters/node.md) | Add a Node `node:http` listener with WebSocket upgrades around the portable Hypervisor core.                                                              |
+| [`/adapters/postgres`](api/adapters/postgres.md) | Store one owner's epoch and receipts in Postgres. The owner id is opaque.                                                                                 |
 | [`/providers`](api/providers.md)         | Provision, inspect, and terminate compute without coupling compute presence to transport readiness.                                                       |
 | [`/local`](api/local.md)                 | Compose the development runtime, run manifest-defined workers, and store local credentials.                                                               |
-| [`/owner`](api/owner.md)                 | Run one tenant's commands: serialized queue, group commit, receipts, and an in-memory store.                                                              |
+| [`/host`](api/host.md)                   | Run the owners assigned to this process. Another shard cannot take them, and the connection budget is 1,000.                                             |
+| [`/owner`](api/owner.md)                 | Run one owner's commands: serialized queue, group commit, receipts, alarms, and an in-memory store.                                                        |
 | [`/cli`](api/cli.md)                     | Parse or execute the six Oxian commands without terminating the host process. The same page documents the [`/bin`](api/cli.md#executable-bin) entrypoint. |
 
 ## Dispatch capacity

@@ -46,9 +46,36 @@ export type CommandContext = Readonly<{
   now: number;
   /** Runs only after the outer commit containing this command is durable. */
   afterCommit(callback: () => void | Promise<void>): void;
+  /**
+   * Appends one change and returns its sequence. A failed command, a rolled-back
+   * group, and a compatible duplicate consume none.
+   */
+  append(body: JsonValue): Promise<number>;
+  /** The sequence head visible to this command, including earlier commands in the group. */
+  head(): Promise<number>;
+  /** The owner's next wake-up. `undefined` clears it. */
+  setAlarm(at: number | undefined): Promise<void>;
   refuse(reason: string): never;
   invalid(reason: string): never;
   conflict(reason: string): never;
+}>;
+
+/** The next time this owner should wake, and which write set it. */
+export type OwnerAlarm = Readonly<{
+  at: number;
+  revision: number;
+}>;
+
+/** One live observer of the change sequence. A reset observer attaches again. */
+export type ObserverState = Readonly<{
+  cursor: number;
+  applied: number | undefined;
+  reset: boolean;
+}>;
+
+/** The committed sequence head. A client behind this head missed an update. */
+export type Heartbeat = Readonly<{
+  head: number;
 }>;
 
 /** A transaction program: reads current state, decides and writes. */
@@ -76,6 +103,9 @@ export type OwnerStoreTransaction<Tx> = Readonly<{
   rollbackToSavepoint(): Promise<void>;
   readReceipt(identity: CommandIdentity): Promise<Receipt | undefined>;
   writeReceipt(receipt: Receipt): Promise<void>;
+  append(body: JsonValue): Promise<number>;
+  head(): Promise<number>;
+  setAlarm(at: number | undefined): Promise<void>;
   /**
    * Rejects with an `OwnerError` coded `commit_unknown` when the outcome is
    * unknown, and with any other error when nothing was committed. The
@@ -100,6 +130,23 @@ export type OwnerStore<Tx> = Readonly<{
   begin(epoch: number): Promise<OwnerStoreTransaction<Tx>>;
   /** Reads a committed receipt. Allowed for any epoch. */
   readReceipt(identity: CommandIdentity): Promise<Receipt | undefined>;
+  /** The committed sequence head. 0 before any change. */
+  readHead(): Promise<number>;
+  /** The committed alarm, if one is set. */
+  readAlarm(): Promise<OwnerAlarm | undefined>;
+  /**
+   * A read-only view of committed state. Later commits are not visible.
+   * `close` ends it.
+   */
+  beginSnapshot(): Promise<OwnerReadTransaction<Tx>>;
+  /** The committed epoch, without acquiring. 0 before the first acquire. */
+  readEpoch(): Promise<number>;
+}>;
+
+/** A read-only transaction outside the command loop. */
+export type OwnerReadTransaction<Tx> = Readonly<{
+  tx: Tx;
+  close(): Promise<void>;
 }>;
 
 export type OwnerOptions<Tx> = Readonly<{
@@ -112,6 +159,13 @@ export type OwnerOptions<Tx> = Readonly<{
   maxQueuedCommands?: number;
   /** Receives errors thrown by `afterCommit` callbacks. Defaults to `console.error`. */
   onError?: (error: unknown) => void;
+  /** Wakes the owner when its alarm is due, including after a takeover. */
+  onAlarm?: (at: number) => void | Promise<void>;
+  /**
+   * Schedules `run` at absolute time `at`. Returns a cancel function.
+   * Defaults to `setTimeout`.
+   */
+  scheduleAlarm?: (at: number, run: () => void) => () => void;
 }>;
 
 export type OwnerState = "activating" | "active" | "stopped";
@@ -129,6 +183,18 @@ export type Owner = Readonly<{
   stopped: Promise<unknown>;
   submit(request: CommandRequest): Promise<CommandOutcome>;
   lookupReceipt(identity: CommandIdentity): Promise<Receipt | undefined>;
+  /** The committed sequence head. */
+  heartbeat(): Promise<Heartbeat>;
+  /**
+   * Captures the sequence head for `observer`, in the command queue so the
+   * cursor commits atomically with the changes it includes.
+   */
+  attach(observer: string): Promise<{ cursor: number }>;
+  /** Records the last sequence `observer` has applied. Ignored after a reset. */
+  acknowledge(observer: string, seq: number): void;
+  /** A failed or dropped push. The observer must attach again. */
+  resetObserver(observer: string): void;
+  observer(observer: string): ObserverState | undefined;
   snapshot(): OwnerSnapshot;
   /** Finishes the current group; queued commands end `ownership_lost`. */
   stop(): Promise<void>;

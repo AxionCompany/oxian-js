@@ -54,6 +54,10 @@ async function started(
             },
             begin: (epoch) => store.begin(epoch),
             readReceipt: (identity) => store.readReceipt(identity),
+            readHead: () => store.readHead(),
+            readAlarm: () => store.readAlarm(),
+            beginSnapshot: () => store.beginSnapshot(),
+            readEpoch: () => store.readEpoch(),
           },
     commands,
   });
@@ -253,6 +257,10 @@ test("a lost commit stops the owner and the successor trusts receipts", async ()
   const store: OwnerStore<MemoryTables> = {
     acquire: () => inner.acquire(),
     readReceipt: (identity) => inner.readReceipt(identity),
+    readHead: () => inner.readHead(),
+    readAlarm: () => inner.readAlarm(),
+    beginSnapshot: () => inner.beginSnapshot(),
+    readEpoch: () => inner.readEpoch(),
     async begin(epoch) {
       const transaction = await inner.begin(epoch);
       return {
@@ -314,6 +322,10 @@ test("a lost commit that aborted reruns each command once", async () => {
   const store: OwnerStore<MemoryTables> = {
     acquire: () => inner.acquire(),
     readReceipt: (identity) => inner.readReceipt(identity),
+    readHead: () => inner.readHead(),
+    readAlarm: () => inner.readAlarm(),
+    beginSnapshot: () => inner.beginSnapshot(),
+    readEpoch: () => inner.readEpoch(),
     async begin(epoch) {
       const transaction = await inner.begin(epoch);
       return {
@@ -358,6 +370,10 @@ test("a definitive rollback retries each command on its own", async () => {
   const store: OwnerStore<MemoryTables> = {
     acquire: () => inner.acquire(),
     readReceipt: (identity) => inner.readReceipt(identity),
+    readHead: () => inner.readHead(),
+    readAlarm: () => inner.readAlarm(),
+    beginSnapshot: () => inner.beginSnapshot(),
+    readEpoch: () => inner.readEpoch(),
     async begin(epoch) {
       const transaction = await inner.begin(epoch);
       return {

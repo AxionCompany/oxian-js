@@ -8,6 +8,8 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { WebSocketServer } from "ws";
+import { createOwnerHost, createShardMap } from "../../host/host.ts";
+import type { OwnerConnection, OwnerHost } from "../../host/types.ts";
 import { observeListenerSettlement } from "../../hypervisor/internal/listener.ts";
 import {
   createHypervisorError,
@@ -23,6 +25,8 @@ export async function serve(
   options: NodeServeOptions,
 ): Promise<HypervisorListener> {
   const { hypervisor, hostname = "127.0.0.1", port = 0, signal } = options;
+  const budget: OwnerHost =
+    options.budget ?? createOwnerHost({ map: createShardMap("listener", {}) });
   if (!hypervisor.snapshot().acceptingConnections) {
     throw createHypervisorError(
       "shutting_down",
@@ -79,6 +83,13 @@ export async function serve(
     socket: Duplex,
     head: Buffer,
   ): Promise<void> {
+    if (takeConnection(budget, socket) === "refused") {
+      await reject(
+        socket,
+        new Response("connection budget exceeded", { status: 503 }),
+      );
+      return;
+    }
     let cancel: ((reason?: string) => void) | undefined;
     const failed = (): void => cancel?.("upgrade_closed");
     socket.on("error", failed);
@@ -158,6 +169,22 @@ export async function serve(
     cleanup: () => undefined,
   });
   return listener;
+}
+
+function takeConnection(
+  budget: NodeServeOptions["budget"],
+  socket: Duplex,
+): "refused" | undefined {
+  if (budget === undefined) return undefined;
+  let held: OwnerConnection;
+  try {
+    held = budget.connect();
+  } catch {
+    return "refused";
+  }
+  if (socket.destroyed) held.release();
+  else socket.once("close", () => held.release());
+  return undefined;
 }
 
 function toRequest(

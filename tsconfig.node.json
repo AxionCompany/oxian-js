@@ -3,7 +3,11 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src/adapters/node/**/*.ts", "tests/**/*.ts"],
+  "include": [
+    "src/adapters/node/**/*.ts",
+    "src/adapters/postgres/**/*.ts",
+    "tests/**/*.ts"
+  ],
   "exclude": [
     "tests/app/application_test.ts",
     "tests/app/factory_test.ts",

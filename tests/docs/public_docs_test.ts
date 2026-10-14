@@ -25,10 +25,12 @@ const GETTING_STARTED_CHAPTERS = Object.freeze([
 const API_REFERENCE_MODULES = Object.freeze([
   "../../docs/api/adapters/deno.md",
   "../../docs/api/adapters/node.md",
+  "../../docs/api/adapters/postgres.md",
   "../../docs/api/app.md",
   "../../docs/api/cli.md",
   "../../docs/api/config.md",
   "../../docs/api/edge.md",
+  "../../docs/api/host.md",
   "../../docs/api/http.md",
   "../../docs/api/hypervisor.md",
   "../../docs/api/local.md",

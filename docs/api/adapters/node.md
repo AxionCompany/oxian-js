@@ -27,7 +27,8 @@ await listener.finished;
 `HypervisorListener` with resolved address, URL, `finished`, and idempotent
 `shutdown()`. Each upgrade calls `hypervisor.prepare()`, accepts only the
 subprotocol the Hypervisor selected, adapts the socket, and attaches it once.
-Other requests use the Hypervisor fallback. An optional signal closes only this
-listener.
+Other requests use the Hypervisor fallback. Each upgrade takes one connection
+from `budget`. When `budget` is omitted the listener uses the host cap of
+1,000 and answers 503 past it. An optional signal closes only this listener.
 
 Call `hypervisor.shutdown()` separately in the application layer that owns it.

@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": [],
+    "noEmit": false,
+    "declaration": true,
+    "outDir": "build/npm",
+    "rootDir": "."
+  },
+  "files": ["src/host/index.ts", "src/owner/index.ts"]
+}

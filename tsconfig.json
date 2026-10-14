@@ -6,6 +6,7 @@
   "files": [
     "src/mod.ts",
     "src/http/index.ts",
+    "src/host/index.ts",
     "src/hypervisor/index.ts",
     "src/lifecycle/index.ts",
     "src/owner/index.ts",

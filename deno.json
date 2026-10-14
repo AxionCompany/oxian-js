@@ -5,12 +5,14 @@
     ".": "./src/mod.ts",
     "./adapters/deno": "./src/adapters/deno/index.ts",
     "./adapters/node": "./src/adapters/node/index.ts",
+    "./adapters/postgres": "./src/adapters/postgres/index.ts",
     "./app": "./src/app/index.ts",
     "./bin": "./cli.ts",
     "./cli": "./src/cli/index.ts",
     "./config": "./src/config/index.ts",
     "./edge": "./src/edge/index.ts",
     "./http": "./src/http/index.ts",
+    "./host": "./src/host/index.ts",
     "./hypervisor": "./src/hypervisor/index.ts",
     "./local": "./src/local/index.ts",
     "./owner": "./src/owner/index.ts",
@@ -51,6 +53,7 @@
   },
   "imports": {
     "@std/path": "jsr:@std/path@1.1.1",
+    "pg": "npm:pg@8.23.1",
     "ws": "npm:ws@8.22.0"
   },
   "tasks": {
