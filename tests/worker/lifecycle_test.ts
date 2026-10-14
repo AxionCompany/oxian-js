@@ -1,4 +1,6 @@
-import { assert, assertEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import {
   createDrainFrame,
   createHelloFrame,
@@ -44,7 +46,7 @@ async function openAndStart(
     metadata: { request: streamId },
   }));
   const accepted = await nextControl(connection, "work.accepted");
-  assertEquals(
+  assert.deepStrictEqual(
     "streamId" in accepted.acceptance.frame
       ? accepted.acceptance.frame.streamId
       : undefined,
@@ -63,7 +65,7 @@ async function shutdown(
   }));
 }
 
-Deno.test("worker multiplexes concurrent credited streams", async () => {
+test("worker multiplexes concurrent credited streams", async () => {
   const peer = await startTestPeer();
   const client = createWorker({
     transport: {
@@ -101,7 +103,7 @@ Deno.test("worker multiplexes concurrent credited streams", async () => {
         accepted.add(message.acceptance.frame.streamId);
       }
     }
-    assertEquals(accepted, new Set(streamIds));
+    assert.deepStrictEqual(accepted, new Set(streamIds));
 
     for (const streamId of streamIds) {
       await connection.transport.sendControl(
@@ -131,26 +133,29 @@ Deno.test("worker multiplexes concurrent credited streams", async () => {
       }
     }
 
-    assertEquals(metadata, new Set(streamIds));
+    assert.deepStrictEqual(metadata, new Set(streamIds));
     for (const streamId of streamIds) {
-      assertEquals(
+      assert.deepStrictEqual(
         new TextDecoder().decode(
           new Uint8Array(output.get(streamId) ?? []),
         ),
         `response:${streamId}`,
       );
     }
-    assertEquals(connection.transport.snapshot().activeStreamCount, 0);
-    assertEquals(client.snapshot().activeStreams, 0);
+    assert.deepStrictEqual(
+      connection.transport.snapshot().activeStreamCount,
+      0,
+    );
+    assert.deepStrictEqual(client.snapshot().activeStreams, 0);
     await shutdown(connection, handshake.welcome.connectionId);
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("ignored request body stops at credit while response finishes promptly", async () => {
+test("ignored request body stops at credit while response finishes promptly", async () => {
   const peer = await startTestPeer();
   const response = new Uint8Array(128 * 1024).fill(7);
   const client = createWorker({
@@ -228,26 +233,29 @@ Deno.test("ignored request body stops at credit while response finishes promptly
     // and closes the request half, releasing worker capacity.
     await connection.transport.sendControl(createWorkEndFrame({ streamId }));
 
-    assert(sawMetadata);
-    assertEquals(responseBytes, response.byteLength);
-    assert(
+    assert.ok(sawMetadata);
+    assert.deepStrictEqual(responseBytes, response.byteLength);
+    assert.ok(
       producedBytes <= 64 * 1024,
       "ignored input must not receive unbounded credit",
     );
-    assert(
+    assert.ok(
       performance.now() - startedAt < 1_000,
       "response must not wait for an ignored/infinite request body",
     );
-    assertEquals(connection.transport.snapshot().activeStreamCount, 0);
+    assert.deepStrictEqual(
+      connection.transport.snapshot().activeStreamCount,
+      0,
+    );
     await shutdown(connection, handshake.welcome.connectionId);
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("slow output reader applies credit backpressure to native stream", async () => {
+test("slow output reader applies credit backpressure to native stream", async () => {
   const peer = await startTestPeer();
   const chunkBytes = 32 * 1024;
   const chunkCount = 6;
@@ -284,7 +292,7 @@ Deno.test("slow output reader applies credit backpressure to native stream", asy
     const streamId = createStreamId();
     await openAndStart(connection, streamId);
     await nextControl(connection, "work.metadata");
-    assert(
+    assert.ok(
       produced <= 2,
       "worker may stage at most one bounded producer chunk beyond demand",
     );
@@ -300,7 +308,7 @@ Deno.test("slow output reader applies credit backpressure to native stream", asy
           message.kind === "data" &&
           message.acceptance.frame.streamId === streamId
         ) {
-          assertEquals(
+          assert.deepStrictEqual(
             message.acceptance.frame.payload.byteLength,
             chunkBytes,
           );
@@ -308,24 +316,27 @@ Deno.test("slow output reader applies credit backpressure to native stream", asy
           break;
         }
       }
-      assert(
+      assert.ok(
         produced <= received + 2,
         "producer must remain bounded behind slow peer credit",
       );
     }
     await nextControl(connection, "work.end");
     await connection.transport.sendControl(createWorkEndFrame({ streamId }));
-    assertEquals(connection.transport.snapshot().activeStreamCount, 0);
+    assert.deepStrictEqual(
+      connection.transport.snapshot().activeStreamCount,
+      0,
+    );
 
     await shutdown(connection, handshake.welcome.connectionId);
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("remote cancel aborts handler and receives directional acknowledgement", async () => {
+test("remote cancel aborts handler and receives directional acknowledgement", async () => {
   const peer = await startTestPeer();
   let aborted = false;
   const client = createWorker({
@@ -363,24 +374,27 @@ Deno.test("remote cancel aborts handler and receives directional acknowledgement
       connection,
       "work.cancel",
     );
-    assertEquals(
+    assert.deepStrictEqual(
       "streamId" in acknowledgement.acceptance.frame
         ? acknowledgement.acceptance.frame.streamId
         : undefined,
       streamId,
     );
-    assert(aborted);
-    assertEquals(connection.transport.snapshot().activeStreamCount, 0);
+    assert.ok(aborted);
+    assert.deepStrictEqual(
+      connection.transport.snapshot().activeStreamCount,
+      0,
+    );
 
     await shutdown(connection, handshake.welcome.connectionId);
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("deadline rejection discards a crossed Start after Accepted", async () => {
+test("deadline rejection discards a crossed Start after Accepted", async () => {
   const peer = await startTestPeer();
   let invocations = 0;
   const client = createWorker({
@@ -413,7 +427,7 @@ Deno.test("deadline rejection discards a crossed Start after Accepted", async ()
     }));
     await nextControl(connection, "work.accepted");
     const deadlineCancel = await nextControl(connection, "work.cancel");
-    assertEquals(
+    assert.deepStrictEqual(
       deadlineCancel.acceptance.frame.type === "work.cancel"
         ? deadlineCancel.acceptance.frame.reason
         : undefined,
@@ -426,22 +440,25 @@ Deno.test("deadline rejection discards a crossed Start after Accepted", async ()
       createWorkStartFrame({ streamId }),
     ));
     await new Promise((resolve) => setTimeout(resolve, 25));
-    assertEquals(invocations, 0);
+    assert.deepStrictEqual(invocations, 0);
     await connection.transport.sendControl(createWorkCancelFrame({
       streamId,
       reason: "deadline_acknowledged",
     }));
-    assertEquals(connection.transport.snapshot().activeStreamCount, 0);
+    assert.deepStrictEqual(
+      connection.transport.snapshot().activeStreamCount,
+      0,
+    );
 
     await shutdown(connection, handshake.welcome.connectionId);
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("loss before Start never invokes; loss after Start aborts without replay", async () => {
+test("loss before Start never invokes; loss after Start aborts without replay", async () => {
   const peer = await startTestPeer();
   let invocations = 0;
   let aborts = 0;
@@ -483,7 +500,7 @@ Deno.test("loss before Start never invokes; loss after Start aborts without repl
       code: 1000,
       reason: "loss_before_start",
     });
-    assertEquals(invocations, 0);
+    assert.deepStrictEqual(invocations, 0);
 
     const afterStart = await peer.nextConnection();
     await acceptTestHandshake(afterStart);
@@ -506,18 +523,18 @@ Deno.test("loss before Start never invokes; loss after Start aborts without repl
     const finalConnection = await peer.nextConnection();
     const finalHandshake = await acceptTestHandshake(finalConnection);
     await new Promise((resolve) => setTimeout(resolve, 25));
-    assertEquals(invocations, 1);
-    assertEquals(aborts, 1);
-    assertEquals(client.snapshot().activeStreams, 0);
+    assert.deepStrictEqual(invocations, 1);
+    assert.deepStrictEqual(aborts, 1);
+    assert.deepStrictEqual(client.snapshot().activeStreams, 0);
     await shutdown(finalConnection, finalHandshake.welcome.connectionId);
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("drained waits: peer close reconnects, explicit Shutdown stops", async () => {
+test("drained waits: peer close reconnects, explicit Shutdown stops", async () => {
   const peer = await startTestPeer();
   const client = createWorker({
     transport: {
@@ -542,7 +559,7 @@ Deno.test("drained waits: peer close reconnects, explicit Shutdown stops", async
       deadlineAtMs: Date.now() + 5_000,
     }));
     await nextControl(first, "drained");
-    assertEquals(
+    assert.deepStrictEqual(
       await Promise.race([
         first.transport.closed.then(() => "closed"),
         new Promise<string>((resolve) => setTimeout(() => resolve("open"), 25)),
@@ -556,7 +573,7 @@ Deno.test("drained waits: peer close reconnects, explicit Shutdown stops", async
 
     const second = await peer.nextConnection();
     const secondHandshake = await acceptTestHandshake(second);
-    assertEquals(
+    assert.deepStrictEqual(
       (secondHandshake.hello as HelloFrame).credential.kind,
       "resume",
     );
@@ -567,14 +584,14 @@ Deno.test("drained waits: peer close reconnects, explicit Shutdown stops", async
     }));
     await nextControl(second, "drained");
     await shutdown(second, secondHandshake.welcome.connectionId);
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("resume rotation rejects racing Open as retryable before acceptance", async () => {
+test("resume rotation rejects racing Open as retryable before acceptance", async () => {
   const peer = await startTestPeer();
   let invocations = 0;
   const client = createWorker({
@@ -642,9 +659,12 @@ Deno.test("resume rotation rejects racing Open as retryable before acceptance", 
     if (rejection.acceptance.frame.type !== "work.cancel") {
       throw new TypeError("expected pre-accept draining rejection");
     }
-    assertEquals(rejection.acceptance.frame.streamId, racingStream);
-    assertEquals(rejection.acceptance.frame.reason, "worker_draining");
-    assertEquals(invocations, 1);
+    assert.deepStrictEqual(rejection.acceptance.frame.streamId, racingStream);
+    assert.deepStrictEqual(
+      rejection.acceptance.frame.reason,
+      "worker_draining",
+    );
+    assert.deepStrictEqual(invocations, 1);
     await first.transport.sendControl(createWorkCancelFrame({
       streamId: racingStream,
       reason: "retry_acknowledged",
@@ -659,16 +679,16 @@ Deno.test("resume rotation rejects racing Open as retryable before acceptance", 
 
     const second = await peer.nextConnection();
     const secondHandshake = await acceptTestHandshake(second);
-    assertEquals(invocations, 1);
+    assert.deepStrictEqual(invocations, 1);
     await shutdown(second, secondHandshake.welcome.connectionId);
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("hung execution keeps process capacity across cancel and reconnect", async () => {
+test("hung execution keeps process capacity across cancel and reconnect", async () => {
   const peer = await startTestPeer();
   let invocations = 0;
   const client = createWorker({
@@ -711,8 +731,8 @@ Deno.test("hung execution keeps process capacity across cancel and reconnect", a
       reason: "caller_cancelled",
     }));
     await nextControl(first, "work.cancel");
-    assertEquals(client.snapshot().activeStreams, 0);
-    assertEquals(client.snapshot().occupiedExecutions, 1);
+    assert.deepStrictEqual(client.snapshot().activeStreams, 0);
+    assert.deepStrictEqual(client.snapshot().occupiedExecutions, 1);
     await first.transport.close({
       code: 1000,
       reason: "reconnect_after_cancel",
@@ -727,8 +747,8 @@ Deno.test("hung execution keeps process capacity across cancel and reconnect", a
     if (heartbeat.acceptance.frame.type !== "heartbeat") {
       throw new TypeError("expected heartbeat");
     }
-    assertEquals(heartbeat.acceptance.frame.inflight, 1);
-    assertEquals(heartbeat.acceptance.frame.availableCapacity, 0);
+    assert.deepStrictEqual(heartbeat.acceptance.frame.inflight, 1);
+    assert.deepStrictEqual(heartbeat.acceptance.frame.availableCapacity, 0);
 
     const rejectedStream = createStreamId();
     await second.transport.sendControl(createWorkOpenFrame({
@@ -740,9 +760,12 @@ Deno.test("hung execution keeps process capacity across cancel and reconnect", a
     if (rejection.acceptance.frame.type !== "work.cancel") {
       throw new TypeError("expected capacity rejection");
     }
-    assertEquals(rejection.acceptance.frame.streamId, rejectedStream);
-    assertEquals(rejection.acceptance.frame.reason, "worker_capacity");
-    assertEquals(invocations, 1);
+    assert.deepStrictEqual(rejection.acceptance.frame.streamId, rejectedStream);
+    assert.deepStrictEqual(
+      rejection.acceptance.frame.reason,
+      "worker_capacity",
+    );
+    assert.deepStrictEqual(invocations, 1);
     await second.transport.sendControl(createWorkCancelFrame({
       streamId: rejectedStream,
       reason: "capacity_rejection_ack",
@@ -754,18 +777,18 @@ Deno.test("hung execution keeps process capacity across cancel and reconnect", a
       deadlineAtMs: Date.now() + 5_000,
     }));
     await new Promise((resolve) => setTimeout(resolve, 50));
-    assertEquals(client.snapshot().state, "draining");
-    assertEquals(client.snapshot().occupiedExecutions, 1);
+    assert.deepStrictEqual(client.snapshot().state, "draining");
+    assert.deepStrictEqual(client.snapshot().occupiedExecutions, 1);
 
     await withTimeout(client.stop("hung_execution_test"));
-    assertEquals(await withTimeout(run), { reason: "stopped" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "stopped" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("deferred output cancellation holds capacity and Drain until source settlement", async () => {
+test("deferred output cancellation holds capacity and Drain until source settlement", async () => {
   const peer = await startTestPeer();
   const output = deferredCancellationOutput();
   let invocations = 0;
@@ -802,9 +825,9 @@ Deno.test("deferred output cancellation holds capacity and Drain until source se
     }));
     await nextControl(connection, "work.cancel");
     await output.cancelling;
-    assertEquals(client.snapshot().activeStreams, 0);
-    assertEquals(client.snapshot().occupiedExecutions, 1);
-    assertEquals(output.cancelCalls(), 1);
+    assert.deepStrictEqual(client.snapshot().activeStreams, 0);
+    assert.deepStrictEqual(client.snapshot().occupiedExecutions, 1);
+    assert.deepStrictEqual(output.cancelCalls(), 1);
 
     const capacityProbe = createStreamId();
     await connection.transport.sendControl(createWorkOpenFrame({
@@ -816,9 +839,12 @@ Deno.test("deferred output cancellation holds capacity and Drain until source se
     if (rejection.acceptance.frame.type !== "work.cancel") {
       throw new TypeError("expected capacity rejection");
     }
-    assertEquals(rejection.acceptance.frame.streamId, capacityProbe);
-    assertEquals(rejection.acceptance.frame.reason, "worker_capacity");
-    assertEquals(invocations, 1);
+    assert.deepStrictEqual(rejection.acceptance.frame.streamId, capacityProbe);
+    assert.deepStrictEqual(
+      rejection.acceptance.frame.reason,
+      "worker_capacity",
+    );
+    assert.deepStrictEqual(invocations, 1);
     await connection.transport.sendControl(createWorkCancelFrame({
       streamId: capacityProbe,
       reason: "capacity_rejection_acknowledged",
@@ -834,19 +860,19 @@ Deno.test("deferred output cancellation holds capacity and Drain until source se
       drained = true;
     });
     await new Promise((resolve) => setTimeout(resolve, 25));
-    assertEquals(client.snapshot().state, "draining");
-    assertEquals(client.snapshot().occupiedExecutions, 1);
-    assertEquals(drained, false);
-    assertEquals(output.settled(), false);
+    assert.deepStrictEqual(client.snapshot().state, "draining");
+    assert.deepStrictEqual(client.snapshot().occupiedExecutions, 1);
+    assert.deepStrictEqual(drained, false);
+    assert.deepStrictEqual(output.settled(), false);
 
     output.release();
     await withTimeout(drain);
-    assertEquals(output.settled(), true);
-    assertEquals(client.snapshot().occupiedExecutions, 0);
-    assertEquals(client.snapshot().state, "drained");
+    assert.deepStrictEqual(output.settled(), true);
+    assert.deepStrictEqual(client.snapshot().occupiedExecutions, 0);
+    assert.deepStrictEqual(client.snapshot().state, "drained");
 
     await shutdown(connection, handshake.welcome.connectionId);
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     output.release();
     await client.stop();
@@ -854,7 +880,7 @@ Deno.test("deferred output cancellation holds capacity and Drain until source se
   }
 });
 
-Deno.test("deferred output cancellation keeps replacement-session capacity occupied", async () => {
+test("deferred output cancellation keeps replacement-session capacity occupied", async () => {
   const peer = await startTestPeer();
   const output = deferredCancellationOutput();
   let invocations = 0;
@@ -889,8 +915,8 @@ Deno.test("deferred output cancellation keeps replacement-session capacity occup
       reason: "connection_lost_during_output",
     });
     await output.cancelling;
-    assertEquals(client.snapshot().occupiedExecutions, 1);
-    assertEquals(output.settled(), false);
+    assert.deepStrictEqual(client.snapshot().occupiedExecutions, 1);
+    assert.deepStrictEqual(output.settled(), false);
 
     const second = await peer.nextConnection();
     const secondHandshake = await acceptTestHandshake(second, {
@@ -909,8 +935,8 @@ Deno.test("deferred output cancellation keeps replacement-session capacity occup
         occupiedHeartbeat = message.acceptance.frame;
       }
     }
-    assertEquals(occupiedHeartbeat.inflight, 1);
-    assertEquals(occupiedHeartbeat.availableCapacity, 0);
+    assert.deepStrictEqual(occupiedHeartbeat.inflight, 1);
+    assert.deepStrictEqual(occupiedHeartbeat.availableCapacity, 0);
 
     const capacityProbe = createStreamId();
     await second.transport.sendControl(createWorkOpenFrame({
@@ -922,8 +948,11 @@ Deno.test("deferred output cancellation keeps replacement-session capacity occup
     if (rejection.acceptance.frame.type !== "work.cancel") {
       throw new TypeError("expected replacement-session capacity rejection");
     }
-    assertEquals(rejection.acceptance.frame.reason, "worker_capacity");
-    assertEquals(invocations, 1);
+    assert.deepStrictEqual(
+      rejection.acceptance.frame.reason,
+      "worker_capacity",
+    );
+    assert.deepStrictEqual(invocations, 1);
     await second.transport.sendControl(createWorkCancelFrame({
       streamId: capacityProbe,
       reason: "capacity_rejection_acknowledged",
@@ -931,7 +960,7 @@ Deno.test("deferred output cancellation keeps replacement-session capacity occup
 
     output.release();
     await waitForSnapshot(() => client.snapshot().occupiedExecutions === 0);
-    assertEquals(output.settled(), true);
+    assert.deepStrictEqual(output.settled(), true);
     let availableCapacity = 0;
     while (availableCapacity !== 1) {
       const heartbeat = await nextControl(second, "heartbeat");
@@ -941,7 +970,7 @@ Deno.test("deferred output cancellation keeps replacement-session capacity occup
     }
 
     await shutdown(second, secondHandshake.welcome.connectionId);
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     output.release();
     await client.stop();
@@ -949,7 +978,7 @@ Deno.test("deferred output cancellation keeps replacement-session capacity occup
   }
 });
 
-Deno.test("run waits for deferred output cancellation after terminal connection loss", async () => {
+test("run waits for deferred output cancellation after terminal connection loss", async () => {
   const peer = await startTestPeer();
   const output = deferredCancellationOutput();
   const client = createWorker({
@@ -983,15 +1012,18 @@ Deno.test("run waits for deferred output cancellation after terminal connection 
     });
     await output.cancelling;
     await new Promise((resolve) => setTimeout(resolve, 25));
-    assertEquals(runSettled, false);
-    assertEquals(client.snapshot().occupiedExecutions, 1);
-    assertEquals(output.settled(), false);
+    assert.deepStrictEqual(runSettled, false);
+    assert.deepStrictEqual(client.snapshot().occupiedExecutions, 1);
+    assert.deepStrictEqual(output.settled(), false);
 
     output.release();
-    assertEquals((await withTimeout(run)).reason, "reconnect_exhausted");
-    assertEquals(output.settled(), true);
-    assertEquals(client.snapshot().occupiedExecutions, 0);
-    assertEquals(client.snapshot().state, "stopped");
+    assert.deepStrictEqual(
+      (await withTimeout(run)).reason,
+      "reconnect_exhausted",
+    );
+    assert.deepStrictEqual(output.settled(), true);
+    assert.deepStrictEqual(client.snapshot().occupiedExecutions, 0);
+    assert.deepStrictEqual(client.snapshot().state, "stopped");
   } finally {
     output.release();
     await client.stop();
@@ -999,7 +1031,7 @@ Deno.test("run waits for deferred output cancellation after terminal connection 
   }
 });
 
-Deno.test("late zombie failure cannot terminate the replacement session", async () => {
+test("late zombie failure cannot terminate the replacement session", async () => {
   const peer = await startTestPeer();
   let rejectZombie: ((error: unknown) => void) | undefined;
   let invocations = 0;
@@ -1051,7 +1083,7 @@ Deno.test("late zombie failure cannot terminate the replacement session", async 
       leaseTimeoutMs: 100,
     });
     await nextControl(second, "heartbeat");
-    assertEquals(client.snapshot().occupiedExecutions, 1);
+    assert.deepStrictEqual(client.snapshot().occupiedExecutions, 1);
 
     rejectZombie?.(new Error("late zombie failure"));
     await withTimeout(
@@ -1064,8 +1096,8 @@ Deno.test("late zombie failure cannot terminate the replacement session", async 
       }),
     );
     await new Promise((resolve) => setTimeout(resolve, 25));
-    assertEquals(peer.connectionCount(), 2);
-    assertEquals(
+    assert.deepStrictEqual(peer.connectionCount(), 2);
+    assert.deepStrictEqual(
       client.snapshot().connectionId,
       secondHandshake.welcome.connectionId,
     );
@@ -1077,18 +1109,18 @@ Deno.test("late zombie failure cannot terminate the replacement session", async 
     }));
     await nextControl(second, "work.metadata");
     await nextControl(second, "work.end");
-    assertEquals(invocations, 2);
-    assertEquals(peer.connectionCount(), 2);
+    assert.deepStrictEqual(invocations, 2);
+    assert.deepStrictEqual(peer.connectionCount(), 2);
 
     await shutdown(second, secondHandshake.welcome.connectionId);
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("crossed pre-start cancel stays stream-local on a multiplexed worker", async () => {
+test("crossed pre-start cancel stays stream-local on a multiplexed worker", async () => {
   const peer = await startTestPeer();
   let finishHealthy: (() => void) | undefined;
   let invocations = 0;
@@ -1152,9 +1184,9 @@ Deno.test("crossed pre-start cancel stays stream-local on a multiplexed worker",
         break;
       }
     }
-    assertEquals(invocations, 1);
-    assertEquals(peer.connectionCount(), 1);
-    assertEquals(
+    assert.deepStrictEqual(invocations, 1);
+    assert.deepStrictEqual(peer.connectionCount(), 1);
+    assert.deepStrictEqual(
       client.snapshot().connectionId,
       handshake.welcome.connectionId,
     );
@@ -1162,18 +1194,18 @@ Deno.test("crossed pre-start cancel stays stream-local on a multiplexed worker",
     finishHealthy?.();
     await nextControl(connection, "work.metadata");
     await nextControl(connection, "work.end");
-    assertEquals(client.snapshot().state, "ready");
-    assertEquals(peer.connectionCount(), 1);
+    assert.deepStrictEqual(client.snapshot().state, "ready");
+    assert.deepStrictEqual(peer.connectionCount(), 1);
 
     await shutdown(connection, handshake.welcome.connectionId);
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("worker validator exposes the stable crossed-acceptance error", () => {
+test("worker validator exposes the stable crossed-acceptance error", () => {
   const validator = createProtocolOrderValidator({ role: "worker" });
   const connectionId = "crossed-cancel-connection";
   const streamId = createStreamId();
@@ -1233,7 +1265,7 @@ Deno.test("worker validator exposes the stable crossed-acceptance error", () => 
       createWorkAcceptedFrame({ streamId }),
     )
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (error as Error & Readonly<{ code?: string }>).code,
     "post_terminal_frame",
   );

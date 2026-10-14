@@ -3,9 +3,22 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22.15"
+    "node": ">=24"
   },
   "scripts": {
-    "check:node": "node scripts/check_node_portability.mjs"
+    "check": "npm run check:types && npm run check:biome && npm run check:node",
+    "check:types": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "check:biome": "biome lint .",
+    "check:node": "node scripts/check_node_portability.mjs",
+    "test": "node scripts/test-node.mjs"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "24.19.2",
+    "@types/ws": "8.18.2",
+    "typescript": "7.0.2"
   }
 }

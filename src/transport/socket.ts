@@ -52,7 +52,8 @@ export function adaptWebSocket(
       return socket.bufferedAmount;
     },
     send(data) {
-      socket.send(data);
+      // Frames are encoded into fresh ArrayBuffers, never shared memory.
+      socket.send(data as string | Uint8Array<ArrayBuffer>);
     },
     close(code, reason) {
       socket.close(code, reason);

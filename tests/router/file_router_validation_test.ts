@@ -1,4 +1,5 @@
-import { assertRejects } from "@std/assert";
+import { test } from "node:test";
+import { assertRejects } from "../support/assert.ts";
 import { join } from "@std/path";
 import { createFileRouter } from "../../src/router/file_router.ts";
 
@@ -39,7 +40,7 @@ async function rejectsFixture(
 
 const GET_ROUTE = `export const GET = () => new Response("ok");`;
 
-Deno.test("v0.20 file router rejects duplicate canonical routes", async () => {
+test("v0.20 file router rejects duplicate canonical routes", async () => {
   await rejectsFixture(
     {
       "users.ts": GET_ROUTE,
@@ -49,7 +50,7 @@ Deno.test("v0.20 file router rejects duplicate canonical routes", async () => {
   );
 });
 
-Deno.test("v0.20 file router rejects structurally ambiguous parameter routes", async () => {
+test("v0.20 file router rejects structurally ambiguous parameter routes", async () => {
   await rejectsFixture(
     {
       "users/[id].ts": GET_ROUTE,
@@ -59,14 +60,14 @@ Deno.test("v0.20 file router rejects structurally ambiguous parameter routes", a
   );
 });
 
-Deno.test("v0.20 file router rejects non-final catchalls", async () => {
+test("v0.20 file router rejects non-final catchalls", async () => {
   await rejectsFixture(
     { "docs/[...path]/details.ts": GET_ROUTE },
     "must be final",
   );
 });
 
-Deno.test("v0.20 file router rejects route extension collisions before import", async () => {
+test("v0.20 file router rejects route extension collisions before import", async () => {
   await rejectsFixture(
     {
       "health.js": GET_ROUTE,
@@ -87,7 +88,7 @@ Deno.test("v0.20 file router rejects route extension collisions before import", 
   );
 });
 
-Deno.test("v0.20 file router requires named function HTTP exports", async () => {
+test("v0.20 file router requires named function HTTP exports", async () => {
   await rejectsFixture(
     { "empty.ts": `export const helper = 1;` },
     "must export at least one named HTTP method",
@@ -124,7 +125,7 @@ Deno.test("v0.20 file router requires named function HTTP exports", async () => 
   );
 });
 
-Deno.test("v0.20 file router rejects unsupported uppercase method exports", async () => {
+test("v0.20 file router rejects unsupported uppercase method exports", async () => {
   await rejectsFixture(
     {
       "typo.ts": `
@@ -146,7 +147,7 @@ Deno.test("v0.20 file router rejects unsupported uppercase method exports", asyn
   );
 });
 
-Deno.test("v0.20 file router validates every middleware module at startup", async () => {
+test("v0.20 file router validates every middleware module at startup", async () => {
   await rejectsFixture(
     {
       "_middleware.ts": `export const middleware = 42;`,
@@ -164,7 +165,7 @@ Deno.test("v0.20 file router validates every middleware module at startup", asyn
   );
 });
 
-Deno.test("v0.20 file router rejects malformed and duplicate parameters", async () => {
+test("v0.20 file router rejects malformed and duplicate parameters", async () => {
   await rejectsFixture(
     { "users/[id.ts": GET_ROUTE },
     "Invalid route segment",
@@ -191,7 +192,7 @@ Deno.test("v0.20 file router rejects malformed and duplicate parameters", async 
   );
 });
 
-Deno.test("v0.20 file router only accepts filesystem roots", async () => {
+test("v0.20 file router only accepts filesystem roots", async () => {
   await assertRejects(
     () => createFileRouter({ root: new URL("https://example.com/routes/") }),
     TypeError,

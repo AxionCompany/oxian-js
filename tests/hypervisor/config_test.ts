@@ -1,22 +1,24 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import { WORKER_PROTOCOL_LIMITS } from "../../src/protocol/limits.ts";
 import {
   createHypervisorConfig,
   DEFAULT_HYPERVISOR_CONFIG,
 } from "../../src/hypervisor/config.ts";
 
-Deno.test("v0.21 hypervisor config has bounded immutable defaults", () => {
+test("v0.21 hypervisor config has bounded immutable defaults", () => {
   const config = createHypervisorConfig();
 
-  assertEquals(config, DEFAULT_HYPERVISOR_CONFIG);
-  assertEquals(
+  assert.deepStrictEqual(config, DEFAULT_HYPERVISOR_CONFIG);
+  assert.deepStrictEqual(
     config.maxDataPayloadBytes,
     WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes,
   );
-  assertEquals(Object.isFrozen(config), true);
+  assert.deepStrictEqual(Object.isFrozen(config), true);
 });
 
-Deno.test("v0.21 hypervisor config accepts stricter protocol admission limits", () => {
+test("v0.21 hypervisor config accepts stricter protocol admission limits", () => {
   const config = createHypervisorConfig({
     handshakeTimeoutMs: 2_000,
     readyTimeoutMs: 20_000,
@@ -41,13 +43,13 @@ Deno.test("v0.21 hypervisor config accepts stricter protocol admission limits", 
     maxReceiveCreditBytes: 1_024 * 1_024,
   });
 
-  assertEquals(config.maxWorkerCapacity, 8);
-  assertEquals(config.maxUnauthenticatedConnections, 4);
-  assertEquals(config.maxPendingAcceptanceCommits, 12);
-  assertEquals(config.maxPendingAcceptanceCommitsPerWorker, 3);
+  assert.deepStrictEqual(config.maxWorkerCapacity, 8);
+  assert.deepStrictEqual(config.maxUnauthenticatedConnections, 4);
+  assert.deepStrictEqual(config.maxPendingAcceptanceCommits, 12);
+  assert.deepStrictEqual(config.maxPendingAcceptanceCommitsPerWorker, 3);
 });
 
-Deno.test("v0.21 hypervisor config rejects invalid timing", () => {
+test("v0.21 hypervisor config rejects invalid timing", () => {
   assertThrows(
     () =>
       createHypervisorConfig({
@@ -96,7 +98,7 @@ Deno.test("v0.21 hypervisor config rejects invalid timing", () => {
   );
 });
 
-Deno.test("v0.21 hypervisor config cannot exceed wire hard limits", () => {
+test("v0.21 hypervisor config cannot exceed wire hard limits", () => {
   assertThrows(
     () =>
       createHypervisorConfig({
@@ -125,10 +127,13 @@ Deno.test("v0.21 hypervisor config cannot exceed wire hard limits", () => {
   );
 });
 
-Deno.test("Hypervisor dispatch queue limits are opt-in and bounded", () => {
-  assertEquals(createHypervisorConfig().maxQueuedDispatches, 0);
-  assertEquals(createHypervisorConfig().dispatchQueueTimeoutMs, 30_000);
-  assertEquals(
+test("Hypervisor dispatch queue limits are opt-in and bounded", () => {
+  assert.deepStrictEqual(createHypervisorConfig().maxQueuedDispatches, 0);
+  assert.deepStrictEqual(
+    createHypervisorConfig().dispatchQueueTimeoutMs,
+    30_000,
+  );
+  assert.deepStrictEqual(
     createHypervisorConfig({ maxQueuedDispatches: 100 }).maxQueuedDispatches,
     100,
   );

@@ -1,3 +1,6 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { WebSocketServer } from "ws";
 import {
   createReadyAckFrame,
   createWelcomeFrame,
@@ -62,8 +65,7 @@ export function withTimeout<T>(
   });
 }
 
-export function startTestPeer(): Promise<TestPeer> {
-  const abortController = new AbortController();
+export async function startTestPeer(): Promise<TestPeer> {
   const pending: TestPeerConnection[] = [];
   const waiters: Waiter[] = [];
   const transports = new Set<ProtocolTransport>();
@@ -82,35 +84,28 @@ export function startTestPeer(): Promise<TestPeer> {
     while (waiters.length > 0) waiters.shift()?.reject(error);
   };
 
-  const server = Deno.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    signal: abortController.signal,
-    onListen: () => undefined,
-    onError: (error) => {
-      fail(error);
-      return new Response("test peer failed", { status: 500 });
-    },
-  }, (request) => {
-    if (
-      request.headers.get("upgrade")?.toLowerCase() !== "websocket" ||
-      request.headers.get("sec-websocket-protocol") !== WORKER_PROTOCOL
-    ) {
-      return new Response("exact worker subprotocol required", {
-        status: 426,
-      });
+  const sockets = new WebSocketServer({
+    noServer: true,
+    perMessageDeflate: false,
+    handleProtocols: (offered) =>
+      offered.has(WORKER_PROTOCOL) ? WORKER_PROTOCOL : false,
+  });
+  const server = createServer((_request, response) => {
+    response.writeHead(426).end("exact worker subprotocol required");
+  });
+  server.on("upgrade", (request, socket, head) => {
+    if (request.headers["sec-websocket-protocol"] !== WORKER_PROTOCOL) {
+      socket.end(
+        "HTTP/1.1 426 Upgrade Required\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
+      );
+      return;
     }
-    const { socket, response } = Deno.upgradeWebSocket(request, {
-      protocol: WORKER_PROTOCOL,
-    });
-    socket.addEventListener("open", () => {
+    sockets.handleUpgrade(request, socket, head, (ws) => {
+      const socket = ws as unknown as WebSocket;
       void createFrameConnection(adaptSocketConnection(socket), {
         negotiatedProtocol: WORKER_PROTOCOL,
       }).then((connection) =>
-        Promise.resolve(createProtocolTransport({
-          connection,
-          role: "hypervisor",
-        }))
+        createProtocolTransport({ connection, role: "hypervisor" })
       ).then((transport) => {
         transports.add(transport);
         transport.closed.then(() => transports.delete(transport));
@@ -120,15 +115,11 @@ export function startTestPeer(): Promise<TestPeer> {
           iterator: transport.messages()[Symbol.asyncIterator](),
         });
       }).catch(fail);
-    }, { once: true });
-    return response;
+    });
   });
-
-  const address = server.addr;
-  if (address.transport !== "tcp") {
-    abortController.abort();
-    throw new TypeError("test peer did not bind TCP");
-  }
+  server.on("error", fail);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
 
   const nextConnection = (timeoutMs = 2_000): Promise<TestPeerConnection> => {
     const connection = pending.shift();
@@ -158,16 +149,20 @@ export function startTestPeer(): Promise<TestPeer> {
           }).catch(() => undefined),
       ),
     );
-    abortController.abort();
-    await server.finished.catch(() => undefined);
+    for (const client of sockets.clients) client.terminate();
+    sockets.close();
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections();
+    });
   };
 
-  return Promise.resolve(Object.freeze({
+  return Object.freeze({
     url: `ws://127.0.0.1:${address.port}/workers`,
     nextConnection,
     connectionCount: () => connectionCount,
     close,
-  }));
+  });
 }
 
 export async function nextMessage(

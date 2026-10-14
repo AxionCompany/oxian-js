@@ -1,4 +1,6 @@
-import { assert, assertEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import { createDevProxyAdapter } from "../../src/edge/dev_proxy.ts";
 
 type Deferred<T> = Readonly<{
@@ -64,150 +66,147 @@ const loopbackPermission = await Deno.permissions.query({
   host: "127.0.0.1",
 });
 
-Deno.test({
-  name: "dev proxy preserves request semantics and forwards original authority",
-  ignore: loopbackPermission.state !== "granted",
-  async fn() {
-    const upstream = startLoopback(async (request) => {
-      return Response.json({
-        method: request.method,
-        path: new URL(request.url).pathname,
-        query: new URL(request.url).search,
-        host: request.headers.get("host"),
-        forwardedHost: request.headers.get("x-forwarded-host"),
-        custom: request.headers.get("x-custom"),
-        removed: request.headers.get("x-remove"),
-        body: await request.text(),
-      }, {
-        headers: [
-          ["set-cookie", "first=1; Path=/"],
-          ["set-cookie", "second=2; Path=/"],
-          ["x-upstream", "yes"],
-        ],
-      });
+test("dev proxy preserves request semantics and forwards original authority", {
+  skip: loopbackPermission.state !== "granted",
+}, async () => {
+  const upstream = startLoopback(async (request) => {
+    return Response.json({
+      method: request.method,
+      path: new URL(request.url).pathname,
+      query: new URL(request.url).search,
+      host: request.headers.get("host"),
+      forwardedHost: request.headers.get("x-forwarded-host"),
+      custom: request.headers.get("x-custom"),
+      removed: request.headers.get("x-remove"),
+      body: await request.text(),
+    }, {
+      headers: [
+        ["set-cookie", "first=1; Path=/"],
+        ["set-cookie", "second=2; Path=/"],
+        ["x-upstream", "yes"],
+      ],
     });
-    try {
-      const handler = createDevProxyAdapter({
-        upstream: `${upstream.origin}/base`,
-        prefix: "/dev",
-        stripPrefix: true,
-        forwardHost: true,
-      })(() => new Response("fallback"));
-      const response = await handler(
-        new Request("https://public.example/dev/items?id=42&sort=asc", {
-          method: "POST",
-          headers: {
-            "connection": "x-remove",
-            "host": "public.example",
-            "x-custom": "preserved",
-            "x-remove": "secret",
-          },
-          body: new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode("streamed body"));
-              controller.close();
-            },
-          }),
-        }),
-      );
-
-      assertEquals(response.status, 200);
-      assertEquals(response.headers.get("x-upstream"), "yes");
-      assertEquals(response.headers.getSetCookie(), [
-        "first=1; Path=/",
-        "second=2; Path=/",
-      ]);
-      assertEquals(await response.json(), {
+  });
+  try {
+    const handler = createDevProxyAdapter({
+      upstream: `${upstream.origin}/base`,
+      prefix: "/dev",
+      stripPrefix: true,
+      forwardHost: true,
+    })(() => new Response("fallback"));
+    const response = await handler(
+      new Request("https://public.example/dev/items?id=42&sort=asc", {
         method: "POST",
-        path: "/base/items",
-        query: "?id=42&sort=asc",
-        host: new URL(upstream.origin).host,
-        forwardedHost: "public.example",
-        custom: "preserved",
-        removed: null,
-        body: "streamed body",
-      });
-    } finally {
-      await upstream.close();
-    }
-  },
-});
-
-Deno.test({
-  name: "dev proxy defaults Host to upstream and removes response hop headers",
-  ignore: loopbackPermission.state !== "granted",
-  async fn() {
-    const upstream = startLoopback((request) => {
-      return new Response(request.headers.get("host"), {
         headers: {
-          "connection": "x-response-hop",
-          "x-response-hop": "remove",
-          "x-end-to-end": "preserve",
+          "connection": "x-remove",
+          "host": "public.example",
+          "x-custom": "preserved",
+          "x-remove": "secret",
         },
-      });
-    });
-    try {
-      const handler = createDevProxyAdapter({
-        upstream: upstream.origin,
-      })(() => new Response("fallback"));
-      const response = await handler(
-        new Request("https://public.example/path", {
-          headers: { host: "public.example" },
-        }),
-      );
-      assertEquals(await response.text(), new URL(upstream.origin).host);
-      assertEquals(response.headers.get("connection"), null);
-      assertEquals(response.headers.get("x-response-hop"), null);
-      assertEquals(response.headers.get("x-end-to-end"), "preserve");
-    } finally {
-      await upstream.close();
-    }
-  },
-});
-
-Deno.test({
-  name: "dev proxy streams the response and propagates downstream cancellation",
-  ignore: loopbackPermission.state !== "granted",
-  async fn() {
-    const cancelled = createDeferred<unknown>();
-    const upstream = startLoopback(() => {
-      return new Response(
-        new ReadableStream<Uint8Array>({
+        body: new ReadableStream<Uint8Array>({
           start(controller) {
-            controller.enqueue(new TextEncoder().encode("first"));
-          },
-          cancel(reason) {
-            cancelled.resolve(reason);
+            controller.enqueue(new TextEncoder().encode("streamed body"));
+            controller.close();
           },
         }),
-      );
+      }),
+    );
+
+    assert.deepStrictEqual(response.status, 200);
+    assert.deepStrictEqual(response.headers.get("x-upstream"), "yes");
+    assert.deepStrictEqual(response.headers.getSetCookie(), [
+      "first=1; Path=/",
+      "second=2; Path=/",
+    ]);
+    assert.deepStrictEqual(await response.json(), {
+      method: "POST",
+      path: "/base/items",
+      query: "?id=42&sort=asc",
+      host: new URL(upstream.origin).host,
+      forwardedHost: "public.example",
+      custom: "preserved",
+      removed: null,
+      body: "streamed body",
     });
-    try {
-      const handler = createDevProxyAdapter({
-        upstream: upstream.origin,
-      })(() => new Response("fallback"));
-      const response = await handler(
-        new Request("https://public.example/stream"),
-      );
-      assert(response.body);
-      const reader = response.body.getReader();
-      const first = await reader.read();
-      assertEquals(
-        new TextDecoder().decode(first.value),
-        "first",
-      );
-      await reader.cancel("client stopped");
-      await withTimeout(
-        cancelled.promise,
-        "proxy did not cancel the upstream response body",
-      );
-    } finally {
-      await upstream.close();
-    }
-  },
+  } finally {
+    await upstream.close();
+  }
 });
 
-Deno.test("dev proxy falls through outside its prefix and validates upstream", async () => {
+test("dev proxy defaults Host to upstream and removes response hop headers", {
+  skip: loopbackPermission.state !== "granted",
+}, async () => {
+  const upstream = startLoopback((request) => {
+    return new Response(request.headers.get("host"), {
+      headers: {
+        "connection": "x-response-hop",
+        "x-response-hop": "remove",
+        "x-end-to-end": "preserve",
+      },
+    });
+  });
+  try {
+    const handler = createDevProxyAdapter({
+      upstream: upstream.origin,
+    })(() => new Response("fallback"));
+    const response = await handler(
+      new Request("https://public.example/path", {
+        headers: { host: "public.example" },
+      }),
+    );
+    assert.deepStrictEqual(
+      await response.text(),
+      new URL(upstream.origin).host,
+    );
+    assert.deepStrictEqual(response.headers.get("connection"), null);
+    assert.deepStrictEqual(response.headers.get("x-response-hop"), null);
+    assert.deepStrictEqual(response.headers.get("x-end-to-end"), "preserve");
+  } finally {
+    await upstream.close();
+  }
+});
+
+test("dev proxy streams the response and propagates downstream cancellation", {
+  skip: loopbackPermission.state !== "granted",
+}, async () => {
+  const cancelled = createDeferred<unknown>();
+  const upstream = startLoopback(() => {
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("first"));
+        },
+        cancel(reason) {
+          cancelled.resolve(reason);
+        },
+      }),
+    );
+  });
+  try {
+    const handler = createDevProxyAdapter({
+      upstream: upstream.origin,
+    })(() => new Response("fallback"));
+    const response = await handler(
+      new Request("https://public.example/stream"),
+    );
+    assert.ok(response.body);
+    const reader = response.body.getReader();
+    const first = await reader.read();
+    assert.deepStrictEqual(
+      new TextDecoder().decode(first.value),
+      "first",
+    );
+    await reader.cancel("client stopped");
+    await withTimeout(
+      cancelled.promise,
+      "proxy did not cancel the upstream response body",
+    );
+  } finally {
+    await upstream.close();
+  }
+});
+
+test("dev proxy falls through outside its prefix and validates upstream", async () => {
   let calls = 0;
   const handler = createDevProxyAdapter({
     upstream: "http://127.0.0.1:9",
@@ -219,9 +218,9 @@ Deno.test("dev proxy falls through outside its prefix and validates upstream", a
   const response = await handler(
     new Request("https://public.example/api"),
   );
-  assertEquals(response.status, 201);
-  assertEquals(await response.text(), "application");
-  assertEquals(calls, 1);
+  assert.deepStrictEqual(response.status, 201);
+  assert.deepStrictEqual(await response.text(), "application");
+  assert.deepStrictEqual(calls, 1);
 
   assertThrows(
     () => createDevProxyAdapter({ upstream: "ftp://example.test" }),
@@ -246,20 +245,18 @@ Deno.test("dev proxy falls through outside its prefix and validates upstream", a
   );
 });
 
-Deno.test({
-  name: "dev proxy converts connection failures to Bad Gateway",
-  ignore: loopbackPermission.state !== "granted",
-  async fn() {
-    const server = startLoopback(() => new Response("unused"));
-    const upstream = server.origin;
-    await server.close();
-    const handler = createDevProxyAdapter({ upstream })(
-      () => new Response("fallback"),
-    );
-    const response = await handler(
-      new Request("https://public.example/path"),
-    );
-    assertEquals(response.status, 502);
-    assertEquals(await response.text(), "Bad Gateway");
-  },
+test("dev proxy converts connection failures to Bad Gateway", {
+  skip: loopbackPermission.state !== "granted",
+}, async () => {
+  const server = startLoopback(() => new Response("unused"));
+  const upstream = server.origin;
+  await server.close();
+  const handler = createDevProxyAdapter({ upstream })(
+    () => new Response("fallback"),
+  );
+  const response = await handler(
+    new Request("https://public.example/path"),
+  );
+  assert.deepStrictEqual(response.status, 502);
+  assert.deepStrictEqual(await response.text(), "Bad Gateway");
 });

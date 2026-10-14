@@ -1,4 +1,5 @@
-import { assertEquals } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
 import { handler } from "../../src/adapters/deno/index.ts";
 import {
   createHttpGateway,
@@ -86,12 +87,13 @@ const [loopbackPermission, fixturePermission] = await Promise.all([
   }),
 ]);
 
-Deno.test({
-  name:
-    "HTTP workload round-trips through a certificate-verified TLS WSS worker",
-  ignore: loopbackPermission.state !== "granted" ||
-    fixturePermission.state !== "granted",
-  async fn() {
+test(
+  "HTTP workload round-trips through a certificate-verified TLS WSS worker",
+  {
+    skip: loopbackPermission.state !== "granted" ||
+      fixturePermission.state !== "granted",
+  },
+  async () => {
     const [certificate, privateKey] = await Promise.all([
       Deno.readTextFile(new URL("server.pem", TLS_FIXTURE_DIRECTORY)),
       Deno.readTextFile(new URL("server.key", TLS_FIXTURE_DIRECTORY)),
@@ -128,7 +130,7 @@ Deno.test({
       onListen() {},
     }, handler(hypervisor));
     const url = workerUrl(server.addr, TEST_WORKER_PATH);
-    assertEquals(url.protocol, "wss:");
+    assert.deepStrictEqual(url.protocol, "wss:");
     const worker = createWorker({
       transport: {
         type: "websocket",
@@ -141,12 +143,15 @@ Deno.test({
       workloads: {
         [HTTP_WORKLOAD]: createHttpWorkload({
           fetch: async (request) => {
-            assertEquals(request.method, "POST");
-            assertEquals(
+            assert.deepStrictEqual(request.method, "POST");
+            assert.deepStrictEqual(
               request.url,
               "https://application.test/tls-round-trip",
             );
-            assertEquals(request.headers.get("x-oxian-test"), "tls-wss");
+            assert.deepStrictEqual(
+              request.headers.get("x-oxian-test"),
+              "tls-wss",
+            );
             const input = await request.text();
             return new Response(`received:${input}`, {
               status: 202,
@@ -189,9 +194,12 @@ Deno.test({
         "HTTP response metadata did not arrive over TLS WSS",
       );
 
-      assertEquals(response.status, 202);
-      assertEquals(response.headers.get("x-oxian-transport"), "tls-wss");
-      assertEquals(
+      assert.deepStrictEqual(response.status, 202);
+      assert.deepStrictEqual(
+        response.headers.get("x-oxian-transport"),
+        "tls-wss",
+      );
+      assert.deepStrictEqual(
         await withTimeout(
           response.text(),
           "HTTP response body did not arrive over TLS WSS",
@@ -205,4 +213,4 @@ Deno.test({
       await workerClosed?.catch(() => undefined);
     }
   },
-});
+);

@@ -1,4 +1,6 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
 import {
   BINARY_PROTOCOL,
   createHelloFrame,
@@ -133,23 +135,23 @@ function createCallbackWireConnection(): Readonly<{
   });
 }
 
-Deno.test("transport accepts a callback-based runtime wire connection", async () => {
+test("transport accepts a callback-based runtime wire connection", async () => {
   const wire = createCallbackWireConnection();
   const transport = await createTestTransport({
     socket: wire.connection,
     role: "worker",
   });
   await transport.sendControl(HELLO);
-  assertEquals(wire.sent.length, 1);
+  assert.deepStrictEqual(wire.sent.length, 1);
   wire.close({ code: 1000, reason: "peer_complete" });
-  assertEquals(await transport.closed, {
+  assert.deepStrictEqual(await transport.closed, {
     code: 1000,
     reason: "peer_complete",
     wasClean: true,
   });
 });
 
-Deno.test("transport safely handles synchronous wire open subscription", async () => {
+test("transport safely handles synchronous wire open subscription", async () => {
   const observers = new Set<SocketObserver>();
   let state: SocketConnection["state"] = "connecting";
   const connection: SocketConnection = Object.freeze({
@@ -185,10 +187,10 @@ Deno.test("transport safely handles synchronous wire open subscription", async (
     socket: connection,
     role: "worker",
   });
-  assertEquals(observers.size, 1);
+  assert.deepStrictEqual(observers.size, 1);
   connection.close(1000, "test_complete");
   await transport.closed;
-  assertEquals(observers.size, 0);
+  assert.deepStrictEqual(observers.size, 0);
 });
 
 type FakeSocket = Readonly<{
@@ -210,7 +212,7 @@ function createFakeSocket(
 ): FakeSocket {
   const target = new EventTarget();
   const sent: (string | ArrayBufferView | ArrayBuffer | Blob)[] = [];
-  let readyState = WebSocket.OPEN;
+  let readyState: number = WebSocket.OPEN;
   let bufferedAmount = options.bufferedAmount ?? 0;
   const socket = {
     get readyState() {
@@ -263,7 +265,7 @@ function createFakeSocket(
   };
 }
 
-Deno.test("real transport closes an invalid protocol peer with stable 4xxx code", async () => {
+test("real transport closes an invalid protocol peer with stable 4xxx code", async () => {
   const peer = await startTestPeer();
   let worker:
     | Awaited<ReturnType<typeof createTestTransport>>
@@ -281,17 +283,17 @@ Deno.test("real transport closes an invalid protocol peer with stable 4xxx code"
     hypervisor.socket.send("{malformed");
     const localClose = await withTimeout(worker.closed);
     const remoteClose = await withTimeout(hypervisor.transport.closed);
-    assertEquals(localClose.code, 4400);
-    assertEquals(localClose.reason, "invalid_control_frame");
-    assertEquals(remoteClose.code, 4400);
-    assertEquals(remoteClose.reason, "invalid_control_frame");
+    assert.deepStrictEqual(localClose.code, 4400);
+    assert.deepStrictEqual(localClose.reason, "invalid_control_frame");
+    assert.deepStrictEqual(remoteClose.code, 4400);
+    assert.deepStrictEqual(remoteClose.reason, "invalid_control_frame");
   } finally {
     await worker?.close().catch(() => undefined);
     await peer.close();
   }
 });
 
-Deno.test("worker socket factory can authenticate before Oxian owns Open", async () => {
+test("worker socket factory can authenticate before Oxian owns Open", async () => {
   const peer = await startTestPeer();
   let factoryCalls = 0;
   let factorySignal: AbortSignal | undefined;
@@ -303,24 +305,24 @@ Deno.test("worker socket factory can authenticate before Oxian owns Open", async
       async createWebSocket(context) {
         factoryCalls++;
         factorySignal = context.signal;
-        assertEquals(context.url.href, peer.url);
-        assertEquals(context.protocol, WORKER_PROTOCOL);
-        assertEquals(context.signal.aborted, false);
+        assert.deepStrictEqual(context.url.href, peer.url);
+        assert.deepStrictEqual(context.protocol, WORKER_PROTOCOL);
+        assert.deepStrictEqual(context.signal.aborted, false);
         await Promise.resolve();
         return new WebSocket(context.url, context.protocol);
       },
     });
     await peer.nextConnection();
-    assertEquals(factoryCalls, 1);
-    assertEquals(factorySignal?.aborted, false);
-    assertEquals(socket.protocol, WORKER_PROTOCOL);
+    assert.deepStrictEqual(factoryCalls, 1);
+    assert.deepStrictEqual(factorySignal?.aborted, false);
+    assert.deepStrictEqual(socket.protocol, WORKER_PROTOCOL);
   } finally {
     socket?.close(1000, "test_complete");
     await peer.close();
   }
 });
 
-Deno.test("worker socket factory authentication is inside the connect deadline", async () => {
+test("worker socket factory authentication is inside the connect deadline", async () => {
   let factorySignal: AbortSignal | undefined;
   await assertRejects(
     () =>
@@ -335,10 +337,10 @@ Deno.test("worker socket factory authentication is inside the connect deadline",
     DOMException,
     "timed out",
   );
-  assertEquals(factorySignal?.aborted, true);
+  assert.deepStrictEqual(factorySignal?.aborted, true);
 });
 
-Deno.test("worker socket URL rejects embedded credentials before invoking its factory", async () => {
+test("worker socket URL rejects embedded credentials before invoking its factory", async () => {
   let factoryCalls = 0;
   for (
     const url of [
@@ -360,10 +362,10 @@ Deno.test("worker socket URL rejects embedded credentials before invoking its fa
       "credential-free",
     );
   }
-  assertEquals(factoryCalls, 0);
+  assert.deepStrictEqual(factoryCalls, 0);
 });
 
-Deno.test("fatal queue close discards retained values", async () => {
+test("fatal queue close discards retained values", async () => {
   const queue = createBoundedAsyncQueue<number>({
     maxItems: 2,
     maxWeight: 2,
@@ -372,7 +374,11 @@ Deno.test("fatal queue close discards retained values", async () => {
   const failure = new Error("fatal");
   queue.push(1);
   queue.close(failure, { discard: true });
-  assertEquals(queue.snapshot(), { items: 0, weight: 0, closed: true });
+  assert.deepStrictEqual(queue.snapshot(), {
+    items: 0,
+    weight: 0,
+    closed: true,
+  });
   await assertRejects(
     () => queue.iterable[Symbol.asyncIterator]().next(),
     Error,
@@ -380,7 +386,7 @@ Deno.test("fatal queue close discards retained values", async () => {
   );
 });
 
-Deno.test("send failure poisons advanced protocol state deterministically", async () => {
+test("send failure poisons advanced protocol state deterministically", async () => {
   const sendFailure = new Error("native send failed");
   const fake = createFakeSocket({ sendError: sendFailure });
   const transport = await createTestTransport({
@@ -393,7 +399,7 @@ Deno.test("send failure poisons advanced protocol state deterministically", asyn
     Error,
     "native send failed",
   );
-  assertEquals(await transport.closed, {
+  assert.deepStrictEqual(await transport.closed, {
     code: 4500,
     reason: "transport_failed",
     wasClean: false,
@@ -405,7 +411,7 @@ Deno.test("send failure poisons advanced protocol state deterministically", asyn
   );
 });
 
-Deno.test("transport drains a received terminal frame before peer close", async () => {
+test("transport drains a received terminal frame before peer close", async () => {
   const fake = createFakeSocket();
   const transport = await createTestTransport({
     socket: fake.socket,
@@ -419,20 +425,23 @@ Deno.test("transport drains a received terminal frame before peer close", async 
   });
 
   const first = await messages.next();
-  assertEquals(first.done, false);
-  assertEquals(first.value?.kind, "control");
+  assert.deepStrictEqual(first.done, false);
+  assert.deepStrictEqual(first.value?.kind, "control");
   if (first.value?.kind === "control") {
-    assertEquals(first.value.acceptance.frame, HELLO);
+    assert.deepStrictEqual(first.value.acceptance.frame, HELLO);
   }
-  assertEquals(await messages.next(), { value: undefined, done: true });
-  assertEquals(await transport.closed, {
+  assert.deepStrictEqual(await messages.next(), {
+    value: undefined,
+    done: true,
+  });
+  assert.deepStrictEqual(await transport.closed, {
     code: 1000,
     reason: "peer_terminal",
     wasClean: true,
   });
 });
 
-Deno.test("socket error settles closed and pending sends are bounded", async () => {
+test("socket error settles closed and pending sends are bounded", async () => {
   const abortController = new AbortController();
   const fake = createFakeSocket({ bufferedAmount: 2 * 1024 * 1024 });
   const transport = await createTestTransport({
@@ -449,7 +458,7 @@ Deno.test("socket error settles closed and pending sends are bounded", async () 
     RangeError,
     "send queue",
   );
-  assertEquals(fake.sent().length, 0);
+  assert.deepStrictEqual(fake.sent().length, 0);
   abortController.abort(new DOMException("test abort", "AbortError"));
   await assertRejects(() => first, DOMException);
   await transport.closed;
@@ -460,14 +469,14 @@ Deno.test("socket error settles closed and pending sends are bounded", async () 
     role: "worker",
   });
   errored.dispatchError();
-  assertEquals(await erroredTransport.closed, {
+  assert.deepStrictEqual(await erroredTransport.closed, {
     code: 4500,
     reason: "transport_failed",
     wasClean: false,
   });
 });
 
-Deno.test("transport enforces admission, buffer relation, and close wire bounds", async () => {
+test("transport enforces admission, buffer relation, and close wire bounds", async () => {
   const fake = createFakeSocket();
   const transport = await createTestTransport({
     socket: fake.socket,
@@ -479,7 +488,7 @@ Deno.test("transport enforces admission, buffer relation, and close wire bounds"
     maxBufferedAmountBytes: 128,
     bufferedAmountLowWaterBytes: 16,
   });
-  assertEquals(transport.snapshot().role, "worker");
+  assert.deepStrictEqual(transport.snapshot().role, "worker");
   await assertRejects(
     () => transport.close({ code: 1011 }),
     TypeError,

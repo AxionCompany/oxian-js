@@ -1,4 +1,4 @@
-import { serve } from "../../src/adapters/deno/index.ts";
+import { serve } from "../../src/adapters/node/index.ts";
 import type {
   HypervisorLifecycleCallbacks,
   WorkerLifecycleCallbacks,
@@ -84,7 +84,7 @@ export async function queueHarness(
     },
   }, hostCallbacks);
   const listener = type === "websocket"
-    ? serve({ hypervisor, hostname: "127.0.0.1", port: 0 })
+    ? await serve({ hypervisor, hostname: "127.0.0.1", port: 0 })
     : undefined;
   const url = listener === undefined
     ? undefined

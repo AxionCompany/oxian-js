@@ -1,4 +1,6 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import {
   createHypervisor,
   type HypervisorAdmit,
@@ -13,7 +15,7 @@ const rejectUnknownWorker: HypervisorAdmit = () => {
   });
 };
 
-Deno.test("portable Hypervisor prepares only its declared WebSocket paths", async () => {
+test("portable Hypervisor prepares only its declared WebSocket paths", async () => {
   const websocket = {
     type: "websocket",
     config: { path },
@@ -31,8 +33,8 @@ Deno.test("portable Hypervisor prepares only its declared WebSocket paths", asyn
     throw new Error("expected a normal HTTP response decision");
   }
   const response = await fallback.response;
-  assertEquals(response.status, 202);
-  assertEquals(await response.text(), "fallback");
+  assert.deepStrictEqual(response.status, 202);
+  assert.deepStrictEqual(await response.text(), "fallback");
 
   const admission = hypervisor.prepare(
     new Request(`https://example.test${path}`, {
@@ -45,14 +47,14 @@ Deno.test("portable Hypervisor prepares only its declared WebSocket paths", asyn
   if (admission.kind !== "upgrade") {
     throw new Error("expected a WebSocket upgrade decision");
   }
-  assertEquals(admission.protocol, "oxian.worker.v1");
-  assertEquals(hypervisor.snapshot().connections, 1);
+  assert.deepStrictEqual(admission.protocol, "oxian.worker.v1");
+  assert.deepStrictEqual(hypervisor.snapshot().connections, 1);
   admission.cancel("test_upgrade_failure");
-  assertEquals(hypervisor.snapshot().connections, 0);
+  assert.deepStrictEqual(hypervisor.snapshot().connections, 0);
   await hypervisor.shutdown();
 });
 
-Deno.test("Hypervisor accepts plain admission and lifecycle functions", async () => {
+test("Hypervisor accepts plain admission and lifecycle functions", async () => {
   let assigned = false;
   const hypervisor = createHypervisor(
     {
@@ -68,12 +70,12 @@ Deno.test("Hypervisor accepts plain admission and lifecycle functions", async ()
       },
     },
   );
-  assertEquals(hypervisor.snapshot().connections, 0);
-  assertEquals(assigned, false);
+  assert.deepStrictEqual(hypervisor.snapshot().connections, 0);
+  assert.deepStrictEqual(assigned, false);
   await hypervisor.shutdown();
 });
 
-Deno.test("Hypervisor validates declarative transports and functions", () => {
+test("Hypervisor validates declarative transports and functions", () => {
   assertThrows(
     () => createHypervisor({ transports: [] }),
     TypeError,

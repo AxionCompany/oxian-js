@@ -1,4 +1,6 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import {
   type AcceptanceCommit,
   createWorkDispatcher,
@@ -75,7 +77,7 @@ function streamId(sequence: number): string {
   return `00000000-0000-4000-8000-${sequence.toString().padStart(12, "0")}`;
 }
 
-Deno.test("claim does not authorize execution until durable acceptance commits", async () => {
+test("claim does not authorize execution until durable acceptance commits", async () => {
   const context = createReadySession();
   let streamIndex = 0;
   let releasePersistence!: () => void;
@@ -105,24 +107,27 @@ Deno.test("claim does not authorize execution until durable acceptance commits",
     },
     deadlineAtMs,
   });
-  assertEquals(offered.status, "offered");
+  assert.deepStrictEqual(offered.status, "offered");
   const claimed = dispatcher.claim(
     offered.operationId,
     offered.assignment!.fence,
     offered.assignment!.streamId,
   );
-  assertEquals(claimed.status, "claimed");
-  assertEquals(persisted, false);
+  assert.deepStrictEqual(claimed.status, "claimed");
+  assert.deepStrictEqual(persisted, false);
 
   const commitment = dispatcher.commitAcceptance(
     claimed.operationId,
     claimed.assignment!.fence,
     claimed.assignment!.streamId,
   );
-  assertEquals(dispatcher.get(claimed.operationId)?.status, "committing");
-  assertEquals(persisted, false);
+  assert.deepStrictEqual(
+    dispatcher.get(claimed.operationId)?.status,
+    "committing",
+  );
+  assert.deepStrictEqual(persisted, false);
   await Promise.resolve();
-  assertEquals(accepted, {
+  assert.deepStrictEqual(accepted, {
     operationId: offered.operationId,
     workload: "sandbox.command",
     metadata: {
@@ -134,26 +139,26 @@ Deno.test("claim does not authorize execution until durable acceptance commits",
     assignment: offered.assignment!,
     claimedAtMs: claimed.claimedAtMs!,
   });
-  assertEquals(Object.isFrozen(accepted), true);
-  assertEquals(Object.isFrozen(accepted?.metadata), true);
-  assertEquals(
+  assert.deepStrictEqual(Object.isFrozen(accepted), true);
+  assert.deepStrictEqual(Object.isFrozen(accepted?.metadata), true);
+  assert.deepStrictEqual(
     Object.isFrozen(accepted?.metadata.nested as object),
     true,
   );
   releasePersistence();
-  assertEquals((await commitment).status, "committed");
-  assertEquals(persisted, true);
+  assert.deepStrictEqual((await commitment).status, "committed");
+  assert.deepStrictEqual(persisted, true);
 
   const completed = dispatcher.complete(
     claimed.operationId,
     claimed.assignment!.fence,
     claimed.assignment!.streamId,
   );
-  assertEquals(completed.status, "completed");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 0);
+  assert.deepStrictEqual(completed.status, "completed");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 0);
 });
 
-Deno.test("disconnect before commit is explicitly reschedulable", () => {
+test("disconnect before commit is explicitly reschedulable", () => {
   const context = createReadySession();
   let streamIndex = 0;
   const dispatcher = createWorkDispatcher({
@@ -169,15 +174,15 @@ Deno.test("disconnect before commit is explicitly reschedulable", () => {
   );
 
   const lost = dispatcher.connectionLost(offered.assignment!.fence);
-  assertEquals(lost[0].status, "reschedulable");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 0);
+  assert.deepStrictEqual(lost[0].status, "reschedulable");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 0);
   const retried = dispatcher.retry(offered.operationId);
-  assertEquals(retried.status, "offered");
-  assertEquals(retried.deliveryCount, 2);
-  assertEquals(retried.assignment?.streamId, STREAM_IDS[1]);
+  assert.deepStrictEqual(retried.status, "offered");
+  assert.deepStrictEqual(retried.deliveryCount, 2);
+  assert.deepStrictEqual(retried.assignment?.streamId, STREAM_IDS[1]);
 });
 
-Deno.test("exact target is immutable and survives rescheduling", async () => {
+test("exact target is immutable and survives rescheduling", async () => {
   const sessions = createSessionRegistry({ clock: () => 10 });
   attachReadyWorker(sessions, "worker-a");
   attachReadyWorker(sessions, "worker-b");
@@ -198,17 +203,23 @@ Deno.test("exact target is immutable and survives rescheduling", async () => {
     target,
   });
   target.workerId = "worker-a";
-  assertEquals(offered.target, { workerId: "worker-b" });
-  assertEquals(Object.isFrozen(offered.target), true);
-  assertEquals(offered.assignment?.fence.identity.workerId, "worker-b");
+  assert.deepStrictEqual(offered.target, { workerId: "worker-b" });
+  assert.deepStrictEqual(Object.isFrozen(offered.target), true);
+  assert.deepStrictEqual(
+    offered.assignment?.fence.identity.workerId,
+    "worker-b",
+  );
 
   const [lost] = dispatcher.connectionLost(offered.assignment!.fence);
-  assertEquals(lost.status, "reschedulable");
-  assertEquals(lost.target, { workerId: "worker-b" });
+  assert.deepStrictEqual(lost.status, "reschedulable");
+  assert.deepStrictEqual(lost.target, { workerId: "worker-b" });
   const retried = dispatcher.retry(offered.operationId);
-  assertEquals(retried.deliveryCount, 2);
-  assertEquals(retried.target, { workerId: "worker-b" });
-  assertEquals(retried.assignment?.fence.identity.workerId, "worker-b");
+  assert.deepStrictEqual(retried.deliveryCount, 2);
+  assert.deepStrictEqual(retried.target, { workerId: "worker-b" });
+  assert.deepStrictEqual(
+    retried.assignment?.fence.identity.workerId,
+    "worker-b",
+  );
 
   dispatcher.claim(
     retried.operationId,
@@ -220,7 +231,7 @@ Deno.test("exact target is immutable and survives rescheduling", async () => {
     retried.assignment!.fence,
     retried.assignment!.streamId,
   );
-  assertEquals(accepted?.target, { workerId: "worker-b" });
+  assert.deepStrictEqual(accepted?.target, { workerId: "worker-b" });
   dispatcher.complete(
     retried.operationId,
     retried.assignment!.fence,
@@ -228,7 +239,7 @@ Deno.test("exact target is immutable and survives rescheduling", async () => {
   );
 });
 
-Deno.test("disconnect after commit is indeterminate and never retryable", async () => {
+test("disconnect after commit is indeterminate and never retryable", async () => {
   const context = createReadySession();
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
@@ -248,8 +259,8 @@ Deno.test("disconnect after commit is indeterminate and never retryable", async 
   );
 
   const [lost] = dispatcher.connectionLost(claimed.assignment!.fence);
-  assertEquals(lost.status, "indeterminate");
-  assertEquals(lost.terminal?.code, "connection_lost_after_commit");
+  assert.deepStrictEqual(lost.status, "indeterminate");
+  assert.deepStrictEqual(lost.terminal?.code, "connection_lost_after_commit");
   assertThrows(
     () => dispatcher.retry(claimed.operationId),
     Error,
@@ -257,7 +268,7 @@ Deno.test("disconnect after commit is indeterminate and never retryable", async 
   );
 });
 
-Deno.test("pre-start cancellation remains reserved until worker acknowledgement", () => {
+test("pre-start cancellation remains reserved until worker acknowledgement", () => {
   const context = createReadySession();
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
@@ -275,18 +286,18 @@ Deno.test("pre-start cancellation remains reserved until worker acknowledgement"
     code: "caller_cancelled",
     message: "request disconnected",
   });
-  assertEquals(cancelling.status, "cancelling");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 1);
+  assert.deepStrictEqual(cancelling.status, "cancelling");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 1);
   const cancelled = dispatcher.confirmCancellation(
     offered.operationId,
     offered.assignment!.fence,
     offered.assignment!.streamId,
   );
-  assertEquals(cancelled.terminal?.code, "caller_cancelled");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 0);
+  assert.deepStrictEqual(cancelled.terminal?.code, "caller_cancelled");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 0);
 });
 
-Deno.test("crossed Accepted after pre-claim cancellation is idempotent", () => {
+test("crossed Accepted after pre-claim cancellation is idempotent", () => {
   const context = createReadySession();
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
@@ -294,16 +305,19 @@ Deno.test("crossed Accepted after pre-claim cancellation is idempotent", () => {
     commitAcceptedWork: () => Promise.resolve(),
   });
   const offered = dispatcher.offer({ workload: "sandbox.command" });
-  assertEquals(dispatcher.cancel(offered.operationId).status, "cancelling");
+  assert.deepStrictEqual(
+    dispatcher.cancel(offered.operationId).status,
+    "cancelling",
+  );
   const crossed = dispatcher.claim(
     offered.operationId,
     offered.assignment!.fence,
     offered.assignment!.streamId,
   );
-  assertEquals(crossed.status, "cancelling");
-  assertEquals(typeof crossed.claimedAtMs, "number");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 1);
-  assertEquals(
+  assert.deepStrictEqual(crossed.status, "cancelling");
+  assert.deepStrictEqual(typeof crossed.claimedAtMs, "number");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 1);
+  assert.deepStrictEqual(
     dispatcher.confirmCancellation(
       offered.operationId,
       offered.assignment!.fence,
@@ -313,7 +327,7 @@ Deno.test("crossed Accepted after pre-claim cancellation is idempotent", () => {
   );
 });
 
-Deno.test("post-start cancellation remains reserved until worker acknowledgement", async () => {
+test("post-start cancellation remains reserved until worker acknowledgement", async () => {
   const context = createReadySession();
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
@@ -335,20 +349,20 @@ Deno.test("post-start cancellation remains reserved until worker acknowledgement
   const cancelling = dispatcher.cancel(offered.operationId, {
     code: "caller_cancelled",
   });
-  assertEquals(cancelling.status, "cancelling");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 1);
+  assert.deepStrictEqual(cancelling.status, "cancelling");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 1);
 
   const cancelled = dispatcher.confirmCancellation(
     offered.operationId,
     offered.assignment!.fence,
     offered.assignment!.streamId,
   );
-  assertEquals(cancelled.status, "cancelled");
-  assertEquals(cancelled.terminal?.code, "caller_cancelled");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 0);
+  assert.deepStrictEqual(cancelled.status, "cancelled");
+  assert.deepStrictEqual(cancelled.terminal?.code, "caller_cancelled");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 0);
 });
 
-Deno.test("connection loss before cancellation acknowledgement is indeterminate", async () => {
+test("connection loss before cancellation acknowledgement is indeterminate", async () => {
   const context = createReadySession();
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
@@ -369,12 +383,12 @@ Deno.test("connection loss before cancellation acknowledgement is indeterminate"
   dispatcher.cancel(offered.operationId);
 
   const [lost] = dispatcher.connectionLost(offered.assignment!.fence);
-  assertEquals(lost.status, "indeterminate");
-  assertEquals(
+  assert.deepStrictEqual(lost.status, "indeterminate");
+  assert.deepStrictEqual(
     lost.terminal?.code,
     "connection_lost_during_cancellation",
   );
-  assertEquals(context.sessions.get("worker-1")?.reserved, 0);
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 0);
   assertThrows(
     () => dispatcher.retry(offered.operationId),
     Error,
@@ -382,7 +396,7 @@ Deno.test("connection loss before cancellation acknowledgement is indeterminate"
   );
 });
 
-Deno.test("crossed result settles work that was awaiting cancellation acknowledgement", async () => {
+test("crossed result settles work that was awaiting cancellation acknowledgement", async () => {
   const context = createReadySession();
   let streamIndex = 0;
   const dispatcher = createWorkDispatcher({
@@ -408,7 +422,7 @@ Deno.test("crossed result settles work that was awaiting cancellation acknowledg
     first.assignment!.fence,
     first.assignment!.streamId,
   );
-  assertEquals(completed.status, "completed");
+  assert.deepStrictEqual(completed.status, "completed");
 
   const second = dispatcher.offer({ workload: "sandbox.command" });
   dispatcher.claim(
@@ -428,9 +442,9 @@ Deno.test("crossed result settles work that was awaiting cancellation acknowledg
     second.assignment!.streamId,
     { code: "worker_failed", message: "failed before cancellation" },
   );
-  assertEquals(failed.status, "failed");
-  assertEquals(failed.terminal?.code, "worker_failed");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 0);
+  assert.deepStrictEqual(failed.status, "failed");
+  assert.deepStrictEqual(failed.terminal?.code, "worker_failed");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 0);
   assertThrows(
     () =>
       dispatcher.confirmCancellation(
@@ -443,7 +457,7 @@ Deno.test("crossed result settles work that was awaiting cancellation acknowledg
   );
 });
 
-Deno.test("loss during durable commit becomes indeterminate only after persistence succeeds", async () => {
+test("loss during durable commit becomes indeterminate only after persistence succeeds", async () => {
   const context = createReadySession();
   let resolvePersistence!: () => void;
   const persistence = new Promise<void>((resolve) => {
@@ -467,7 +481,7 @@ Deno.test("loss during durable commit becomes indeterminate only after persisten
   );
 
   const changed = dispatcher.connectionLost(offered.assignment!.fence);
-  assertEquals(changed[0].status, "committing");
+  assert.deepStrictEqual(changed[0].status, "committing");
   assertThrows(
     () => dispatcher.retry(offered.operationId),
     Error,
@@ -475,11 +489,11 @@ Deno.test("loss during durable commit becomes indeterminate only after persisten
   );
   resolvePersistence();
   const result = await commitment;
-  assertEquals(result.status, "indeterminate");
-  assertEquals(result.terminal?.code, "connection_lost_before_start");
+  assert.deepStrictEqual(result.status, "indeterminate");
+  assert.deepStrictEqual(result.terminal?.code, "connection_lost_before_start");
 });
 
-Deno.test("replacement fencing rejects frames from the displaced socket", () => {
+test("replacement fencing rejects frames from the displaced socket", () => {
   const context = createReadySession();
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
@@ -509,13 +523,13 @@ Deno.test("replacement fencing rejects frames from the displaced socket", () => 
     Error,
     "not current",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     dispatcher.connectionLost(staleFence)[0].status,
     "reschedulable",
   );
 });
 
-Deno.test("assignment matching includes worker, attempt, epoch, connection, and stream", () => {
+test("assignment matching includes worker, attempt, epoch, connection, and stream", () => {
   const context = createReadySession();
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
@@ -541,7 +555,7 @@ Deno.test("assignment matching includes worker, attempt, epoch, connection, and 
   );
 });
 
-Deno.test("peer terminal safely reschedules offered and claimed streams", () => {
+test("peer terminal safely reschedules offered and claimed streams", () => {
   const context = createReadySession();
   let sequence = 0;
   const dispatcher = createWorkDispatcher({
@@ -557,7 +571,7 @@ Deno.test("peer terminal safely reschedules offered and claimed streams", () => 
     offered.assignment!.streamId,
     { type: "error", code: "busy", message: "worker rejected offer" },
   );
-  assertEquals(rejected.status, "reschedulable");
+  assert.deepStrictEqual(rejected.status, "reschedulable");
 
   const claimed = dispatcher.offer({ workload: "sandbox.command" });
   dispatcher.claim(
@@ -571,12 +585,12 @@ Deno.test("peer terminal safely reschedules offered and claimed streams", () => 
     claimed.assignment!.streamId,
     { type: "cancel", reason: "worker declined" },
   );
-  assertEquals(cancelled.status, "reschedulable");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 0);
-  assertEquals(dispatcher.list().length, 2);
+  assert.deepStrictEqual(cancelled.status, "reschedulable");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 0);
+  assert.deepStrictEqual(dispatcher.list().length, 2);
 });
 
-Deno.test("peer rejection crossing acceptance persistence suppresses commit", async () => {
+test("peer rejection crossing acceptance persistence suppresses commit", async () => {
   const context = createReadySession();
   const persistence = createDeferred<void>();
   const dispatcher = createWorkDispatcher({
@@ -601,14 +615,14 @@ Deno.test("peer rejection crossing acceptance persistence suppresses commit", as
     offered.assignment!.streamId,
     { type: "error", code: "rejected", message: "cannot execute" },
   );
-  assertEquals(crossed.status, "committing");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 0);
+  assert.deepStrictEqual(crossed.status, "committing");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 0);
   persistence.resolve();
-  assertEquals((await commitment).status, "indeterminate");
-  assertEquals(dispatcher.list().length, 0);
+  assert.deepStrictEqual((await commitment).status, "indeterminate");
+  assert.deepStrictEqual(dispatcher.list().length, 0);
 });
 
-Deno.test("ambiguous persistence stays indeterminate until stream cancellation closes", async () => {
+test("ambiguous persistence stays indeterminate until stream cancellation closes", async () => {
   const context = createReadySession();
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
@@ -626,10 +640,13 @@ Deno.test("ambiguous persistence stays indeterminate until stream cancellation c
     offered.assignment!.fence,
     offered.assignment!.streamId,
   );
-  assertEquals(result.status, "indeterminate");
-  assertEquals(result.terminal?.code, "acceptance_persistence_unknown");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 1);
-  assertEquals(dispatcher.list().length, 1);
+  assert.deepStrictEqual(result.status, "indeterminate");
+  assert.deepStrictEqual(
+    result.terminal?.code,
+    "acceptance_persistence_unknown",
+  );
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 1);
+  assert.deepStrictEqual(dispatcher.list().length, 1);
 
   const acknowledged = dispatcher.settlePeerTerminal(
     offered.operationId,
@@ -637,12 +654,12 @@ Deno.test("ambiguous persistence stays indeterminate until stream cancellation c
     offered.assignment!.streamId,
     { type: "cancel", reason: "pre-start cancelled" },
   );
-  assertEquals(acknowledged.status, "indeterminate");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 0);
-  assertEquals(dispatcher.list().length, 0);
+  assert.deepStrictEqual(acknowledged.status, "indeterminate");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 0);
+  assert.deepStrictEqual(dispatcher.list().length, 0);
 });
 
-Deno.test("synchronous persistence throw is deferred and cannot strand commit bookkeeping", async () => {
+test("synchronous persistence throw is deferred and cannot strand commit bookkeeping", async () => {
   const context = createReadySession();
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
@@ -662,18 +679,21 @@ Deno.test("synchronous persistence throw is deferred and cannot strand commit bo
     offered.assignment!.fence,
     offered.assignment!.streamId,
   );
-  assertEquals(dispatcher.get(offered.operationId)?.status, "committing");
-  assertEquals((await commitment).status, "indeterminate");
+  assert.deepStrictEqual(
+    dispatcher.get(offered.operationId)?.status,
+    "committing",
+  );
+  assert.deepStrictEqual((await commitment).status, "indeterminate");
   dispatcher.settlePeerTerminal(
     offered.operationId,
     offered.assignment!.fence,
     offered.assignment!.streamId,
     { type: "cancel", reason: "cancelled after ambiguous failure" },
   );
-  assertEquals(dispatcher.list().length, 0);
+  assert.deepStrictEqual(dispatcher.list().length, 0);
 });
 
-Deno.test("cancellation may cross an in-flight acceptance commit", async () => {
+test("cancellation may cross an in-flight acceptance commit", async () => {
   const context = createReadySession();
   const persistence = createDeferred<void>();
   const dispatcher = createWorkDispatcher({
@@ -692,12 +712,15 @@ Deno.test("cancellation may cross an in-flight acceptance commit", async () => {
     offered.assignment!.fence,
     offered.assignment!.streamId,
   );
-  assertEquals(dispatcher.cancel(offered.operationId).status, "cancelling");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 1);
+  assert.deepStrictEqual(
+    dispatcher.cancel(offered.operationId).status,
+    "cancelling",
+  );
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 1);
   persistence.resolve();
   const committedCancellation = await commitment;
-  assertEquals(committedCancellation.status, "cancelling");
-  assertEquals(
+  assert.deepStrictEqual(committedCancellation.status, "cancelling");
+  assert.deepStrictEqual(
     typeof committedCancellation.committedAtMs,
     "number",
   );
@@ -706,12 +729,12 @@ Deno.test("cancellation may cross an in-flight acceptance commit", async () => {
     offered.assignment!.fence,
     offered.assignment!.streamId,
   );
-  assertEquals(cancelled.status, "cancelled");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 0);
-  assertEquals(dispatcher.list().length, 0);
+  assert.deepStrictEqual(cancelled.status, "cancelled");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 0);
+  assert.deepStrictEqual(dispatcher.list().length, 0);
 });
 
-Deno.test("completed operations are evicted from process-local dispatcher memory", async () => {
+test("completed operations are evicted from process-local dispatcher memory", async () => {
   const context = createReadySession();
   let sequence = 0;
   const dispatcher = createWorkDispatcher({
@@ -739,11 +762,11 @@ Deno.test("completed operations are evicted from process-local dispatcher memory
     );
   }
 
-  assertEquals(dispatcher.list().length, 0);
-  assertEquals(context.sessions.get("worker-1")?.reserved, 0);
+  assert.deepStrictEqual(dispatcher.list().length, 0);
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 0);
 });
 
-Deno.test("a definitely undelivered offer can be withdrawn without a worker acknowledgement", () => {
+test("a definitely undelivered offer can be withdrawn without a worker acknowledgement", () => {
   const context = createReadySession();
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
@@ -762,14 +785,14 @@ Deno.test("a definitely undelivered offer can be withdrawn without a worker ackn
     },
   );
 
-  assertEquals(withdrawn.status, "cancelled");
-  assertEquals(withdrawn.assignment, undefined);
-  assertEquals(withdrawn.terminal?.code, "owner_route_failed");
-  assertEquals(context.sessions.get("worker-1")?.reserved, 0);
-  assertEquals(dispatcher.get(offered.operationId), undefined);
+  assert.deepStrictEqual(withdrawn.status, "cancelled");
+  assert.deepStrictEqual(withdrawn.assignment, undefined);
+  assert.deepStrictEqual(withdrawn.terminal?.code, "owner_route_failed");
+  assert.deepStrictEqual(context.sessions.get("worker-1")?.reserved, 0);
+  assert.deepStrictEqual(dispatcher.get(offered.operationId), undefined);
 });
 
-Deno.test("a surfaced reschedulable result can be explicitly evicted but an active offer cannot", () => {
+test("a surfaced reschedulable result can be explicitly evicted but an active offer cannot", () => {
   const context = createReadySession();
   const dispatcher = createWorkDispatcher({
     sessions: context.sessions,
@@ -786,7 +809,10 @@ Deno.test("a surfaced reschedulable result can be explicitly evicted but an acti
   const [reschedulable] = dispatcher.connectionLost(
     offered.assignment!.fence,
   );
-  assertEquals(reschedulable.status, "reschedulable");
-  assertEquals(dispatcher.discard(offered.operationId), reschedulable);
-  assertEquals(dispatcher.get(offered.operationId), undefined);
+  assert.deepStrictEqual(reschedulable.status, "reschedulable");
+  assert.deepStrictEqual(
+    dispatcher.discard(offered.operationId),
+    reschedulable,
+  );
+  assert.deepStrictEqual(dispatcher.get(offered.operationId), undefined);
 });

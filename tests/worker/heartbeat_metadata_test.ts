@@ -1,4 +1,6 @@
-import { assert, assertEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import {
   createShutdownFrame,
   WORKER_PROTOCOL_LIMITS,
@@ -48,10 +50,10 @@ function waitUntil(predicate: () => boolean): Promise<void> {
 }
 
 function assertReconnectExhausted(result: WorkerResult): void {
-  assertEquals(result.reason, "reconnect_exhausted");
+  assert.deepStrictEqual(result.reason, "reconnect_exhausted");
 }
 
-Deno.test("worker propagates heartbeat metadata from an immutable status context", async () => {
+test("worker propagates heartbeat metadata from an immutable status context", async () => {
   const peer = await startTestPeer();
   let context: WorkerHeartbeatContext | undefined;
   const client = createWorker({
@@ -68,8 +70,8 @@ Deno.test("worker propagates heartbeat metadata from an immutable status context
     reconnectDelay: false,
     createHeartbeatMetadata: (next) => {
       context = next;
-      assert(Object.isFrozen(next));
-      assert(Object.isFrozen(next.identity));
+      assert.ok(Object.isFrozen(next));
+      assert.ok(Object.isFrozen(next.identity));
       assertThrows(
         () =>
           Object.assign(next as unknown as Record<string, unknown>, {
@@ -102,7 +104,7 @@ Deno.test("worker propagates heartbeat metadata from an immutable status context
     if (message.acceptance.frame.type !== "heartbeat") {
       throw new TypeError("expected heartbeat");
     }
-    assertEquals(message.acceptance.frame.metadata, {
+    assert.deepStrictEqual(message.acceptance.frame.metadata, {
       sandbox: {
         dirty: false,
         processes: 0,
@@ -112,7 +114,7 @@ Deno.test("worker propagates heartbeat metadata from an immutable status context
     if (capturedContext === undefined) {
       throw new TypeError("heartbeat context was not captured");
     }
-    assertEquals(capturedContext, {
+    assert.deepStrictEqual(capturedContext, {
       identity: IDENTITY,
       connectionId: handshake.welcome.connectionId,
       capacity: 2,
@@ -122,21 +124,21 @@ Deno.test("worker propagates heartbeat metadata from an immutable status context
       draining: false,
       signal: capturedContext.signal,
     });
-    assertEquals(capturedContext.signal.aborted, false);
+    assert.deepStrictEqual(capturedContext.signal.aborted, false);
 
     await connection.transport.sendControl(createShutdownFrame({
       connectionId: handshake.welcome.connectionId,
       reason: "test_complete",
     }));
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
-    assertEquals(capturedContext.signal.aborted, true);
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(capturedContext.signal.aborted, true);
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("worker heartbeat metadata callback is single-flight and stop aborts a hung call", async () => {
+test("worker heartbeat metadata callback is single-flight and stop aborts a hung call", async () => {
   const peer = await startTestPeer();
   const firstGate = deferred();
   const hungGate = deferred();
@@ -177,20 +179,20 @@ Deno.test("worker heartbeat metadata callback is single-flight and stop aborts a
     });
     await waitUntil(() => contexts.length === 1);
     await new Promise((resolve) => setTimeout(resolve, 50));
-    assertEquals(contexts.length, 1);
+    assert.deepStrictEqual(contexts.length, 1);
 
     firstGate.resolve();
     await nextControl(connection, "heartbeat");
     await waitUntil(() => contexts.length === 2);
     await new Promise((resolve) => setTimeout(resolve, 75));
-    assertEquals(contexts.length, 2);
-    assertEquals(maximumActive, 1);
-    assertEquals(contexts.map(({ sequence }) => sequence), [0, 1]);
+    assert.deepStrictEqual(contexts.length, 2);
+    assert.deepStrictEqual(maximumActive, 1);
+    assert.deepStrictEqual(contexts.map(({ sequence }) => sequence), [0, 1]);
 
     await withTimeout(client.stop("hung_heartbeat_test"));
-    assertEquals(await withTimeout(run), { reason: "stopped" });
-    assertEquals(contexts[1]?.signal.aborted, true);
-    assertEquals(active, 1);
+    assert.deepStrictEqual(await withTimeout(run), { reason: "stopped" });
+    assert.deepStrictEqual(contexts[1]?.signal.aborted, true);
+    assert.deepStrictEqual(active, 1);
     hungGate.resolve();
     await waitUntil(() => active === 0);
   } finally {
@@ -201,7 +203,7 @@ Deno.test("worker heartbeat metadata callback is single-flight and stop aborts a
   }
 });
 
-Deno.test("hung heartbeat metadata does not block remote shutdown", async () => {
+test("hung heartbeat metadata does not block remote shutdown", async () => {
   const peer = await startTestPeer();
   const hungGate = deferred();
   let context: WorkerHeartbeatContext | undefined;
@@ -231,8 +233,8 @@ Deno.test("hung heartbeat metadata does not block remote shutdown", async () => 
       connectionId: handshake.welcome.connectionId,
       reason: "test_complete",
     }));
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
-    assertEquals(context?.signal.aborted, true);
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
+    assert.deepStrictEqual(context?.signal.aborted, true);
   } finally {
     hungGate.resolve();
     await client.stop();
@@ -240,7 +242,7 @@ Deno.test("hung heartbeat metadata does not block remote shutdown", async () => 
   }
 });
 
-Deno.test("worker fail-closes a session when heartbeat metadata creation throws", async () => {
+test("worker fail-closes a session when heartbeat metadata creation throws", async () => {
   const peer = await startTestPeer();
   let signal: AbortSignal | undefined;
   const client = createWorker({
@@ -265,17 +267,17 @@ Deno.test("worker fail-closes a session when heartbeat metadata creation throws"
     const connection = await peer.nextConnection();
     await acceptTestHandshake(connection);
     const close = await withTimeout(connection.transport.closed);
-    assertEquals(close.code, 4000);
-    assertEquals(close.reason, "worker_session_failed");
+    assert.deepStrictEqual(close.code, 4000);
+    assert.deepStrictEqual(close.reason, "worker_session_failed");
     assertReconnectExhausted(await withTimeout(run));
-    assertEquals(signal?.aborted, true);
+    assert.deepStrictEqual(signal?.aborted, true);
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("worker fail-closes a session when heartbeat metadata is not valid JSON", async () => {
+test("worker fail-closes a session when heartbeat metadata is not valid JSON", async () => {
   const peer = await startTestPeer();
   const client = createWorker({
     transport: {
@@ -298,8 +300,8 @@ Deno.test("worker fail-closes a session when heartbeat metadata is not valid JSO
     const connection = await peer.nextConnection();
     await acceptTestHandshake(connection);
     const close = await withTimeout(connection.transport.closed);
-    assertEquals(close.code, 4000);
-    assertEquals(close.reason, "worker_session_failed");
+    assert.deepStrictEqual(close.code, 4000);
+    assert.deepStrictEqual(close.reason, "worker_session_failed");
     assertReconnectExhausted(await withTimeout(run));
   } finally {
     await client.stop();
@@ -307,7 +309,7 @@ Deno.test("worker fail-closes a session when heartbeat metadata is not valid JSO
   }
 });
 
-Deno.test("worker fail-closes a session when heartbeat metadata exceeds the control bound", async () => {
+test("worker fail-closes a session when heartbeat metadata exceeds the control bound", async () => {
   const peer = await startTestPeer();
   const client = createWorker({
     transport: {
@@ -330,8 +332,8 @@ Deno.test("worker fail-closes a session when heartbeat metadata exceeds the cont
     const connection = await peer.nextConnection();
     await acceptTestHandshake(connection);
     const close = await withTimeout(connection.transport.closed);
-    assertEquals(close.code, 4000);
-    assertEquals(close.reason, "worker_session_failed");
+    assert.deepStrictEqual(close.code, 4000);
+    assert.deepStrictEqual(close.reason, "worker_session_failed");
     assertReconnectExhausted(await withTimeout(run));
   } finally {
     await client.stop();

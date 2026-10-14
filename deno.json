@@ -4,6 +4,7 @@
   "exports": {
     ".": "./src/mod.ts",
     "./adapters/deno": "./src/adapters/deno/index.ts",
+    "./adapters/node": "./src/adapters/node/index.ts",
     "./app": "./src/app/index.ts",
     "./bin": "./cli.ts",
     "./cli": "./src/cli/index.ts",
@@ -48,8 +49,8 @@
     ]
   },
   "imports": {
-    "@std/assert": "jsr:@std/assert@1",
-    "@std/path": "jsr:@std/path@1.1.1"
+    "@std/path": "jsr:@std/path@1.1.1",
+    "ws": "npm:ws@8.22.0"
   },
   "tasks": {
     "check": "deno task check:portability && deno task check:architecture && deno task check:source-graph && deno task check:api-reference && deno fmt --check && deno lint && deno check src/mod.ts cli.ts",

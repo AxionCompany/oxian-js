@@ -1,7 +1,8 @@
-import { assertThrows } from "@std/assert";
+import { test } from "node:test";
+import { assertThrows } from "../support/assert.ts";
 import { validatePublishRelease } from "../../scripts/validate_publish_release.ts";
 
-Deno.test("publish contract permits only the exact package version tag", () => {
+test("publish contract permits only the exact package version tag", () => {
   validatePublishRelease({
     version: "0.20.0",
     refName: "v0.20.0",

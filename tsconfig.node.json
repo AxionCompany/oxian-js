@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["src/adapters/node/**/*.ts", "tests/**/*.ts"],
+  "exclude": [
+    "tests/app/application_test.ts",
+    "tests/app/factory_test.ts",
+    "tests/cli/**",
+    "tests/config/**",
+    "tests/docs/**",
+    "tests/edge/**",
+    "tests/exports/**",
+    "tests/http/wss_tls_integration_test.ts",
+    "tests/local/**",
+    "tests/providers/fixtures/**",
+    "tests/providers/local_process_test.ts",
+    "tests/release/**",
+    "tests/router/**"
+  ]
+}

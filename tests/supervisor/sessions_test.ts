@@ -1,4 +1,6 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import {
   createSessionRegistry,
   fenceForSession,
@@ -49,36 +51,42 @@ function attachReadyWorker(
   return registry.markReady(fenceForSession(session));
 }
 
-Deno.test("session replacement fences every operation on the stale connection", () => {
+test("session replacement fences every operation on the stale connection", () => {
   const registry = createSessionRegistry({ clock: () => 10 });
   const first = attach(registry);
   const oldLease = registry.lease(fenceForSession(first));
   const replacement = attach(registry, "connection-2", 2);
 
-  assertEquals(registry.isCurrent(fenceForSession(first)), false);
-  assertEquals(oldLease.isCurrent(), false);
+  assert.deepStrictEqual(registry.isCurrent(fenceForSession(first)), false);
+  assert.deepStrictEqual(oldLease.isCurrent(), false);
   const error = assertThrows(() => oldLease.assertCurrent()) as SupervisorError;
-  assertEquals(error.code, "stale_session");
-  assertEquals(
+  assert.deepStrictEqual(error.code, "stale_session");
+  assert.deepStrictEqual(
     registry.assertCurrent(fenceForSession(replacement)).connectionId,
     "connection-2",
   );
-  assertEquals(registry.detach(fenceForSession(first)), undefined);
-  assertEquals(registry.get("worker-1")?.connectionId, "connection-2");
+  assert.deepStrictEqual(registry.detach(fenceForSession(first)), undefined);
+  assert.deepStrictEqual(
+    registry.get("worker-1")?.connectionId,
+    "connection-2",
+  );
 });
 
-Deno.test("equal generation replay cannot displace a live session", () => {
+test("equal generation replay cannot displace a live session", () => {
   const registry = createSessionRegistry({ clock: () => 10 });
   const first = attach(registry);
 
   const error = assertThrows(
     () => attach(registry, "connection-2", 1),
   ) as SupervisorError;
-  assertEquals(error.code, "stale_session");
-  assertEquals(registry.get("worker-1")?.connectionId, first.connectionId);
+  assert.deepStrictEqual(error.code, "stale_session");
+  assert.deepStrictEqual(
+    registry.get("worker-1")?.connectionId,
+    first.connectionId,
+  );
 });
 
-Deno.test("reused connection ID cannot revive an older generation fence", () => {
+test("reused connection ID cannot revive an older generation fence", () => {
   const registry = createSessionRegistry({ clock: () => 10 });
   const first = attach(registry);
   const oldLease = registry.lease(fenceForSession(first));
@@ -86,13 +94,16 @@ Deno.test("reused connection ID cannot revive an older generation fence", () => 
 
   const replacement = attach(registry, first.connectionId, 2);
   registry.markReady(fenceForSession(replacement));
-  assertEquals(oldLease.isCurrent(), false);
+  assert.deepStrictEqual(oldLease.isCurrent(), false);
   const error = assertThrows(() => oldLease.assertCurrent()) as SupervisorError;
-  assertEquals(error.code, "stale_session");
-  assertEquals(registry.isCurrent(fenceForSession(replacement)), true);
+  assert.deepStrictEqual(error.code, "stale_session");
+  assert.deepStrictEqual(
+    registry.isCurrent(fenceForSession(replacement)),
+    true,
+  );
 });
 
-Deno.test("session generation high-watermark survives detach and expiry", () => {
+test("session generation high-watermark survives detach and expiry", () => {
   let nowMs = 0;
   const registry = createSessionRegistry({ clock: () => nowMs });
   const first = attach(registry, "connection-1", 2);
@@ -101,11 +112,11 @@ Deno.test("session generation high-watermark survives detach and expiry", () => 
   const detachedStale = assertThrows(
     () => attach(registry, "connection-stale", 1),
   ) as SupervisorError;
-  assertEquals(detachedStale.code, "stale_session");
+  assert.deepStrictEqual(detachedStale.code, "stale_session");
   const detachedReplay = assertThrows(
     () => attach(registry, "connection-detached-replay", 2),
   ) as SupervisorError;
-  assertEquals(detachedReplay.code, "stale_session");
+  assert.deepStrictEqual(detachedReplay.code, "stale_session");
 
   const next = attach(registry, "connection-next", 3);
   nowMs = next.leaseExpiresAtMs;
@@ -113,14 +124,14 @@ Deno.test("session generation high-watermark survives detach and expiry", () => 
   const expiredStale = assertThrows(
     () => attach(registry, "connection-expired-stale", 3),
   ) as SupervisorError;
-  assertEquals(expiredStale.code, "stale_session");
-  assertEquals(
+  assert.deepStrictEqual(expiredStale.code, "stale_session");
+  assert.deepStrictEqual(
     attach(registry, "connection-after-expiry", 4).sessionGeneration,
     4,
   );
 });
 
-Deno.test("session heartbeat extends the lease and expiry removes readiness", () => {
+test("session heartbeat extends the lease and expiry removes readiness", () => {
   let nowMs = 0;
   const registry = createSessionRegistry({ clock: () => nowMs });
   const session = attach(registry);
@@ -129,15 +140,15 @@ Deno.test("session heartbeat extends the lease and expiry removes readiness", ()
 
   nowMs = 50;
   const heartbeat = registry.heartbeat(fence, { sequence: 0 });
-  assertEquals(heartbeat.leaseExpiresAtMs, 150);
+  assert.deepStrictEqual(heartbeat.leaseExpiresAtMs, 150);
   nowMs = 149;
-  assertEquals(registry.get("worker-1")?.phase, "ready");
+  assert.deepStrictEqual(registry.get("worker-1")?.phase, "ready");
   nowMs = 150;
-  assertEquals(registry.expireLeases()[0].phase, "expired");
-  assertEquals(registry.get("worker-1"), undefined);
+  assert.deepStrictEqual(registry.expireLeases()[0].phase, "expired");
+  assert.deepStrictEqual(registry.get("worker-1"), undefined);
 });
 
-Deno.test("in-process sessions retain readiness across an overdue heartbeat sweep", () => {
+test("in-process sessions retain readiness across an overdue heartbeat sweep", () => {
   let nowMs = 0;
   const registry = createSessionRegistry({ clock: () => nowMs });
   const session = registry.attach({
@@ -153,31 +164,31 @@ Deno.test("in-process sessions retain readiness across an overdue heartbeat swee
   registry.markReady(fence);
 
   nowMs = 10_000;
-  assertEquals(registry.expireLeases(), []);
-  assertEquals(registry.assertCurrent(fence).phase, "ready");
+  assert.deepStrictEqual(registry.expireLeases(), []);
+  assert.deepStrictEqual(registry.assertCurrent(fence).phase, "ready");
 });
 
-Deno.test("connected sessions use the Ready deadline and start their lease when published", () => {
+test("connected sessions use the Ready deadline and start their lease when published", () => {
   let nowMs = 0;
   const registry = createSessionRegistry({ clock: () => nowMs });
   const connected = attach(registry);
   const fence = fenceForSession(connected);
 
   nowMs = 1_000;
-  assertEquals(registry.expireLeases(), []);
-  assertEquals(registry.get("worker-1")?.phase, "connected");
+  assert.deepStrictEqual(registry.expireLeases(), []);
+  assert.deepStrictEqual(registry.get("worker-1")?.phase, "connected");
 
   const ready = registry.markReady(fence);
-  assertEquals(ready.lastHeartbeatAtMs, 1_000);
-  assertEquals(ready.leaseExpiresAtMs, 1_100);
+  assert.deepStrictEqual(ready.lastHeartbeatAtMs, 1_000);
+  assert.deepStrictEqual(ready.leaseExpiresAtMs, 1_100);
 
   nowMs = 1_099;
-  assertEquals(registry.expireLeases(), []);
+  assert.deepStrictEqual(registry.expireLeases(), []);
   nowMs = 1_100;
-  assertEquals(registry.expireLeases()[0]?.phase, "expired");
+  assert.deepStrictEqual(registry.expireLeases()[0]?.phase, "expired");
 });
 
-Deno.test("read and admission observers cannot consume lease-expiry events", () => {
+test("read and admission observers cannot consume lease-expiry events", () => {
   for (
     const observe of [
       (registry: ReturnType<typeof createSessionRegistry>) => registry.list(),
@@ -196,14 +207,14 @@ Deno.test("read and admission observers cannot consume lease-expiry events", () 
 
     observe(registry);
     const expired = registry.expireLeases();
-    assertEquals(expired.length, 1);
-    assertEquals(expired[0].connectionId, session.connectionId);
-    assertEquals(expired[0].phase, "expired");
-    assertEquals(registry.expireLeases(), []);
+    assert.deepStrictEqual(expired.length, 1);
+    assert.deepStrictEqual(expired[0].connectionId, session.connectionId);
+    assert.deepStrictEqual(expired[0].phase, "expired");
+    assert.deepStrictEqual(registry.expireLeases(), []);
   }
 });
 
-Deno.test("newer generation attachment reports an expired predecessor", () => {
+test("newer generation attachment reports an expired predecessor", () => {
   let nowMs = 0;
   const registry = createSessionRegistry({ clock: () => nowMs });
   const connected = attach(registry);
@@ -218,24 +229,27 @@ Deno.test("newer generation attachment reports an expired predecessor", () => {
     capacity: 2,
     leaseTimeoutMs: 100,
   });
-  assertEquals(attachment.replaced?.connectionId, first.connectionId);
-  assertEquals(attachment.replaced?.phase, "expired");
-  assertEquals(registry.get("worker-1")?.connectionId, "connection-2");
+  assert.deepStrictEqual(attachment.replaced?.connectionId, first.connectionId);
+  assert.deepStrictEqual(attachment.replaced?.phase, "expired");
+  assert.deepStrictEqual(
+    registry.get("worker-1")?.connectionId,
+    "connection-2",
+  );
 });
 
-Deno.test("draining stops admission and waits for reserved work", () => {
+test("draining stops admission and waits for reserved work", () => {
   const registry = createSessionRegistry({ clock: () => 10 });
   const session = attach(registry);
   const fence = fenceForSession(session);
   registry.markReady(fence);
   registry.reserve({ workload: "sandbox.command" });
   registry.reserve({ workload: "sandbox.command" });
-  assertEquals(registry.startDrain(fence).phase, "draining");
+  assert.deepStrictEqual(registry.startDrain(fence).phase, "draining");
 
   const exhausted = assertThrows(
     () => registry.reserve({ workload: "sandbox.command" }),
   ) as SupervisorError;
-  assertEquals(exhausted.code, "capacity_exhausted");
+  assert.deepStrictEqual(exhausted.code, "capacity_exhausted");
   assertThrows(
     () => registry.markDrained(fence),
     Error,
@@ -244,10 +258,10 @@ Deno.test("draining stops admission and waits for reserved work", () => {
 
   registry.release(fence);
   registry.release(fence);
-  assertEquals(registry.markDrained(fence).phase, "drained");
+  assert.deepStrictEqual(registry.markDrained(fence).phase, "drained");
 });
 
-Deno.test("explicit reservation targets one exact ready worker", () => {
+test("explicit reservation targets one exact ready worker", () => {
   const registry = createSessionRegistry({ clock: () => 10 });
   attachReadyWorker(registry, "worker-a");
   attachReadyWorker(registry, "worker-b");
@@ -256,12 +270,12 @@ Deno.test("explicit reservation targets one exact ready worker", () => {
     workload: "sandbox.command",
     target: { workerId: "worker-b" },
   });
-  assertEquals(targeted.identity.workerId, "worker-b");
-  assertEquals(registry.get("worker-a")?.reserved, 0);
-  assertEquals(registry.get("worker-b")?.reserved, 1);
+  assert.deepStrictEqual(targeted.identity.workerId, "worker-b");
+  assert.deepStrictEqual(registry.get("worker-a")?.reserved, 0);
+  assert.deepStrictEqual(registry.get("worker-b")?.reserved, 1);
 });
 
-Deno.test("targeted reservation never spills to another eligible worker", () => {
+test("targeted reservation never spills to another eligible worker", () => {
   const registry = createSessionRegistry({ clock: () => 10 });
   const workerA = attachReadyWorker(registry, "worker-a", {
     capacity: 1,
@@ -294,7 +308,7 @@ Deno.test("targeted reservation never spills to another eligible worker", () => 
     const error = assertThrows(() =>
       registry.reserve(input)
     ) as SupervisorError;
-    assertEquals(error.code, "capacity_exhausted");
+    assert.deepStrictEqual(error.code, "capacity_exhausted");
   }
 
   registry.startDrain(fenceForSession(workerB));
@@ -304,30 +318,30 @@ Deno.test("targeted reservation never spills to another eligible worker", () => 
       target: { workerId: "worker-b" },
     })
   ) as SupervisorError;
-  assertEquals(draining.code, "capacity_exhausted");
-  assertEquals(registry.get("worker-a")?.reserved, 1);
-  assertEquals(registry.get("worker-b")?.reserved, 0);
+  assert.deepStrictEqual(draining.code, "capacity_exhausted");
+  assert.deepStrictEqual(registry.get("worker-a")?.reserved, 1);
+  assert.deepStrictEqual(registry.get("worker-b")?.reserved, 0);
   registry.release(fenceForSession(workerA));
 });
 
-Deno.test("untargeted reservation retains least-load balancing", () => {
+test("untargeted reservation retains least-load balancing", () => {
   const registry = createSessionRegistry({ clock: () => 10 });
   attachReadyWorker(registry, "worker-a");
   attachReadyWorker(registry, "worker-b");
 
-  assertEquals(
+  assert.deepStrictEqual(
     registry.reserve({ workload: "sandbox.command" }).identity.workerId,
     "worker-a",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     registry.reserve({ workload: "sandbox.command" }).identity.workerId,
     "worker-b",
   );
-  assertEquals(registry.get("worker-a")?.reserved, 1);
-  assertEquals(registry.get("worker-b")?.reserved, 1);
+  assert.deepStrictEqual(registry.get("worker-a")?.reserved, 1);
+  assert.deepStrictEqual(registry.get("worker-b")?.reserved, 1);
 });
 
-Deno.test("lower epochs and conflicting attempts cannot replace a session", () => {
+test("lower epochs and conflicting attempts cannot replace a session", () => {
   const registry = createSessionRegistry({ clock: () => 10 });
   attach(registry);
 
@@ -345,7 +359,7 @@ Deno.test("lower epochs and conflicting attempts cannot replace a session", () =
       leaseTimeoutMs: 100,
     })
   ) as SupervisorError;
-  assertEquals(stale.code, "stale_session");
+  assert.deepStrictEqual(stale.code, "stale_session");
 
   const conflict = assertThrows(() =>
     registry.attach({
@@ -361,5 +375,5 @@ Deno.test("lower epochs and conflicting attempts cannot replace a session", () =
       leaseTimeoutMs: 100,
     })
   ) as SupervisorError;
-  assertEquals(conflict.code, "stale_session");
+  assert.deepStrictEqual(conflict.code, "stale_session");
 });

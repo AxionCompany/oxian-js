@@ -1,4 +1,6 @@
-import { assertEquals, assertNotStrictEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import {
   type ControlFrame,
   createDrainedFrame,
@@ -35,7 +37,7 @@ const IDENTITY = createWorkerIdentity({
   epoch: 3,
 });
 
-Deno.test("control frames: all v1 frame factories round-trip strictly", () => {
+test("control frames: all v1 frame factories round-trip strictly", () => {
   const frames: ControlFrame[] = [
     createHelloFrame({
       handshakeId: "handshake-1",
@@ -117,12 +119,12 @@ Deno.test("control frames: all v1 frame factories round-trip strictly", () => {
   ];
 
   for (const frame of frames) {
-    assertEquals(parseControlFrame(encodeControlFrame(frame)), frame);
-    assertEquals(frame.protocol, WORKER_PROTOCOL);
+    assert.deepStrictEqual(parseControlFrame(encodeControlFrame(frame)), frame);
+    assert.deepStrictEqual(frame.protocol, WORKER_PROTOCOL);
   }
 });
 
-Deno.test("control frames: decoder rejects unknown and missing fields", () => {
+test("control frames: decoder rejects unknown and missing fields", () => {
   const hello = createHelloFrame({
     handshakeId: "handshake-1",
     identity: IDENTITY,
@@ -155,7 +157,7 @@ Deno.test("control frames: decoder rejects unknown and missing fields", () => {
   );
 });
 
-Deno.test("control frames: decoder rejects unsupported protocol and type", () => {
+test("control frames: decoder rejects unsupported protocol and type", () => {
   const ready = createReadyFrame({
     connectionId: "connection-1",
     capacity: 1,
@@ -182,7 +184,7 @@ Deno.test("control frames: decoder rejects unsupported protocol and type", () =>
   );
 });
 
-Deno.test("control frames: parser and encoder enforce UTF-8 byte limits", () => {
+test("control frames: parser and encoder enforce UTF-8 byte limits", () => {
   const frame = createProtocolErrorFrame({
     code: "bad_frame",
     message: "💥",
@@ -190,7 +192,7 @@ Deno.test("control frames: parser and encoder enforce UTF-8 byte limits", () => 
   const encoded = encodeControlFrame(frame);
   const frameBytes = new TextEncoder().encode(encoded).byteLength;
 
-  assertEquals(
+  assert.deepStrictEqual(
     parseControlFrame(encoded, { maxFrameBytes: frameBytes }),
     frame,
   );
@@ -199,7 +201,7 @@ Deno.test("control frames: parser and encoder enforce UTF-8 byte limits", () => 
     TypeError,
     "control frame is",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (oversized as ProtocolViolation).code,
     "control_frame_too_large",
   );
@@ -231,7 +233,7 @@ Deno.test("control frames: parser and encoder enforce UTF-8 byte limits", () => 
   );
 });
 
-Deno.test("control frames: factories enforce identity and lifecycle bounds", () => {
+test("control frames: factories enforce identity and lifecycle bounds", () => {
   assertThrows(
     () =>
       createWorkerIdentity({
@@ -293,7 +295,7 @@ Deno.test("control frames: factories enforce identity and lifecycle bounds", () 
   );
 });
 
-Deno.test("control frames: metadata must be JSON and is copied", () => {
+test("control frames: metadata must be JSON and is copied", () => {
   const metadata: Record<string, unknown> = {
     nested: { value: 1 },
     list: [true, null, "value"],
@@ -303,9 +305,9 @@ Deno.test("control frames: metadata must be JSON and is copied", () => {
     metadata: metadata as never,
   });
 
-  assertNotStrictEquals(frame.metadata, metadata);
+  assert.notStrictEqual(frame.metadata, metadata);
   (metadata.nested as Record<string, unknown>).value = 2;
-  assertEquals(frame.metadata, {
+  assert.deepStrictEqual(frame.metadata, {
     nested: { value: 1 },
     list: [true, null, "value"],
   });
@@ -333,14 +335,14 @@ Deno.test("control frames: metadata must be JSON and is copied", () => {
   );
 });
 
-Deno.test("control frames: heartbeat metadata defaults, copies, and stays bounded", () => {
+test("control frames: heartbeat metadata defaults, copies, and stays bounded", () => {
   const base = {
     connectionId: "connection-1",
     sequence: 0,
     inflight: 0,
     availableCapacity: 1,
   } as const;
-  assertEquals(createHeartbeatFrame(base).metadata, {});
+  assert.deepStrictEqual(createHeartbeatFrame(base).metadata, {});
 
   const metadata: Record<string, unknown> = {
     status: { dirty: true },
@@ -349,9 +351,9 @@ Deno.test("control frames: heartbeat metadata defaults, copies, and stays bounde
     ...base,
     metadata: metadata as never,
   });
-  assertNotStrictEquals(frame.metadata, metadata);
+  assert.notStrictEqual(frame.metadata, metadata);
   (metadata.status as Record<string, unknown>).dirty = false;
-  assertEquals(frame.metadata, { status: { dirty: true } });
+  assert.deepStrictEqual(frame.metadata, { status: { dirty: true } });
 
   assertThrows(
     () =>
@@ -382,13 +384,13 @@ Deno.test("control frames: heartbeat metadata defaults, copies, and stays bounde
     TypeError,
     "control frame is",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (error as ProtocolViolation).code,
     "control_frame_too_large",
   );
 });
 
-Deno.test("control frames: metadata safely preserves __proto__ as data", () => {
+test("control frames: metadata safely preserves __proto__ as data", () => {
   const metadata = JSON.parse(
     '{"__proto__":{"polluted":true},"constructor":"plain-data"}',
   );
@@ -397,11 +399,14 @@ Deno.test("control frames: metadata safely preserves __proto__ as data", () => {
     metadata,
   });
 
-  assertEquals(Object.getPrototypeOf(frame.metadata), Object.prototype);
-  assertEquals(Object.hasOwn(frame.metadata, "__proto__"), true);
-  assertEquals(frame.metadata, {
+  assert.deepStrictEqual(
+    Object.getPrototypeOf(frame.metadata),
+    Object.prototype,
+  );
+  assert.deepStrictEqual(Object.hasOwn(frame.metadata, "__proto__"), true);
+  assert.deepStrictEqual(frame.metadata, {
     ["__proto__"]: { polluted: true },
     constructor: "plain-data",
   });
-  assertEquals(({} as Record<string, unknown>).polluted, undefined);
+  assert.deepStrictEqual(({} as Record<string, unknown>).polluted, undefined);
 });

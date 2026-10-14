@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": []
+  },
+  "files": [
+    "src/mod.ts",
+    "src/http/index.ts",
+    "src/hypervisor/index.ts",
+    "src/lifecycle/index.ts",
+    "src/protocol/index.ts",
+    "src/providers/core.ts",
+    "src/supervisor/index.ts",
+    "src/transport/index.ts",
+    "src/work/index.ts",
+    "src/worker/index.ts"
+  ]
+}

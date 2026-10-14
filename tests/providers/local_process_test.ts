@@ -1,4 +1,6 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
 import {
   createLocalProcessProvider,
   isProviderError,
@@ -57,168 +59,147 @@ async function assertTamperedReferencesRejected(
       ]
     ) {
       const error = await assertRejects(operation, Error);
-      assertEquals(isProviderError(error), true);
+      assert.deepStrictEqual(isProviderError(error), true);
       if (isProviderError(error)) {
-        assertEquals(error.code, "invalid_resource");
+        assert.deepStrictEqual(error.code, "invalid_resource");
       }
     }
   }
 }
 
-Deno.test({
-  name: "local process provider passes conformance with a real child",
-  permissions: {
-    run: true,
-  },
-  async fn() {
-    const provider = createLocalProcessProvider({
-      createResourceId: () => "local-conformance-child",
-      defaultGracePeriodMs: 500,
-    });
+test("local process provider passes conformance with a real child", async () => {
+  const provider = createLocalProcessProvider({
+    createResourceId: () => "local-conformance-child",
+    defaultGracePeriodMs: 500,
+  });
 
-    const report = await runProviderConformance({
-      provider,
-      launch: {
-        command: Deno.execPath(),
-        args: [
-          "eval",
-          "setInterval(() => {}, 60000); await new Promise(() => {});",
-        ],
-        stdout: "null",
-        stderr: "null",
-      },
-    });
+  const report = await runProviderConformance({
+    provider,
+    launch: {
+      command: Deno.execPath(),
+      args: [
+        "eval",
+        "setInterval(() => {}, 60000); await new Promise(() => {});",
+      ],
+      stdout: "null",
+      stderr: "null",
+    },
+  });
 
-    assertEquals(report.initialInspection.state, "present");
-    assertEquals(report.termination.outcome, "terminated");
-    assertEquals(report.finalInspection.state, "absent");
-    assertEquals(
-      typeof report.initialInspection.details.pid,
-      "number",
-    );
-    await assertTamperedReferencesRejected(
-      provider,
-      report.resource,
-    );
-  },
+  assert.deepStrictEqual(report.initialInspection.state, "present");
+  assert.deepStrictEqual(report.termination.outcome, "terminated");
+  assert.deepStrictEqual(report.finalInspection.state, "absent");
+  assert.deepStrictEqual(
+    typeof report.initialInspection.details.pid,
+    "number",
+  );
+  await assertTamperedReferencesRejected(
+    provider,
+    report.resource,
+  );
 });
 
-Deno.test({
-  name: "local process provider passes explicit args, env, and cwd",
-  permissions: {
-    env: ["OXIAN_PROVIDER_TEST_INHERITED"],
-    read: true,
-    run: true,
-    write: true,
-  },
-  async fn() {
-    const directory = await Deno.makeTempDir({
-      prefix: "oxian-provider-test-",
-    });
-    const markerPath = `${directory}/marker.json`;
-    const expectedArgument = "expected-argument";
-    Deno.env.set(
-      "OXIAN_PROVIDER_TEST_INHERITED",
-      "must-not-reach-the-child",
-    );
-    const provider = createLocalProcessProvider({
-      createResourceId: () => "explicit-launch-child",
-      defaultGracePeriodMs: 500,
-    });
-    const resource = await provider.provision({
-      identity: {
-        workerId: "worker-explicit",
-        attemptId: "attempt-explicit",
-        epoch: 1,
+test("local process provider passes explicit args, env, and cwd", async () => {
+  const directory = await Deno.makeTempDir({
+    prefix: "oxian-provider-test-",
+  });
+  const markerPath = `${directory}/marker.json`;
+  const expectedArgument = "expected-argument";
+  Deno.env.set(
+    "OXIAN_PROVIDER_TEST_INHERITED",
+    "must-not-reach-the-child",
+  );
+  const provider = createLocalProcessProvider({
+    createResourceId: () => "explicit-launch-child",
+    defaultGracePeriodMs: 500,
+  });
+  const resource = await provider.provision({
+    identity: {
+      workerId: "worker-explicit",
+      attemptId: "attempt-explicit",
+      epoch: 1,
+    },
+    launch: {
+      command: Deno.execPath(),
+      args: [
+        "run",
+        `--allow-env=OXIAN_PROVIDER_TEST_MARKER,OXIAN_PROVIDER_TEST_ARGUMENT,OXIAN_PROVIDER_TEST_IGNORE_SIGTERM,OXIAN_PROVIDER_TEST_INHERITED`,
+        `--allow-write=${directory}`,
+        fixtureUrl.toString(),
+        expectedArgument,
+      ],
+      cwd: directory,
+      env: {
+        OXIAN_PROVIDER_TEST_ARGUMENT: expectedArgument,
+        OXIAN_PROVIDER_TEST_MARKER: markerPath,
       },
-      launch: {
-        command: Deno.execPath(),
-        args: [
-          "run",
-          `--allow-env=OXIAN_PROVIDER_TEST_MARKER,OXIAN_PROVIDER_TEST_ARGUMENT,OXIAN_PROVIDER_TEST_IGNORE_SIGTERM,OXIAN_PROVIDER_TEST_INHERITED`,
-          `--allow-write=${directory}`,
-          fixtureUrl.toString(),
-          expectedArgument,
-        ],
-        cwd: directory,
-        env: {
-          OXIAN_PROVIDER_TEST_ARGUMENT: expectedArgument,
-          OXIAN_PROVIDER_TEST_MARKER: markerPath,
-        },
-        stdout: "null",
-        stderr: "null",
-      },
+      stdout: "null",
+      stderr: "null",
+    },
+  });
+
+  try {
+    await waitFor(async () => {
+      try {
+        await Deno.stat(markerPath);
+        return true;
+      } catch (error) {
+        if (error instanceof Deno.errors.NotFound) return false;
+        throw error;
+      }
     });
 
-    try {
-      await waitFor(async () => {
-        try {
-          await Deno.stat(markerPath);
-          return true;
-        } catch (error) {
-          if (error instanceof Deno.errors.NotFound) return false;
-          throw error;
-        }
-      });
+    const marker = JSON.parse(await Deno.readTextFile(markerPath));
+    assert.deepStrictEqual(marker, {
+      argument: expectedArgument,
+      cwd: await Deno.realPath(directory),
+      env: expectedArgument,
+      ignoresSigterm: false,
+      inheritedSentinel: null,
+    });
+    assert.deepStrictEqual((await provider.inspect(resource)).state, "present");
+  } finally {
+    Deno.env.delete("OXIAN_PROVIDER_TEST_INHERITED");
+    await provider.terminate(resource, {
+      gracePeriodMs: 500,
+    });
+    await Deno.remove(directory, { recursive: true });
+  }
 
-      const marker = JSON.parse(await Deno.readTextFile(markerPath));
-      assertEquals(marker, {
-        argument: expectedArgument,
-        cwd: await Deno.realPath(directory),
-        env: expectedArgument,
-        ignoresSigterm: false,
-        inheritedSentinel: null,
-      });
-      assertEquals((await provider.inspect(resource)).state, "present");
-    } finally {
-      Deno.env.delete("OXIAN_PROVIDER_TEST_INHERITED");
-      await provider.terminate(resource, {
-        gracePeriodMs: 500,
-      });
-      await Deno.remove(directory, { recursive: true });
-    }
-
-    assertEquals((await provider.inspect(resource)).state, "absent");
-  },
+  assert.deepStrictEqual((await provider.inspect(resource)).state, "absent");
 });
 
-Deno.test({
-  name: "local process provider reports unexpected non-zero exits",
-  permissions: {
-    run: true,
-  },
-  async fn() {
-    const provider = createLocalProcessProvider({
-      createResourceId: () => "failed-child",
-    });
-    const resource = await provider.provision({
-      identity: {
-        workerId: "worker-failure",
-        attemptId: "attempt-failure",
-        epoch: 1,
-      },
-      launch: {
-        command: Deno.execPath(),
-        args: ["eval", "Deno.exit(23);"],
-        stdout: "null",
-        stderr: "null",
-      },
-    });
+test("local process provider reports unexpected non-zero exits", async () => {
+  const provider = createLocalProcessProvider({
+    createResourceId: () => "failed-child",
+  });
+  const resource = await provider.provision({
+    identity: {
+      workerId: "worker-failure",
+      attemptId: "attempt-failure",
+      epoch: 1,
+    },
+    launch: {
+      command: Deno.execPath(),
+      args: ["eval", "Deno.exit(23);"],
+      stdout: "null",
+      stderr: "null",
+    },
+  });
 
-    await waitFor(async () =>
-      (await provider.inspect(resource)).state === "failed"
-    );
-    const inspection = await provider.inspect(resource);
-    assertEquals(inspection.state, "failed");
-    assertEquals(inspection.details.exitCode, 23);
-    assertEquals(
-      (await provider.terminate(resource)).outcome,
-      "already_absent",
-    );
-  },
+  await waitFor(async () =>
+    (await provider.inspect(resource)).state === "failed"
+  );
+  const inspection = await provider.inspect(resource);
+  assert.deepStrictEqual(inspection.state, "failed");
+  assert.deepStrictEqual(inspection.details.exitCode, 23);
+  assert.deepStrictEqual(
+    (await provider.terminate(resource)).outcome,
+    "already_absent",
+  );
 });
 
-Deno.test("local process provider rejects invalid launch specs before spawning", async () => {
+test("local process provider rejects invalid launch specs before spawning", async () => {
   const provider = createLocalProcessProvider();
   const error = await assertRejects(
     () =>
@@ -235,13 +216,13 @@ Deno.test("local process provider rejects invalid launch specs before spawning",
     Error,
   );
 
-  assertEquals(isProviderError(error), true);
+  assert.deepStrictEqual(isProviderError(error), true);
   if (isProviderError(error)) {
-    assertEquals(error.code, "invalid_launch_spec");
+    assert.deepStrictEqual(error.code, "invalid_launch_spec");
   }
 });
 
-Deno.test("local process provider reports rejected child status as unknown", async () => {
+test("local process provider reports rejected child status as unknown", async () => {
   const signals: Array<Deno.Signal | undefined> = [];
   const provider = createLocalProcessProvider({
     createResourceId: () => "rejected-status-child",
@@ -263,23 +244,23 @@ Deno.test("local process provider reports rejected child status as unknown", asy
   });
 
   await Promise.resolve();
-  assertEquals((await provider.inspect(resource)).state, "unknown");
+  assert.deepStrictEqual((await provider.inspect(resource)).state, "unknown");
   const error = await assertRejects(
     () => provider.terminate(resource),
     Error,
   );
-  assertEquals(isProviderError(error), true);
+  assert.deepStrictEqual(isProviderError(error), true);
   if (isProviderError(error)) {
-    assertEquals(error.code, "termination_failed");
-    assertEquals(
+    assert.deepStrictEqual(error.code, "termination_failed");
+    assert.deepStrictEqual(
       (error.cause as Error).message,
       "status channel failed",
     );
   }
-  assertEquals(signals, ["SIGKILL"]);
+  assert.deepStrictEqual(signals, ["SIGKILL"]);
 });
 
-Deno.test("local process forced termination has a bounded status wait", async () => {
+test("local process forced termination has a bounded status wait", async () => {
   const signals: Array<Deno.Signal | undefined> = [];
   const provider = createLocalProcessProvider({
     createResourceId: () => "stuck-status-child",
@@ -307,77 +288,69 @@ Deno.test("local process forced termination has a bounded status wait", async ()
     () => provider.terminate(resource),
     Error,
   );
-  assertEquals(isProviderError(error), true);
+  assert.deepStrictEqual(isProviderError(error), true);
   if (isProviderError(error)) {
-    assertEquals(error.code, "termination_failed");
+    assert.deepStrictEqual(error.code, "termination_failed");
   }
-  assertEquals(signals, ["SIGTERM", "SIGKILL"]);
-  assertEquals(performance.now() - startedAt < 1_000, true);
+  assert.deepStrictEqual(signals, ["SIGTERM", "SIGKILL"]);
+  assert.deepStrictEqual(performance.now() - startedAt < 1_000, true);
 });
 
-Deno.test({
-  name: "local process provider force-kills a real child that ignores SIGTERM",
-  permissions: {
-    read: true,
-    run: true,
-    write: true,
-  },
-  async fn() {
-    const directory = await Deno.makeTempDir({
-      prefix: "oxian-provider-force-test-",
-    });
-    const markerPath = `${directory}/marker.json`;
-    const provider = createLocalProcessProvider({
-      createResourceId: () => "sigterm-resistant-child",
-      defaultGracePeriodMs: 30,
-      forceExitTimeoutMs: 1_000,
-    });
-    const resource = await provider.provision({
-      identity: {
-        workerId: "worker-force",
-        attemptId: "attempt-force",
-        epoch: 1,
+test("local process provider force-kills a real child that ignores SIGTERM", async () => {
+  const directory = await Deno.makeTempDir({
+    prefix: "oxian-provider-force-test-",
+  });
+  const markerPath = `${directory}/marker.json`;
+  const provider = createLocalProcessProvider({
+    createResourceId: () => "sigterm-resistant-child",
+    defaultGracePeriodMs: 30,
+    forceExitTimeoutMs: 1_000,
+  });
+  const resource = await provider.provision({
+    identity: {
+      workerId: "worker-force",
+      attemptId: "attempt-force",
+      epoch: 1,
+    },
+    launch: {
+      command: Deno.execPath(),
+      args: [
+        "run",
+        `--allow-env=OXIAN_PROVIDER_TEST_MARKER,OXIAN_PROVIDER_TEST_ARGUMENT,OXIAN_PROVIDER_TEST_IGNORE_SIGTERM,OXIAN_PROVIDER_TEST_INHERITED`,
+        `--allow-write=${directory}`,
+        fixtureUrl.toString(),
+        "force-test",
+      ],
+      cwd: directory,
+      env: {
+        OXIAN_PROVIDER_TEST_ARGUMENT: "force-test",
+        OXIAN_PROVIDER_TEST_IGNORE_SIGTERM: "true",
+        OXIAN_PROVIDER_TEST_MARKER: markerPath,
       },
-      launch: {
-        command: Deno.execPath(),
-        args: [
-          "run",
-          `--allow-env=OXIAN_PROVIDER_TEST_MARKER,OXIAN_PROVIDER_TEST_ARGUMENT,OXIAN_PROVIDER_TEST_IGNORE_SIGTERM,OXIAN_PROVIDER_TEST_INHERITED`,
-          `--allow-write=${directory}`,
-          fixtureUrl.toString(),
-          "force-test",
-        ],
-        cwd: directory,
-        env: {
-          OXIAN_PROVIDER_TEST_ARGUMENT: "force-test",
-          OXIAN_PROVIDER_TEST_IGNORE_SIGTERM: "true",
-          OXIAN_PROVIDER_TEST_MARKER: markerPath,
-        },
-        stdout: "null",
-        stderr: "null",
-      },
+      stdout: "null",
+      stderr: "null",
+    },
+  });
+
+  try {
+    await waitFor(async () => {
+      try {
+        await Deno.stat(markerPath);
+        return true;
+      } catch (error) {
+        if (error instanceof Deno.errors.NotFound) return false;
+        throw error;
+      }
     });
 
-    try {
-      await waitFor(async () => {
-        try {
-          await Deno.stat(markerPath);
-          return true;
-        } catch (error) {
-          if (error instanceof Deno.errors.NotFound) return false;
-          throw error;
-        }
-      });
-
-      const startedAt = performance.now();
-      const termination = await provider.terminate(resource);
-      assertEquals(termination.outcome, "terminated");
-      assertEquals(termination.details.signal, "SIGKILL");
-      assertEquals(performance.now() - startedAt < 2_000, true);
-      assertEquals((await provider.inspect(resource)).state, "absent");
-    } finally {
-      await provider.terminate(resource).catch(() => {});
-      await Deno.remove(directory, { recursive: true });
-    }
-  },
+    const startedAt = performance.now();
+    const termination = await provider.terminate(resource);
+    assert.deepStrictEqual(termination.outcome, "terminated");
+    assert.deepStrictEqual(termination.details.signal, "SIGKILL");
+    assert.deepStrictEqual(performance.now() - startedAt < 2_000, true);
+    assert.deepStrictEqual((await provider.inspect(resource)).state, "absent");
+  } finally {
+    await provider.terminate(resource).catch(() => {});
+    await Deno.remove(directory, { recursive: true });
+  }
 });

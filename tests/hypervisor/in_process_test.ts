@@ -1,4 +1,6 @@
-import { assertEquals, assertRejects, assertStrictEquals } from "@std/assert";
+import { afterEach, test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
 import {
   createHypervisor as createPublicHypervisor,
   type Hypervisor,
@@ -16,6 +18,13 @@ import {
 import type { InProcessTransport } from "../../src/transport/index.ts";
 
 const transports = new WeakMap<Hypervisor, InProcessTransport>();
+// Workers reconnect after their Hypervisor shuts down until they are stopped.
+const workers = new Set<Worker>();
+
+afterEach(async () => {
+  await Promise.all([...workers].map((worker) => worker.stop()));
+  workers.clear();
+});
 
 function createHypervisor(
   options: Readonly<{
@@ -85,6 +94,7 @@ function createWorker(
         }),
     }),
   });
+  workers.add(worker);
   if (options.onStateChange !== undefined) {
     const reader = worker.events.getReader();
     void (async () => {
@@ -154,7 +164,7 @@ async function waitUntil(condition: () => boolean): Promise<void> {
   throw new Error("condition did not become true");
 }
 
-Deno.test("in-process connections do not arm WebSocket age rotation", async () => {
+test("in-process connections do not arm WebSocket age rotation", async () => {
   type ScheduledTimer = {
     delayMs: number;
     cancelled: boolean;
@@ -184,8 +194,8 @@ Deno.test("in-process connections do not arm WebSocket age rotation", async () =
   });
 
   try {
-    assertEquals(worker.snapshot().state, "ready");
-    assertEquals(
+    assert.deepStrictEqual(worker.snapshot().state, "ready");
+    assert.deepStrictEqual(
       timers.some((timer) =>
         !timer.cancelled && timer.delayMs > 40_000 && timer.delayMs < 60_000
       ),
@@ -196,7 +206,7 @@ Deno.test("in-process connections do not arm WebSocket age rotation", async () =
   }
 });
 
-Deno.test("in-process work starts only after durable acceptance commits", async () => {
+test("in-process work starts only after durable acceptance commits", async () => {
   const persistence = createDeferred<void>();
   let accepted: AcceptanceCommit | undefined;
   let invoked = false;
@@ -229,20 +239,20 @@ Deno.test("in-process work starts only after durable acceptance commits", async 
     });
     await waitUntil(() => accepted !== undefined);
 
-    assertEquals(invoked, false);
-    assertEquals(accepted?.metadata, {
+    assert.deepStrictEqual(invoked, false);
+    assert.deepStrictEqual(accepted?.metadata, {
       conversationId: "conversation-1",
     });
-    assertEquals(typeof accepted?.operationId, "string");
-    assertEquals(accepted?.target, { workerId: "embedded-worker" });
-    assertEquals(accepted?.deadlineAtMs, deadlineAtMs);
-    assertEquals(accepted?.deliveryCount, 1);
-    assertEquals(
+    assert.deepStrictEqual(typeof accepted?.operationId, "string");
+    assert.deepStrictEqual(accepted?.target, { workerId: "embedded-worker" });
+    assert.deepStrictEqual(accepted?.deadlineAtMs, deadlineAtMs);
+    assert.deepStrictEqual(accepted?.deliveryCount, 1);
+    assert.deepStrictEqual(
       Number.isSafeInteger(accepted?.claimedAtMs) &&
         (accepted?.claimedAtMs ?? -1) >= 0,
       true,
     );
-    assertEquals(
+    assert.deepStrictEqual(
       accepted?.assignment.fence.identity,
       worker.snapshot().identity,
     );
@@ -250,17 +260,20 @@ Deno.test("in-process work starts only after durable acceptance commits", async 
     persistence.resolve();
     const handle = await pendingHandle;
     await handle.started;
-    assertEquals(invoked, true);
-    assertEquals(await handle.metadata, { channel: "text" });
-    assertEquals(await readText(handle.output), "done");
-    assertEquals((await handle.completed).status, "completed");
-    assertEquals(hypervisor.sessions.get("embedded-worker")?.reserved, 0);
+    assert.deepStrictEqual(invoked, true);
+    assert.deepStrictEqual(await handle.metadata, { channel: "text" });
+    assert.deepStrictEqual(await readText(handle.output), "done");
+    assert.deepStrictEqual((await handle.completed).status, "completed");
+    assert.deepStrictEqual(
+      hypervisor.sessions.get("embedded-worker")?.reserved,
+      0,
+    );
   } finally {
     await hypervisor.shutdown();
   }
 });
 
-Deno.test("in-process workers are not routable before initialization completes", async () => {
+test("in-process workers are not routable before initialization completes", async () => {
   const initialized = createDeferred<void>();
   const hypervisor = createHypervisor({
     commitAcceptedWork: () => Promise.resolve(),
@@ -272,22 +285,25 @@ Deno.test("in-process workers are not routable before initialization completes",
     beforeReady: () => initialized.promise,
   });
   const running = worker.closed;
-  assertStrictEquals(worker.closed, running);
+  assert.strictEqual(worker.closed, running);
 
   try {
     await Promise.resolve();
-    assertEquals(hypervisor.sessions.get("initializing-worker"), undefined);
+    assert.deepStrictEqual(
+      hypervisor.sessions.get("initializing-worker"),
+      undefined,
+    );
     await assertRejects(() => hypervisor.dispatch({ workload: "task" }));
 
     initialized.resolve();
     await worker.ready;
-    assertEquals(
+    assert.deepStrictEqual(
       hypervisor.sessions.get("initializing-worker")?.phase,
       "ready",
     );
     const handle = await hypervisor.dispatch({ workload: "task" });
     await readText(handle.output);
-    assertEquals((await handle.completed).status, "completed");
+    assert.deepStrictEqual((await handle.completed).status, "completed");
   } finally {
     initialized.resolve();
     await worker.stop("test_complete");
@@ -296,7 +312,7 @@ Deno.test("in-process workers are not routable before initialization completes",
   }
 });
 
-Deno.test("stopping an in-process Worker does not wait for a hung initializer", async () => {
+test("stopping an in-process Worker does not wait for a hung initializer", async () => {
   const entered = createDeferred<void>();
   const hypervisor = createHypervisor({
     commitAcceptedWork: () => Promise.resolve(),
@@ -317,12 +333,15 @@ Deno.test("stopping an in-process Worker does not wait for a hung initializer", 
 
   await entered.promise;
   await worker.stop("test_stop");
-  assertEquals(await running, { reason: "stopped" });
-  assertEquals(hypervisor.sessions.get("hung-initializer"), undefined);
+  assert.deepStrictEqual(await running, { reason: "stopped" });
+  assert.deepStrictEqual(
+    hypervisor.sessions.get("hung-initializer"),
+    undefined,
+  );
   await hypervisor.shutdown();
 });
 
-Deno.test("maintenance drain cannot expose or duplicate a pre-ready Worker", async () => {
+test("maintenance drain cannot expose or duplicate a pre-ready Worker", async () => {
   const entered = createDeferred<void>();
   const release = createDeferred<void>();
   let calls = 0;
@@ -344,19 +363,22 @@ Deno.test("maintenance drain cannot expose or duplicate a pre-ready Worker", asy
   try {
     await entered.promise;
     await hypervisor.drain("serialized-initializer");
-    assertEquals(worker.snapshot().state, "handshaking");
-    assertEquals(hypervisor.sessions.get("serialized-initializer"), undefined);
-    assertEquals(calls, 1);
+    assert.deepStrictEqual(worker.snapshot().state, "handshaking");
+    assert.deepStrictEqual(
+      hypervisor.sessions.get("serialized-initializer"),
+      undefined,
+    );
+    assert.deepStrictEqual(calls, 1);
 
     await worker.stop("test_complete");
-    assertEquals(await running, { reason: "stopped" });
+    assert.deepStrictEqual(await running, { reason: "stopped" });
   } finally {
     release.resolve();
     await hypervisor.shutdown();
   }
 });
 
-Deno.test("in-process initialization is session-scoped across maintenance rebinds", async () => {
+test("in-process initialization is session-scoped across maintenance rebinds", async () => {
   const contexts: Array<
     Readonly<{
       reconnecting: boolean;
@@ -384,21 +406,21 @@ Deno.test("in-process initialization is session-scoped across maintenance rebind
     await reinitialized.promise;
     await waitUntil(() => worker.snapshot().state === "ready");
 
-    assertEquals(contexts.map(({ reconnecting }) => reconnecting), [
+    assert.deepStrictEqual(contexts.map(({ reconnecting }) => reconnecting), [
       false,
       true,
     ]);
-    assertEquals(contexts[0].signal.aborted, true);
-    assertEquals(contexts[1].signal.aborted, false);
-    assertEquals(worker.snapshot().state, "ready");
+    assert.deepStrictEqual(contexts[0].signal.aborted, true);
+    assert.deepStrictEqual(contexts[1].signal.aborted, false);
+    assert.deepStrictEqual(worker.snapshot().state, "ready");
   } finally {
     await worker.stop("test_complete");
-    assertEquals(await running, { reason: "stopped" });
+    assert.deepStrictEqual(await running, { reason: "stopped" });
     await hypervisor.shutdown();
   }
 });
 
-Deno.test("an overdue in-process lease sweep does not fence a live Worker", async () => {
+test("an overdue in-process lease sweep does not fence a live Worker", async () => {
   type ScheduledTimer = {
     callback: () => void;
     delayMs: number;
@@ -435,7 +457,10 @@ Deno.test("an overdue in-process lease sweep does not fence a live Worker", asyn
 
   try {
     await worker.ready;
-    assertEquals(hypervisor.sessions.get("bound-worker")?.phase, "ready");
+    assert.deepStrictEqual(
+      hypervisor.sessions.get("bound-worker")?.phase,
+      "ready",
+    );
 
     // A request-scoped CPU pause makes the local heartbeat and lease sweep
     // overdue together. Resuming must not self-fence the live session.
@@ -447,11 +472,14 @@ Deno.test("an overdue in-process lease sweep does not fence a live Worker", asyn
       throw new Error("expected the Hypervisor lease sweep to be scheduled");
     }
     overdueSweep.callback();
-    assertEquals(hypervisor.sessions.get("bound-worker")?.phase, "ready");
+    assert.deepStrictEqual(
+      hypervisor.sessions.get("bound-worker")?.phase,
+      "ready",
+    );
 
     const handle = await hypervisor.dispatch({ workload: "task" });
     await readText(handle.output);
-    assertEquals((await handle.completed).status, "completed");
+    assert.deepStrictEqual((await handle.completed).status, "completed");
   } finally {
     await worker.stop("test_complete");
     await running;
@@ -459,7 +487,7 @@ Deno.test("an overdue in-process lease sweep does not fence a live Worker", asyn
   }
 });
 
-Deno.test("in-process streams remain bidirectional and runtime-neutral", async () => {
+test("in-process streams remain bidirectional and runtime-neutral", async () => {
   const hypervisor = createHypervisor({
     commitAcceptedWork: () => Promise.resolve(),
   });
@@ -492,15 +520,17 @@ Deno.test("in-process streams remain bidirectional and runtime-neutral", async (
       workload: "media.stream",
       body,
     });
-    assertEquals(await handle.metadata, { contentType: "text/plain" });
-    assertEquals(await readText(handle.output), "REALTIME");
-    assertEquals((await handle.completed).status, "completed");
+    assert.deepStrictEqual(await handle.metadata, {
+      contentType: "text/plain",
+    });
+    assert.deepStrictEqual(await readText(handle.output), "REALTIME");
+    assert.deepStrictEqual((await handle.completed).status, "completed");
   } finally {
     await hypervisor.shutdown();
   }
 });
 
-Deno.test("capacity and exact worker targeting apply in process", async () => {
+test("capacity and exact worker targeting apply in process", async () => {
   const firstRelease = createDeferred<void>();
   const hypervisor = createHypervisor({
     commitAcceptedWork: () => Promise.resolve(),
@@ -534,8 +564,8 @@ Deno.test("capacity and exact worker targeting apply in process", async () => {
         target: { workerId: "worker-a" },
       })
     );
-    assertEquals((unavailable as Error).name, "HypervisorError");
-    assertEquals(
+    assert.deepStrictEqual((unavailable as Error).name, "HypervisorError");
+    assert.deepStrictEqual(
       (unavailable as Error & { code: string }).code,
       "worker_unavailable",
     );
@@ -544,20 +574,20 @@ Deno.test("capacity and exact worker targeting apply in process", async () => {
       workload: "task",
       target: { workerId: "worker-b" },
     });
-    assertEquals(await second.metadata, { worker: "b" });
+    assert.deepStrictEqual(await second.metadata, { worker: "b" });
     await readText(second.output);
-    assertEquals((await second.completed).status, "completed");
+    assert.deepStrictEqual((await second.completed).status, "completed");
 
     firstRelease.resolve();
     await readText(first.output);
-    assertEquals((await first.completed).status, "completed");
+    assert.deepStrictEqual((await first.completed).status, "completed");
   } finally {
     firstRelease.resolve();
     await hypervisor.shutdown();
   }
 });
 
-Deno.test("cancellation aborts an active in-process workload cooperatively", async () => {
+test("cancellation aborts an active in-process workload cooperatively", async () => {
   const hypervisor = createHypervisor({
     commitAcceptedWork: () => Promise.resolve(),
   });
@@ -577,20 +607,23 @@ Deno.test("cancellation aborts an active in-process workload cooperatively", asy
     const handle = await hypervisor.dispatch({ workload: "wait" });
     await handle.started;
     const completed = await handle.cancel("caller left");
-    assertEquals(completed.status, "cancelled");
-    assertEquals(completed.terminal, {
+    assert.deepStrictEqual(completed.status, "cancelled");
+    assert.deepStrictEqual(completed.terminal, {
       code: "caller_cancelled",
       message: "caller left",
     });
     await assertRejects(() => handle.metadata);
     await assertRejects(() => readText(handle.output));
-    assertEquals(hypervisor.sessions.get("cancellable-worker")?.reserved, 0);
+    assert.deepStrictEqual(
+      hypervisor.sessions.get("cancellable-worker")?.reserved,
+      0,
+    );
   } finally {
     await hypervisor.shutdown();
   }
 });
 
-Deno.test("maintenance drain settles active work and rebinds the Worker", async () => {
+test("maintenance drain settles active work and rebinds the Worker", async () => {
   const release = createDeferred<void>();
   const hypervisor = createHypervisor({
     commitAcceptedWork: () => Promise.resolve(),
@@ -609,7 +642,7 @@ Deno.test("maintenance drain settles active work and rebinds the Worker", async 
     const handle = await hypervisor.dispatch({ workload: "task" });
     await handle.started;
     const draining = hypervisor.drain("draining-worker");
-    assertEquals(
+    assert.deepStrictEqual(
       hypervisor.sessions.get("draining-worker")?.phase,
       "draining",
     );
@@ -617,32 +650,32 @@ Deno.test("maintenance drain settles active work and rebinds the Worker", async 
 
     release.resolve();
     await readText(handle.output);
-    assertEquals((await handle.completed).status, "completed");
+    assert.deepStrictEqual((await handle.completed).status, "completed");
     await draining;
     await waitUntil(() =>
       hypervisor.sessions.get("draining-worker")?.phase === "ready"
     );
     const replacement = hypervisor.sessions.get("draining-worker")!;
-    assertEquals(replacement.phase, "ready");
-    assertEquals(replacement.identity, original.identity);
-    assertEquals(
+    assert.deepStrictEqual(replacement.phase, "ready");
+    assert.deepStrictEqual(replacement.identity, original.identity);
+    assert.deepStrictEqual(
       replacement.sessionGeneration,
       original.sessionGeneration + 1,
     );
-    assertEquals(worker.snapshot().state, "ready");
-    assertEquals(hypervisor.snapshot().inProcessWorkers, 1);
+    assert.deepStrictEqual(worker.snapshot().state, "ready");
+    assert.deepStrictEqual(hypervisor.snapshot().inProcessWorkers, 1);
 
     const next = await hypervisor.dispatch({ workload: "task" });
     release.resolve();
     await readText(next.output);
-    assertEquals((await next.completed).status, "completed");
+    assert.deepStrictEqual((await next.completed).status, "completed");
   } finally {
     release.resolve();
     await hypervisor.shutdown();
   }
 });
 
-Deno.test("failed durable acceptance never starts or invokes in-process code", async () => {
+test("failed durable acceptance never starts or invokes in-process code", async () => {
   let invoked = false;
   const hypervisor = createHypervisor({
     commitAcceptedWork: () => Promise.reject(new Error("store unavailable")),
@@ -663,15 +696,18 @@ Deno.test("failed durable acceptance never starts or invokes in-process code", a
       Error,
       "acceptance persistence did not confirm",
     );
-    assertEquals((await handle.completed).status, "indeterminate");
-    assertEquals(invoked, false);
-    assertEquals(hypervisor.sessions.get("durable-worker")?.reserved, 0);
+    assert.deepStrictEqual((await handle.completed).status, "indeterminate");
+    assert.deepStrictEqual(invoked, false);
+    assert.deepStrictEqual(
+      hypervisor.sessions.get("durable-worker")?.reserved,
+      0,
+    );
   } finally {
     await hypervisor.shutdown();
   }
 });
 
-Deno.test("deadline cancellation reaches the active in-process handler", async () => {
+test("deadline cancellation reaches the active in-process handler", async () => {
   let aborted = false;
   const hypervisor = createHypervisor({
     commitAcceptedWork: () => Promise.resolve(),
@@ -696,18 +732,18 @@ Deno.test("deadline cancellation reaches the active in-process handler", async (
     });
     await handle.started;
     const terminal = await handle.completed;
-    assertEquals(terminal.status, "cancelled");
-    assertEquals(terminal.terminal, {
+    assert.deepStrictEqual(terminal.status, "cancelled");
+    assert.deepStrictEqual(terminal.terminal, {
       code: "deadline_exceeded",
       message: "deadline_exceeded",
     });
-    assertEquals(aborted, true);
+    assert.deepStrictEqual(aborted, true);
   } finally {
     await hypervisor.shutdown();
   }
 });
 
-Deno.test("cancelling output propagates to the workload stream", async () => {
+test("cancelling output propagates to the workload stream", async () => {
   let outputCancelled = false;
   let handlerAborted = false;
   const hypervisor = createHypervisor({
@@ -737,16 +773,16 @@ Deno.test("cancelling output propagates to the workload stream", async () => {
 
   try {
     const handle = await hypervisor.dispatch({ workload: "stream" });
-    assertEquals(await handle.metadata, { streaming: true });
+    assert.deepStrictEqual(await handle.metadata, { streaming: true });
     await handle.output.cancel("consumer stopped");
     const terminal = await handle.completed;
-    assertEquals(terminal.status, "cancelled");
-    assertEquals(terminal.terminal, {
+    assert.deepStrictEqual(terminal.status, "cancelled");
+    assert.deepStrictEqual(terminal.terminal, {
       code: "caller_cancelled",
       message: "consumer stopped",
     });
-    assertEquals(outputCancelled, true);
-    assertEquals(handlerAborted, true);
+    assert.deepStrictEqual(outputCancelled, true);
+    assert.deepStrictEqual(handlerAborted, true);
   } finally {
     await hypervisor.shutdown();
   }

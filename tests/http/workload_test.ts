@@ -1,4 +1,6 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
 import {
   createHttpWorkload,
   decodeHttpResponseMetadata,
@@ -45,7 +47,7 @@ function resultObject(
   return result;
 }
 
-Deno.test("HTTP workload reconstructs Request and streams binary Response", async () => {
+test("HTTP workload reconstructs Request and streams binary Response", async () => {
   const limit = WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes;
   const requestBytes = new Uint8Array([0, 1, 255, 2]);
   const responseBytes = new Uint8Array(limit + 19);
@@ -65,7 +67,7 @@ Deno.test("HTTP workload reconstructs Request and streams binary Response", asyn
   const workload = createHttpWorkload({
     fetch: async (incoming) => {
       observedRequest = incoming;
-      assertEquals(
+      assert.deepStrictEqual(
         new Uint8Array(await incoming.arrayBuffer()),
         requestBytes,
       );
@@ -85,14 +87,17 @@ Deno.test("HTTP workload reconstructs Request and streams binary Response", asyn
   const result = resultObject(
     await workload(context(requestMetadata, streamOf(requestBytes))),
   );
-  assertEquals(observedRequest?.method, "POST");
-  assertEquals(observedRequest?.url, "https://worker.test/upload?q=1");
-  assertEquals(observedRequest?.headers.get("x-request"), "yes");
+  assert.deepStrictEqual(observedRequest?.method, "POST");
+  assert.deepStrictEqual(
+    observedRequest?.url,
+    "https://worker.test/upload?q=1",
+  );
+  assert.deepStrictEqual(observedRequest?.headers.get("x-request"), "yes");
   const responseMetadata = decodeHttpResponseMetadata(result.metadata!);
-  assertEquals(responseMetadata.status, 201);
-  assertEquals(responseMetadata.statusText, "Created");
-  assertEquals(responseMetadata.hasBody, true);
-  assertEquals(
+  assert.deepStrictEqual(responseMetadata.status, 201);
+  assert.deepStrictEqual(responseMetadata.statusText, "Created");
+  assert.deepStrictEqual(responseMetadata.hasBody, true);
+  assert.deepStrictEqual(
     responseMetadata.headers.filter(([name]) => name === "set-cookie"),
     [
       ["set-cookie", "first=1; Path=/"],
@@ -102,14 +107,14 @@ Deno.test("HTTP workload reconstructs Request and streams binary Response", asyn
   const chunks = await readChunks(
     result.body as ReadableStream<Uint8Array>,
   );
-  assertEquals(
+  assert.deepStrictEqual(
     chunks.every((chunk) => chunk.byteLength <= limit),
     true,
   );
-  assertEquals(concat(chunks), responseBytes);
+  assert.deepStrictEqual(concat(chunks), responseBytes);
 });
 
-Deno.test("HTTP workload maps context cancellation to Request.signal", async () => {
+test("HTTP workload maps context cancellation to Request.signal", async () => {
   const controller = new AbortController();
   let observedSignal: AbortSignal | undefined;
   const workload = createHttpWorkload({
@@ -125,11 +130,11 @@ Deno.test("HTTP workload maps context cancellation to Request.signal", async () 
 
   await workload(context(metadata, streamOf(), controller.signal));
   controller.abort("operation_cancelled");
-  assertEquals(observedSignal?.aborted, true);
-  assertEquals(observedSignal?.reason, "operation_cancelled");
+  assert.deepStrictEqual(observedSignal?.aborted, true);
+  assert.deepStrictEqual(observedSignal?.reason, "operation_cancelled");
 });
 
-Deno.test("HTTP workload strips and cancels a HEAD response body", async () => {
+test("HTTP workload strips and cancels a HEAD response body", async () => {
   let cancellationReason: unknown;
   const responseBody = new ReadableStream<Uint8Array>({
     cancel(reason) {
@@ -145,16 +150,16 @@ Deno.test("HTTP workload strips and cancels a HEAD response body", async () => {
   );
 
   const result = resultObject(await workload(context(metadata)));
-  assertEquals(result.body, undefined);
-  assertEquals(
+  assert.deepStrictEqual(result.body, undefined);
+  assert.deepStrictEqual(
     decodeHttpResponseMetadata(result.metadata!).hasBody,
     false,
   );
   await Promise.resolve();
-  assertEquals(cancellationReason, "http_response_body_not_allowed");
+  assert.deepStrictEqual(cancellationReason, "http_response_body_not_allowed");
 });
 
-Deno.test("HTTP workload keeps execution active until HEAD body cancellation settles", async () => {
+test("HTTP workload keeps execution active until HEAD body cancellation settles", async () => {
   const cancellationStarted = Promise.withResolvers<void>();
   const releaseCancellation = Promise.withResolvers<void>();
   let resultSettled = false;
@@ -179,15 +184,18 @@ Deno.test("HTTP workload keeps execution active until HEAD body cancellation set
   );
   await cancellationStarted.promise;
   await Promise.resolve();
-  assertEquals(resultSettled, false);
+  assert.deepStrictEqual(resultSettled, false);
 
   releaseCancellation.resolve();
   const result = resultObject(await resultPromise);
-  assertEquals(resultSettled, true);
-  assertEquals(decodeHttpResponseMetadata(result.metadata!).hasBody, false);
+  assert.deepStrictEqual(resultSettled, true);
+  assert.deepStrictEqual(
+    decodeHttpResponseMetadata(result.metadata!).hasBody,
+    false,
+  );
 });
 
-Deno.test("HTTP workload rejects malformed metadata before fetch", async () => {
+test("HTTP workload rejects malformed metadata before fetch", async () => {
   let calls = 0;
   const workload = createHttpWorkload({
     fetch: () => {
@@ -209,10 +217,10 @@ Deno.test("HTTP workload rejects malformed metadata before fetch", async () => {
     TypeError,
     "expected an absolute URL",
   );
-  assertEquals(calls, 0);
+  assert.deepStrictEqual(calls, 0);
 });
 
-Deno.test("HTTP workload requires a native Response", async () => {
+test("HTTP workload requires a native Response", async () => {
   const workload = createHttpWorkload({
     fetch: () => "not a response" as unknown as Response,
   });

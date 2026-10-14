@@ -1,4 +1,6 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import type { JsonObject } from "../../src/protocol/types.ts";
 import {
   createHeaders,
@@ -10,7 +12,7 @@ import {
   HTTP_RESPONSE_METADATA_SCHEMA,
 } from "../../src/http/index.ts";
 
-Deno.test("HTTP request metadata round trips a strict Fetch-native shape", () => {
+test("HTTP request metadata round trips a strict Fetch-native shape", () => {
   const headers = new Headers([
     ["content-type", "application/octet-stream"],
     ["x-request-value", "one"],
@@ -22,7 +24,7 @@ Deno.test("HTTP request metadata round trips a strict Fetch-native shape", () =>
   });
   const metadata = encodeHttpRequestMetadata(request, "request-1");
 
-  assertEquals(metadata, {
+  assert.deepStrictEqual(metadata, {
     schema: HTTP_REQUEST_METADATA_SCHEMA,
     requestId: "request-1",
     method: "POST",
@@ -33,13 +35,13 @@ Deno.test("HTTP request metadata round trips a strict Fetch-native shape", () =>
     ],
     hasBody: true,
   });
-  assertEquals(decodeHttpRequestMetadata(metadata), metadata);
-  assertEquals(Object.isFrozen(metadata), true);
-  assertEquals(Object.isFrozen(metadata.headers), true);
-  assertEquals(Object.isFrozen(metadata.headers[0]), true);
+  assert.deepStrictEqual(decodeHttpRequestMetadata(metadata), metadata);
+  assert.deepStrictEqual(Object.isFrozen(metadata), true);
+  assert.deepStrictEqual(Object.isFrozen(metadata.headers), true);
+  assert.deepStrictEqual(Object.isFrozen(metadata.headers[0]), true);
 });
 
-Deno.test("HTTP response metadata preserves repeated Set-Cookie order", () => {
+test("HTTP response metadata preserves repeated Set-Cookie order", () => {
   const headers = new Headers();
   headers.append("set-cookie", "first=1; Path=/");
   headers.append("set-cookie", "second=2; Path=/");
@@ -51,24 +53,24 @@ Deno.test("HTTP response metadata preserves repeated Set-Cookie order", () => {
   });
 
   const metadata = encodeHttpResponseMetadata(response);
-  assertEquals(metadata.schema, HTTP_RESPONSE_METADATA_SCHEMA);
-  assertEquals(metadata.status, 202);
-  assertEquals(metadata.statusText, "Accepted");
-  assertEquals(metadata.hasBody, false);
-  assertEquals(
+  assert.deepStrictEqual(metadata.schema, HTTP_RESPONSE_METADATA_SCHEMA);
+  assert.deepStrictEqual(metadata.status, 202);
+  assert.deepStrictEqual(metadata.statusText, "Accepted");
+  assert.deepStrictEqual(metadata.hasBody, false);
+  assert.deepStrictEqual(
     metadata.headers.filter(([name]) => name === "set-cookie"),
     [
       ["set-cookie", "first=1; Path=/"],
       ["set-cookie", "second=2; Path=/"],
     ],
   );
-  assertEquals(
+  assert.deepStrictEqual(
     createHeaders(metadata.headers).getSetCookie(),
     ["first=1; Path=/", "second=2; Path=/"],
   );
 });
 
-Deno.test("HTTP metadata rejects unknown fields and malformed pairs", () => {
+test("HTTP metadata rejects unknown fields and malformed pairs", () => {
   const request = {
     schema: HTTP_REQUEST_METADATA_SCHEMA,
     requestId: "request-1",
@@ -108,7 +110,7 @@ Deno.test("HTTP metadata rejects unknown fields and malformed pairs", () => {
   );
 });
 
-Deno.test("HTTP response metadata rejects invalid status/body combinations", () => {
+test("HTTP response metadata rejects invalid status/body combinations", () => {
   const base = {
     schema: HTTP_RESPONSE_METADATA_SCHEMA,
     status: 204,

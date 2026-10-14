@@ -1,4 +1,6 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
 import {
   createHttpGateway,
   decodeHttpRequestMetadata,
@@ -17,7 +19,7 @@ import {
   streamOf,
 } from "./test_utils.ts";
 
-Deno.test("HTTP gateway defaults to the versioned HTTP workload", async () => {
+test("HTTP gateway defaults to the versioned HTTP workload", async () => {
   let workload: string | undefined;
   const gateway = createHttpGateway({
     dispatch: (input) => {
@@ -29,10 +31,10 @@ Deno.test("HTTP gateway defaults to the versioned HTTP workload", async () => {
   });
 
   await gateway(new Request("https://gateway.test/"));
-  assertEquals(workload, HTTP_WORKLOAD);
+  assert.deepStrictEqual(workload, HTTP_WORKLOAD);
 });
 
-Deno.test("HTTP gateway maps request and streaming response without buffering", async () => {
+test("HTTP gateway maps request and streaming response without buffering", async () => {
   const limit = WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes;
   const requestBytes = new Uint8Array(limit + 23);
   requestBytes.fill(7);
@@ -69,35 +71,43 @@ Deno.test("HTTP gateway maps request and streaming response without buffering", 
       "x-client": "test",
     },
     body: streamOf(requestBytes),
+    // RequestInit in the DOM lib lacks `duplex`.
+    ...{ duplex: "half" as const },
   });
   const response = await gateway(request);
 
-  assertEquals(response.status, 201);
-  assertEquals(response.statusText, "Created");
-  assertEquals(response.headers.getSetCookie(), [
+  assert.deepStrictEqual(response.status, 201);
+  assert.deepStrictEqual(response.statusText, "Created");
+  assert.deepStrictEqual(response.headers.getSetCookie(), [
     "first=1; Path=/",
     "second=2; Path=/",
   ]);
-  assertEquals(new Uint8Array(await response.arrayBuffer()), responseBytes);
-  assertEquals(dispatched?.workload, "http.api");
-  assertEquals(dispatched?.deadlineAtMs, 123_456);
-  assertEquals(dispatched?.signal, request.signal);
+  assert.deepStrictEqual(
+    new Uint8Array(await response.arrayBuffer()),
+    responseBytes,
+  );
+  assert.deepStrictEqual(dispatched?.workload, "http.api");
+  assert.deepStrictEqual(dispatched?.deadlineAtMs, 123_456);
+  assert.deepStrictEqual(dispatched?.signal, request.signal);
   const requestMetadata = decodeHttpRequestMetadata(dispatched!.metadata!);
-  assertEquals(requestMetadata.requestId, "request-fixed");
-  assertEquals(requestMetadata.method, "POST");
-  assertEquals(requestMetadata.url, "https://gateway.test/v1/items?q=1");
-  assertEquals(requestMetadata.hasBody, true);
+  assert.deepStrictEqual(requestMetadata.requestId, "request-fixed");
+  assert.deepStrictEqual(requestMetadata.method, "POST");
+  assert.deepStrictEqual(
+    requestMetadata.url,
+    "https://gateway.test/v1/items?q=1",
+  );
+  assert.deepStrictEqual(requestMetadata.hasBody, true);
   const requestChunks = await readChunks(
     dispatched!.body as ReadableStream<Uint8Array>,
   );
-  assertEquals(
+  assert.deepStrictEqual(
     requestChunks.every((chunk) => chunk.byteLength <= limit),
     true,
   );
-  assertEquals(concat(requestChunks), requestBytes);
+  assert.deepStrictEqual(concat(requestChunks), requestBytes);
 });
 
-Deno.test("HTTP gateway maps request abort while awaiting metadata", async () => {
+test("HTTP gateway maps request abort while awaiting metadata", async () => {
   const metadata = createDeferred<JsonObject>();
   const cancellation = createDeferred<string | undefined>();
   const controller = new AbortController();
@@ -121,10 +131,10 @@ Deno.test("HTTP gateway maps request abort while awaiting metadata", async () =>
     DOMException,
     "browser disconnected",
   );
-  assertEquals(await cancellation.promise, "browser disconnected");
+  assert.deepStrictEqual(await cancellation.promise, "browser disconnected");
 });
 
-Deno.test("HTTP gateway cancels a malformed worker response", async () => {
+test("HTTP gateway cancels a malformed worker response", async () => {
   const cancellations: (string | undefined)[] = [];
   const gateway = createHttpGateway({
     dispatch: () =>
@@ -146,10 +156,10 @@ Deno.test("HTTP gateway cancels a malformed worker response", async () => {
     TypeError,
     "unexpected field extra",
   );
-  assertEquals(cancellations, ["invalid_http_response_metadata"]);
+  assert.deepStrictEqual(cancellations, ["invalid_http_response_metadata"]);
 });
 
-Deno.test("HTTP gateway propagates response-body cancellation", async () => {
+test("HTTP gateway propagates response-body cancellation", async () => {
   let cancelledWith: unknown;
   const metadata = encodeHttpResponseMetadata(
     new Response(new Uint8Array([1])),
@@ -169,10 +179,10 @@ Deno.test("HTTP gateway propagates response-body cancellation", async () => {
 
   const response = await gateway(new Request("https://gateway.test/"));
   await response.body!.cancel("client_disconnected");
-  assertEquals(cancelledWith, "client_disconnected");
+  assert.deepStrictEqual(cancelledWith, "client_disconnected");
 });
 
-Deno.test("HTTP gateway cancels an unread request body when dispatch fails", async () => {
+test("HTTP gateway cancels an unread request body when dispatch fails", async () => {
   let cancelledWith: unknown;
   const requestBody = new ReadableStream<Uint8Array>({
     cancel(reason) {
@@ -190,10 +200,12 @@ Deno.test("HTTP gateway cancels an unread request body when dispatch fails", asy
         new Request("https://gateway.test/", {
           method: "POST",
           body: requestBody,
+          // RequestInit in the DOM lib lacks `duplex`.
+          ...{ duplex: "half" as const },
         }),
       ),
     Error,
     "no worker available",
   );
-  assertEquals(cancelledWith, failure);
+  assert.deepStrictEqual(cancelledWith, failure);
 });

@@ -1,9 +1,6 @@
-import {
-  assertEquals,
-  assertRejects,
-  assertStrictEquals,
-  assertThrows,
-} from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects, assertThrows } from "../support/assert.ts";
 import { join, toFileUrl } from "@std/path";
 import { createApplication } from "../../src/app/application.ts";
 import {
@@ -34,7 +31,7 @@ async function withModule(
   }
 }
 
-Deno.test("defineApplicationFactory rejects structural and mount mismatches", async () => {
+test("defineApplicationFactory rejects structural and mount mismatches", async () => {
   const router = createRouter("file:///routes/");
   const otherRouter = createRouter("file:///other/");
   const signal = new AbortController().signal;
@@ -87,13 +84,13 @@ Deno.test("defineApplicationFactory rejects structural and mount mismatches", as
     TypeError,
     "using the provided basePath",
   );
-  assertEquals(wrongMountDisposeCalls, 1);
-  assertEquals(wrongMountApplication?.snapshot(), {
+  assert.deepStrictEqual(wrongMountDisposeCalls, 1);
+  assert.deepStrictEqual(wrongMountApplication?.snapshot(), {
     acceptingRequests: false,
     activeRequests: 0,
   });
   await wrongMountApplication?.dispose();
-  assertEquals(wrongMountDisposeCalls, 1);
+  assert.deepStrictEqual(wrongMountDisposeCalls, 1);
 
   assertThrows(
     () => defineApplicationFactory(null as never),
@@ -102,7 +99,7 @@ Deno.test("defineApplicationFactory rejects structural and mount mismatches", as
   );
 });
 
-Deno.test("factory cleanup cannot replace a Proxy validation error", async () => {
+test("factory cleanup cannot replace a Proxy validation error", async () => {
   const router = createRouter("file:///routes/");
   const signal = new AbortController().signal;
   const validationError = new Error("factory_result_reflection_failed");
@@ -123,60 +120,56 @@ Deno.test("factory cleanup cannot replace a Proxy validation error", async () =>
   } catch (error) {
     rejection = error;
   }
-  assertStrictEquals(rejection, validationError);
+  assert.strictEqual(rejection, validationError);
 });
 
-Deno.test({
-  name: "loadApplicationFactory requires one local default .ts export",
-  permissions: { read: true, write: true },
-  async fn() {
-    await withModule(
-      `export default function applicationFactory() { return {}; }\n`,
-      async (path) => {
-        const factory = await loadApplicationFactory(path);
-        assertEquals(typeof factory, "function");
-        assertEquals(Object.isFrozen(factory), true);
-      },
-    );
-    await withModule(
-      `export const helper = 1; export default function factory() {}\n`,
-      async (path) => {
-        await assertRejects(
-          () => loadApplicationFactory(path),
-          TypeError,
-          'may only export "default"; found extra export "helper"',
-        );
-      },
-    );
-    await withModule(
-      `export const factory = () => {};\n`,
-      async (path) => {
-        await assertRejects(
-          () => loadApplicationFactory(path),
-          TypeError,
-          "must export exactly one default factory",
-        );
-      },
-    );
-    await withModule(
-      `export default 42;\n`,
-      async (path) => {
-        await assertRejects(
-          () => loadApplicationFactory(path),
-          TypeError,
-          "must be a function",
-        );
-      },
-    );
-    await assertRejects(
-      () => loadApplicationFactory("https://example.test/application.ts"),
-      TypeError,
-      "local .ts module",
-    );
-    await assertRejects(
-      () => loadApplicationFactory(toFileUrl("/tmp/application.js")),
-      TypeError,
-      "local .ts module",
-    );
-  },
+test("loadApplicationFactory requires one local default .ts export", async () => {
+  await withModule(
+    `export default function applicationFactory() { return {}; }\n`,
+    async (path) => {
+      const factory = await loadApplicationFactory(path);
+      assert.deepStrictEqual(typeof factory, "function");
+      assert.deepStrictEqual(Object.isFrozen(factory), true);
+    },
+  );
+  await withModule(
+    `export const helper = 1; export default function factory() {}\n`,
+    async (path) => {
+      await assertRejects(
+        () => loadApplicationFactory(path),
+        TypeError,
+        'may only export "default"; found extra export "helper"',
+      );
+    },
+  );
+  await withModule(
+    `export const factory = () => {};\n`,
+    async (path) => {
+      await assertRejects(
+        () => loadApplicationFactory(path),
+        TypeError,
+        "must export exactly one default factory",
+      );
+    },
+  );
+  await withModule(
+    `export default 42;\n`,
+    async (path) => {
+      await assertRejects(
+        () => loadApplicationFactory(path),
+        TypeError,
+        "must be a function",
+      );
+    },
+  );
+  await assertRejects(
+    () => loadApplicationFactory("https://example.test/application.ts"),
+    TypeError,
+    "local .ts module",
+  );
+  await assertRejects(
+    () => loadApplicationFactory(toFileUrl("/tmp/application.js")),
+    TypeError,
+    "local .ts module",
+  );
 });

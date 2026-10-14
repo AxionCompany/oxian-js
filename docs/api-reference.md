@@ -56,6 +56,7 @@ subpaths only when the target runtime provides the required capability.
 | Subpath                                  | Use it to                                                                                                                                                 |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`/adapters/deno`](api/adapters/deno.md) | Add Deno WebSocket upgrade and optional `Deno.serve` listener ownership around the portable Hypervisor core.                                              |
+| [`/adapters/node`](api/adapters/node.md) | Add a Node `node:http` listener with WebSocket upgrades around the portable Hypervisor core.                                                              |
 | [`/providers`](api/providers.md)         | Provision, inspect, and terminate compute without coupling compute presence to transport readiness.                                                       |
 | [`/local`](api/local.md)                 | Compose the development runtime, run manifest-defined workers, and store local credentials.                                                               |
 | [`/cli`](api/cli.md)                     | Parse or execute the six Oxian commands without terminating the host process. The same page documents the [`/bin`](api/cli.md#executable-bin) entrypoint. |

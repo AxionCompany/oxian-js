@@ -1,4 +1,5 @@
-import { assertEquals } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
 import type { EdgeConfig } from "../../src/config/types.ts";
 import { composeConfiguredEdge } from "../../src/local/edge.ts";
 
@@ -27,7 +28,7 @@ function navigation(path: string): Request {
   });
 }
 
-Deno.test("configured edge gives a more-specific application mount priority over parent static", async () => {
+test("configured edge gives a more-specific application mount priority over parent static", async () => {
   await withWebRoot(async (root) => {
     const calls: string[] = [];
     const application = (request: Request): Response => {
@@ -50,20 +51,20 @@ Deno.test("configured edge gives a more-specific application mount priority over
     const handler = composeConfiguredEdge(application, edge, "start", "/api");
 
     const api = await handler(navigation("/api/live"));
-    assertEquals(await api.text(), "application:/api/live");
+    assert.deepStrictEqual(await api.text(), "application:/api/live");
 
     const shadowed = await handler(navigation("/api/shadowed"));
-    assertEquals(await shadowed.text(), "application:/api/shadowed");
+    assert.deepStrictEqual(await shadowed.text(), "application:/api/shadowed");
 
     const apiMiss = await handler(navigation("/api/unknown"));
-    assertEquals(apiMiss.status, 404);
-    assertEquals(await apiMiss.text(), "application miss");
+    assert.deepStrictEqual(apiMiss.status, 404);
+    assert.deepStrictEqual(await apiMiss.text(), "application miss");
 
     const callback = await handler(
       navigation("/auth/google/callback?code=synthetic&state=synthetic"),
     );
-    assertEquals(callback.status, 200);
-    assertEquals(await callback.text(), "<h1>compass shell</h1>");
+    assert.deepStrictEqual(callback.status, 200);
+    assert.deepStrictEqual(await callback.text(), "<h1>compass shell</h1>");
 
     const serviceWorkerCallback = await handler(
       new Request("https://example.test/auth/google/callback", {
@@ -74,8 +75,8 @@ Deno.test("configured edge gives a more-specific application mount priority over
         },
       }),
     );
-    assertEquals(serviceWorkerCallback.status, 200);
-    assertEquals(
+    assert.deepStrictEqual(serviceWorkerCallback.status, 200);
+    assert.deepStrictEqual(
       await serviceWorkerCallback.text(),
       "<h1>compass shell</h1>",
     );
@@ -83,9 +84,9 @@ Deno.test("configured edge gives a more-specific application mount priority over
     const asset = await handler(
       new Request("https://example.test/asset.js"),
     );
-    assertEquals(await asset.text(), "asset");
+    assert.deepStrictEqual(await asset.text(), "asset");
 
-    assertEquals(calls, [
+    assert.deepStrictEqual(calls, [
       "/api/live",
       "/api/shadowed",
       "/api/unknown",
@@ -93,7 +94,7 @@ Deno.test("configured edge gives a more-specific application mount priority over
   });
 });
 
-Deno.test("configured edge uses exact segment boundaries for application ownership", async () => {
+test("configured edge uses exact segment boundaries for application ownership", async () => {
   await withWebRoot(async (root) => {
     const edge = {
       static: {
@@ -111,14 +112,14 @@ Deno.test("configured edge uses exact segment boundaries for application ownersh
       "/api",
     );
 
-    assertEquals(
+    assert.deepStrictEqual(
       await (await handler(navigation("/apix"))).text(),
       "<h1>compass shell</h1>",
     );
   });
 });
 
-Deno.test("configured edge lets exact static files and regular routes coexist at equal mounts", async () => {
+test("configured edge lets exact static files and regular routes coexist at equal mounts", async () => {
   await withWebRoot(async (root) => {
     const edge = {
       static: {
@@ -139,23 +140,23 @@ Deno.test("configured edge lets exact static files and regular routes coexist at
       "/",
     );
 
-    assertEquals(
+    assert.deepStrictEqual(
       await (await handler(new Request("https://example.test/asset.js")))
         .text(),
       "asset",
     );
-    assertEquals(
+    assert.deepStrictEqual(
       await (await handler(navigation("/regular"))).text(),
       "regular route",
     );
-    assertEquals(
+    assert.deepStrictEqual(
       await (await handler(navigation("/client-route"))).text(),
       "<h1>compass shell</h1>",
     );
   });
 });
 
-Deno.test("configured edge keeps a parent development proxy away from the application mount", async () => {
+test("configured edge keeps a parent development proxy away from the application mount", async () => {
   const edge = {
     devProxy: {
       upstream: "http://127.0.0.1:1/",
@@ -174,6 +175,6 @@ Deno.test("configured edge keeps a parent development proxy away from the applic
   const response = await handler(
     new Request("https://example.test/api/v1/threads"),
   );
-  assertEquals(response.status, 200);
-  assertEquals(await response.text(), "application");
+  assert.deepStrictEqual(response.status, 200);
+  assert.deepStrictEqual(await response.text(), "application");
 });

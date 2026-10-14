@@ -1,4 +1,6 @@
-import { assert, assertEquals, assertMatch, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import { join } from "@std/path";
 import { createFileRouter } from "../../src/router/file_router.ts";
 
@@ -31,7 +33,7 @@ function relativeModulePath(fileUrl: string, rootUrl: string): string {
   return decodeURIComponent(new URL(fileUrl).pathname.slice(rootPath.length));
 }
 
-Deno.test("v0.20 file router matches static, param, and one-or-more catchall routes by precedence", async () => {
+test("v0.20 file router matches static, param, and one-or-more catchall routes by precedence", async () => {
   await withFixture(
     {
       "_middleware.ts": MIDDLEWARE,
@@ -45,10 +47,10 @@ Deno.test("v0.20 file router matches static, param, and one-or-more catchall rou
       const router = await createFileRouter({ root });
 
       const staticMatch = router.match("/users/new");
-      assert(staticMatch);
-      assertEquals(staticMatch.route.pattern, "/users/new");
-      assertEquals(staticMatch.params, {});
-      assertEquals(
+      assert.ok(staticMatch);
+      assert.deepStrictEqual(staticMatch.route.pattern, "/users/new");
+      assert.deepStrictEqual(staticMatch.params, {});
+      assert.deepStrictEqual(
         staticMatch.middlewares.map(({ fileUrl }) =>
           relativeModulePath(fileUrl, router.root)
         ),
@@ -56,27 +58,30 @@ Deno.test("v0.20 file router matches static, param, and one-or-more catchall rou
       );
 
       const paramMatch = router.match("/users/alice%20smith");
-      assert(paramMatch);
-      assertEquals(paramMatch.route.pattern, "/users/:id");
-      assertEquals(paramMatch.params, { id: "alice smith" });
+      assert.ok(paramMatch);
+      assert.deepStrictEqual(paramMatch.route.pattern, "/users/:id");
+      assert.deepStrictEqual(paramMatch.params, { id: "alice smith" });
 
       // A static branch may fail deeper; matching then falls back to the
       // parameter branch at the same depth.
       const fallbackMatch = router.match("/foo/baz");
-      assert(fallbackMatch);
-      assertEquals(fallbackMatch.route.pattern, "/:id/baz");
-      assertEquals(fallbackMatch.params, { id: "foo" });
+      assert.ok(fallbackMatch);
+      assert.deepStrictEqual(fallbackMatch.route.pattern, "/:id/baz");
+      assert.deepStrictEqual(fallbackMatch.params, { id: "foo" });
 
       const catchallMatch = router.match("/users/new/details");
-      assert(catchallMatch);
-      assertEquals(catchallMatch.route.pattern, "/*path");
-      assertEquals(catchallMatch.params, {
+      assert.ok(catchallMatch);
+      assert.deepStrictEqual(catchallMatch.route.pattern, "/*path");
+      assert.deepStrictEqual(catchallMatch.params, {
         path: ["users", "new", "details"],
       });
 
-      assertEquals(router.match("/"), null);
-      assertEquals(router.match("/?query=ignored"), null);
-      assertEquals(router.match("/users/new?query=ignored#hash"), staticMatch);
+      assert.deepStrictEqual(router.match("/"), null);
+      assert.deepStrictEqual(router.match("/?query=ignored"), null);
+      assert.deepStrictEqual(
+        router.match("/users/new?query=ignored#hash"),
+        staticMatch,
+      );
       assertThrows(
         () => router.match("/users/%ZZ"),
         URIError,
@@ -86,7 +91,7 @@ Deno.test("v0.20 file router matches static, param, and one-or-more catchall rou
   );
 });
 
-Deno.test("v0.20 file router compiles index routes and immutable method maps", async () => {
+test("v0.20 file router compiles index routes and immutable method maps", async () => {
   await withFixture(
     {
       "index.ts": `
@@ -101,38 +106,38 @@ Deno.test("v0.20 file router compiles index routes and immutable method maps", a
     async (root) => {
       const router = await createFileRouter({ root });
 
-      assertEquals(
+      assert.deepStrictEqual(
         router.routes.map(({ pattern }) => pattern),
         ["/", "/projects", "/projects/:projectId"],
       );
 
       const rootMatch = router.match("/");
-      assert(rootMatch);
-      assertEquals(Object.keys(rootMatch.route.methods), [
+      assert.ok(rootMatch);
+      assert.deepStrictEqual(Object.keys(rootMatch.route.methods), [
         "GET",
         "POST",
         "QUERY",
       ]);
-      assert(typeof rootMatch.route.methods.GET === "function");
-      assert(typeof rootMatch.route.methods.POST === "function");
-      assert(typeof rootMatch.route.methods.QUERY === "function");
+      assert.ok(typeof rootMatch.route.methods.GET === "function");
+      assert.ok(typeof rootMatch.route.methods.POST === "function");
+      assert.ok(typeof rootMatch.route.methods.QUERY === "function");
 
       const projectMatch = router.match("/projects/p-123/");
-      assert(projectMatch);
-      assertEquals(projectMatch.params, { projectId: "p-123" });
+      assert.ok(projectMatch);
+      assert.deepStrictEqual(projectMatch.params, { projectId: "p-123" });
 
-      assert(Object.isFrozen(router));
-      assert(Object.isFrozen(router.routes));
-      assert(Object.isFrozen(rootMatch.route));
-      assert(Object.isFrozen(rootMatch.route.segments));
-      assert(Object.isFrozen(rootMatch.route.methods));
-      assert(Object.isFrozen(rootMatch.params));
-      assert(Object.isFrozen(rootMatch.middlewares));
+      assert.ok(Object.isFrozen(router));
+      assert.ok(Object.isFrozen(router.routes));
+      assert.ok(Object.isFrozen(rootMatch.route));
+      assert.ok(Object.isFrozen(rootMatch.route.segments));
+      assert.ok(Object.isFrozen(rootMatch.route.methods));
+      assert.ok(Object.isFrozen(rootMatch.params));
+      assert.ok(Object.isFrozen(rootMatch.middlewares));
     },
   );
 });
 
-Deno.test("v0.20 file router preserves route-specific names on shared parameter prefixes", async () => {
+test("v0.20 file router preserves route-specific names on shared parameter prefixes", async () => {
   await withFixture(
     {
       "[accountId]/profile.ts": GET_ROUTE,
@@ -142,17 +147,17 @@ Deno.test("v0.20 file router preserves route-specific names on shared parameter 
       const router = await createFileRouter({ root });
 
       const profile = router.match("/acct-1/profile");
-      assert(profile);
-      assertEquals(profile.params, { accountId: "acct-1" });
+      assert.ok(profile);
+      assert.deepStrictEqual(profile.params, { accountId: "acct-1" });
 
       const settings = router.match("/work-2/settings");
-      assert(settings);
-      assertEquals(settings.params, { workspaceId: "work-2" });
+      assert.ok(settings);
+      assert.deepStrictEqual(settings.params, { workspaceId: "work-2" });
     },
   );
 });
 
-Deno.test("v0.20 file router returns frozen catchall values and stable root-to-leaf middleware", async () => {
+test("v0.20 file router returns frozen catchall values and stable root-to-leaf middleware", async () => {
   await withFixture(
     {
       "_middleware.ts": MIDDLEWARE,
@@ -163,12 +168,12 @@ Deno.test("v0.20 file router returns frozen catchall values and stable root-to-l
     async (root) => {
       const router = await createFileRouter({ root });
       const match = router.match("/docs/guides/getting-started");
-      assert(match);
+      assert.ok(match);
 
-      assertEquals(match.params.parts, ["guides", "getting-started"]);
-      assert(Array.isArray(match.params.parts));
-      assert(Object.isFrozen(match.params.parts));
-      assertEquals(
+      assert.deepStrictEqual(match.params.parts, ["guides", "getting-started"]);
+      assert.ok(Array.isArray(match.params.parts));
+      assert.ok(Object.isFrozen(match.params.parts));
+      assert.deepStrictEqual(
         match.middlewares.map(({ fileUrl }) =>
           relativeModulePath(fileUrl, router.root)
         ),
@@ -182,7 +187,7 @@ Deno.test("v0.20 file router returns frozen catchall values and stable root-to-l
   );
 });
 
-Deno.test("v0.20 file router is a startup snapshot and performs no request-time loading", async () => {
+test("v0.20 file router is a startup snapshot and performs no request-time loading", async () => {
   const counterKey = `__oxian_router_load_${crypto.randomUUID()}`;
   const counterSource = (body: string) => `
     const state = globalThis as unknown as Record<string, number>;
@@ -198,8 +203,8 @@ Deno.test("v0.20 file router is a startup snapshot and performs no request-time 
       const state = globalThis as unknown as Record<string, number>;
       try {
         const router = await createFileRouter({ root });
-        assertEquals(state[counterKey], 1);
-        assertEquals(router.routes.length, 1);
+        assert.deepStrictEqual(state[counterKey], 1);
+        assert.deepStrictEqual(router.routes.length, 1);
 
         await Deno.writeTextFile(
           join(root, "stable.ts"),
@@ -209,17 +214,17 @@ Deno.test("v0.20 file router is a startup snapshot and performs no request-time 
 
         for (let attempt = 0; attempt < 10; attempt++) {
           const match = router.match("/stable");
-          assert(match);
-          assertEquals(match.route.pattern, "/stable");
+          assert.ok(match);
+          assert.deepStrictEqual(match.route.pattern, "/stable");
         }
 
-        assertEquals(state[counterKey], 1);
-        assertEquals(router.routes.length, 1);
-        assertEquals(router.match("/later"), null);
-        assertMatch(router.root, /^file:.*\/$/);
+        assert.deepStrictEqual(state[counterKey], 1);
+        assert.deepStrictEqual(router.routes.length, 1);
+        assert.deepStrictEqual(router.match("/later"), null);
+        assert.match(router.root, /^file:.*\/$/);
 
         await Deno.remove(join(root, "stable.ts"));
-        assert(router.match("/stable"));
+        assert.ok(router.match("/stable"));
       } finally {
         delete state[counterKey];
       }

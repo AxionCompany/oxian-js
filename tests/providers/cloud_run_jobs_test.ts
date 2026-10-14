@@ -1,13 +1,15 @@
-import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects, assertThrows } from "../support/assert.ts";
 import {
   createCloudRunJobsProvider,
   isProviderError,
   runProviderConformance,
-} from "../../src/providers/index.ts";
+} from "../../src/providers/core.ts";
 import type {
   CloudRunJobsLaunchSpec,
   ProviderResource,
-} from "../../src/providers/index.ts";
+} from "../../src/providers/core.ts";
 
 const PROJECT = "oxian-test-project";
 const LOCATION = "us-central1";
@@ -95,9 +97,9 @@ function assertProviderErrorCode(
   error: unknown,
   code: string,
 ): void {
-  assert(isProviderError(error));
-  assertEquals(error.code, code);
-  assertEquals(error.providerId, "google-cloud-run-jobs");
+  assert.ok(isProviderError(error));
+  assert.deepStrictEqual(error.code, code);
+  assert.deepStrictEqual(error.providerId, "google-cloud-run-jobs");
 }
 
 async function provision(
@@ -150,9 +152,9 @@ function realShapedExecution(
   };
 }
 
-Deno.test("Cloud Run Jobs provision sends the exact authenticated run request and persists only safe attributes", async () => {
+test("Cloud Run Jobs provision sends the exact authenticated run request and persists only safe attributes", async () => {
   const fake = createFakeFetch((call) => {
-    assertEquals(call.url, RUN_URL);
+    assert.deepStrictEqual(call.url, RUN_URL);
     return jsonResponse({
       name: OPERATION,
       metadata: {
@@ -185,15 +187,15 @@ Deno.test("Cloud Run Jobs provision sends the exact authenticated run request an
     },
   });
 
-  assertEquals(fake.calls.length, 1);
-  assertEquals(fake.calls[0].url, RUN_URL);
-  assertEquals(fake.calls[0].method, "POST");
-  assertEquals(fake.calls[0].headers, {
+  assert.deepStrictEqual(fake.calls.length, 1);
+  assert.deepStrictEqual(fake.calls[0].url, RUN_URL);
+  assert.deepStrictEqual(fake.calls[0].method, "POST");
+  assert.deepStrictEqual(fake.calls[0].headers, {
     accept: "application/json",
     authorization: "Bearer test-access-token",
     "content-type": "application/json",
   });
-  assertEquals(JSON.parse(fake.calls[0].body), {
+  assert.deepStrictEqual(JSON.parse(fake.calls[0].body), {
     overrides: {
       taskCount: 1,
       containerOverrides: [{
@@ -215,8 +217,8 @@ Deno.test("Cloud Run Jobs provision sends the exact authenticated run request an
       timeout: "3600s",
     },
   });
-  assertEquals(tokens.signals.length, 1);
-  assertEquals(resource, {
+  assert.deepStrictEqual(tokens.signals.length, 1);
+  assert.deepStrictEqual(resource, {
     providerId: "google-cloud-run-jobs",
     resourceId: OPERATION,
     identity: IDENTITY,
@@ -229,18 +231,18 @@ Deno.test("Cloud Run Jobs provision sends the exact authenticated run request an
     },
   });
   const persisted = JSON.stringify(resource);
-  assertEquals(persisted.includes("test-access-token"), false);
-  assertEquals(persisted.includes("environment-secret"), false);
-  assertEquals(persisted.includes("argument-secret"), false);
-  assertEquals(persisted.includes("control.example.test"), false);
-  assertEquals(
+  assert.deepStrictEqual(persisted.includes("test-access-token"), false);
+  assert.deepStrictEqual(persisted.includes("environment-secret"), false);
+  assert.deepStrictEqual(persisted.includes("argument-secret"), false);
+  assert.deepStrictEqual(persisted.includes("control.example.test"), false);
+  assert.deepStrictEqual(
     persisted.includes("OXIAN_REGISTRATION_CAPABILITY"),
     false,
   );
-  assert(Object.isFrozen(resource.attributes));
+  assert.ok(Object.isFrozen(resource.attributes));
 });
 
-Deno.test("Cloud Run Jobs run omits the container override and timeout when they are absent", async () => {
+test("Cloud Run Jobs run omits the container override and timeout when they are absent", async () => {
   const fake = createFakeFetch(() =>
     jsonResponse({
       name: OPERATION,
@@ -256,14 +258,14 @@ Deno.test("Cloud Run Jobs run omits the container override and timeout when they
 
   await provision(provider);
 
-  assertEquals(JSON.parse(fake.calls[0].body), {
+  assert.deepStrictEqual(JSON.parse(fake.calls[0].body), {
     overrides: {
       taskCount: 1,
     },
   });
 });
 
-Deno.test("Cloud Run Jobs rehydrates a durable resource without exposing private attribute names", () => {
+test("Cloud Run Jobs rehydrates a durable resource without exposing private attribute names", () => {
   const provider = createCloudRunJobsProvider({
     project: PROJECT,
     location: LOCATION,
@@ -284,7 +286,7 @@ Deno.test("Cloud Run Jobs rehydrates a durable resource without exposing private
     },
   });
 
-  assertEquals(resource, {
+  assert.deepStrictEqual(resource, {
     providerId: "google-cloud-run-jobs",
     resourceId: OPERATION,
     identity: IDENTITY,
@@ -312,7 +314,7 @@ Deno.test("Cloud Run Jobs rehydrates a durable resource without exposing private
   assertProviderErrorCode(error, "invalid_resource");
 });
 
-Deno.test("Cloud Run Jobs resolves execution identity from operation metadata or response", async () => {
+test("Cloud Run Jobs resolves execution identity from operation metadata or response", async () => {
   const secondOperation =
     `projects/${PROJECT}/locations/${LOCATION}/operations/run-operation-2`;
   const secondExecution =
@@ -348,16 +350,16 @@ Deno.test("Cloud Run Jobs resolves execution identity from operation metadata or
     launch: { job: JOB },
   });
 
-  assertEquals(fromMetadata.resourceId, OPERATION);
-  assertEquals(fromMetadata.attributes.cloudRunExecution, EXECUTION);
-  assertEquals(fromResponse.resourceId, secondOperation);
-  assertEquals(
+  assert.deepStrictEqual(fromMetadata.resourceId, OPERATION);
+  assert.deepStrictEqual(fromMetadata.attributes.cloudRunExecution, EXECUTION);
+  assert.deepStrictEqual(fromResponse.resourceId, secondOperation);
+  assert.deepStrictEqual(
     fromResponse.attributes.cloudRunExecution,
     secondExecution,
   );
 });
 
-Deno.test("Cloud Run Jobs validates configuration and launch specs before authentication or I/O", async () => {
+test("Cloud Run Jobs validates configuration and launch specs before authentication or I/O", async () => {
   const getAccessToken = () => "must-not-be-read";
 
   for (
@@ -422,11 +424,11 @@ Deno.test("Cloud Run Jobs validates configuration and launch specs before authen
     assertProviderErrorCode(error, "invalid_launch_spec");
   }
 
-  assertEquals(tokenCalls, 0);
-  assertEquals(fake.calls.length, 0);
+  assert.deepStrictEqual(tokenCalls, 0);
+  assert.deepStrictEqual(fake.calls.length, 0);
 });
 
-Deno.test("Cloud Run Jobs accepts only operation and execution names in the exact configured project and location", async () => {
+test("Cloud Run Jobs accepts only operation and execution names in the exact configured project and location", async () => {
   const foreignOperation =
     `projects/other-project/locations/${LOCATION}/operations/foreign`;
   const foreignExecution =
@@ -454,7 +456,7 @@ Deno.test("Cloud Run Jobs accepts only operation and execution names in the exac
   assertProviderErrorCode(error, "provision_indeterminate");
 });
 
-Deno.test("Cloud Run Jobs inspection maps pending, running, succeeded, failed, and cancelled executions", async () => {
+test("Cloud Run Jobs inspection maps pending, running, succeeded, failed, and cancelled executions", async () => {
   let operation: Record<string, unknown> = {
     name: OPERATION,
     done: false,
@@ -486,9 +488,9 @@ Deno.test("Cloud Run Jobs inspection maps pending, running, succeeded, failed, a
   const resource = await provision(provider);
 
   const pending = await provider.inspect(resource);
-  assertEquals(pending.state, "present");
-  assertEquals(pending.observedAtMs, 123);
-  assertEquals(
+  assert.deepStrictEqual(pending.state, "present");
+  assert.deepStrictEqual(pending.observedAtMs, 123);
+  assert.deepStrictEqual(
     fake.calls.filter((call) => call.url === EXECUTION_URL).length,
     0,
   );
@@ -501,30 +503,30 @@ Deno.test("Cloud Run Jobs inspection maps pending, running, succeeded, failed, a
     name: EXECUTION,
     runningCount: 1,
   };
-  assertEquals((await provider.inspect(resource)).state, "present");
+  assert.deepStrictEqual((await provider.inspect(resource)).state, "present");
 
   execution = {
     name: EXECUTION,
     succeededCount: 1,
     completionTime: "2026-07-25T00:00:00Z",
   };
-  assertEquals((await provider.inspect(resource)).state, "absent");
+  assert.deepStrictEqual((await provider.inspect(resource)).state, "absent");
 
   execution = {
     name: EXECUTION,
     failedCount: 1,
   };
-  assertEquals((await provider.inspect(resource)).state, "failed");
+  assert.deepStrictEqual((await provider.inspect(resource)).state, "failed");
 
   execution = {
     name: EXECUTION,
     cancelledCount: 1,
     completionTime: "2026-07-25T00:01:00Z",
   };
-  assertEquals((await provider.inspect(resource)).state, "absent");
+  assert.deepStrictEqual((await provider.inspect(resource)).state, "absent");
 });
 
-Deno.test("Cloud Run Jobs inspection accepts real execution responses with short and canonical Job names", async () => {
+test("Cloud Run Jobs inspection accepts real execution responses with short and canonical Job names", async () => {
   let responseJob = JOB;
   const fake = createFakeFetch((call) => {
     if (call.url === RUN_URL && call.method === "POST") {
@@ -555,16 +557,16 @@ Deno.test("Cloud Run Jobs inspection accepts real execution responses with short
 
   const inspection = await provider.inspect(resource);
 
-  assertEquals(inspection.state, "present");
-  assertEquals(inspection.observedAtMs, 234);
-  assertEquals(inspection.details.phase, "active");
-  assertEquals(inspection.details.runningCount, 1);
+  assert.deepStrictEqual(inspection.state, "present");
+  assert.deepStrictEqual(inspection.observedAtMs, 234);
+  assert.deepStrictEqual(inspection.details.phase, "active");
+  assert.deepStrictEqual(inspection.details.runningCount, 1);
 
   responseJob = `projects/${PROJECT}/locations/${LOCATION}/jobs/${JOB}`;
-  assertEquals((await provider.inspect(resource)).state, "present");
+  assert.deepStrictEqual((await provider.inspect(resource)).state, "present");
 });
 
-Deno.test("Cloud Run Jobs inspection rejects execution responses naming any other Job", async () => {
+test("Cloud Run Jobs inspection rejects execution responses naming any other Job", async () => {
   let responseJob: unknown = "another-job";
   const fake = createFakeFetch((call) => {
     if (call.url === RUN_URL && call.method === "POST") {
@@ -608,14 +610,14 @@ Deno.test("Cloud Run Jobs inspection rejects execution responses naming any othe
       Error,
     );
     assertProviderErrorCode(error, "inspection_failed");
-    assertEquals(
+    assert.deepStrictEqual(
       (error as Error & { cause?: unknown }).cause instanceof TypeError,
       true,
     );
   }
 });
 
-Deno.test("Cloud Run Jobs termination is confirmed, idempotent, and cancels exactly once", async () => {
+test("Cloud Run Jobs termination is confirmed, idempotent, and cancels exactly once", async () => {
   let cancelled = false;
   let cancelCalls = 0;
   const fake = createFakeFetch((call) => {
@@ -648,7 +650,7 @@ Deno.test("Cloud Run Jobs termination is confirmed, idempotent, and cancels exac
     if (call.url === CANCEL_URL && call.method === "POST") {
       cancelCalls++;
       cancelled = true;
-      assertEquals(call.body, "{}");
+      assert.deepStrictEqual(call.body, "{}");
       return jsonResponse({
         name: CANCEL_OPERATION,
         metadata: { name: EXECUTION },
@@ -668,17 +670,17 @@ Deno.test("Cloud Run Jobs termination is confirmed, idempotent, and cancels exac
   const first = await provider.terminate(resource);
   const repeated = await provider.terminate(resource);
 
-  assertEquals(first.outcome, "terminated");
-  assertEquals(first.observedAtMs, 456);
-  assertEquals(
+  assert.deepStrictEqual(first.outcome, "terminated");
+  assert.deepStrictEqual(first.observedAtMs, 456);
+  assert.deepStrictEqual(
     first.details.cancellationOperation,
     CANCEL_OPERATION,
   );
-  assertEquals(repeated.outcome, "already_absent");
-  assertEquals(cancelCalls, 1);
+  assert.deepStrictEqual(repeated.outcome, "already_absent");
+  assert.deepStrictEqual(cancelCalls, 1);
 });
 
-Deno.test("Cloud Run Jobs termination accepts real execution responses with their short Job ID", async () => {
+test("Cloud Run Jobs termination accepts real execution responses with their short Job ID", async () => {
   let executionReads = 0;
   let cancelCalls = 0;
   const fake = createFakeFetch((call) => {
@@ -713,7 +715,7 @@ Deno.test("Cloud Run Jobs termination accepts real execution responses with thei
     }
     if (call.url === CANCEL_URL && call.method === "POST") {
       cancelCalls++;
-      assertEquals(call.body, "{}");
+      assert.deepStrictEqual(call.body, "{}");
       return jsonResponse({
         name: CANCEL_OPERATION,
         metadata: { name: EXECUTION },
@@ -732,18 +734,18 @@ Deno.test("Cloud Run Jobs termination accepts real execution responses with thei
 
   const termination = await provider.terminate(resource);
 
-  assertEquals(termination.outcome, "terminated");
-  assertEquals(termination.observedAtMs, 567);
-  assertEquals(termination.details.phase, "cancelled");
-  assertEquals(
+  assert.deepStrictEqual(termination.outcome, "terminated");
+  assert.deepStrictEqual(termination.observedAtMs, 567);
+  assert.deepStrictEqual(termination.details.phase, "cancelled");
+  assert.deepStrictEqual(
     termination.details.cancellationOperation,
     CANCEL_OPERATION,
   );
-  assertEquals(executionReads, 2);
-  assertEquals(cancelCalls, 1);
+  assert.deepStrictEqual(executionReads, 2);
+  assert.deepStrictEqual(cancelCalls, 1);
 });
 
-Deno.test("Cloud Run Jobs pre-aborted operations perform no token lookup or HTTP I/O", async () => {
+test("Cloud Run Jobs pre-aborted operations perform no token lookup or HTTP I/O", async () => {
   let tokenCalls = 0;
   const fake = createFakeFetch((call) => {
     if (call.url === RUN_URL) {
@@ -787,11 +789,11 @@ Deno.test("Cloud Run Jobs pre-aborted operations perform no token lookup or HTTP
     );
   }
 
-  assertEquals(fake.calls.length, callsBeforeAbortChecks);
-  assertEquals(tokenCalls, tokensBeforeAbortChecks);
+  assert.deepStrictEqual(fake.calls.length, callsBeforeAbortChecks);
+  assert.deepStrictEqual(tokenCalls, tokensBeforeAbortChecks);
 });
 
-Deno.test("Cloud Run Jobs never retries an ambiguous launch and returns a typed indeterminate error", async () => {
+test("Cloud Run Jobs never retries an ambiguous launch and returns a typed indeterminate error", async () => {
   let tokenCalls = 0;
   let fetchCalls = 0;
   const provider = createCloudRunJobsProvider({
@@ -813,15 +815,15 @@ Deno.test("Cloud Run Jobs never retries an ambiguous launch and returns a typed 
   );
 
   assertProviderErrorCode(error, "provision_indeterminate");
-  assertEquals(tokenCalls, 1);
-  assertEquals(fetchCalls, 1);
-  assertEquals(
+  assert.deepStrictEqual(tokenCalls, 1);
+  assert.deepStrictEqual(fetchCalls, 1);
+  assert.deepStrictEqual(
     (error as Error).cause instanceof TypeError,
     true,
   );
 });
 
-Deno.test("Cloud Run Jobs bounds API bodies while streaming", async () => {
+test("Cloud Run Jobs bounds API bodies while streaming", async () => {
   let cancelled = false;
   const body = new ReadableStream<Uint8Array>({
     pull(controller) {
@@ -847,10 +849,10 @@ Deno.test("Cloud Run Jobs bounds API bodies while streaming", async () => {
   const error = await assertRejects(() => provision(provider), Error);
 
   assertProviderErrorCode(error, "provision_indeterminate");
-  assertEquals(cancelled, true);
+  assert.deepStrictEqual(cancelled, true);
 });
 
-Deno.test("Cloud Run Jobs passes generic provider conformance against a deterministic fake API", async () => {
+test("Cloud Run Jobs passes generic provider conformance against a deterministic fake API", async () => {
   let cancelled = false;
   let runCalls = 0;
   let cancelCalls = 0;
@@ -912,7 +914,7 @@ Deno.test("Cloud Run Jobs passes generic provider conformance against a determin
     },
   });
 
-  assertEquals(report.checks, [
+  assert.deepStrictEqual(report.checks, [
     "pre-aborted provision",
     "provision",
     "resource identity",
@@ -924,11 +926,11 @@ Deno.test("Cloud Run Jobs passes generic provider conformance against a determin
     "inspect absent",
     "idempotent terminate",
   ]);
-  assertEquals(report.initialInspection.state, "present");
-  assertEquals(report.termination.outcome, "terminated");
-  assertEquals(report.finalInspection.state, "absent");
-  assertEquals(report.repeatedTermination.outcome, "already_absent");
-  assertEquals(report.resource.attributes.tier, "conformance");
-  assertEquals(runCalls, 1);
-  assertEquals(cancelCalls, 1);
+  assert.deepStrictEqual(report.initialInspection.state, "present");
+  assert.deepStrictEqual(report.termination.outcome, "terminated");
+  assert.deepStrictEqual(report.finalInspection.state, "absent");
+  assert.deepStrictEqual(report.repeatedTermination.outcome, "already_absent");
+  assert.deepStrictEqual(report.resource.attributes.tier, "conformance");
+  assert.deepStrictEqual(runCalls, 1);
+  assert.deepStrictEqual(cancelCalls, 1);
 });

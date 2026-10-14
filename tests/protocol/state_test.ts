@@ -1,4 +1,6 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import {
   createDrainedFrame,
   createDrainFrame,
@@ -144,10 +146,10 @@ function closeNormally(
   );
 }
 
-Deno.test("protocol order: validates both sides of the handshake", () => {
+test("protocol order: validates both sides of the handshake", () => {
   for (const role of ["worker", "hypervisor"] as const) {
     const validator = createReadyValidator(role);
-    assertEquals(validator.snapshot(), {
+    assert.deepStrictEqual(validator.snapshot(), {
       role,
       phase: "ready",
       identity: HELLO.identity,
@@ -163,13 +165,13 @@ Deno.test("protocol order: validates both sides of the handshake", () => {
   }
 });
 
-Deno.test("protocol order: Ready is not working state before Hypervisor acknowledgement", () => {
+test("protocol order: Ready is not working state before Hypervisor acknowledgement", () => {
   for (const role of ["worker", "hypervisor"] as const) {
     const validator = createProtocolOrderValidator({ role });
     validator.acceptControl(direction(role, "worker"), HELLO);
     validator.acceptControl(direction(role, "hypervisor"), WELCOME);
     validator.acceptControl(direction(role, "worker"), READY);
-    assertEquals(validator.snapshot().phase, "readied");
+    assert.deepStrictEqual(validator.snapshot().phase, "readied");
 
     assertThrows(
       () =>
@@ -195,11 +197,11 @@ Deno.test("protocol order: Ready is not working state before Hypervisor acknowle
       "uses stale connection",
     );
     validator.acceptControl(direction(role, "hypervisor"), READY_ACK);
-    assertEquals(validator.snapshot().phase, "ready");
+    assert.deepStrictEqual(validator.snapshot().phase, "ready");
   }
 });
 
-Deno.test("protocol order: rejects wrong-direction and stale lifecycle frames", () => {
+test("protocol order: rejects wrong-direction and stale lifecycle frames", () => {
   const worker = createProtocolOrderValidator({ role: "worker" });
   assertThrows(
     () => worker.acceptControl("received", HELLO),
@@ -234,7 +236,7 @@ Deno.test("protocol order: rejects wrong-direction and stale lifecycle frames", 
   );
 });
 
-Deno.test("protocol order: heartbeat sequence and load remain bounded", () => {
+test("protocol order: heartbeat sequence and load remain bounded", () => {
   const validator = createReadyValidator();
   const accepted = validator.acceptControl(
     "sent",
@@ -246,11 +248,11 @@ Deno.test("protocol order: heartbeat sequence and load remain bounded", () => {
       metadata: { processes: { active: 1 } },
     }),
   );
-  assertEquals(
+  assert.deepStrictEqual(
     accepted.frame.type === "heartbeat" ? accepted.frame.metadata : undefined,
     { processes: { active: 1 } },
   );
-  assertEquals(validator.snapshot().nextHeartbeatSequence, 1);
+  assert.deepStrictEqual(validator.snapshot().nextHeartbeatSequence, 1);
 
   const sequenceGap = assertThrows(
     () =>
@@ -266,7 +268,7 @@ Deno.test("protocol order: heartbeat sequence and load remain bounded", () => {
     TypeError,
     "does not match expected 1",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (sequenceGap as ProtocolViolation).code,
     "sequence_mismatch",
   );
@@ -285,7 +287,7 @@ Deno.test("protocol order: heartbeat sequence and load remain bounded", () => {
     TypeError,
     "exceeds the declared worker capacity",
   );
-  assertEquals(validator.snapshot().nextHeartbeatSequence, 1);
+  assert.deepStrictEqual(validator.snapshot().nextHeartbeatSequence, 1);
 
   validator.acceptControl(
     "sent",
@@ -296,10 +298,10 @@ Deno.test("protocol order: heartbeat sequence and load remain bounded", () => {
       availableCapacity: 2,
     }),
   );
-  assertEquals(validator.snapshot().nextHeartbeatSequence, 2);
+  assert.deepStrictEqual(validator.snapshot().nextHeartbeatSequence, 2);
 });
 
-Deno.test("protocol order: accepted reserves and start authorizes execution", () => {
+test("protocol order: accepted reserves and start authorizes execution", () => {
   const validator = createReadyValidator();
   validator.acceptControl(
     "received",
@@ -334,7 +336,7 @@ Deno.test("protocol order: accepted reserves and start authorizes execution", ()
     "sent",
     createWorkAcceptedFrame({ streamId: STREAM_ID }),
   );
-  assertEquals(validator.snapshot().streams[0].status, "accepted");
+  assert.deepStrictEqual(validator.snapshot().streams[0].status, "accepted");
   assertThrows(
     () =>
       validator.acceptControl(
@@ -349,8 +351,8 @@ Deno.test("protocol order: accepted reserves and start authorizes execution", ()
     "received",
     createWorkStartFrame({ streamId: STREAM_ID }),
   );
-  assertEquals(start.disposition, "deliver");
-  assertEquals(validator.snapshot().streams[0].status, "started");
+  assert.deepStrictEqual(start.disposition, "deliver");
+  assert.deepStrictEqual(validator.snapshot().streams[0].status, "started");
   assertThrows(
     () =>
       validator.acceptControl(
@@ -375,10 +377,10 @@ Deno.test("protocol order: accepted reserves and start authorizes execution", ()
     createWorkCreditFrame({ streamId: STREAM_ID, bytes: 1 }),
   );
   validator.acceptBinary("sent", data);
-  assertEquals(validator.snapshot().streams[0].sendCredit, 0);
+  assert.deepStrictEqual(validator.snapshot().streams[0].sendCredit, 0);
 });
 
-Deno.test("protocol order: interleaves bidirectional stream sequences independently", () => {
+test("protocol order: interleaves bidirectional stream sequences independently", () => {
   const validator = createReadyValidator();
   openAcceptStart(validator, "worker", STREAM_ID);
   openAcceptStart(validator, "worker", OTHER_STREAM_ID);
@@ -435,7 +437,7 @@ Deno.test("protocol order: interleaves bidirectional stream sequences independen
     }),
   );
 
-  assertEquals(
+  assert.deepStrictEqual(
     validator.snapshot().streams.map((stream) => ({
       streamId: stream.streamId,
       sent: stream.nextSentSequence,
@@ -462,7 +464,7 @@ Deno.test("protocol order: interleaves bidirectional stream sequences independen
   );
 });
 
-Deno.test("protocol order: validates runtime binary objects before state mutation", () => {
+test("protocol order: validates runtime binary objects before state mutation", () => {
   const validator = createReadyValidator();
   openAcceptStart(validator);
   validator.acceptControl(
@@ -481,15 +483,15 @@ Deno.test("protocol order: validates runtime binary objects before state mutatio
     TypeError,
     "unsupported frame type",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (malformed as ProtocolViolation).code,
     "unsupported_frame_type",
   );
-  assertEquals(validator.snapshot().streams[0].nextSentSequence, 0);
-  assertEquals(validator.snapshot().streams[0].sendCredit, 1);
+  assert.deepStrictEqual(validator.snapshot().streams[0].nextSentSequence, 0);
+  assert.deepStrictEqual(validator.snapshot().streams[0].sendCredit, 1);
 });
 
-Deno.test("protocol order: fixed credit limits agree across stricter receivers", () => {
+test("protocol order: fixed credit limits agree across stricter receivers", () => {
   const worker = createReadyValidator("worker", {
     maxReceiveCreditBytes: 5,
   });
@@ -537,7 +539,7 @@ Deno.test("protocol order: fixed credit limits agree across stricter receivers",
   );
 });
 
-Deno.test("protocol order: enforces workload declaration and active capacity", () => {
+test("protocol order: enforces workload declaration and active capacity", () => {
   const validator = createReadyValidator();
   const unsupported = assertThrows(
     () =>
@@ -552,7 +554,7 @@ Deno.test("protocol order: enforces workload declaration and active capacity", (
     TypeError,
     "did not declare workload",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (unsupported as ProtocolViolation).code,
     "unsupported_workload",
   );
@@ -574,7 +576,7 @@ Deno.test("protocol order: enforces workload declaration and active capacity", (
   );
 });
 
-Deno.test("protocol order: binary sequences reject gaps in either direction", () => {
+test("protocol order: binary sequences reject gaps in either direction", () => {
   const validator = createReadyValidator();
   openAcceptStart(validator);
   validator.acceptControl(
@@ -597,7 +599,7 @@ Deno.test("protocol order: binary sequences reject gaps in either direction", ()
   );
 });
 
-Deno.test("protocol order: crossed cancel and acceptance preserve boundary", () => {
+test("protocol order: crossed cancel and acceptance preserve boundary", () => {
   const validator = createReadyValidator("hypervisor");
   validator.acceptControl(
     "sent",
@@ -619,8 +621,8 @@ Deno.test("protocol order: crossed cancel and acceptance preserve boundary", () 
     "received",
     createWorkAcceptedFrame({ streamId: STREAM_ID }),
   );
-  assertEquals(crossedAcceptance.disposition, "deliver");
-  assertEquals(validator.snapshot().streams[0], {
+  assert.deepStrictEqual(crossedAcceptance.disposition, "deliver");
+  assert.deepStrictEqual(validator.snapshot().streams[0], {
     streamId: STREAM_ID,
     status: "terminating",
     accepted: true,
@@ -639,12 +641,12 @@ Deno.test("protocol order: crossed cancel and acceptance preserve boundary", () 
       reason: "cancel acknowledged",
     }),
   );
-  assertEquals(acknowledgement.disposition, "discard");
-  assertEquals(validator.snapshot().activeStreamCount, 0);
-  assertEquals(validator.snapshot().usedStreamCount, 1);
+  assert.deepStrictEqual(acknowledgement.disposition, "discard");
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
+  assert.deepStrictEqual(validator.snapshot().usedStreamCount, 1);
 });
 
-Deno.test("protocol order: worker detects cancellation queued before acceptance", () => {
+test("protocol order: worker detects cancellation queued before acceptance", () => {
   const validator = createReadyValidator("worker");
   validator.acceptControl(
     "received",
@@ -671,11 +673,11 @@ Deno.test("protocol order: worker detects cancellation queued before acceptance"
     TypeError,
     "aborted",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (violation as ProtocolViolation).code,
     "post_terminal_frame",
   );
-  assertEquals(validator.snapshot().activeStreamCount, 1);
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 1);
 
   const acknowledgement = validator.acceptControl(
     "sent",
@@ -684,11 +686,11 @@ Deno.test("protocol order: worker detects cancellation queued before acceptance"
       reason: "cancel acknowledged",
     }),
   );
-  assertEquals(acknowledgement.disposition, "deliver");
-  assertEquals(validator.snapshot().activeStreamCount, 0);
+  assert.deepStrictEqual(acknowledgement.disposition, "deliver");
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
 });
 
-Deno.test("protocol order: crossed data is validated then discarded after cancel", () => {
+test("protocol order: crossed data is validated then discarded after cancel", () => {
   const validator = createReadyValidator("hypervisor");
   openAcceptStart(validator, "hypervisor");
   validator.acceptControl(
@@ -711,9 +713,12 @@ Deno.test("protocol order: crossed data is validated then discarded after cancel
       payload: new Uint8Array([1]),
     }),
   );
-  assertEquals(crossedData.disposition, "discard");
-  assertEquals(validator.snapshot().streams[0].nextReceivedSequence, 1);
-  assertEquals(validator.snapshot().streams[0].receiveCredit, 1);
+  assert.deepStrictEqual(crossedData.disposition, "discard");
+  assert.deepStrictEqual(
+    validator.snapshot().streams[0].nextReceivedSequence,
+    1,
+  );
+  assert.deepStrictEqual(validator.snapshot().streams[0].receiveCredit, 1);
 
   validator.acceptControl(
     "received",
@@ -722,10 +727,10 @@ Deno.test("protocol order: crossed data is validated then discarded after cancel
       reason: "cancel acknowledged",
     }),
   );
-  assertEquals(validator.snapshot().activeStreamCount, 0);
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
 });
 
-Deno.test("protocol order: crossed start and data are discarded after local error", () => {
+test("protocol order: crossed start and data are discarded after local error", () => {
   const beforeStart = createReadyValidator("worker");
   openAndAccept(beforeStart);
   beforeStart.acceptControl(
@@ -740,8 +745,8 @@ Deno.test("protocol order: crossed start and data are discarded after local erro
     "received",
     createWorkStartFrame({ streamId: STREAM_ID }),
   );
-  assertEquals(crossedStart.disposition, "discard");
-  assertEquals(beforeStart.snapshot().streams[0].started, true);
+  assert.deepStrictEqual(crossedStart.disposition, "discard");
+  assert.deepStrictEqual(beforeStart.snapshot().streams[0].started, true);
   beforeStart.acceptControl(
     "received",
     createWorkCancelFrame({
@@ -749,7 +754,7 @@ Deno.test("protocol order: crossed start and data are discarded after local erro
       reason: "error acknowledged",
     }),
   );
-  assertEquals(beforeStart.snapshot().activeStreamCount, 0);
+  assert.deepStrictEqual(beforeStart.snapshot().activeStreamCount, 0);
 
   const afterStart = createReadyValidator("worker");
   openAcceptStart(afterStart);
@@ -773,10 +778,10 @@ Deno.test("protocol order: crossed start and data are discarded after local erro
       payload: new Uint8Array([1]),
     }),
   );
-  assertEquals(crossedData.disposition, "discard");
+  assert.deepStrictEqual(crossedData.disposition, "discard");
 });
 
-Deno.test("protocol order: same-direction frames after terminal are rejected", () => {
+test("protocol order: same-direction frames after terminal are rejected", () => {
   const validator = createReadyValidator();
   openAcceptStart(validator);
   validator.acceptControl(
@@ -801,27 +806,27 @@ Deno.test("protocol order: same-direction frames after terminal are rejected", (
     TypeError,
     "same stream half",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (violation as ProtocolViolation).code,
     "post_terminal_frame",
   );
-  assertEquals(validator.snapshot().activeStreamCount, 1);
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 1);
 
   validator.acceptControl(
     "sent",
     createWorkEndFrame({ streamId: STREAM_ID }),
   );
-  assertEquals(validator.snapshot().activeStreamCount, 0);
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
 });
 
-Deno.test("protocol order: a normal End may be upgraded once to whole-stream Cancel", () => {
+test("protocol order: a normal End may be upgraded once to whole-stream Cancel", () => {
   const validator = createReadyValidator("hypervisor");
   openAcceptStart(validator, "hypervisor");
   validator.acceptControl(
     "sent",
     createWorkEndFrame({ streamId: STREAM_ID }),
   );
-  assertEquals(validator.snapshot().streams[0].sentTerminal, "end");
+  assert.deepStrictEqual(validator.snapshot().streams[0].sentTerminal, "end");
 
   validator.acceptControl(
     "sent",
@@ -830,8 +835,11 @@ Deno.test("protocol order: a normal End may be upgraded once to whole-stream Can
       reason: "response consumer abandoned output",
     }),
   );
-  assertEquals(validator.snapshot().streams[0].sentTerminal, "cancel");
-  assertEquals(validator.snapshot().streams[0].status, "terminating");
+  assert.deepStrictEqual(
+    validator.snapshot().streams[0].sentTerminal,
+    "cancel",
+  );
+  assert.deepStrictEqual(validator.snapshot().streams[0].status, "terminating");
 
   const duplicate = assertThrows(
     () =>
@@ -845,7 +853,7 @@ Deno.test("protocol order: a normal End may be upgraded once to whole-stream Can
     TypeError,
     "follows a terminal frame",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (duplicate as ProtocolViolation).code,
     "post_terminal_frame",
   );
@@ -857,11 +865,11 @@ Deno.test("protocol order: a normal End may be upgraded once to whole-stream Can
       reason: "cancel acknowledged",
     }),
   );
-  assertEquals(acknowledgement.disposition, "discard");
-  assertEquals(validator.snapshot().activeStreamCount, 0);
+  assert.deepStrictEqual(acknowledgement.disposition, "discard");
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
 });
 
-Deno.test("protocol order: mixed End and Abort stays active until reciprocal upgrade", () => {
+test("protocol order: mixed End and Abort stays active until reciprocal upgrade", () => {
   const validator = createReadyValidator("hypervisor");
   openAcceptStart(validator, "hypervisor");
   validator.acceptControl(
@@ -876,9 +884,12 @@ Deno.test("protocol order: mixed End and Abort stays active until reciprocal upg
     }),
   );
 
-  assertEquals(validator.snapshot().activeStreamCount, 1);
-  assertEquals(validator.snapshot().streams[0].sentTerminal, "end");
-  assertEquals(validator.snapshot().streams[0].receivedTerminal, "cancel");
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 1);
+  assert.deepStrictEqual(validator.snapshot().streams[0].sentTerminal, "end");
+  assert.deepStrictEqual(
+    validator.snapshot().streams[0].receivedTerminal,
+    "cancel",
+  );
 
   validator.acceptControl(
     "sent",
@@ -887,10 +898,10 @@ Deno.test("protocol order: mixed End and Abort stays active until reciprocal upg
       reason: "abort acknowledged",
     }),
   );
-  assertEquals(validator.snapshot().activeStreamCount, 0);
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
 });
 
-Deno.test("protocol order: normal terminal tombstone reciprocates a late abort upgrade", () => {
+test("protocol order: normal terminal tombstone reciprocates a late abort upgrade", () => {
   const validator = createReadyValidator("hypervisor");
   openAcceptStart(validator, "hypervisor");
   validator.acceptControl(
@@ -901,7 +912,7 @@ Deno.test("protocol order: normal terminal tombstone reciprocates a late abort u
     "received",
     createWorkEndFrame({ streamId: STREAM_ID }),
   );
-  assertEquals(validator.snapshot().activeStreamCount, 0);
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
 
   const lateUpgrade = validator.acceptControl(
     "received",
@@ -910,8 +921,8 @@ Deno.test("protocol order: normal terminal tombstone reciprocates a late abort u
       reason: "late crossed cancellation",
     }),
   );
-  assertEquals(lateUpgrade.disposition, "discard");
-  assertEquals(validator.snapshot().activeStreamCount, 0);
+  assert.deepStrictEqual(lateUpgrade.disposition, "discard");
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
 
   const acknowledgement = validator.acceptControl(
     "sent",
@@ -920,8 +931,8 @@ Deno.test("protocol order: normal terminal tombstone reciprocates a late abort u
       reason: "late abort acknowledged",
     }),
   );
-  assertEquals(acknowledgement.disposition, "discard");
-  assertEquals(validator.snapshot().activeStreamCount, 0);
+  assert.deepStrictEqual(acknowledgement.disposition, "discard");
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
 
   const duplicate = assertThrows(
     () =>
@@ -935,18 +946,18 @@ Deno.test("protocol order: normal terminal tombstone reciprocates a late abort u
     TypeError,
     "terminal stream",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (duplicate as ProtocolViolation).code,
     "post_terminal_frame",
   );
 });
 
-Deno.test("protocol order: End/End tombstones discard crossed inbound credit", () => {
+test("protocol order: End/End tombstones discard crossed inbound credit", () => {
   for (const role of ["worker", "hypervisor"] as const) {
     const validator = createReadyValidator(role);
     openAcceptStart(validator, role);
     closeNormally(validator, role, STREAM_ID);
-    assertEquals(validator.snapshot().activeStreamCount, 0);
+    assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
 
     // The peer granted this credit before receiving our End, but the two
     // directions crossed and our validator observed End/End first.
@@ -954,8 +965,8 @@ Deno.test("protocol order: End/End tombstones discard crossed inbound credit", (
       "received",
       createWorkCreditFrame({ streamId: STREAM_ID, bytes: 1 }),
     );
-    assertEquals(crossed.disposition, "discard");
-    assertEquals(validator.snapshot().activeStreamCount, 0);
+    assert.deepStrictEqual(crossed.disposition, "discard");
+    assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
 
     const localLateCredit = assertThrows(
       () =>
@@ -966,14 +977,14 @@ Deno.test("protocol order: End/End tombstones discard crossed inbound credit", (
       TypeError,
       "closed peer half",
     );
-    assertEquals(
+    assert.deepStrictEqual(
       (localLateCredit as ProtocolViolation).code,
       "post_terminal_frame",
     );
   }
 });
 
-Deno.test("protocol order: worker metadata is single-shot and precedes output", () => {
+test("protocol order: worker metadata is single-shot and precedes output", () => {
   const validator = createReadyValidator();
   openAcceptStart(validator, "worker", STREAM_ID, false);
   const metadata = createWorkMetadataFrame({
@@ -987,7 +998,7 @@ Deno.test("protocol order: worker metadata is single-shot and precedes output", 
     TypeError,
     "at most once",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (violation as ProtocolViolation).code,
     "invalid_protocol_order",
   );
@@ -996,7 +1007,7 @@ Deno.test("protocol order: worker metadata is single-shot and precedes output", 
     TypeError,
     "only be sent by a worker",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (directionViolation as ProtocolViolation).code,
     "invalid_direction",
   );
@@ -1020,7 +1031,7 @@ Deno.test("protocol order: worker metadata is single-shot and precedes output", 
     TypeError,
     "precedes work.metadata",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (dataViolation as ProtocolViolation).code,
     "invalid_protocol_order",
   );
@@ -1035,7 +1046,7 @@ Deno.test("protocol order: worker metadata is single-shot and precedes output", 
   );
 });
 
-Deno.test("protocol order: drain waits for both terminal halves", () => {
+test("protocol order: drain waits for both terminal halves", () => {
   const validator = createReadyValidator();
   openAcceptStart(validator);
   validator.acceptControl(
@@ -1082,10 +1093,10 @@ Deno.test("protocol order: drain waits for both terminal halves", () => {
       reason: "drain complete",
     }),
   );
-  assertEquals(validator.snapshot().phase, "shutdown");
+  assert.deepStrictEqual(validator.snapshot().phase, "shutdown");
 });
 
-Deno.test("protocol order: lifetime ID bound preserves strict no-reuse", () => {
+test("protocol order: lifetime ID bound preserves strict no-reuse", () => {
   const validator = createReadyValidator("worker", {
     maxLifetimeStreams: 2,
   });
@@ -1094,8 +1105,8 @@ Deno.test("protocol order: lifetime ID bound preserves strict no-reuse", () => {
   closeNormally(validator, "worker", STREAM_ID);
   openAcceptStart(validator, "worker", OTHER_STREAM_ID);
   closeNormally(validator, "worker", OTHER_STREAM_ID);
-  assertEquals(validator.snapshot().activeStreamCount, 0);
-  assertEquals(validator.snapshot().usedStreamCount, 2);
+  assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
+  assert.deepStrictEqual(validator.snapshot().usedStreamCount, 2);
 
   const duplicate = assertThrows(
     () =>
@@ -1110,7 +1121,10 @@ Deno.test("protocol order: lifetime ID bound preserves strict no-reuse", () => {
     TypeError,
     "already been opened",
   );
-  assertEquals((duplicate as ProtocolViolation).code, "duplicate_stream");
+  assert.deepStrictEqual(
+    (duplicate as ProtocolViolation).code,
+    "duplicate_stream",
+  );
 
   const exhausted = assertThrows(
     () =>
@@ -1125,13 +1139,13 @@ Deno.test("protocol order: lifetime ID bound preserves strict no-reuse", () => {
     TypeError,
     "reconnect before opening more work",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (exhausted as ProtocolViolation).code,
     "stream_limit_exceeded",
   );
 });
 
-Deno.test("protocol order: protocol_error terminates a connection", () => {
+test("protocol order: protocol_error terminates a connection", () => {
   const validator = createReadyValidator();
   validator.acceptControl(
     "received",
@@ -1141,7 +1155,7 @@ Deno.test("protocol order: protocol_error terminates a connection", () => {
       message: "binary frame sequence skipped",
     }),
   );
-  assertEquals(validator.snapshot().phase, "protocol_error");
+  assert.deepStrictEqual(validator.snapshot().phase, "protocol_error");
 
   assertThrows(
     () =>
