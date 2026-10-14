@@ -88,17 +88,15 @@ test("one declaration changes only transport ownership", async () => {
   assert.deepStrictEqual((await handle.completed).status, "completed");
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  for (
-    const [before, after] of [
-      ["worker.activate", "worker.register"],
-      ["worker.register", "host.connect"],
-      ["host.connect", "host.admit"],
-      ["host.admit", "host.handshake"],
-      ["host.handshake", "worker.handshake"],
-      ["worker.handshake", "host.ready"],
-      ["host.ready", "worker.ready"],
-    ] as const
-  ) {
+  for (const [before, after] of [
+    ["worker.activate", "worker.register"],
+    ["worker.register", "host.connect"],
+    ["host.connect", "host.admit"],
+    ["host.admit", "host.handshake"],
+    ["host.handshake", "worker.handshake"],
+    ["worker.handshake", "host.ready"],
+    ["host.ready", "worker.ready"],
+  ] as const) {
     assert.deepStrictEqual(
       order.indexOf(before) < order.indexOf(after),
       true,
@@ -128,21 +126,24 @@ test("Worker onReady gates public readiness and queued handler execution", async
   const release = deferred();
   let invoked = false;
   const hypervisor = createHypervisor({ transports: [transport] });
-  const worker = createWorker({
-    id: "ready-gated-worker",
-    transport,
-    workloads: {
-      task: () => {
-        invoked = true;
-        return new TextEncoder().encode("complete");
+  const worker = createWorker(
+    {
+      id: "ready-gated-worker",
+      transport,
+      workloads: {
+        task: () => {
+          invoked = true;
+          return new TextEncoder().encode("complete");
+        },
       },
     },
-  }, {
-    onReady() {
-      entered.resolve();
-      return release.promise;
+    {
+      onReady() {
+        entered.resolve();
+        return release.promise;
+      },
     },
-  });
+  );
 
   try {
     await entered.promise;
@@ -170,11 +171,14 @@ test("completion observer failure cannot rewrite work or close its session", asy
     type: "in-process",
     config: { topic: `complete-observer-${crypto.randomUUID()}` },
   } as const;
-  const hypervisor = createHypervisor({ transports: [transport] }, {
-    onComplete() {
-      throw new Error("observer unavailable");
+  const hypervisor = createHypervisor(
+    { transports: [transport] },
+    {
+      onComplete() {
+        throw new Error("observer unavailable");
+      },
     },
-  });
+  );
   const worker = createWorker({
     id: "complete-observer-worker",
     transport,
@@ -207,20 +211,26 @@ test("Hypervisor onWorkAssigned fails before Open and releases capacity", async 
   } as const;
   let accepted = false;
   let invoked = false;
-  const hypervisor = createHypervisor({ transports: [transport] }, {
-    onWorkAssigned() {
-      throw new Error("assignment store unavailable");
+  const hypervisor = createHypervisor(
+    { transports: [transport] },
+    {
+      onWorkAssigned() {
+        throw new Error("assignment store unavailable");
+      },
     },
-  });
-  const worker = createWorker({
-    id: "assignment-gated-worker",
-    transport,
-    workloads: {
-      task: () => void (invoked = true),
+  );
+  const worker = createWorker(
+    {
+      id: "assignment-gated-worker",
+      transport,
+      workloads: {
+        task: () => void (invoked = true),
+      },
     },
-  }, {
-    onWorkAccepted: () => void (accepted = true),
-  });
+    {
+      onWorkAccepted: () => void (accepted = true),
+    },
+  );
 
   try {
     await worker.ready;

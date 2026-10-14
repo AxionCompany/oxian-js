@@ -25,17 +25,17 @@ function createTestRouter<State>(
     match: (pathname: string) =>
       pathname.startsWith("/items/")
         ? Object.freeze({
-          route,
-          params: Object.freeze({ id: pathname.slice("/items/".length) }),
-          middlewares: Object.freeze(
-            middlewares.map((middleware, index) =>
-              Object.freeze({
-                fileUrl: `file:///routes/middleware-${index}.ts`,
-                middleware,
-              })
+            route,
+            params: Object.freeze({ id: pathname.slice("/items/".length) }),
+            middlewares: Object.freeze(
+              middlewares.map((middleware, index) =>
+                Object.freeze({
+                  fileUrl: `file:///routes/middleware-${index}.ts`,
+                  middleware,
+                }),
+              ),
             ),
-          ),
-        })
+          })
         : null,
   });
 }
@@ -54,12 +54,15 @@ test("application initializes once and runs one root-to-leaf onion chain", async
     order.push("route-out");
     return new Response(`${await response.text()}:route`);
   };
-  const router = createTestRouter<{ prefix: string }>({
-    GET: (_request, context) => {
-      order.push("handler");
-      return new Response(`${context.state.prefix}:${context.params.id}`);
+  const router = createTestRouter<{ prefix: string }>(
+    {
+      GET: (_request, context) => {
+        order.push("handler");
+        return new Response(`${context.state.prefix}:${context.params.id}`);
+      },
     },
-  }, [routeMiddleware]);
+    [routeMiddleware],
+  );
   const application = await createApplication({
     router,
     setup: () => {
@@ -102,9 +105,8 @@ test("application initializes once and runs one root-to-leaf onion chain", async
   await firstDispose;
   assert.deepStrictEqual(disposeCalls, 1);
   assert.deepStrictEqual(
-    (await application.fetch(
-      new Request("https://example.test/items/42"),
-    )).status,
+    (await application.fetch(new Request("https://example.test/items/42")))
+      .status,
     503,
   );
 });
@@ -133,21 +135,16 @@ test("application mounts routes at one exact segment-boundary basePath", async (
   );
   assert.deepStrictEqual(await mounted.text(), "/api/items/42:42");
   assert.deepStrictEqual(
-    (await application.fetch(
-      new Request("https://example.test/api"),
-    )).status,
+    (await application.fetch(new Request("https://example.test/api"))).status,
     404,
   );
   assert.deepStrictEqual(
-    (await application.fetch(
-      new Request("https://example.test/api/"),
-    )).status,
+    (await application.fetch(new Request("https://example.test/api/"))).status,
     404,
   );
   assert.deepStrictEqual(
-    (await application.fetch(
-      new Request("https://example.test/apix/items/42"),
-    )).status,
+    (await application.fetch(new Request("https://example.test/apix/items/42")))
+      .status,
     404,
   );
   assert.deepStrictEqual(matchedPaths, ["/items/42", "/", "/"]);
@@ -215,9 +212,9 @@ test("application factory installs lifecycle, middleware, and error behavior", a
   assert.deepStrictEqual(application.basePath, "/api");
   assert.deepStrictEqual(setupCalls, 1);
   assert.deepStrictEqual(
-    await (await application.fetch(
-      new Request("https://example.test/api/items/7"),
-    )).text(),
+    await (
+      await application.fetch(new Request("https://example.test/api/items/7"))
+    ).text(),
     "factory:7:middleware",
   );
   const failed = await application.fetch(
@@ -297,15 +294,18 @@ test("application implements 404, 405/Allow, HEAD, and OPTIONS", async () => {
 });
 
 test("middleware errors are contained and next cannot run twice", async () => {
-  const router = createTestRouter({
-    GET: () => new Response("unreachable"),
-  }, [
-    async (_request, _context, next) => {
-      await next();
-      await next();
-      return new Response("invalid");
+  const router = createTestRouter(
+    {
+      GET: () => new Response("unreachable"),
     },
-  ]);
+    [
+      async (_request, _context, next) => {
+        await next();
+        await next();
+        return new Response("invalid");
+      },
+    ],
+  );
   const application = await createApplication({
     router,
     onError: (error) =>
@@ -394,17 +394,20 @@ test("application disposal waits for asynchronous response cancellation", async 
 test("middleware next cannot escape after its scope settles", async () => {
   let lateNext: (() => Promise<Response>) | undefined;
   let handlerCalls = 0;
-  const router = createTestRouter({
-    GET: () => {
-      handlerCalls++;
-      return new Response("downstream");
+  const router = createTestRouter(
+    {
+      GET: () => {
+        handlerCalls++;
+        return new Response("downstream");
+      },
     },
-  }, [
-    (_request, _context, next) => {
-      lateNext = next;
-      return new Response("early");
-    },
-  ]);
+    [
+      (_request, _context, next) => {
+        lateNext = next;
+        return new Response("early");
+      },
+    ],
+  );
   const application = await createApplication({ router });
 
   const response = await application.fetch(
@@ -412,11 +415,7 @@ test("middleware next cannot escape after its scope settles", async () => {
   );
   assert.deepStrictEqual(await response.text(), "early");
   assert.deepStrictEqual(application.snapshot().activeRequests, 0);
-  assertThrows(
-    () => lateNext!(),
-    TypeError,
-    "after middleware settles",
-  );
+  assertThrows(() => lateNext!(), TypeError, "after middleware settles");
   assert.deepStrictEqual(handlerCalls, 0);
   await application.dispose();
 });
@@ -449,11 +448,14 @@ test("application dispose is stable under abort-listener reentrancy", async () =
   let disposeReason: unknown;
   const router = createTestRouter<undefined>({
     GET: (_request, context) => {
-      context.signal.addEventListener("abort", () => {
-        reentrantDisposal = applicationReference.current!.dispose(
-          "reentrant_reason",
-        );
-      }, { once: true });
+      context.signal.addEventListener(
+        "abort",
+        () => {
+          reentrantDisposal =
+            applicationReference.current!.dispose("reentrant_reason");
+        },
+        { once: true },
+      );
       return new Response(null);
     },
   });

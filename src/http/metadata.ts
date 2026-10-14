@@ -15,8 +15,8 @@ const MAX_HEADER_COUNT = 256;
 const MAX_HEADER_NAME_LENGTH = 256;
 const MAX_HEADER_VALUE_LENGTH = 16_384;
 const MAX_STATUS_TEXT_LENGTH = 1_024;
-const MAX_HTTP_METADATA_BYTES = WORKER_PROTOCOL_LIMITS.maxControlFrameBytes -
-  4 * 1_024;
+const MAX_HTTP_METADATA_BYTES =
+  WORKER_PROTOCOL_LIMITS.maxControlFrameBytes - 4 * 1_024;
 const HTTP_TOKEN_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const textEncoder = new TextEncoder();
 
@@ -111,10 +111,7 @@ function expectSchema<T extends string>(
   return schema;
 }
 
-function validateHeaderPair(
-  value: unknown,
-  path: string,
-): HttpHeaderPair {
+function validateHeaderPair(value: unknown, path: string): HttpHeaderPair {
   if (!Array.isArray(value) || value.length !== 2) {
     return invalid(path, "expected a two-item [name, value] pair");
   }
@@ -126,11 +123,7 @@ function validateHeaderPair(
   ) {
     return invalid(path, "header pairs cannot contain extra fields");
   }
-  const name = expectString(
-    value[0],
-    `${path}[0]`,
-    MAX_HEADER_NAME_LENGTH,
-  );
+  const name = expectString(value[0], `${path}[0]`, MAX_HEADER_NAME_LENGTH);
   const headerValue = expectString(
     value[1],
     `${path}[1]`,
@@ -211,12 +204,7 @@ function expectStatus(value: unknown, path: string): number {
 }
 
 function expectStatusText(value: unknown, path: string): string {
-  const statusText = expectString(
-    value,
-    path,
-    MAX_STATUS_TEXT_LENGTH,
-    true,
-  );
+  const statusText = expectString(value, path, MAX_STATUS_TEXT_LENGTH, true);
   if (statusText.includes("\r") || statusText.includes("\n")) {
     return invalid(path, "status text cannot contain CR or LF");
   }
@@ -235,9 +223,8 @@ function enforceMetadataSize(value: JsonObject, path: string): void {
 
 function headerPairs(headers: Headers): readonly HttpHeaderPair[] {
   const pairs: HttpHeaderPair[] = [];
-  const cookies = typeof headers.getSetCookie === "function"
-    ? headers.getSetCookie()
-    : [];
+  const cookies =
+    typeof headers.getSetCookie === "function" ? headers.getSetCookie() : [];
   let emittedCookies = false;
 
   for (const [name, value] of headers) {
@@ -258,17 +245,12 @@ function headerPairs(headers: Headers): readonly HttpHeaderPair[] {
     }
   }
   if (pairs.length > MAX_HEADER_COUNT) {
-    invalid(
-      "$.headers",
-      `cannot contain more than ${MAX_HEADER_COUNT} pairs`,
-    );
+    invalid("$.headers", `cannot contain more than ${MAX_HEADER_COUNT} pairs`);
   }
   return Object.freeze(pairs);
 }
 
-export function createHeaders(
-  pairs: readonly HttpHeaderPair[],
-): Headers {
+export function createHeaders(pairs: readonly HttpHeaderPair[]): Headers {
   const headers = new Headers();
   for (const [name, value] of pairs) headers.append(name, value);
   return headers;
@@ -353,10 +335,7 @@ export function decodeHttpResponseMetadata(
   ]);
   const status = expectStatus(record.status, "$.status");
   const hasBody = expectBoolean(record.hasBody, "$.hasBody");
-  if (
-    hasBody &&
-    (status === 204 || status === 205 || status === 304)
-  ) {
+  if (hasBody && (status === 204 || status === 205 || status === 304)) {
     invalid("$.hasBody", `status ${status} cannot carry a body`);
   }
   const metadata = Object.freeze({

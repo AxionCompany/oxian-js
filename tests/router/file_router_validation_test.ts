@@ -78,10 +78,8 @@ test("v0.20 file router rejects route extension collisions before import", async
 
   await rejectsFixture(
     {
-      "_middleware.js":
-        `export const middleware = (_request, _context, next) => next();`,
-      "_middleware.ts":
-        `export const middleware = (_request, _context, next) => next();`,
+      "_middleware.js": `export const middleware = (_request, _context, next) => next();`,
+      "_middleware.ts": `export const middleware = (_request, _context, next) => next();`,
       "index.ts": GET_ROUTE,
     },
     "extension collision",
@@ -166,10 +164,7 @@ test("v0.20 file router validates every middleware module at startup", async () 
 });
 
 test("v0.20 file router rejects malformed and duplicate parameters", async () => {
-  await rejectsFixture(
-    { "users/[id.ts": GET_ROUTE },
-    "Invalid route segment",
-  );
+  await rejectsFixture({ "users/[id.ts": GET_ROUTE }, "Invalid route segment");
 
   await rejectsFixture(
     { "[id]/[id].ts": GET_ROUTE },

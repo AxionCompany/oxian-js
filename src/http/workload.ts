@@ -58,9 +58,9 @@ export function createHttpWorkload(
     }
     if (!hasBody) {
       if (response.body !== null) {
-        await response.body.cancel("http_response_body_not_allowed").catch(
-          () => undefined,
-        );
+        await response.body
+          .cancel("http_response_body_not_allowed")
+          .catch(() => undefined);
       }
       return Object.freeze({ metadata: responseMetadata });
     }

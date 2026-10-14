@@ -1,20 +1,13 @@
-export type FetchHandler = (
-  request: Request,
-) => Response | Promise<Response>;
+export type FetchHandler = (request: Request) => Response | Promise<Response>;
 
-export type FetchAdapter = (
-  next: FetchHandler,
-) => FetchHandler;
+export type FetchAdapter = (next: FetchHandler) => FetchHandler;
 
 export type CorsOriginPredicate = (
   origin: string,
   request: Request,
 ) => boolean | Promise<boolean>;
 
-export type CorsOriginPolicy =
-  | "*"
-  | readonly string[]
-  | CorsOriginPredicate;
+export type CorsOriginPolicy = "*" | readonly string[] | CorsOriginPredicate;
 
 export type CorsAdapterOptions = Readonly<{
   /**

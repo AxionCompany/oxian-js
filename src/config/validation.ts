@@ -37,9 +37,7 @@ const GATEWAY_KEYS = new Set([
   "edge",
 ]);
 const LISTENER_KEYS = new Set(["hostname", "port"]);
-const HYPERVISOR_KEYS = new Set(
-  Object.keys(DEFAULT_HYPERVISOR_CONFIG),
-);
+const HYPERVISOR_KEYS = new Set(Object.keys(DEFAULT_HYPERVISOR_CONFIG));
 const EDGE_KEYS = new Set(["cors", "static", "devProxy"]);
 const CORS_KEYS = new Set([
   "origins",
@@ -70,9 +68,7 @@ type NormalizationContext = Readonly<{
   baseDirectory?: string;
 }>;
 
-function normalizeWorkerTransport(
-  value: unknown,
-): "in-process" | "websocket" {
+function normalizeWorkerTransport(value: unknown): "in-process" | "websocket" {
   if (value === undefined || value === "in-process") return "in-process";
   if (value === "websocket") return value;
   throw new TypeError(
@@ -84,9 +80,10 @@ function normalizeWorkerCapacity(
   value: unknown,
   maxWorkerCapacity: number,
 ): number {
-  const selected = value === undefined
-    ? Math.min(DEFAULT_LOCAL_WORKER_CAPACITY, maxWorkerCapacity)
-    : value;
+  const selected =
+    value === undefined
+      ? Math.min(DEFAULT_LOCAL_WORKER_CAPACITY, maxWorkerCapacity)
+      : value;
   if (
     typeof selected !== "number" ||
     !Number.isSafeInteger(selected) ||
@@ -139,9 +136,7 @@ function assertExactKeys(
       descriptor.set !== undefined ||
       descriptor.enumerable !== true
     ) {
-      throw new TypeError(
-        `${path}.${key} must be an enumerable data property`,
-      );
+      throw new TypeError(`${path}.${key} must be an enumerable data property`);
     }
     if (!allowed.has(key)) {
       throw new TypeError(`${path} contains unknown key "${key}"`);
@@ -149,10 +144,7 @@ function assertExactKeys(
   }
 }
 
-function optionalRecord(
-  value: unknown,
-  path: string,
-): PlainRecord | undefined {
+function optionalRecord(value: unknown, path: string): PlainRecord | undefined {
   return value === undefined ? undefined : expectPlainRecord(value, path);
 }
 
@@ -232,10 +224,7 @@ function normalizeLocalPath(
   path: string,
   baseDirectory: string | undefined,
 ): string {
-  const selected = expectString(
-    value === undefined ? fallback : value,
-    path,
-  );
+  const selected = expectString(value === undefined ? fallback : value, path);
   if (selected.includes("\0")) {
     throw new TypeError(`${path} must not contain a null byte`);
   }
@@ -250,11 +239,7 @@ function normalizeLocalPath(
         `${path} must be a local filesystem path or file: URL`,
       );
     }
-    if (
-      url.protocol !== "file:" ||
-      url.search !== "" ||
-      url.hash !== ""
-    ) {
+    if (url.protocol !== "file:" || url.search !== "" || url.hash !== "") {
       throw new TypeError(
         `${path} must be a local filesystem path or file: URL without a query or fragment`,
       );
@@ -273,12 +258,7 @@ function normalizeLocalTypescriptPath(
   path: string,
   baseDirectory: string | undefined,
 ): string {
-  const normalized = normalizeLocalPath(
-    value,
-    undefined,
-    path,
-    baseDirectory,
-  );
+  const normalized = normalizeLocalPath(value, undefined, path, baseDirectory);
   const fileUrl = normalized.startsWith("file:")
     ? new URL(normalized)
     : undefined;
@@ -352,10 +332,12 @@ function isSerializedOrigin(origin: string): boolean {
   if (origin === "null") return true;
   try {
     const parsed = new URL(origin);
-    return (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
       parsed.origin === origin &&
       parsed.username === "" &&
-      parsed.password === "";
+      parsed.password === ""
+    );
   } catch {
     return false;
   }
@@ -392,22 +374,14 @@ function normalizeCors(value: unknown): CorsConfig {
     DEFAULT_CORS_METHODS,
     "config.gateway.edge.cors.methods",
     (method) =>
-      normalizeHttpToken(
-        method,
-        "config.gateway.edge.cors.methods",
-        true,
-      ),
+      normalizeHttpToken(method, "config.gateway.edge.cors.methods", true),
   );
   const headers = expectStringArray(
     record.headers,
     [],
     "config.gateway.edge.cors.headers",
     (header) =>
-      normalizeHttpToken(
-        header,
-        "config.gateway.edge.cors.headers",
-        false,
-      ),
+      normalizeHttpToken(header, "config.gateway.edge.cors.headers", false),
   );
   const exposeHeaders = expectStringArray(
     record.exposeHeaders,
@@ -484,13 +458,14 @@ function normalizeRelativePath(value: string, path: string): string {
     throw new TypeError(`${path} must contain relative paths`);
   }
   if (
-    value.split("/").some((segment) =>
-      segment.length === 0 || segment === "." || segment === ".."
-    )
+    value
+      .split("/")
+      .some(
+        (segment) =>
+          segment.length === 0 || segment === "." || segment === "..",
+      )
   ) {
-    throw new TypeError(
-      `${path} must not contain empty or traversal segments`,
-    );
+    throw new TypeError(`${path} must not contain empty or traversal segments`);
   }
   return value;
 }
@@ -510,10 +485,7 @@ function normalizeStatic(
     index = Object.freeze([]);
   } else if (typeof record.index === "string") {
     index = Object.freeze([
-      normalizeRelativePath(
-        record.index,
-        "config.gateway.edge.static.index",
-      ),
+      normalizeRelativePath(record.index, "config.gateway.edge.static.index"),
     ]);
   } else {
     index = expectStringArray(
@@ -521,10 +493,7 @@ function normalizeStatic(
       ["index.html"],
       "config.gateway.edge.static.index",
       (entry) =>
-        normalizeRelativePath(
-          entry,
-          "config.gateway.edge.static.index",
-        ),
+        normalizeRelativePath(entry, "config.gateway.edge.static.index"),
     );
   }
 
@@ -534,10 +503,7 @@ function normalizeStatic(
       record.cacheControl,
       "config.gateway.edge.static.cacheControl",
     );
-    if (
-      cacheControl.includes("\r") ||
-      cacheControl.includes("\n")
-    ) {
+    if (cacheControl.includes("\r") || cacheControl.includes("\n")) {
       throw new TypeError(
         "config.gateway.edge.static.cacheControl must not contain line breaks",
       );
@@ -556,15 +522,17 @@ function normalizeStatic(
       "config.gateway.edge.static.prefix",
     ),
     index,
-    ...(record.fallback === undefined ? {} : {
-      fallback: normalizeRelativePath(
-        expectString(
-          record.fallback,
-          "config.gateway.edge.static.fallback",
-        ),
-        "config.gateway.edge.static.fallback",
-      ),
-    }),
+    ...(record.fallback === undefined
+      ? {}
+      : {
+          fallback: normalizeRelativePath(
+            expectString(
+              record.fallback,
+              "config.gateway.edge.static.fallback",
+            ),
+            "config.gateway.edge.static.fallback",
+          ),
+        }),
     ...(cacheControl === undefined ? {} : { cacheControl }),
     fallthrough: expectBoolean(
       record.fallthrough,
@@ -654,35 +622,23 @@ export function normalizeConfig(
   const config = expectPlainRecord(input, "config");
   assertExactKeys(config, TOP_LEVEL_KEYS, "config");
 
-  const application = optionalRecord(
-    config.application,
-    "config.application",
-  ) ?? {};
+  const application =
+    optionalRecord(config.application, "config.application") ?? {};
   assertExactKeys(application, APPLICATION_KEYS, "config.application");
 
   const gateway = optionalRecord(config.gateway, "config.gateway") ?? {};
   assertExactKeys(gateway, GATEWAY_KEYS, "config.gateway");
 
-  const listener = optionalRecord(
-    gateway.listener,
-    "config.gateway.listener",
-  ) ?? {};
+  const listener =
+    optionalRecord(gateway.listener, "config.gateway.listener") ?? {};
   assertExactKeys(listener, LISTENER_KEYS, "config.gateway.listener");
 
-  const hypervisor = optionalRecord(
-    gateway.hypervisor,
-    "config.gateway.hypervisor",
-  ) ?? {};
-  assertExactKeys(
-    hypervisor,
-    HYPERVISOR_KEYS,
-    "config.gateway.hypervisor",
-  );
+  const hypervisor =
+    optionalRecord(gateway.hypervisor, "config.gateway.hypervisor") ?? {};
+  assertExactKeys(hypervisor, HYPERVISOR_KEYS, "config.gateway.hypervisor");
   for (const [key, value] of Object.entries(hypervisor)) {
     if (value === null) {
-      throw new TypeError(
-        `config.gateway.hypervisor.${key} must not be null`,
-      );
+      throw new TypeError(`config.gateway.hypervisor.${key} must not be null`);
     }
   }
   const normalizedHypervisor = createHypervisorConfig(hypervisor);
@@ -701,13 +657,15 @@ export function normalizeConfig(
         application.basePath,
         "config.application.basePath",
       ),
-      ...(application.factory === undefined ? {} : {
-        factory: normalizeLocalTypescriptPath(
-          application.factory,
-          "config.application.factory",
-          context.baseDirectory,
-        ),
-      }),
+      ...(application.factory === undefined
+        ? {}
+        : {
+            factory: normalizeLocalTypescriptPath(
+              application.factory,
+              "config.application.factory",
+              context.baseDirectory,
+            ),
+          }),
     }),
     gateway: Object.freeze({
       listener: Object.freeze({

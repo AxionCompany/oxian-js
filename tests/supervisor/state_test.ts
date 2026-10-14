@@ -111,19 +111,35 @@ test("worker definition JSON copying is prototype-safe and rejects non-JSON runt
 
 test("worker attempt factory exposes only valid immutable transitions", () => {
   const requested = createWorkerAttempt({ identity: IDENTITY, nowMs: 10 });
-  const launching = transitionWorkerAttempt(requested, {
-    type: "launching",
-  }, 11);
-  const running = transitionWorkerAttempt(launching, {
-    type: "running",
-    providerInstanceId: "pid-42",
-  }, 12);
-  const terminating = transitionWorkerAttempt(running, {
-    type: "terminate",
-  }, 13);
-  const terminated = transitionWorkerAttempt(terminating, {
-    type: "terminated",
-  }, 14);
+  const launching = transitionWorkerAttempt(
+    requested,
+    {
+      type: "launching",
+    },
+    11,
+  );
+  const running = transitionWorkerAttempt(
+    launching,
+    {
+      type: "running",
+      providerInstanceId: "pid-42",
+    },
+    12,
+  );
+  const terminating = transitionWorkerAttempt(
+    running,
+    {
+      type: "terminate",
+    },
+    13,
+  );
+  const terminated = transitionWorkerAttempt(
+    terminating,
+    {
+      type: "terminated",
+    },
+    14,
+  );
 
   assert.deepStrictEqual(terminated.phase, "terminated");
   assert.deepStrictEqual(terminated.providerInstanceId, "pid-42");
@@ -135,10 +151,14 @@ test("worker attempt factory exposes only valid immutable transitions", () => {
 
   assertThrows(
     () =>
-      transitionWorkerAttempt(terminated, {
-        type: "running",
-        providerInstanceId: "pid-2",
-      }, 15),
+      transitionWorkerAttempt(
+        terminated,
+        {
+          type: "running",
+          providerInstanceId: "pid-2",
+        },
+        15,
+      ),
     Error,
     "cannot mark an attempt running",
   );
@@ -146,11 +166,15 @@ test("worker attempt factory exposes only valid immutable transitions", () => {
 
 test("worker attempts may fail before termination but never leave a terminal phase", () => {
   const requested = createWorkerAttempt({ identity: IDENTITY, nowMs: 10 });
-  const failed = transitionWorkerAttempt(requested, {
-    type: "failed",
-    code: "launch_failed",
-    message: "process exited",
-  }, 11);
+  const failed = transitionWorkerAttempt(
+    requested,
+    {
+      type: "failed",
+      code: "launch_failed",
+      message: "process exited",
+    },
+    11,
+  );
 
   assert.deepStrictEqual(failed.phase, "failed");
   assert.deepStrictEqual(failed.failure, {

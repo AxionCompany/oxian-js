@@ -146,23 +146,26 @@ function createBoundedFrameQueue(
     finishEnd();
   };
 
-  const readable = new ReadableStream<Frame>({
-    start(value) {
-      controller = value;
-      flush();
+  const readable = new ReadableStream<Frame>(
+    {
+      start(value) {
+        controller = value;
+        flush();
+      },
+      pull() {
+        flush();
+      },
+      cancel(reason) {
+        if (closed) return;
+        closed = true;
+        pending.length = 0;
+        pendingBytes = 0;
+        controller = undefined;
+        cancel(reason);
+      },
     },
-    pull() {
-      flush();
-    },
-    cancel(reason) {
-      if (closed) return;
-      closed = true;
-      pending.length = 0;
-      pendingBytes = 0;
-      controller = undefined;
-      cancel(reason);
-    },
-  }, new CountQueuingStrategy({ highWaterMark: 1 }));
+    new CountQueuingStrategy({ highWaterMark: 1 }),
+  );
 
   const push = (frame: Frame): boolean => {
     if (closed || ending) return false;
@@ -306,17 +309,20 @@ export async function createFrameConnection(
     unsubscribe();
     if (!opened) {
       openReject(
-        error ?? new TypeError(
-          `connection closed before opening (${event.code}: ${event.reason})`,
-        ),
+        error ??
+          new TypeError(
+            `connection closed before opening (${event.code}: ${event.reason})`,
+          ),
       );
     }
     queue.close(error);
-    closedResolve(Object.freeze({
-      code: event.code,
-      reason: event.reason,
-      wasClean: event.wasClean,
-    }));
+    closedResolve(
+      Object.freeze({
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean,
+      }),
+    );
   };
 
   const receive = (value: SocketMessage): void => {
@@ -330,19 +336,25 @@ export async function createFrameConnection(
             "connection inbound frame queue exceeded its bound",
           );
           closeWire(connection, INTERNAL_ERROR_CLOSE_CODE, "inbound_overflow");
-          finish({
-            code: INTERNAL_ERROR_CLOSE_CODE,
-            reason: "inbound_overflow",
-            wasClean: false,
-          }, error);
+          finish(
+            {
+              code: INTERNAL_ERROR_CLOSE_CODE,
+              reason: "inbound_overflow",
+              wasClean: false,
+            },
+            error,
+          );
         }
       } catch (error) {
         closeWire(connection, INTERNAL_ERROR_CLOSE_CODE, "invalid_frame");
-        finish({
-          code: INTERNAL_ERROR_CLOSE_CODE,
-          reason: "invalid_frame",
-          wasClean: false,
-        }, error);
+        finish(
+          {
+            code: INTERNAL_ERROR_CLOSE_CODE,
+            reason: "invalid_frame",
+            wasClean: false,
+          },
+          error,
+        );
       }
     });
   };
@@ -350,11 +362,14 @@ export async function createFrameConnection(
   abort = (): void => {
     const reason = options.signal?.reason;
     closeWire(connection, NORMAL_CLOSE_CODE, "connection_aborted");
-    finish({
-      code: NORMAL_CLOSE_CODE,
-      reason: "connection_aborted",
-      wasClean: true,
-    }, reason);
+    finish(
+      {
+        code: NORMAL_CLOSE_CODE,
+        reason: "connection_aborted",
+        wasClean: true,
+      },
+      reason,
+    );
   };
 
   unsubscribe = connection.subscribe({
@@ -370,11 +385,14 @@ export async function createFrameConnection(
     error(error) {
       const failure = error ?? new TypeError("connection transport failed");
       closeWire(connection, INTERNAL_ERROR_CLOSE_CODE, "transport_failed");
-      finish({
-        code: INTERNAL_ERROR_CLOSE_CODE,
-        reason: "transport_failed",
-        wasClean: false,
-      }, failure);
+      finish(
+        {
+          code: INTERNAL_ERROR_CLOSE_CODE,
+          reason: "transport_failed",
+          wasClean: false,
+        },
+        failure,
+      );
     },
   });
 

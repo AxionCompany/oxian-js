@@ -4,10 +4,7 @@ import { assertRejects } from "../support/assert.ts";
 import { join } from "@std/path";
 import { runCli } from "../../src/cli/index.ts";
 
-const APP_MODULE_URL = new URL(
-  "../../src/app/index.ts",
-  import.meta.url,
-).href;
+const APP_MODULE_URL = new URL("../../src/app/index.ts", import.meta.url).href;
 
 function captureIo(): Readonly<{
   stdout: string[];
@@ -149,11 +146,7 @@ export default defineApplicationFactory(({ router, basePath, signal }) =>
       }),
       1,
     );
-    assert.ok(
-      invalidCapture.stderr[0].includes(
-        'found extra export "extra"',
-      ),
-    );
+    assert.ok(invalidCapture.stderr[0].includes('found extra export "extra"'));
 
     await Deno.writeTextFile(
       join(root, "non-function-application.ts"),
@@ -170,13 +163,12 @@ export default defineApplicationFactory(({ router, basePath, signal }) =>
     );
     const nonFunctionCapture = captureIo();
     assert.deepStrictEqual(
-      await runCli([
-        "check",
-        "--config",
-        join(root, "non-function.config.ts"),
-      ], {
-        io: nonFunctionCapture.io,
-      }),
+      await runCli(
+        ["check", "--config", join(root, "non-function.config.ts")],
+        {
+          io: nonFunctionCapture.io,
+        },
+      ),
       1,
     );
     assert.ok(
@@ -236,10 +228,9 @@ test("routes and check load strict config and compile the same frozen router", a
       }),
       0,
     );
-    assert.deepStrictEqual(
-      checkCapture.stdout,
-      ["configuration, application entry, and 1 route are valid"],
-    );
+    assert.deepStrictEqual(checkCapture.stdout, [
+      "configuration, application entry, and 1 route are valid",
+    ]);
 
     const invalidRoot = join(root, "invalid");
     await Deno.mkdir(invalidRoot);

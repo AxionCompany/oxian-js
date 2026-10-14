@@ -84,9 +84,10 @@ export function createDispatchQueue(
       );
     }
     const target = entry.input.target;
-    const phase = target === undefined
-      ? undefined
-      : options.sessions.get(target.workerId)?.phase;
+    const phase =
+      target === undefined
+        ? undefined
+        : options.sessions.get(target.workerId)?.phase;
     if (phase === "draining" || phase === "drained") {
       throw createHypervisorError(
         "worker_draining",
@@ -128,22 +129,25 @@ export function createDispatchQueue(
         // same workload. Untargeted requests use a separate workload lane.
         // Runnable lane heads compete in arrival order for actual reservations;
         // an unavailable head never blocks a different lane.
-        const blocked = target === undefined
-          ? blockedWorkloads.has(entry.input.workload)
-          : blockedTargets.has(target);
+        const blocked =
+          target === undefined
+            ? blockedWorkloads.has(entry.input.workload)
+            : blockedTargets.has(target);
         if (!entry.selecting && !blocked) {
           const hasRoom = (session: WorkerSession): boolean =>
-            session.phase === "ready" && session.reserved < session.capacity &&
+            session.phase === "ready" &&
+            session.reserved < session.capacity &&
             session.workloads.includes(entry.input.workload);
           // Every registry change (including heartbeats) re-runs this pass, so
           // a targeted entry looks up only its own Worker instead of scanning
           // every session: O(entries) per pass rather than O(entries × sessions).
-          const available = target === undefined
-            ? options.sessions.list().some(hasRoom)
-            : (() => {
-              const session = options.sessions.get(target);
-              return session !== undefined && hasRoom(session);
-            })();
+          const available =
+            target === undefined
+              ? options.sessions.list().some(hasRoom)
+              : (() => {
+                  const session = options.sessions.get(target);
+                  return session !== undefined && hasRoom(session);
+                })();
           if (available) {
             entry.selecting = true;
             const result = entry.offer({
@@ -153,10 +157,13 @@ export function createDispatchQueue(
               offered: (dispatch) => settle(entry, dispatch),
             });
             if (result instanceof Promise) {
-              void result.then((offered) => {
-                settle(entry, offered);
-                wake();
-              }, (error) => reject(entry, error));
+              void result.then(
+                (offered) => {
+                  settle(entry, offered);
+                  wake();
+                },
+                (error) => reject(entry, error),
+              );
             } else {
               settle(entry, result);
             }
@@ -171,7 +178,8 @@ export function createDispatchQueue(
       }
     }
     if (
-      entries.size > 0 && options.sessions.subscribe === undefined &&
+      entries.size > 0 &&
+      options.sessions.subscribe === undefined &&
       pollTimer === undefined
     ) {
       pollTimer = options.scheduler.schedule(() => {
@@ -265,14 +273,13 @@ export function createDispatchQueue(
       >();
       for (const { input } of entries) {
         const key = JSON.stringify([input.workload, input.target?.workerId]);
-        const lane = lanes.get(key) ??
-          {
-            workload: input.workload,
-            ...(input.target === undefined
-              ? {}
-              : { workerId: input.target.workerId }),
-            count: 0,
-          };
+        const lane = lanes.get(key) ?? {
+          workload: input.workload,
+          ...(input.target === undefined
+            ? {}
+            : { workerId: input.target.workerId }),
+          count: 0,
+        };
         lane.count++;
         lanes.set(key, lane);
       }

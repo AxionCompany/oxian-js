@@ -10,10 +10,7 @@ function assertDeepFrozen(value: unknown): void {
   for (const child of Object.values(value)) assertDeepFrozen(child);
 }
 
-function assertTypeErrorMessage(
-  run: () => unknown,
-  message: string,
-): void {
+function assertTypeErrorMessage(run: () => unknown, message: string): void {
   try {
     run();
     throw new Error("expected callback to throw");
@@ -23,9 +20,7 @@ function assertTypeErrorMessage(
   }
 }
 
-const defineUnknown = defineConfig as (
-  input: unknown,
-) => OxianConfig;
+const defineUnknown = defineConfig as (input: unknown) => OxianConfig;
 
 test("v0.20 config exposes immutable, implemented-only defaults", () => {
   const config = defineConfig({});
@@ -43,12 +38,9 @@ test("v0.20 config exposes immutable, implemented-only defaults", () => {
   assert.deepStrictEqual(config.gateway.edge, undefined);
   assertDeepFrozen(config);
 
-  assertThrows(
-    () => {
-      (config.gateway.listener as { port: number }).port = 9_000;
-    },
-    TypeError,
-  );
+  assertThrows(() => {
+    (config.gateway.listener as { port: number }).port = 9_000;
+  }, TypeError);
 });
 
 test("v0.20 config permits listener port zero for ephemeral binding", () => {
@@ -305,18 +297,16 @@ test("v0.20 config rejects invalid paths, ports, hosts, and URLs", () => {
       }),
     "config.application.routesRoot must be a local filesystem path or file: URL without a query or fragment",
   );
-  for (
-    const basePath of [
-      "",
-      "api",
-      "/api/",
-      "//api",
-      "/api//v1",
-      "/api/../v1",
-      "/api%2Fv1",
-      "/café",
-    ]
-  ) {
+  for (const basePath of [
+    "",
+    "api",
+    "/api/",
+    "//api",
+    "/api//v1",
+    "/api/../v1",
+    "/api%2Fv1",
+    "/café",
+  ]) {
     assertTypeErrorMessage(
       () =>
         defineUnknown({
@@ -454,16 +444,14 @@ test("v0.21 config delegates Hypervisor bounds and relationships", () => {
 });
 
 test("v0.20 config keeps manifests, credentials, providers, and logging separate", () => {
-  for (
-    const key of [
-      "workers",
-      "bootstrap",
-      "credentials",
-      "providers",
-      "secrets",
-      "logging",
-    ]
-  ) {
+  for (const key of [
+    "workers",
+    "bootstrap",
+    "credentials",
+    "providers",
+    "secrets",
+    "logging",
+  ]) {
     assertTypeErrorMessage(
       () => defineUnknown({ [key]: {} }),
       `config contains unknown key "${key}"`,

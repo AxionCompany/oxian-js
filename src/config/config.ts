@@ -15,9 +15,7 @@ export const DEFAULT_OXIAN_CONFIG: OxianConfig = normalizeConfig({});
  * loaded with `loadConfig()`, those paths are resolved against that module's
  * directory.
  */
-export function defineConfig(
-  input: OxianConfigInput,
-): OxianConfig {
+export function defineConfig(input: OxianConfigInput): OxianConfig {
   return normalizeConfig(input);
 }
 
@@ -46,11 +44,7 @@ function configModuleUrl(source: LoadConfigSource): URL {
     );
   }
 
-  if (
-    url.protocol !== "file:" ||
-    url.search !== "" ||
-    url.hash !== ""
-  ) {
+  if (url.protocol !== "file:" || url.search !== "" || url.hash !== "") {
     throw new TypeError(
       "config source must be a local file: URL without a query or fragment",
     );
@@ -101,7 +95,7 @@ export async function loadConfig(
   source: LoadConfigSource = "./oxian.config.ts",
 ): Promise<OxianConfig> {
   const url = configModuleUrl(source);
-  const module = await import(url.href) as Readonly<Record<string, unknown>>;
+  const module = (await import(url.href)) as Readonly<Record<string, unknown>>;
   const exported = selectModuleExport(module);
   const baseDirectory = dirname(fromFileUrl(url));
   return normalizeConfig(exported, { baseDirectory });

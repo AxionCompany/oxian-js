@@ -35,33 +35,31 @@ export type HypervisorConfig = Readonly<{
   maxReceiveCreditBytes: number;
 }>;
 
-export const DEFAULT_HYPERVISOR_CONFIG: HypervisorConfig = Object
-  .freeze({
-    maxQueuedDispatches: 0,
-    dispatchQueueTimeoutMs: 30_000,
-    handshakeTimeoutMs: 10_000,
-    readyTimeoutMs: 5 * 60_000,
-    heartbeatIntervalMs: 10_000,
-    leaseTimeoutMs: 30_000,
-    leaseSweepIntervalMs: 1_000,
-    shutdownTimeoutMs: 30_000,
-    cancellationAckTimeoutMs: 10_000,
-    maxConnectionAgeMs: 50 * 60_000,
-    proactiveDrainMarginMs: 60_000,
-    maxConnections: 10_000,
-    maxUnauthenticatedConnections: 128,
-    maxAuthenticatedConnections: 10_000,
-    maxPendingAcceptanceCommits: 1_024,
-    maxPendingAcceptanceCommitsPerWorker: 64,
-    maxInboundMessages: 256,
-    maxInboundBytes: 16 * 1_024 * 1_024,
-    maxBufferedAmountBytes: 4 * 1_024 * 1_024,
-    maxWorkerCapacity: WORKER_PROTOCOL_LIMITS.maxWorkerCapacity,
-    maxLifetimeStreams: WORKER_PROTOCOL_LIMITS.maxLifetimeStreams,
-    maxDataPayloadBytes: WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes,
-    maxReceiveCreditBytes:
-      WORKER_PROTOCOL_LIMITS.maxOutstandingStreamCreditBytes,
-  });
+export const DEFAULT_HYPERVISOR_CONFIG: HypervisorConfig = Object.freeze({
+  maxQueuedDispatches: 0,
+  dispatchQueueTimeoutMs: 30_000,
+  handshakeTimeoutMs: 10_000,
+  readyTimeoutMs: 5 * 60_000,
+  heartbeatIntervalMs: 10_000,
+  leaseTimeoutMs: 30_000,
+  leaseSweepIntervalMs: 1_000,
+  shutdownTimeoutMs: 30_000,
+  cancellationAckTimeoutMs: 10_000,
+  maxConnectionAgeMs: 50 * 60_000,
+  proactiveDrainMarginMs: 60_000,
+  maxConnections: 10_000,
+  maxUnauthenticatedConnections: 128,
+  maxAuthenticatedConnections: 10_000,
+  maxPendingAcceptanceCommits: 1_024,
+  maxPendingAcceptanceCommitsPerWorker: 64,
+  maxInboundMessages: 256,
+  maxInboundBytes: 16 * 1_024 * 1_024,
+  maxBufferedAmountBytes: 4 * 1_024 * 1_024,
+  maxWorkerCapacity: WORKER_PROTOCOL_LIMITS.maxWorkerCapacity,
+  maxLifetimeStreams: WORKER_PROTOCOL_LIMITS.maxLifetimeStreams,
+  maxDataPayloadBytes: WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes,
+  maxReceiveCreditBytes: WORKER_PROTOCOL_LIMITS.maxOutstandingStreamCreditBytes,
+});
 
 function expectTimer(value: unknown, name: string): number {
   if (
@@ -77,11 +75,7 @@ function expectTimer(value: unknown, name: string): number {
   return value;
 }
 
-function expectLimit(
-  value: unknown,
-  name: string,
-  hardLimit: number,
-): number {
+function expectLimit(value: unknown, name: string, hardLimit: number): number {
   if (
     typeof value !== "number" ||
     !Number.isSafeInteger(value) ||
@@ -117,10 +111,11 @@ export function createHypervisorConfig(
   input: Partial<HypervisorConfig> = {},
 ): HypervisorConfig {
   const defaults = DEFAULT_HYPERVISOR_CONFIG;
-  const maxQueuedDispatches = input.maxQueuedDispatches ??
-    defaults.maxQueuedDispatches;
+  const maxQueuedDispatches =
+    input.maxQueuedDispatches ?? defaults.maxQueuedDispatches;
   if (
-    !Number.isSafeInteger(maxQueuedDispatches) || maxQueuedDispatches < 0 ||
+    !Number.isSafeInteger(maxQueuedDispatches) ||
+    maxQueuedDispatches < 0 ||
     maxQueuedDispatches > MAX_CONNECTIONS
   ) {
     throw new TypeError(
@@ -134,18 +129,15 @@ export function createHypervisorConfig(
       "dispatchQueueTimeoutMs",
     ),
     handshakeTimeoutMs: expectTimer(
-      input.handshakeTimeoutMs ??
-        defaults.handshakeTimeoutMs,
+      input.handshakeTimeoutMs ?? defaults.handshakeTimeoutMs,
       "handshakeTimeoutMs",
     ),
     readyTimeoutMs: expectTimer(
-      input.readyTimeoutMs ??
-        defaults.readyTimeoutMs,
+      input.readyTimeoutMs ?? defaults.readyTimeoutMs,
       "readyTimeoutMs",
     ),
     heartbeatIntervalMs: expectTimer(
-      input.heartbeatIntervalMs ??
-        defaults.heartbeatIntervalMs,
+      input.heartbeatIntervalMs ?? defaults.heartbeatIntervalMs,
       "heartbeatIntervalMs",
     ),
     leaseTimeoutMs: expectTimer(
@@ -153,28 +145,23 @@ export function createHypervisorConfig(
       "leaseTimeoutMs",
     ),
     leaseSweepIntervalMs: expectTimer(
-      input.leaseSweepIntervalMs ??
-        defaults.leaseSweepIntervalMs,
+      input.leaseSweepIntervalMs ?? defaults.leaseSweepIntervalMs,
       "leaseSweepIntervalMs",
     ),
     shutdownTimeoutMs: expectTimer(
-      input.shutdownTimeoutMs ??
-        defaults.shutdownTimeoutMs,
+      input.shutdownTimeoutMs ?? defaults.shutdownTimeoutMs,
       "shutdownTimeoutMs",
     ),
     cancellationAckTimeoutMs: expectTimer(
-      input.cancellationAckTimeoutMs ??
-        defaults.cancellationAckTimeoutMs,
+      input.cancellationAckTimeoutMs ?? defaults.cancellationAckTimeoutMs,
       "cancellationAckTimeoutMs",
     ),
     maxConnectionAgeMs: expectTimer(
-      input.maxConnectionAgeMs ??
-        defaults.maxConnectionAgeMs,
+      input.maxConnectionAgeMs ?? defaults.maxConnectionAgeMs,
       "maxConnectionAgeMs",
     ),
     proactiveDrainMarginMs: expectTimer(
-      input.proactiveDrainMarginMs ??
-        defaults.proactiveDrainMarginMs,
+      input.proactiveDrainMarginMs ?? defaults.proactiveDrainMarginMs,
       "proactiveDrainMarginMs",
     ),
     maxConnections: expectBoundedInteger(
@@ -189,14 +176,12 @@ export function createHypervisorConfig(
       MAX_CONNECTIONS,
     ),
     maxAuthenticatedConnections: expectBoundedInteger(
-      input.maxAuthenticatedConnections ??
-        defaults.maxAuthenticatedConnections,
+      input.maxAuthenticatedConnections ?? defaults.maxAuthenticatedConnections,
       "maxAuthenticatedConnections",
       MAX_CONNECTIONS,
     ),
     maxPendingAcceptanceCommits: expectBoundedInteger(
-      input.maxPendingAcceptanceCommits ??
-        defaults.maxPendingAcceptanceCommits,
+      input.maxPendingAcceptanceCommits ?? defaults.maxPendingAcceptanceCommits,
       "maxPendingAcceptanceCommits",
       MAX_CONNECTIONS,
     ),
@@ -207,44 +192,37 @@ export function createHypervisorConfig(
       MAX_CONNECTIONS,
     ),
     maxInboundMessages: expectBoundedInteger(
-      input.maxInboundMessages ??
-        defaults.maxInboundMessages,
+      input.maxInboundMessages ?? defaults.maxInboundMessages,
       "maxInboundMessages",
       MAX_INBOUND_MESSAGES,
     ),
     maxInboundBytes: expectBoundedInteger(
-      input.maxInboundBytes ??
-        defaults.maxInboundBytes,
+      input.maxInboundBytes ?? defaults.maxInboundBytes,
       "maxInboundBytes",
       MAX_INBOUND_BYTES,
     ),
     maxBufferedAmountBytes: expectBoundedInteger(
-      input.maxBufferedAmountBytes ??
-        defaults.maxBufferedAmountBytes,
+      input.maxBufferedAmountBytes ?? defaults.maxBufferedAmountBytes,
       "maxBufferedAmountBytes",
       MAX_BUFFERED_AMOUNT_BYTES,
     ),
     maxWorkerCapacity: expectLimit(
-      input.maxWorkerCapacity ??
-        defaults.maxWorkerCapacity,
+      input.maxWorkerCapacity ?? defaults.maxWorkerCapacity,
       "maxWorkerCapacity",
       WORKER_PROTOCOL_LIMITS.maxWorkerCapacity,
     ),
     maxLifetimeStreams: expectLimit(
-      input.maxLifetimeStreams ??
-        defaults.maxLifetimeStreams,
+      input.maxLifetimeStreams ?? defaults.maxLifetimeStreams,
       "maxLifetimeStreams",
       WORKER_PROTOCOL_LIMITS.maxLifetimeStreams,
     ),
     maxDataPayloadBytes: expectLimit(
-      input.maxDataPayloadBytes ??
-        defaults.maxDataPayloadBytes,
+      input.maxDataPayloadBytes ?? defaults.maxDataPayloadBytes,
       "maxDataPayloadBytes",
       WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes,
     ),
     maxReceiveCreditBytes: expectLimit(
-      input.maxReceiveCreditBytes ??
-        defaults.maxReceiveCreditBytes,
+      input.maxReceiveCreditBytes ?? defaults.maxReceiveCreditBytes,
       "maxReceiveCreditBytes",
       WORKER_PROTOCOL_LIMITS.maxOutstandingStreamCreditBytes,
     ),
@@ -272,7 +250,7 @@ export function createHypervisorConfig(
   }
   if (
     config.maxPendingAcceptanceCommitsPerWorker >
-      config.maxPendingAcceptanceCommits
+    config.maxPendingAcceptanceCommits
   ) {
     throw new TypeError(
       "maxPendingAcceptanceCommitsPerWorker must not exceed maxPendingAcceptanceCommits",
@@ -285,7 +263,7 @@ export function createHypervisorConfig(
   }
   if (
     config.maxInboundBytes <
-      config.maxDataPayloadBytes + BINARY_PROTOCOL.headerBytes
+    config.maxDataPayloadBytes + BINARY_PROTOCOL.headerBytes
   ) {
     throw new TypeError(
       "maxInboundBytes must fit one configured binary data frame",
@@ -293,7 +271,7 @@ export function createHypervisorConfig(
   }
   if (
     config.maxBufferedAmountBytes <
-      config.maxDataPayloadBytes + BINARY_PROTOCOL.headerBytes
+    config.maxDataPayloadBytes + BINARY_PROTOCOL.headerBytes
   ) {
     throw new TypeError(
       "maxBufferedAmountBytes must fit one configured binary data frame",

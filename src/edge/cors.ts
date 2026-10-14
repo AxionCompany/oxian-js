@@ -29,9 +29,8 @@ type CorsConfiguration = Readonly<{
 
 function copyHeaders(source: Headers): Headers {
   const target = new Headers();
-  const cookies = typeof source.getSetCookie === "function"
-    ? source.getSetCookie()
-    : [];
+  const cookies =
+    typeof source.getSetCookie === "function" ? source.getSetCookie() : [];
   let copiedCookies = false;
 
   for (const [name, value] of source) {
@@ -54,9 +53,13 @@ function mergeVary(headers: Headers, ...names: readonly string[]): void {
   const current = headers.get("vary");
   if (current?.trim() === "*") return;
 
-  const values = current === null
-    ? []
-    : current.split(",").map((value) => value.trim()).filter(Boolean);
+  const values =
+    current === null
+      ? []
+      : current
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean);
   const known = new Set(values.map((value) => value.toLowerCase()));
   for (const name of names) {
     if (!known.has(name.toLowerCase())) {
@@ -89,10 +92,7 @@ function normalizeTokens(
   const result: string[] = [];
   const seen = new Set<string>();
   for (const candidate of values ?? fallback) {
-    if (
-      typeof candidate !== "string" ||
-      !HTTP_TOKEN_PATTERN.test(candidate)
-    ) {
+    if (typeof candidate !== "string" || !HTTP_TOKEN_PATTERN.test(candidate)) {
       throw new TypeError(`${label} must contain valid HTTP tokens`);
     }
     const value = uppercase ? candidate.toUpperCase() : candidate.toLowerCase();
@@ -108,8 +108,10 @@ function isSerializedOrigin(origin: string): boolean {
   if (origin === "null") return true;
   try {
     const parsed = new URL(origin);
-    return (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-      parsed.origin === origin;
+    return (
+      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      parsed.origin === origin
+    );
   } catch {
     return false;
   }
@@ -136,9 +138,7 @@ function normalizeOrigins(policy: CorsOriginPolicy): CorsOriginPolicy {
   return Object.freeze(origins);
 }
 
-function createConfiguration(
-  options: CorsAdapterOptions,
-): CorsConfiguration {
+function createConfiguration(options: CorsAdapterOptions): CorsConfiguration {
   const origins = normalizeOrigins(options.origins);
   const credentials = options.credentials ?? false;
   if (credentials && origins === "*") {
@@ -148,8 +148,7 @@ function createConfiguration(
   }
   if (
     options.maxAgeSeconds !== undefined &&
-    (!Number.isSafeInteger(options.maxAgeSeconds) ||
-      options.maxAgeSeconds < 0)
+    (!Number.isSafeInteger(options.maxAgeSeconds) || options.maxAgeSeconds < 0)
   ) {
     throw new TypeError(
       "cors maxAgeSeconds must be a non-negative safe integer",
@@ -162,12 +161,7 @@ function createConfiguration(
     "cors methods",
     true,
   );
-  const headers = normalizeTokens(
-    options.headers,
-    [],
-    "cors headers",
-    false,
-  );
+  const headers = normalizeTokens(options.headers, [], "cors headers", false);
   const exposeHeaders = normalizeTokens(
     options.exposeHeaders,
     [],
@@ -209,7 +203,7 @@ async function permitsOrigin(
   if (!isSerializedOrigin(origin)) return false;
   if (policy === "*") return true;
   if (typeof policy === "function") {
-    return await policy(origin, request) === true;
+    return (await policy(origin, request)) === true;
   }
   return policy.includes(origin);
 }
@@ -259,7 +253,8 @@ function preflightResponse(
   );
 
   const method = requestedMethod?.toUpperCase();
-  const requestIsValid = allowed &&
+  const requestIsValid =
+    allowed &&
     method !== undefined &&
     HTTP_TOKEN_PATTERN.test(method) &&
     config.methodSet.has(method) &&
@@ -279,10 +274,7 @@ function preflightResponse(
     headers.set("access-control-allow-credentials", "true");
   }
   if (config.maxAgeSeconds !== undefined) {
-    headers.set(
-      "access-control-max-age",
-      String(config.maxAgeSeconds),
-    );
+    headers.set("access-control-max-age", String(config.maxAgeSeconds));
   }
   return new Response(null, { status: 204, headers });
 }
@@ -292,9 +284,7 @@ function preflightResponse(
  * authorization mechanism: disallowed non-preflight requests still reach the
  * wrapped handler, but receive no access-control grant.
  */
-export function createCorsAdapter(
-  options: CorsAdapterOptions,
-): FetchAdapter {
+export function createCorsAdapter(options: CorsAdapterOptions): FetchAdapter {
   const config = createConfiguration(options);
   return (next) => {
     if (typeof next !== "function") {
@@ -304,20 +294,14 @@ export function createCorsAdapter(
       const origin = request.headers.get("origin");
       if (origin === null) {
         const response = await next(request);
-        return withHeaders(
-          response,
-          (headers) =>
-            applyActualHeaders(
-              headers,
-              config,
-              "",
-              config.origins === "*",
-            ),
+        return withHeaders(response, (headers) =>
+          applyActualHeaders(headers, config, "", config.origins === "*"),
         );
       }
 
       const allowed = await permitsOrigin(config.origins, origin, request);
-      const isPreflight = request.method.toUpperCase() === "OPTIONS" &&
+      const isPreflight =
+        request.method.toUpperCase() === "OPTIONS" &&
         request.headers.has("access-control-request-method");
       if (isPreflight) {
         return preflightResponse(
@@ -332,9 +316,8 @@ export function createCorsAdapter(
       }
 
       const response = await next(request);
-      return withHeaders(
-        response,
-        (headers) => applyActualHeaders(headers, config, origin, allowed),
+      return withHeaders(response, (headers) =>
+        applyActualHeaders(headers, config, origin, allowed),
       );
     };
   };

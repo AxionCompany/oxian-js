@@ -14,14 +14,10 @@ import type {
 const PROJECT = "oxian-test-project";
 const LOCATION = "us-central1";
 const JOB = "oxian-worker";
-const OPERATION =
-  `projects/${PROJECT}/locations/${LOCATION}/operations/run-operation-1`;
-const EXECUTION =
-  `projects/${PROJECT}/locations/${LOCATION}/jobs/${JOB}/executions/execution-1`;
-const CANCEL_OPERATION =
-  `projects/${PROJECT}/locations/${LOCATION}/operations/cancel-operation-1`;
-const RUN_URL =
-  `https://run.googleapis.com/v2/projects/${PROJECT}/locations/${LOCATION}/jobs/${JOB}:run`;
+const OPERATION = `projects/${PROJECT}/locations/${LOCATION}/operations/run-operation-1`;
+const EXECUTION = `projects/${PROJECT}/locations/${LOCATION}/jobs/${JOB}/executions/execution-1`;
+const CANCEL_OPERATION = `projects/${PROJECT}/locations/${LOCATION}/operations/cancel-operation-1`;
+const RUN_URL = `https://run.googleapis.com/v2/projects/${PROJECT}/locations/${LOCATION}/jobs/${JOB}:run`;
 const OPERATION_URL = `https://run.googleapis.com/v2/${OPERATION}`;
 const EXECUTION_URL = `https://run.googleapis.com/v2/${EXECUTION}`;
 const CANCEL_URL = `${EXECUTION_URL}:cancel`;
@@ -44,10 +40,7 @@ type FakeFetch = Readonly<{
   fetcher: typeof fetch;
 }>;
 
-function jsonResponse(
-  body: unknown,
-  init: ResponseInit = {},
-): Response {
+function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
     ...init,
     headers: {
@@ -69,9 +62,7 @@ function createFakeFetch(
     const call = Object.freeze({
       url: request.url,
       method: request.method,
-      headers: Object.freeze(
-        Object.fromEntries(request.headers.entries()),
-      ),
+      headers: Object.freeze(Object.fromEntries(request.headers.entries())),
       body: request.body === null ? "" : await request.text(),
     });
     calls.push(call);
@@ -84,19 +75,14 @@ function createTokenRecorder(token = "test-access-token") {
   const signals: Array<AbortSignal | undefined> = [];
   return {
     signals,
-    getAccessToken(
-      options: Readonly<{ signal?: AbortSignal }> = {},
-    ): string {
+    getAccessToken(options: Readonly<{ signal?: AbortSignal }> = {}): string {
       signals.push(options.signal);
       return token;
     },
   };
 }
 
-function assertProviderErrorCode(
-  error: unknown,
-  code: string,
-): void {
+function assertProviderErrorCode(error: unknown, code: string): void {
   assert.ok(isProviderError(error));
   assert.deepStrictEqual(error.code, code);
   assert.deepStrictEqual(error.providerId, "google-cloud-run-jobs");
@@ -130,19 +116,23 @@ function realShapedExecution(
     parallelism: 1,
     taskCount: 1,
     template: {
-      containers: [{
-        image: "us-docker.pkg.dev/cloudrun/container/hello",
-      }],
+      containers: [
+        {
+          image: "us-docker.pkg.dev/cloudrun/container/hello",
+        },
+      ],
       maxRetries: 3,
       timeout: "3600s",
       serviceAccount: "worker@example.iam.gserviceaccount.com",
     },
     reconciling: false,
-    conditions: [{
-      type: "Started",
-      state: "CONDITION_SUCCEEDED",
-      lastTransitionTime: "2026-07-28T00:00:01.000000Z",
-    }],
+    conditions: [
+      {
+        type: "Started",
+        state: "CONDITION_SUCCEEDED",
+        lastTransitionTime: "2026-07-28T00:00:01.000000Z",
+      },
+    ],
     observedGeneration: "1",
     runningCount: 1,
     logUri: "https://console.cloud.google.com/logs/viewer",
@@ -198,22 +188,22 @@ test("Cloud Run Jobs provision sends the exact authenticated run request and per
   assert.deepStrictEqual(JSON.parse(fake.calls[0].body), {
     overrides: {
       taskCount: 1,
-      containerOverrides: [{
-        name: "worker",
-        args: [
-          "deno",
-          "task",
-          "worker",
-          "--opaque=argument-secret",
-        ],
-        env: [{
-          name: "OXIAN_REGISTRATION_CAPABILITY",
-          value: "environment-secret",
-        }, {
-          name: "OXIAN_URL",
-          value: "wss://control.example.test/_oxian/workers/connect",
-        }],
-      }],
+      containerOverrides: [
+        {
+          name: "worker",
+          args: ["deno", "task", "worker", "--opaque=argument-secret"],
+          env: [
+            {
+              name: "OXIAN_REGISTRATION_CAPABILITY",
+              value: "environment-secret",
+            },
+            {
+              name: "OXIAN_URL",
+              value: "wss://control.example.test/_oxian/workers/connect",
+            },
+          ],
+        },
+      ],
       timeout: "3600s",
     },
   });
@@ -247,7 +237,7 @@ test("Cloud Run Jobs run omits the container override and timeout when they are 
     jsonResponse({
       name: OPERATION,
       metadata: { name: EXECUTION },
-    })
+    }),
   );
   const provider = createCloudRunJobsProvider({
     project: PROJECT,
@@ -306,8 +296,7 @@ test("Cloud Run Jobs rehydrates a durable resource without exposing private attr
         createdAtMs: 1,
         job: JOB,
         operationName: OPERATION,
-        executionName:
-          `projects/other/locations/${LOCATION}/jobs/${JOB}/executions/e`,
+        executionName: `projects/other/locations/${LOCATION}/jobs/${JOB}/executions/e`,
       }),
     Error,
   );
@@ -315,23 +304,21 @@ test("Cloud Run Jobs rehydrates a durable resource without exposing private attr
 });
 
 test("Cloud Run Jobs resolves execution identity from operation metadata or response", async () => {
-  const secondOperation =
-    `projects/${PROJECT}/locations/${LOCATION}/operations/run-operation-2`;
-  const secondExecution =
-    `projects/${PROJECT}/locations/${LOCATION}/jobs/${JOB}/executions/execution-2`;
+  const secondOperation = `projects/${PROJECT}/locations/${LOCATION}/operations/run-operation-2`;
+  const secondExecution = `projects/${PROJECT}/locations/${LOCATION}/jobs/${JOB}/executions/execution-2`;
   let launches = 0;
   const fake = createFakeFetch(() => {
     launches++;
     return launches === 1
       ? jsonResponse({
-        name: OPERATION,
-        metadata: { name: EXECUTION },
-      })
+          name: OPERATION,
+          metadata: { name: EXECUTION },
+        })
       : jsonResponse({
-        name: secondOperation,
-        done: true,
-        response: { name: secondExecution },
-      });
+          name: secondOperation,
+          done: true,
+          response: { name: secondExecution },
+        });
   });
   const provider = createCloudRunJobsProvider({
     project: PROJECT,
@@ -362,14 +349,12 @@ test("Cloud Run Jobs resolves execution identity from operation metadata or resp
 test("Cloud Run Jobs validates configuration and launch specs before authentication or I/O", async () => {
   const getAccessToken = () => "must-not-be-read";
 
-  for (
-    const options of [
-      { project: "projects/other", location: LOCATION },
-      { project: PROJECT, location: "us-central1/operations" },
-      { project: "-invalid-project", location: LOCATION },
-      { project: PROJECT, location: "US-CENTRAL1" },
-    ]
-  ) {
+  for (const options of [
+    { project: "projects/other", location: LOCATION },
+    { project: PROJECT, location: "us-central1/operations" },
+    { project: "-invalid-project", location: LOCATION },
+    { project: PROJECT, location: "US-CENTRAL1" },
+  ]) {
     assertThrows(
       () =>
         createCloudRunJobsProvider({
@@ -417,10 +402,7 @@ test("Cloud Run Jobs validates configuration and launch specs before authenticat
   ] as unknown as CloudRunJobsLaunchSpec[];
 
   for (const launch of invalidLaunches) {
-    const error = await assertRejects(
-      () => provision(provider, launch),
-      Error,
-    );
+    const error = await assertRejects(() => provision(provider, launch), Error);
     assertProviderErrorCode(error, "invalid_launch_spec");
   }
 
@@ -429,10 +411,8 @@ test("Cloud Run Jobs validates configuration and launch specs before authenticat
 });
 
 test("Cloud Run Jobs accepts only operation and execution names in the exact configured project and location", async () => {
-  const foreignOperation =
-    `projects/other-project/locations/${LOCATION}/operations/foreign`;
-  const foreignExecution =
-    `projects/${PROJECT}/locations/europe-west1/jobs/${JOB}/executions/foreign`;
+  const foreignOperation = `projects/other-project/locations/${LOCATION}/operations/foreign`;
+  const foreignExecution = `projects/${PROJECT}/locations/europe-west1/jobs/${JOB}/executions/foreign`;
   let response: unknown = {
     name: foreignOperation,
     metadata: { name: EXECUTION },
@@ -594,21 +574,16 @@ test("Cloud Run Jobs inspection rejects execution responses naming any other Job
   });
   const resource = await provision(provider);
 
-  for (
-    const invalidJob of [
-      "another-job",
-      `projects/${PROJECT}/locations/${LOCATION}/jobs/another-job`,
-      `locations/${LOCATION}/jobs/${JOB}`,
-      "",
-      42,
-      null,
-    ]
-  ) {
+  for (const invalidJob of [
+    "another-job",
+    `projects/${PROJECT}/locations/${LOCATION}/jobs/another-job`,
+    `locations/${LOCATION}/jobs/${JOB}`,
+    "",
+    42,
+    null,
+  ]) {
     responseJob = invalidJob;
-    const error = await assertRejects(
-      () => provider.inspect(resource),
-      Error,
-    );
+    const error = await assertRejects(() => provider.inspect(resource), Error);
     assertProviderErrorCode(error, "inspection_failed");
     assert.deepStrictEqual(
       (error as Error & { cause?: unknown }).cause instanceof TypeError,
@@ -637,14 +612,14 @@ test("Cloud Run Jobs termination is confirmed, idempotent, and cancels exactly o
       return jsonResponse(
         cancelled
           ? {
-            name: EXECUTION,
-            cancelledCount: 1,
-            completionTime: "2026-07-25T00:00:00Z",
-          }
+              name: EXECUTION,
+              cancelledCount: 1,
+              completionTime: "2026-07-25T00:00:00Z",
+            }
           : {
-            name: EXECUTION,
-            runningCount: 1,
-          },
+              name: EXECUTION,
+              runningCount: 1,
+            },
       );
     }
     if (call.url === CANCEL_URL && call.method === "POST") {
@@ -672,10 +647,7 @@ test("Cloud Run Jobs termination is confirmed, idempotent, and cancels exactly o
 
   assert.deepStrictEqual(first.outcome, "terminated");
   assert.deepStrictEqual(first.observedAtMs, 456);
-  assert.deepStrictEqual(
-    first.details.cancellationOperation,
-    CANCEL_OPERATION,
-  );
+  assert.deepStrictEqual(first.details.cancellationOperation, CANCEL_OPERATION);
   assert.deepStrictEqual(repeated.outcome, "already_absent");
   assert.deepStrictEqual(cancelCalls, 1);
 });
@@ -699,18 +671,22 @@ test("Cloud Run Jobs termination accepts real execution responses with their sho
     if (call.url === EXECUTION_URL && call.method === "GET") {
       executionReads++;
       return jsonResponse(
-        executionReads === 1 ? realShapedExecution() : realShapedExecution({
-          runningCount: undefined,
-          cancelledCount: 1,
-          completionTime: "2026-07-28T00:00:02.000000Z",
-          conditions: [{
-            type: "Completed",
-            state: "CONDITION_FAILED",
-            reason: "Cancelled",
-            message: "Execution cancelled.",
-            lastTransitionTime: "2026-07-28T00:00:02.000000Z",
-          }],
-        }),
+        executionReads === 1
+          ? realShapedExecution()
+          : realShapedExecution({
+              runningCount: undefined,
+              cancelledCount: 1,
+              completionTime: "2026-07-28T00:00:02.000000Z",
+              conditions: [
+                {
+                  type: "Completed",
+                  state: "CONDITION_FAILED",
+                  reason: "Cancelled",
+                  message: "Execution cancelled.",
+                  lastTransitionTime: "2026-07-28T00:00:02.000000Z",
+                },
+              ],
+            }),
       );
     }
     if (call.url === CANCEL_URL && call.method === "POST") {
@@ -769,17 +745,15 @@ test("Cloud Run Jobs pre-aborted operations perform no token lookup or HTTP I/O"
   const callsBeforeAbortChecks = fake.calls.length;
   const tokensBeforeAbortChecks = tokenCalls;
 
-  for (
-    const operation of [
-      (signal: AbortSignal) =>
-        provider.provision(
-          { identity: IDENTITY, launch: { job: JOB } },
-          { signal },
-        ),
-      (signal: AbortSignal) => provider.inspect(resource, { signal }),
-      (signal: AbortSignal) => provider.terminate(resource, { signal }),
-    ]
-  ) {
+  for (const operation of [
+    (signal: AbortSignal) =>
+      provider.provision(
+        { identity: IDENTITY, launch: { job: JOB } },
+        { signal },
+      ),
+    (signal: AbortSignal) => provider.inspect(resource, { signal }),
+    (signal: AbortSignal) => provider.terminate(resource, { signal }),
+  ]) {
     const controller = new AbortController();
     controller.abort();
     await assertRejects(
@@ -809,18 +783,12 @@ test("Cloud Run Jobs never retries an ambiguous launch and returns a typed indet
     }) as typeof fetch,
   });
 
-  const error = await assertRejects(
-    () => provision(provider),
-    Error,
-  );
+  const error = await assertRejects(() => provision(provider), Error);
 
   assertProviderErrorCode(error, "provision_indeterminate");
   assert.deepStrictEqual(tokenCalls, 1);
   assert.deepStrictEqual(fetchCalls, 1);
-  assert.deepStrictEqual(
-    (error as Error).cause instanceof TypeError,
-    true,
-  );
+  assert.deepStrictEqual((error as Error).cause instanceof TypeError, true);
 });
 
 test("Cloud Run Jobs bounds API bodies while streaming", async () => {
@@ -875,14 +843,14 @@ test("Cloud Run Jobs passes generic provider conformance against a deterministic
       return jsonResponse(
         cancelled
           ? {
-            name: EXECUTION,
-            cancelledCount: 1,
-            completionTime: "2026-07-25T00:00:00Z",
-          }
+              name: EXECUTION,
+              cancelledCount: 1,
+              completionTime: "2026-07-25T00:00:00Z",
+            }
           : {
-            name: EXECUTION,
-            runningCount: 1,
-          },
+              name: EXECUTION,
+              runningCount: 1,
+            },
       );
     }
     if (call.url === CANCEL_URL && call.method === "POST") {

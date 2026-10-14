@@ -131,30 +131,30 @@ async function createLifecycleHarness(
   sessionCallbacks: SessionLifecycleCallbacks,
   options: Readonly<{
     clock?: () => number;
-    wrapAuthority?: (
-      authority: CredentialLifecycle,
-    ) => CredentialLifecycle;
+    wrapAuthority?: (authority: CredentialLifecycle) => CredentialLifecycle;
   }> = {},
 ): Promise<LifecycleHarness> {
   const repository = createEphemeralWorkerStore({
     clock: options.clock,
   });
-  const definition = await repository.define(createWorkerDefinition({
-    workerId: "session-lifecycle-worker",
-    providerId: "externally-attached",
-    workloads: [WORKLOAD],
-    capacity: CAPACITY,
-    providerConfig: { pool: "lifecycle-test" },
-    labels: { region: "local" },
-  }));
+  const definition = await repository.define(
+    createWorkerDefinition({
+      workerId: "session-lifecycle-worker",
+      providerId: "externally-attached",
+      workloads: [WORKLOAD],
+      capacity: CAPACITY,
+      providerConfig: { pool: "lifecycle-test" },
+      labels: { region: "local" },
+    }),
+  );
   const identity = (await repository.activate(definition.workerId)).attempt
     .identity;
   const registrationAuthority = createEphemeralCredentialLifecycle({
     clock: options.clock,
   });
   const registration = await registrationAuthority.issueRegistration(identity);
-  const authority = options.wrapAuthority?.(registrationAuthority) ??
-    registrationAuthority;
+  const authority =
+    options.wrapAuthority?.(registrationAuthority) ?? registrationAuthority;
   const hypervisor = createHypervisor({
     control: { authority, repository },
     commitAcceptedWork: () => Promise.resolve(),
@@ -194,23 +194,24 @@ async function createLifecycleHarness(
     });
     const iterator = transport.messages()[Symbol.asyncIterator]();
     try {
-      await transport.sendControl(createHelloFrame({
-        handshakeId: input.handshakeId,
-        identity,
-        credential: input.credential,
-        workloads: [WORKLOAD],
-        capacity: CAPACITY,
-      }));
-      const welcome = await nextControlledControl(
-        { iterator },
-        "welcome",
-      );
-      if (input.sendReady !== false) {
-        await transport.sendControl(createReadyFrame({
-          connectionId: welcome.connectionId,
+      await transport.sendControl(
+        createHelloFrame({
+          handshakeId: input.handshakeId,
+          identity,
+          credential: input.credential,
+          workloads: [WORKLOAD],
           capacity: CAPACITY,
-          metadata: input.metadata ?? {},
-        }));
+        }),
+      );
+      const welcome = await nextControlledControl({ iterator }, "welcome");
+      if (input.sendReady !== false) {
+        await transport.sendControl(
+          createReadyFrame({
+            connectionId: welcome.connectionId,
+            capacity: CAPACITY,
+            metadata: input.metadata ?? {},
+          }),
+        );
       }
       let closed = false;
       const worker: LifecycleWorker = Object.freeze({
@@ -220,21 +221,25 @@ async function createLifecycleHarness(
         close: async (reason = "lifecycle_worker_closed") => {
           if (closed) return;
           closed = true;
-          await transport.close({
-            code: 4100,
-            reason,
-            timeoutMs: 250,
-          }).catch(() => undefined);
+          await transport
+            .close({
+              code: 4100,
+              reason,
+              timeoutMs: 250,
+            })
+            .catch(() => undefined);
         },
       });
       workers.add(worker);
       return worker;
     } catch (error) {
-      await transport.close({
-        code: 4100,
-        reason: "lifecycle_worker_setup_failed",
-        timeoutMs: 250,
-      }).catch(() => undefined);
+      await transport
+        .close({
+          code: 4100,
+          reason: "lifecycle_worker_setup_failed",
+          timeoutMs: 250,
+        })
+        .catch(() => undefined);
       throw error;
     }
   };
@@ -243,9 +248,9 @@ async function createLifecycleHarness(
   const close = (): Promise<void> => {
     closing ??= (async () => {
       await Promise.all([...workers].map((worker) => worker.close()));
-      await hypervisor.shutdown("lifecycle_test_cleanup").catch(() =>
-        undefined
-      );
+      await hypervisor
+        .shutdown("lifecycle_test_cleanup")
+        .catch(() => undefined);
       await listener.shutdown().catch(() => undefined);
     })();
     return closing;
@@ -308,7 +313,7 @@ test("session lifecycle Ready commit gates process-local routability", async () 
     await waitFor(
       () =>
         harness.hypervisor.sessions.get(harness.identity.workerId)?.phase ===
-          "ready",
+        "ready",
       "Ready commit did not publish the session",
     );
     await nextControlledControl(worker, "ready_ack");
@@ -330,23 +335,26 @@ test("session lifecycle Ready commit gates process-local routability", async () 
 test("snapshot retains an unsettled admission operation after its connection closes", async () => {
   const exchangeEntered = createDeferred<void>();
   const releaseExchange = createDeferred<void>();
-  const harness = await createLifecycleHarness({
-    onReady() {},
-    onHeartbeat() {},
-    onDisconnect() {},
-  }, {
-    wrapAuthority(authority) {
-      return Object.freeze({
-        issueRegistration: authority.issueRegistration,
-        revoke: authority.revoke,
-        async exchange(input) {
-          exchangeEntered.resolve();
-          await releaseExchange.promise;
-          return await authority.exchange(input);
-        },
-      });
+  const harness = await createLifecycleHarness(
+    {
+      onReady() {},
+      onHeartbeat() {},
+      onDisconnect() {},
     },
-  });
+    {
+      wrapAuthority(authority) {
+        return Object.freeze({
+          issueRegistration: authority.issueRegistration,
+          revoke: authority.revoke,
+          async exchange(input) {
+            exchangeEntered.resolve();
+            await releaseExchange.promise;
+            return await authority.exchange(input);
+          },
+        });
+      },
+    },
+  );
   const connecting = harness.connect({
     credential: harness.registration.credential,
     handshakeId: "hanging-authority-exchange",
@@ -384,15 +392,14 @@ test("snapshot retains an unsettled admission operation after its connection clo
     assert.deepStrictEqual(closed.readyOperations, 0);
 
     releaseExchange.resolve();
-    await waitFor(
-      () => {
-        const snapshot = harness.hypervisor.snapshot();
-        return snapshot.unauthenticatedConnections === 0 &&
-          snapshot.authenticatedConnections === 0 &&
-          snapshot.handshakeOperations === 0;
-      },
-      "settled exchange did not release retained admission",
-    );
+    await waitFor(() => {
+      const snapshot = harness.hypervisor.snapshot();
+      return (
+        snapshot.unauthenticatedConnections === 0 &&
+        snapshot.authenticatedConnections === 0 &&
+        snapshot.handshakeOperations === 0
+      );
+    }, "settled exchange did not release retained admission");
   } finally {
     releaseExchange.resolve();
     await connecting.catch(() => undefined);
@@ -437,27 +444,21 @@ test("late Ready completion from a replaced generation cannot publish or detach 
       },
       handshakeId: "replacement-new-handshake",
     });
-    await waitFor(
-      () => {
-        const session = harness.hypervisor.sessions.get(
-          harness.identity.workerId,
-        );
-        return session?.connectionId === replacement.welcome.connectionId &&
-          session.phase === "ready";
-      },
-      "replacement did not become ready",
-    );
-    await withTimeout(
-      oldWorker.transport.closed,
-      "old worker was not fenced",
-    );
+    await waitFor(() => {
+      const session = harness.hypervisor.sessions.get(
+        harness.identity.workerId,
+      );
+      return (
+        session?.connectionId === replacement.welcome.connectionId &&
+        session.phase === "ready"
+      );
+    }, "replacement did not become ready");
+    await withTimeout(oldWorker.transport.closed, "old worker was not fenced");
     assert.ok(oldContext.signal.aborted);
 
     releaseOld.resolve();
     await new Promise<void>((resolve) => setTimeout(resolve, 20));
-    const current = harness.hypervisor.sessions.get(
-      harness.identity.workerId,
-    );
+    const current = harness.hypervisor.sessions.get(harness.identity.workerId);
     assert.deepStrictEqual(
       current?.connectionId,
       replacement.welcome.connectionId,
@@ -469,14 +470,16 @@ test("late Ready completion from a replaced generation cannot publish or detach 
       undefined,
     );
     assert.deepStrictEqual(
-      harness.hypervisor.sessions.get(harness.identity.workerId)
-        ?.connectionId,
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.connectionId,
       replacement.welcome.connectionId,
     );
     assert.deepStrictEqual(
-      disconnects.filter((event) =>
-        event.fence.connectionId === oldWorker.welcome.connectionId
-      ).map((event) => [event.phase, event.reason]),
+      disconnects
+        .filter(
+          (event) =>
+            event.fence.connectionId === oldWorker.welcome.connectionId,
+        )
+        .map((event) => [event.phase, event.reason]),
       [["connected", "session_replaced"]],
     );
   } finally {
@@ -487,26 +490,27 @@ test("late Ready completion from a replaced generation cannot publish or detach 
 
 test("heartbeat commit gates lease mutation and rejection fail-closes the session", async () => {
   let nowMs = 1_000;
-  const heartbeatEntered = createDeferred<
-    HypervisorHeartbeatContext
-  >();
+  const heartbeatEntered = createDeferred<HypervisorHeartbeatContext>();
   const releaseHeartbeat = createDeferred<void>();
   const heartbeatContexts: HypervisorHeartbeatContext[] = [];
   const disconnects: HypervisorDisconnectEvent[] = [];
-  const harness = await createLifecycleHarness({
-    onReady() {},
-    onHeartbeat(context) {
-      heartbeatContexts.push(context);
-      if (context.sequence === 0) {
-        heartbeatEntered.resolve(context);
-        return releaseHeartbeat.promise;
-      }
-      return Promise.reject(new Error("heartbeat persistence failed"));
+  const harness = await createLifecycleHarness(
+    {
+      onReady() {},
+      onHeartbeat(context) {
+        heartbeatContexts.push(context);
+        if (context.sequence === 0) {
+          heartbeatEntered.resolve(context);
+          return releaseHeartbeat.promise;
+        }
+        return Promise.reject(new Error("heartbeat persistence failed"));
+      },
+      onDisconnect(event) {
+        disconnects.push(event);
+      },
     },
-    onDisconnect(event) {
-      disconnects.push(event);
-    },
-  }, { clock: () => nowMs });
+    { clock: () => nowMs },
+  );
   try {
     const worker = await harness.connect({
       credential: harness.registration.credential,
@@ -515,21 +519,21 @@ test("heartbeat commit gates lease mutation and rejection fail-closes the sessio
     await waitFor(
       () =>
         harness.hypervisor.sessions.get(harness.identity.workerId)?.phase ===
-          "ready",
+        "ready",
       "heartbeat worker did not become ready",
     );
     await nextControlledControl(worker, "ready_ack");
-    const before = harness.hypervisor.sessions.get(
-      harness.identity.workerId,
-    )!;
+    const before = harness.hypervisor.sessions.get(harness.identity.workerId)!;
     nowMs = 1_500;
-    await worker.transport.sendControl(createHeartbeatFrame({
-      connectionId: worker.welcome.connectionId,
-      sequence: 0,
-      inflight: 1,
-      availableCapacity: 3,
-      metadata: { cpuPercent: 25, state: "healthy" },
-    }));
+    await worker.transport.sendControl(
+      createHeartbeatFrame({
+        connectionId: worker.welcome.connectionId,
+        sequence: 0,
+        inflight: 1,
+        availableCapacity: 3,
+        metadata: { cpuPercent: 25, state: "healthy" },
+      }),
+    );
     const context = await withTimeout(
       heartbeatEntered.promise,
       "heartbeat commit was not invoked",
@@ -555,19 +559,19 @@ test("heartbeat commit gates lease mutation and rejection fail-closes the sessio
           ?.nextHeartbeatSequence === 1,
       "durable heartbeat did not update the local lease",
     );
-    const after = harness.hypervisor.sessions.get(
-      harness.identity.workerId,
-    )!;
+    const after = harness.hypervisor.sessions.get(harness.identity.workerId)!;
     assert.deepStrictEqual(after.lastHeartbeatAtMs, 1_500);
     assert.deepStrictEqual(after.leaseExpiresAtMs, 3_500);
 
-    await worker.transport.sendControl(createHeartbeatFrame({
-      connectionId: worker.welcome.connectionId,
-      sequence: 1,
-      inflight: 0,
-      availableCapacity: 4,
-      metadata: { state: "will-fail" },
-    }));
+    await worker.transport.sendControl(
+      createHeartbeatFrame({
+        connectionId: worker.welcome.connectionId,
+        sequence: 1,
+        inflight: 0,
+        availableCapacity: 4,
+        metadata: { state: "will-fail" },
+      }),
+    );
     await withTimeout(
       worker.transport.closed,
       "failed heartbeat did not close the connection",
@@ -575,7 +579,7 @@ test("heartbeat commit gates lease mutation and rejection fail-closes the sessio
     await waitFor(
       () =>
         harness.hypervisor.sessions.get(harness.identity.workerId) ===
-          undefined,
+        undefined,
       "failed heartbeat left a routable session",
     );
     assert.deepStrictEqual(heartbeatContexts.length, 2);
@@ -597,9 +601,7 @@ test("a monotonic disconnect tombstone prevents a late Ready commit from resurre
   const disconnectedFences = new Set<string>();
   const disconnects: HypervisorDisconnectEvent[] = [];
   let durableState: "starting" | "ready" | "disconnected" = "starting";
-  const fenceKey = (
-    fence: HypervisorReadyContext["fence"],
-  ): string =>
+  const fenceKey = (fence: HypervisorReadyContext["fence"]): string =>
     [
       fence.identity.workerId,
       fence.identity.attemptId,
@@ -663,14 +665,13 @@ test("a monotonic disconnect tombstone prevents a late Ready commit from resurre
       lateReadySettled.promise,
       "late Ready adapter task did not settle",
     );
-    await waitFor(
-      () => {
-        const snapshot = harness.hypervisor.snapshot();
-        return snapshot.authenticatedConnections === 0 &&
-          snapshot.readyOperations === 0;
-      },
-      "settled Ready adapter did not release retained admission",
-    );
+    await waitFor(() => {
+      const snapshot = harness.hypervisor.snapshot();
+      return (
+        snapshot.authenticatedConnections === 0 &&
+        snapshot.readyOperations === 0
+      );
+    }, "settled Ready adapter did not release retained admission");
     assert.deepStrictEqual(durableState, "disconnected");
     assert.deepStrictEqual(disconnects.length, 1);
     assert.deepStrictEqual(
@@ -685,17 +686,20 @@ test("a monotonic disconnect tombstone prevents a late Ready commit from resurre
 
 test("disconnect observer fires once for pre-ready, replacement, and shutdown without owning cleanup", async () => {
   const disconnects: HypervisorDisconnectEvent[] = [];
-  const harness = await createLifecycleHarness({
-    onReady() {},
-    onHeartbeat() {},
-    onDisconnect(event) {
-      disconnects.push(event);
-      if (disconnects.length === 1) {
-        throw new Error("synchronous observer failure");
-      }
-      return Promise.reject(new Error("asynchronous observer failure"));
+  const harness = await createLifecycleHarness(
+    {
+      onReady() {},
+      onHeartbeat() {},
+      onDisconnect(event) {
+        disconnects.push(event);
+        if (disconnects.length === 1) {
+          throw new Error("synchronous observer failure");
+        }
+        return Promise.reject(new Error("asynchronous observer failure"));
+      },
     },
-  }, { clock: () => 10_000 });
+    { clock: () => 10_000 },
+  );
   try {
     const preReady = await harness.connect({
       credential: harness.registration.credential,
@@ -719,7 +723,7 @@ test("disconnect observer fires once for pre-ready, replacement, and shutdown wi
     await waitFor(
       () =>
         harness.hypervisor.sessions.get(harness.identity.workerId)?.phase ===
-          "ready",
+        "ready",
       "current worker did not become ready",
     );
     const replacement = await harness.connect({
@@ -732,7 +736,7 @@ test("disconnect observer fires once for pre-ready, replacement, and shutdown wi
     await waitFor(
       () =>
         harness.hypervisor.sessions.get(harness.identity.workerId)
-            ?.connectionId === replacement.welcome.connectionId &&
+          ?.connectionId === replacement.welcome.connectionId &&
         disconnects.length === 2,
       "replacement disconnect was not observed",
     );

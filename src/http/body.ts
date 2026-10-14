@@ -16,51 +16,54 @@ export function rechunkHttpBody(
     reader.releaseLock();
   };
 
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      if (terminal) return;
-      try {
-        while (staged === undefined || offset >= staged.byteLength) {
-          staged = undefined;
-          offset = 0;
-          const next = await reader.read();
-          if (terminal) return;
-          if (next.done) {
-            terminal = true;
-            release();
-            controller.close();
-            return;
+  return new ReadableStream<Uint8Array>(
+    {
+      async pull(controller) {
+        if (terminal) return;
+        try {
+          while (staged === undefined || offset >= staged.byteLength) {
+            staged = undefined;
+            offset = 0;
+            const next = await reader.read();
+            if (terminal) return;
+            if (next.done) {
+              terminal = true;
+              release();
+              controller.close();
+              return;
+            }
+            if (!(next.value instanceof Uint8Array)) {
+              throw new TypeError("HTTP body streams must yield Uint8Array");
+            }
+            if (next.value.byteLength === 0) continue;
+            staged = next.value;
           }
-          if (!(next.value instanceof Uint8Array)) {
-            throw new TypeError("HTTP body streams must yield Uint8Array");
-          }
-          if (next.value.byteLength === 0) continue;
-          staged = next.value;
-        }
 
-        const end = Math.min(staged.byteLength, offset + limit);
-        controller.enqueue(staged.subarray(offset, end));
-        offset = end;
-      } catch (error) {
+          const end = Math.min(staged.byteLength, offset + limit);
+          controller.enqueue(staged.subarray(offset, end));
+          offset = end;
+        } catch (error) {
+          if (terminal) return;
+          terminal = true;
+          try {
+            await reader.cancel(error);
+          } catch {
+            // The original read/validation failure remains authoritative.
+          }
+          release();
+          controller.error(error);
+        }
+      },
+      async cancel(reason) {
         if (terminal) return;
         terminal = true;
         try {
-          await reader.cancel(error);
-        } catch {
-          // The original read/validation failure remains authoritative.
+          await reader.cancel(reason);
+        } finally {
+          release();
         }
-        release();
-        controller.error(error);
-      }
+      },
     },
-    async cancel(reason) {
-      if (terminal) return;
-      terminal = true;
-      try {
-        await reader.cancel(reason);
-      } finally {
-        release();
-      }
-    },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
 }

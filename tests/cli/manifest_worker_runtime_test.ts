@@ -17,10 +17,7 @@ import {
   createWorkerDefinition,
 } from "../../src/supervisor/index.ts";
 
-const APP_MODULE_URL = new URL(
-  "../../src/app/index.ts",
-  import.meta.url,
-).href;
+const APP_MODULE_URL = new URL("../../src/app/index.ts", import.meta.url).href;
 
 async function waitForReady(
   predicate: () => boolean,
@@ -35,10 +32,7 @@ async function waitForReady(
   }
 }
 
-function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs = 1_000,
-): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, timeoutMs = 1_000): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new DOMException("test timed out", "TimeoutError")),
@@ -60,12 +54,14 @@ function withTimeout<T>(
 test("manifest worker durably resumes across a process restart with a newer fenced session", async () => {
   const root = await Deno.makeTempDir();
   const repository = createEphemeralWorkerStore();
-  await repository.define(createWorkerDefinition({
-    workerId: "manifest-worker-live",
-    providerId: "externally-attached",
-    workloads: [HTTP_WORKLOAD],
-    capacity: 1,
-  }));
+  await repository.define(
+    createWorkerDefinition({
+      workerId: "manifest-worker-live",
+      providerId: "externally-attached",
+      workloads: [HTTP_WORKLOAD],
+      capacity: 1,
+    }),
+  );
   const identity = (await repository.activate("manifest-worker-live")).attempt
     .identity;
   const authority = createEphemeralCredentialLifecycle();
@@ -139,33 +135,28 @@ export default defineApplicationFactory(({ router, basePath }) =>
 } as const;
 `,
     );
-    const gatewayUrl = new URL(
-      TEST_WORKER_PATH,
-      listener.url,
-    );
+    const gatewayUrl = new URL(TEST_WORKER_PATH, listener.url);
     gatewayUrl.protocol = "ws:";
     const initialHandshakeId = crypto.randomUUID();
     const storePath = join(root, "state", "resume.json");
     await Deno.writeTextFile(
       join(root, "worker.ts"),
-      `export default ${
-        JSON.stringify(
-          {
-            gatewayUrl: gatewayUrl.href,
-            identity,
-            credential: registration.credential,
-            handshakeId: initialHandshakeId,
-            capacity: 1,
-            applicationConfig: "./oxian.config.ts",
-            credentialStore: {
-              mode: "durable",
-              path: "./state/resume.json",
-            },
+      `export default ${JSON.stringify(
+        {
+          gatewayUrl: gatewayUrl.href,
+          identity,
+          credential: registration.credential,
+          handshakeId: initialHandshakeId,
+          capacity: 1,
+          applicationConfig: "./oxian.config.ts",
+          credentialStore: {
+            mode: "durable",
+            path: "./state/resume.json",
           },
-          null,
-          2,
-        )
-      } as const;
+        },
+        null,
+        2,
+      )} as const;
 `,
     );
 
@@ -177,9 +168,7 @@ export default defineApplicationFactory(({ router, basePath }) =>
       source: "served-by-manifest-factory",
     });
     await waitForReady(
-      () =>
-        hypervisor.sessions.get(identity.workerId)?.phase ===
-          "ready",
+      () => hypervisor.sessions.get(identity.workerId)?.phase === "ready",
     );
     const firstSession = hypervisor.sessions.get(identity.workerId);
     assert.ok(firstSession !== undefined);
@@ -187,18 +176,14 @@ export default defineApplicationFactory(({ router, basePath }) =>
     const gateway = createHttpGateway({
       dispatch: hypervisor.dispatch,
     });
-    const response = await gateway(
-      new Request("https://gateway.example/api"),
-    );
+    const response = await gateway(new Request("https://gateway.example/api"));
     assert.deepStrictEqual(response.status, 200);
     assert.deepStrictEqual(
       await response.text(),
       "served-by-manifest-factory:middleware",
     );
     assert.deepStrictEqual(
-      (await gateway(
-        new Request("https://gateway.example/apix"),
-      )).status,
+      (await gateway(new Request("https://gateway.example/apix"))).status,
       404,
     );
 
@@ -220,9 +205,7 @@ export default defineApplicationFactory(({ router, basePath }) =>
     const runningB = await runtimeB.start();
     assert.deepStrictEqual(runningB.application.basePath, "/api");
     await waitForReady(
-      () =>
-        hypervisor.sessions.get(identity.workerId)?.phase ===
-          "ready",
+      () => hypervisor.sessions.get(identity.workerId)?.phase === "ready",
     );
     const secondSession = hypervisor.sessions.get(identity.workerId);
     assert.ok(secondSession !== undefined);
@@ -310,9 +293,8 @@ test("manifest worker stop preempts an unreachable gateway startup", async () =>
       }),
       handshakeId: "handshake-1",
       capacity: 1,
-      applicationConfig: new URL(
-        `file://${join(root, "oxian.config.ts")}`,
-      ).href,
+      applicationConfig: new URL(`file://${join(root, "oxian.config.ts")}`)
+        .href,
       credentialStore: Object.freeze({ mode: "ephemeral" }),
     }),
   });
@@ -400,9 +382,8 @@ export default defineApplicationFactory(({ router, basePath }) =>
       }),
       handshakeId: "handshake-1",
       capacity: 1,
-      applicationConfig: new URL(
-        `file://${join(root, "oxian.config.ts")}`,
-      ).href,
+      applicationConfig: new URL(`file://${join(root, "oxian.config.ts")}`)
+        .href,
       credentialStore: Object.freeze({ mode: "ephemeral" }),
     }),
   });

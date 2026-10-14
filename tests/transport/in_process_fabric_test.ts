@@ -74,12 +74,15 @@ test("the local fabric addresses ordered frames to one logical connection", asyn
       events.map((event) => event.topic),
       Array(4).fill(topic),
     );
-    assert.deepStrictEqual(events.map((event) => event.direction), [
-      "worker-to-hypervisor",
-      "worker-to-hypervisor",
-      "worker-to-hypervisor",
-      "hypervisor-to-worker",
-    ]);
+    assert.deepStrictEqual(
+      events.map((event) => event.direction),
+      [
+        "worker-to-hypervisor",
+        "worker-to-hypervisor",
+        "worker-to-hypervisor",
+        "hypervisor-to-worker",
+      ],
+    );
 
     dropNext = true;
     workerA.send("dropped-by-test-fault");

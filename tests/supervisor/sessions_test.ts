@@ -76,8 +76,8 @@ test("equal generation replay cannot displace a live session", () => {
   const registry = createSessionRegistry({ clock: () => 10 });
   const first = attach(registry);
 
-  const error = assertThrows(
-    () => attach(registry, "connection-2", 1),
+  const error = assertThrows(() =>
+    attach(registry, "connection-2", 1),
   ) as SupervisorError;
   assert.deepStrictEqual(error.code, "stale_session");
   assert.deepStrictEqual(
@@ -109,20 +109,20 @@ test("session generation high-watermark survives detach and expiry", () => {
   const first = attach(registry, "connection-1", 2);
   registry.detach(fenceForSession(first));
 
-  const detachedStale = assertThrows(
-    () => attach(registry, "connection-stale", 1),
+  const detachedStale = assertThrows(() =>
+    attach(registry, "connection-stale", 1),
   ) as SupervisorError;
   assert.deepStrictEqual(detachedStale.code, "stale_session");
-  const detachedReplay = assertThrows(
-    () => attach(registry, "connection-detached-replay", 2),
+  const detachedReplay = assertThrows(() =>
+    attach(registry, "connection-detached-replay", 2),
   ) as SupervisorError;
   assert.deepStrictEqual(detachedReplay.code, "stale_session");
 
   const next = attach(registry, "connection-next", 3);
   nowMs = next.leaseExpiresAtMs;
   registry.expireLeases();
-  const expiredStale = assertThrows(
-    () => attach(registry, "connection-expired-stale", 3),
+  const expiredStale = assertThrows(() =>
+    attach(registry, "connection-expired-stale", 3),
   ) as SupervisorError;
   assert.deepStrictEqual(expiredStale.code, "stale_session");
   assert.deepStrictEqual(
@@ -189,16 +189,14 @@ test("connected sessions use the Ready deadline and start their lease when publi
 });
 
 test("read and admission observers cannot consume lease-expiry events", () => {
-  for (
-    const observe of [
-      (registry: ReturnType<typeof createSessionRegistry>) => registry.list(),
-      (registry: ReturnType<typeof createSessionRegistry>) =>
-        registry.get("worker-1"),
-      (registry: ReturnType<typeof createSessionRegistry>) => {
-        assertThrows(() => registry.reserve({ workload: "sandbox.command" }));
-      },
-    ]
-  ) {
+  for (const observe of [
+    (registry: ReturnType<typeof createSessionRegistry>) => registry.list(),
+    (registry: ReturnType<typeof createSessionRegistry>) =>
+      registry.get("worker-1"),
+    (registry: ReturnType<typeof createSessionRegistry>) => {
+      assertThrows(() => registry.reserve({ workload: "sandbox.command" }));
+    },
+  ]) {
     let nowMs = 0;
     const registry = createSessionRegistry({ clock: () => nowMs });
     const session = attach(registry);
@@ -246,15 +244,11 @@ test("draining stops admission and waits for reserved work", () => {
   registry.reserve({ workload: "sandbox.command" });
   assert.deepStrictEqual(registry.startDrain(fence).phase, "draining");
 
-  const exhausted = assertThrows(
-    () => registry.reserve({ workload: "sandbox.command" }),
+  const exhausted = assertThrows(() =>
+    registry.reserve({ workload: "sandbox.command" }),
   ) as SupervisorError;
   assert.deepStrictEqual(exhausted.code, "capacity_exhausted");
-  assertThrows(
-    () => registry.markDrained(fence),
-    Error,
-    "reserved work",
-  );
+  assertThrows(() => registry.markDrained(fence), Error, "reserved work");
 
   registry.release(fence);
   registry.release(fence);
@@ -289,24 +283,22 @@ test("targeted reservation never spills to another eligible worker", () => {
     workload: "sandbox.command",
     target: { workerId: "worker-a" },
   });
-  for (
-    const input of [
-      {
-        workload: "sandbox.command",
-        target: { workerId: "worker-a" },
-      },
-      {
-        workload: "sandbox.command",
-        target: { workerId: "worker-missing" },
-      },
-      {
-        workload: "sandbox.other",
-        target: { workerId: "worker-a" },
-      },
-    ] as const
-  ) {
+  for (const input of [
+    {
+      workload: "sandbox.command",
+      target: { workerId: "worker-a" },
+    },
+    {
+      workload: "sandbox.command",
+      target: { workerId: "worker-missing" },
+    },
+    {
+      workload: "sandbox.other",
+      target: { workerId: "worker-a" },
+    },
+  ] as const) {
     const error = assertThrows(() =>
-      registry.reserve(input)
+      registry.reserve(input),
     ) as SupervisorError;
     assert.deepStrictEqual(error.code, "capacity_exhausted");
   }
@@ -316,7 +308,7 @@ test("targeted reservation never spills to another eligible worker", () => {
     registry.reserve({
       workload: "sandbox.command",
       target: { workerId: "worker-b" },
-    })
+    }),
   ) as SupervisorError;
   assert.deepStrictEqual(draining.code, "capacity_exhausted");
   assert.deepStrictEqual(registry.get("worker-a")?.reserved, 1);
@@ -357,7 +349,7 @@ test("lower epochs and conflicting attempts cannot replace a session", () => {
       workloads: ["sandbox.command"],
       capacity: 1,
       leaseTimeoutMs: 100,
-    })
+    }),
   ) as SupervisorError;
   assert.deepStrictEqual(stale.code, "stale_session");
 
@@ -373,7 +365,7 @@ test("lower epochs and conflicting attempts cannot replace a session", () => {
       workloads: ["sandbox.command"],
       capacity: 1,
       leaseTimeoutMs: 100,
-    })
+    }),
   ) as SupervisorError;
   assert.deepStrictEqual(conflict.code, "stale_session");
 });

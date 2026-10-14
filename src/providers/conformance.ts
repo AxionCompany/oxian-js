@@ -67,16 +67,14 @@ async function ensureAbort(
 
 function assertNoSessionState(resource: ProviderResource): void {
   const value = resource as unknown as Record<string, unknown>;
-  for (
-    const forbidden of [
-      "connectionId",
-      "ready",
-      "session",
-      "socket",
-      "target",
-      "url",
-    ]
-  ) {
+  for (const forbidden of [
+    "connectionId",
+    "ready",
+    "session",
+    "socket",
+    "target",
+    "url",
+  ]) {
     ensure(
       !Object.hasOwn(value, forbidden),
       `provider resources must not expose ${forbidden}`,
@@ -93,9 +91,7 @@ export async function runProviderConformance<TLaunchSpec>(
   options: ProviderConformanceOptions<TLaunchSpec>,
 ): Promise<ProviderConformanceReport> {
   const checks: ProviderConformanceCheck[] = [];
-  const identity = createWorkerIdentity(
-    options.identity ?? DEFAULT_IDENTITY,
-  );
+  const identity = createWorkerIdentity(options.identity ?? DEFAULT_IDENTITY);
   const request: ProviderProvisionRequest<TLaunchSpec> = {
     identity,
     launch: options.launch,

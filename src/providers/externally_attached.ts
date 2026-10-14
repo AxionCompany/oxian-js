@@ -47,19 +47,19 @@ export type ExternallyAttachedResourceInput = Readonly<{
 }>;
 
 export type ExternallyAttachedProvider =
-  & WorkerProvider<ExternallyAttachedLaunchSpec>
-  & Readonly<{
-    /**
-     * Restores an active durable reservation into this provider instance.
-     *
-     * Repeating the exact restoration is idempotent. A conflicting fenced
-     * reference is rejected, and restoring a reservation already terminated
-     * in this instance never makes it present again.
-     */
-    rehydrateResource(
-      input: ExternallyAttachedResourceInput,
-    ): ProviderResource;
-  }>;
+  WorkerProvider<ExternallyAttachedLaunchSpec> &
+    Readonly<{
+      /**
+       * Restores an active durable reservation into this provider instance.
+       *
+       * Repeating the exact restoration is idempotent. A conflicting fenced
+       * reference is rejected, and restoring a reservation already terminated
+       * in this instance never makes it present again.
+       */
+      rehydrateResource(
+        input: ExternallyAttachedResourceInput,
+      ): ProviderResource;
+    }>;
 
 type AttachmentEntry = {
   resource: ProviderResource;
@@ -90,8 +90,8 @@ export function createExternallyAttachedProvider(
     options.providerId ?? "externally-attached",
   );
   const now = options.now ?? Date.now;
-  const createResourceId = options.createResourceId ??
-    (() => crypto.randomUUID());
+  const createResourceId =
+    options.createResourceId ?? (() => crypto.randomUUID());
   const attachments = new Map<string, AttachmentEntry>();
 
   const createAttachmentResource = (
@@ -109,8 +109,7 @@ export function createExternallyAttachedProvider(
     ) {
       throw createProviderError({
         code: "invalid_resource",
-        message:
-          `Provider resource ${resourceId} has a conflicting attachment id`,
+        message: `Provider resource ${resourceId} has a conflicting attachment id`,
         providerId,
         resourceId,
       });
@@ -137,12 +136,14 @@ export function createExternallyAttachedProvider(
           request.launch.attachmentId,
         );
 
-        const resourceId = validateProviderResourceId(createResourceId({
-          attachmentId,
-          workerId: request.identity.workerId,
-          attemptId: request.identity.attemptId,
-          epoch: request.identity.epoch,
-        }));
+        const resourceId = validateProviderResourceId(
+          createResourceId({
+            attachmentId,
+            workerId: request.identity.workerId,
+            attemptId: request.identity.attemptId,
+            epoch: request.identity.epoch,
+          }),
+        );
         if (attachments.has(resourceId)) {
           throw createProviderError({
             code: "conflict",
@@ -172,10 +173,7 @@ export function createExternallyAttachedProvider(
     inspect(resourceInput, operationOptions) {
       return asPromise(() => {
         throwIfProviderOperationAborted(operationOptions?.signal);
-        const resource = assertProviderOwnsResource(
-          providerId,
-          resourceInput,
-        );
+        const resource = assertProviderOwnsResource(providerId, resourceInput);
         const entry = attachments.get(resource.resourceId);
 
         if (!entry) {
@@ -185,11 +183,7 @@ export function createExternallyAttachedProvider(
             observedAtMs: now(),
           });
         }
-        assertProviderResourceMatches(
-          providerId,
-          resource,
-          entry.resource,
-        );
+        assertProviderResourceMatches(providerId, resource, entry.resource);
 
         if (entry.terminatedAtMs !== undefined) {
           return createProviderInspection({
@@ -217,10 +211,7 @@ export function createExternallyAttachedProvider(
     terminate(resourceInput, operationOptions) {
       return asPromise(() => {
         throwIfProviderOperationAborted(operationOptions?.signal);
-        const resource = assertProviderOwnsResource(
-          providerId,
-          resourceInput,
-        );
+        const resource = assertProviderOwnsResource(providerId, resourceInput);
         const entry = attachments.get(resource.resourceId);
 
         if (!entry) {
@@ -230,11 +221,7 @@ export function createExternallyAttachedProvider(
             observedAtMs: now(),
           });
         }
-        assertProviderResourceMatches(
-          providerId,
-          resource,
-          entry.resource,
-        );
+        assertProviderResourceMatches(providerId, resource, entry.resource);
 
         if (entry.terminatedAtMs !== undefined) {
           return createProviderTermination({
@@ -266,11 +253,7 @@ export function createExternallyAttachedProvider(
       const resource = createAttachmentResource(input);
       const existing = attachments.get(resource.resourceId);
       if (existing !== undefined) {
-        assertProviderResourceMatches(
-          providerId,
-          resource,
-          existing.resource,
-        );
+        assertProviderResourceMatches(providerId, resource, existing.resource);
         return existing.resource;
       }
 

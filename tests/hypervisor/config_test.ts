@@ -144,9 +144,14 @@ test("Hypervisor dispatch queue limits are opt-in and bounded", () => {
       "maxQueuedDispatches",
     );
   }
-  for (
-    const dispatchQueueTimeoutMs of [0, -1, 0.5, NaN, Infinity, 0x8000_0000]
-  ) {
+  for (const dispatchQueueTimeoutMs of [
+    0,
+    -1,
+    0.5,
+    NaN,
+    Infinity,
+    0x8000_0000,
+  ]) {
     assertThrows(
       () => createHypervisorConfig({ dispatchQueueTimeoutMs }),
       TypeError,

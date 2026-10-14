@@ -46,21 +46,21 @@ async function suite(transport: "in-process" | "websocket", capacity: number) {
         tasks.push(run(`A#${slot}`, "A", 2000));
       }
       tasks.push(run("A#queued", "A", 100));
-      tasks.push((async () => {
-        await sleep(50);
-        await run("B#1", "B", 100);
-      })());
+      tasks.push(
+        (async () => {
+          await sleep(50);
+          await run("B#1", "B", 100);
+        })(),
+      );
       // Observe all rejections immediately, and bound the whole iteration.
       const results = await bounded(Promise.allSettled(tasks), 15_000);
       const failures = results.filter((result) => result.status === "rejected");
       if (failures.length) {
         throw new Error(
-          JSON.stringify(
-            failures,
-            (_, value) =>
-              value instanceof Error
-                ? { message: value.message, ...value }
-                : value,
+          JSON.stringify(failures, (_, value) =>
+            value instanceof Error
+              ? { message: value.message, ...value }
+              : value,
           ),
         );
       }

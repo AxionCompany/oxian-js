@@ -12,12 +12,14 @@ async function createRepository() {
     clock: () => nowMs++,
     createAttemptId: () => `attempt-${++attemptNumber}`,
   });
-  await repository.define(createWorkerDefinition({
-    workerId: "worker-1",
-    providerId: "local",
-    workloads: ["sandbox.command"],
-    capacity: 1,
-  }));
+  await repository.define(
+    createWorkerDefinition({
+      workerId: "worker-1",
+      providerId: "local",
+      workloads: ["sandbox.command"],
+      capacity: 1,
+    }),
+  );
   return repository;
 }
 
@@ -33,8 +35,8 @@ test("repository activation is atomic and reuses the active attempt", async () =
     1,
   );
   assert.ok(
-    activations.every((activation) =>
-      activation.attempt.identity.attemptId === "attempt-1"
+    activations.every(
+      (activation) => activation.attempt.identity.attemptId === "attempt-1",
     ),
   );
   assert.deepStrictEqual((await repository.listAttempts("worker-1")).length, 1);
@@ -77,9 +79,9 @@ test("repository fences transitions by attempt ID and epoch", async () => {
   assert.deepStrictEqual(second.identity.epoch, 2);
   assert.deepStrictEqual(second.identity.attemptId, "attempt-2");
 
-  const error = await assertRejects(
-    () => repository.transition(first.identity, { type: "launching" }),
-  ) as SupervisorError;
+  const error = (await assertRejects(() =>
+    repository.transition(first.identity, { type: "launching" }),
+  )) as SupervisorError;
   assert.deepStrictEqual(error.code, "stale_attempt");
   assert.deepStrictEqual(
     await repository.assertCurrent(second.identity),

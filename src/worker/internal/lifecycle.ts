@@ -83,7 +83,8 @@ export function createOneShotAsyncObserver<T>(
     publish: (value): void => {
       if (published) return;
       published = true;
-      void Promise.resolve().then(() => observer?.(value))
+      void Promise.resolve()
+        .then(() => observer?.(value))
         .catch(() => undefined);
     },
   });

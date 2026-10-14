@@ -35,7 +35,8 @@ export async function serve(
   const sockets = new WebSocketServer({
     noServer: true,
     perMessageDeflate: false,
-    maxPayload: WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes +
+    maxPayload:
+      WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes +
       WORKER_PROTOCOL_LIMITS.maxControlFrameBytes,
     handleProtocols: (offered, request) => {
       const protocol = selected.get(request);
@@ -168,16 +169,16 @@ function toRequest(
   for (let index = 0; index < request.rawHeaders.length; index += 2) {
     headers.append(request.rawHeaders[index]!, request.rawHeaders[index + 1]!);
   }
-  const hasBody = withBody && request.method !== "GET" &&
-    request.method !== "HEAD";
+  const hasBody =
+    withBody && request.method !== "GET" && request.method !== "HEAD";
   return new Request(new URL(request.url ?? "/", origin), {
     method: request.method,
     headers,
     ...(hasBody
       ? {
-        body: Readable.toWeb(request) as ReadableStream<Uint8Array>,
-        duplex: "half",
-      }
+          body: Readable.toWeb(request) as ReadableStream<Uint8Array>,
+          duplex: "half",
+        }
       : {}),
   });
 }

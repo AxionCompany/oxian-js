@@ -3,10 +3,8 @@ import assert from "node:assert/strict";
 import { join, resolve, toFileUrl } from "@std/path";
 import { loadConfig } from "../../src/config/config.ts";
 
-const CONFIG_MODULE_URL = new URL(
-  "../../src/config/config.ts",
-  import.meta.url,
-).href;
+const CONFIG_MODULE_URL = new URL("../../src/config/config.ts", import.meta.url)
+  .href;
 
 async function withConfigModule(
   source: string,
@@ -179,15 +177,12 @@ test("v0.20 loadConfig rejects ambiguous and additional exports", async () => {
     },
   );
 
-  await withConfigModule(
-    `export const helper = 1;`,
-    async ({ path }) => {
-      await assertTypeErrorMessage(
-        () => loadConfig(path),
-        'config module must export exactly one of "default" or "config"',
-      );
-    },
-  );
+  await withConfigModule(`export const helper = 1;`, async ({ path }) => {
+    await assertTypeErrorMessage(
+      () => loadConfig(path),
+      'config module must export exactly one of "default" or "config"',
+    );
+  });
 });
 
 test("v0.20 loadConfig rejects factories and non-plain exports", async () => {

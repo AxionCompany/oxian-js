@@ -108,8 +108,8 @@ function normalizeRelativePath(value: string, label: string): string {
   }
   const segments = value.split("/");
   if (
-    segments.some((segment) =>
-      segment.length === 0 || segment === "." || segment === ".."
+    segments.some(
+      (segment) => segment.length === 0 || segment === "." || segment === "..",
     )
   ) {
     throw new TypeError(`${label} cannot contain empty or traversal segments`);
@@ -121,9 +121,8 @@ function normalizeIndex(
   value: StaticAdapterOptions["index"],
 ): readonly string[] {
   if (value === false) return Object.freeze([]);
-  const values = typeof value === "string"
-    ? [value]
-    : [...(value ?? ["index.html"])];
+  const values =
+    typeof value === "string" ? [value] : [...(value ?? ["index.html"])];
   const result: string[] = [];
   const seen = new Set<string>();
   for (const candidate of values) {
@@ -138,10 +137,10 @@ function normalizeIndex(
 
 function withinRoot(root: string, candidate: string): boolean {
   const path = relative(root, candidate);
-  return path === "" ||
-    (!isAbsolute(path) &&
-      path !== ".." &&
-      !path.startsWith(`..${SEPARATOR}`));
+  return (
+    path === "" ||
+    (!isAbsolute(path) && path !== ".." && !path.startsWith(`..${SEPARATOR}`))
+  );
 }
 
 function decodePathname(pathname: string): string | null {
@@ -202,8 +201,10 @@ function isNotModified(request: Request, info: Deno.FileInfo, etag: string) {
   const modifiedSince = request.headers.get("if-modified-since");
   if (modifiedSince === null || info.mtime === null) return false;
   const timestamp = Date.parse(modifiedSince);
-  return Number.isFinite(timestamp) &&
-    Math.floor(info.mtime.getTime() / 1_000) <= Math.floor(timestamp / 1_000);
+  return (
+    Number.isFinite(timestamp) &&
+    Math.floor(info.mtime.getTime() / 1_000) <= Math.floor(timestamp / 1_000)
+  );
 }
 
 function ifRangeMatches(
@@ -217,8 +218,10 @@ function ifRangeMatches(
   if (value.startsWith("W/")) return false;
   if (info.mtime === null) return false;
   const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) &&
-    Math.floor(info.mtime.getTime() / 1_000) <= Math.floor(timestamp / 1_000);
+  return (
+    Number.isFinite(timestamp) &&
+    Math.floor(info.mtime.getTime() / 1_000) <= Math.floor(timestamp / 1_000)
+  );
 }
 
 function parseRange(value: string, size: number): ByteRange | null {
@@ -305,10 +308,7 @@ function createFileStream(
   });
 }
 
-function sameTimestamp(
-  left: Date | null,
-  right: Date | null,
-): boolean {
+function sameTimestamp(left: Date | null, right: Date | null): boolean {
   return left === null
     ? right === null
     : right !== null && left.getTime() === right.getTime();
@@ -319,10 +319,7 @@ function sameTimestamp(
  * fields are unavailable, the strongest portable fallback is a metadata
  * fingerprint combined with the realpath containment checks around open.
  */
-function sameFileIdentity(
-  left: Deno.FileInfo,
-  right: Deno.FileInfo,
-): boolean {
+function sameFileIdentity(left: Deno.FileInfo, right: Deno.FileInfo): boolean {
   if (
     left.dev !== null &&
     left.ino !== null &&
@@ -331,13 +328,15 @@ function sameFileIdentity(
   ) {
     return left.dev === right.dev && left.ino === right.ino;
   }
-  return left.isFile === right.isFile &&
+  return (
+    left.isFile === right.isFile &&
     left.isDirectory === right.isDirectory &&
     left.size === right.size &&
     left.mode === right.mode &&
     sameTimestamp(left.mtime, right.mtime) &&
     sameTimestamp(left.ctime, right.ctime) &&
-    sameTimestamp(left.birthtime, right.birthtime);
+    sameTimestamp(left.birthtime, right.birthtime)
+  );
 }
 
 async function openVerifiedFile(
@@ -374,14 +373,15 @@ async function openVerifiedFile(
 function createConfiguration(
   options: StaticAdapterOptions,
 ): StaticConfiguration {
-  const rootValue = options.root instanceof URL
-    ? (() => {
-      if (options.root.protocol !== "file:") {
-        throw new TypeError("static root URL must use the file: protocol");
-      }
-      return fromFileUrl(options.root);
-    })()
-    : options.root;
+  const rootValue =
+    options.root instanceof URL
+      ? (() => {
+          if (options.root.protocol !== "file:") {
+            throw new TypeError("static root URL must use the file: protocol");
+          }
+          return fromFileUrl(options.root);
+        })()
+      : options.root;
   if (typeof rootValue !== "string" || rootValue.length === 0) {
     throw new TypeError("static root must be a filesystem path");
   }
@@ -406,9 +406,11 @@ function createConfiguration(
     root,
     prefix: normalizePrefix(options.prefix),
     index: normalizeIndex(options.index),
-    ...(options.fallback === undefined ? {} : {
-      fallback: normalizeRelativePath(options.fallback, "static fallback"),
-    }),
+    ...(options.fallback === undefined
+      ? {}
+      : {
+          fallback: normalizeRelativePath(options.fallback, "static fallback"),
+        }),
     cacheControl: options.cacheControl,
     contentType: options.contentType,
     fallthrough: options.fallthrough ?? true,
@@ -477,13 +479,13 @@ function baseHeaders(
 ): Headers {
   const headers = new Headers({
     "accept-ranges": "bytes",
-    "etag": etag,
+    etag: etag,
   });
   if (info.mtime !== null) {
     headers.set("last-modified", info.mtime.toUTCString());
   }
-  const type = config.contentType?.(path, info) ??
-    MIME_TYPES[extname(path).toLowerCase()];
+  const type =
+    config.contentType?.(path, info) ?? MIME_TYPES[extname(path).toLowerCase()];
   if (type !== undefined) headers.set("content-type", type);
   const caching = cacheControl(config.cacheControl, path, info);
   if (caching !== undefined) headers.set("cache-control", caching);
@@ -561,9 +563,10 @@ function acceptsHtmlNavigation(request: Request): boolean {
   const accept = request.headers.get("accept");
   if (accept === null) return false;
   return accept.split(",").some((candidate) => {
-    const [mediaType, ...parameters] = candidate.trim().toLowerCase().split(
-      ";",
-    );
+    const [mediaType, ...parameters] = candidate
+      .trim()
+      .toLowerCase()
+      .split(";");
     if (
       mediaType !== "text/html" &&
       mediaType !== "application/xhtml+xml" &&
@@ -653,7 +656,7 @@ export function createStaticAdapter(
         return await miss(request, next, config);
       }
       const response = await serveFile(request, config, resolved);
-      return response ?? await miss(request, next, config);
+      return response ?? (await miss(request, next, config));
     };
   };
 }

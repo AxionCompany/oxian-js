@@ -33,12 +33,10 @@ test("binary frames: work.data round-trips stream, sequence and bytes", () => {
     encoded.byteLength,
     BINARY_PROTOCOL.headerBytes + payload.length,
   );
-  assert.deepStrictEqual(Array.from(encoded.subarray(0, 4)), [
-    0x4f,
-    0x58,
-    0x4e,
-    0x42,
-  ]);
+  assert.deepStrictEqual(
+    Array.from(encoded.subarray(0, 4)),
+    [0x4f, 0x58, 0x4e, 0x42],
+  );
   assert.deepStrictEqual(encoded[4], BINARY_PROTOCOL.version);
   assert.deepStrictEqual(encoded[5], BINARY_PROTOCOL.workDataType);
 });

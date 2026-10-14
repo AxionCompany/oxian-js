@@ -81,24 +81,28 @@ export function createProtocolTestHypervisor(
 
   const callbacks: HypervisorLifecycleCallbacks = {
     onWorkAccepted: async (context) => {
-      await options.commitAcceptedWork(Object.freeze({
-        operationId: context.operationId,
-        workload: context.workload,
-        ...(context.target === undefined ? {} : { target: context.target }),
-        metadata: context.metadata,
-        ...(context.deadlineAtMs === undefined
-          ? {}
-          : { deadlineAtMs: context.deadlineAtMs }),
-        deliveryCount: context.deliveryCount,
-        assignment: context.assignment,
-        claimedAtMs: context.acceptedAtMs,
-      }));
+      await options.commitAcceptedWork(
+        Object.freeze({
+          operationId: context.operationId,
+          workload: context.workload,
+          ...(context.target === undefined ? {} : { target: context.target }),
+          metadata: context.metadata,
+          ...(context.deadlineAtMs === undefined
+            ? {}
+            : { deadlineAtMs: context.deadlineAtMs }),
+          deliveryCount: context.deliveryCount,
+          assignment: context.assignment,
+          claimedAtMs: context.acceptedAtMs,
+        }),
+      );
     },
     onReady: async (context) => {
-      const exchange = exchanges.get(exchangeKey(
-        context.fence.identity.workerId,
-        context.fence.sessionGeneration,
-      ));
+      const exchange = exchanges.get(
+        exchangeKey(
+          context.fence.identity.workerId,
+          context.fence.sessionGeneration,
+        ),
+      );
       if (exchange !== undefined) {
         if (control?.validateReady !== undefined) {
           await control.validateReady({
@@ -118,10 +122,12 @@ export function createProtocolTestHypervisor(
     onHeartbeat: async (context) => {
       if (
         control !== undefined &&
-        exchanges.has(exchangeKey(
-          context.fence.identity.workerId,
-          context.fence.sessionGeneration,
-        ))
+        exchanges.has(
+          exchangeKey(
+            context.fence.identity.workerId,
+            context.fence.sessionGeneration,
+          ),
+        )
       ) {
         await control.repository.assertCurrent(context.fence.identity);
       }
@@ -136,64 +142,77 @@ export function createProtocolTestHypervisor(
     type: "in-process" as const,
     config: Object.freeze({ topic: `test-${crypto.randomUUID()}` }),
   });
-  const hypervisor = createPublicHypervisor({
-    transports: [local, {
-      type: "websocket",
-      config: { path: TEST_WORKER_PATH },
-    }],
-    admit: control === undefined
-      ? () => {
-        throw Object.assign(new Error("remote control is not configured"), {
-          code: "authentication_failed",
-        });
-      }
-      : async (context) => {
-        await control.repository.assertCurrent(context.identity);
-        const definition = await control.repository.getDefinition(
-          context.identity.workerId,
-        );
-        if (definition === undefined) {
-          throw Object.assign(new Error("Worker definition is missing"), {
-            code: "stale_attempt",
-          });
-        }
-        const exchange = await control.authority.exchange({
-          identity: context.identity,
-          credential: context.credential,
-          handshakeId: context.handshakeId,
-        });
-        const bootstrap = await control.bootstrap?.({
-          identity: context.identity,
-          definition,
-          exchange,
-          signal: context.signal,
-        });
-        exchanges.set(
-          exchangeKey(context.identity.workerId, exchange.sessionGeneration),
-          exchange,
-        );
-        return Object.freeze({
-          definition,
-          sessionGeneration: exchange.sessionGeneration,
-          authenticatedWith: exchange.authenticatedWith,
-          resume: Object.freeze({
-            credential: exchange.resume.credential,
-            expiresAtMs: exchange.resume.expiresAtMs,
-          }),
-          bootstrap: bootstrap ?? {},
-        });
-      },
-    ...(options.config === undefined ? {} : { config: options.config }),
-    ...(options.sessions === undefined ? {} : { sessions: options.sessions }),
-    ...(options.fallback === undefined ? {} : { fallback: options.fallback }),
-    ...(options.clock === undefined ? {} : { clock: options.clock }),
-    ...(options.scheduler === undefined
-      ? {}
-      : { scheduler: options.scheduler }),
-    ...(options.createConnectionId === undefined
-      ? {}
-      : { createConnectionId: options.createConnectionId }),
-  }, callbacks);
+  const hypervisor = createPublicHypervisor(
+    {
+      transports: [
+        local,
+        {
+          type: "websocket",
+          config: { path: TEST_WORKER_PATH },
+        },
+      ],
+      admit:
+        control === undefined
+          ? () => {
+              throw Object.assign(
+                new Error("remote control is not configured"),
+                {
+                  code: "authentication_failed",
+                },
+              );
+            }
+          : async (context) => {
+              await control.repository.assertCurrent(context.identity);
+              const definition = await control.repository.getDefinition(
+                context.identity.workerId,
+              );
+              if (definition === undefined) {
+                throw Object.assign(new Error("Worker definition is missing"), {
+                  code: "stale_attempt",
+                });
+              }
+              const exchange = await control.authority.exchange({
+                identity: context.identity,
+                credential: context.credential,
+                handshakeId: context.handshakeId,
+              });
+              const bootstrap = await control.bootstrap?.({
+                identity: context.identity,
+                definition,
+                exchange,
+                signal: context.signal,
+              });
+              exchanges.set(
+                exchangeKey(
+                  context.identity.workerId,
+                  exchange.sessionGeneration,
+                ),
+                exchange,
+              );
+              return Object.freeze({
+                definition,
+                sessionGeneration: exchange.sessionGeneration,
+                authenticatedWith: exchange.authenticatedWith,
+                resume: Object.freeze({
+                  credential: exchange.resume.credential,
+                  expiresAtMs: exchange.resume.expiresAtMs,
+                }),
+                bootstrap: bootstrap ?? {},
+              });
+            },
+      ...(options.config === undefined ? {} : { config: options.config }),
+      ...(options.sessions === undefined ? {} : { sessions: options.sessions }),
+      ...(options.fallback === undefined ? {} : { fallback: options.fallback }),
+      ...(options.clock === undefined ? {} : { clock: options.clock }),
+      ...(options.scheduler === undefined
+        ? {}
+        : { scheduler: options.scheduler }),
+      ...(options.createConnectionId === undefined
+        ? {}
+        : { createConnectionId: options.createConnectionId }),
+    },
+    callbacks,
+  );
   localTransports.set(hypervisor, local);
   return hypervisor;
 }

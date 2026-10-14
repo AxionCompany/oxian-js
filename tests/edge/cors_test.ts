@@ -8,16 +8,17 @@ test("cors grants only configured origins and safely merges Vary", async () => {
     origins: ["https://compass.example"],
     credentials: true,
     exposeHeaders: ["x-request-id"],
-  })(() =>
-    new Response("ok", {
-      headers: {
-        "access-control-allow-origin": "*",
-        "access-control-allow-credentials": "true",
-        "access-control-expose-headers": "x-untrusted",
-        "vary": "Accept-Encoding, origin",
-        "x-request-id": "request-1",
-      },
-    })
+  })(
+    () =>
+      new Response("ok", {
+        headers: {
+          "access-control-allow-origin": "*",
+          "access-control-allow-credentials": "true",
+          "access-control-expose-headers": "x-untrusted",
+          vary: "Accept-Encoding, origin",
+          "x-request-id": "request-1",
+        },
+      }),
   );
 
   const allowed = await handler(
@@ -64,9 +65,7 @@ test("cors grants only configured origins and safely merges Vary", async () => {
   assert.deepStrictEqual(denied.headers.get("vary"), "Accept-Encoding, origin");
   await denied.body?.cancel();
 
-  const noOrigin = await handler(
-    new Request("https://api.example/items"),
-  );
+  const noOrigin = await handler(new Request("https://api.example/items"));
   assert.deepStrictEqual(
     noOrigin.headers.get("access-control-allow-origin"),
     null,
@@ -95,7 +94,7 @@ test("cors handles valid preflight without invoking the application", async () =
     new Request("https://api.example/items", {
       method: "OPTIONS",
       headers: {
-        "origin": "https://compass.example",
+        origin: "https://compass.example",
         "access-control-request-method": "post",
         "access-control-request-headers": "X-Client, Authorization",
       },
@@ -154,7 +153,7 @@ test("cors rejects denied preflights and never reflects wildcard credentials", a
     new Request("https://api.example/items", {
       method: "OPTIONS",
       headers: {
-        "origin": "https://compass.example",
+        origin: "https://compass.example",
         "access-control-request-method": "DELETE",
       },
     }),
@@ -169,7 +168,7 @@ test("cors rejects denied preflights and never reflects wildcard credentials", a
     new Request("https://api.example/items", {
       method: "OPTIONS",
       headers: {
-        "origin": "https://compass.example",
+        origin: "https://compass.example",
         "access-control-request-method": "POST",
         "access-control-request-headers": "x-unconfigured",
       },

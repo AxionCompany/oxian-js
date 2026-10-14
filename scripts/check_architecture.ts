@@ -32,11 +32,9 @@ sourceFiles.push({
 });
 
 for (const file of sourceFiles) {
-  for (
-    const match of file.source.matchAll(
-      /^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class(?:\s+(\w+))?/gm,
-    )
-  ) {
+  for (const match of file.source.matchAll(
+    /^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class(?:\s+(\w+))?/gm,
+  )) {
     errors.push(
       `${file.relativePath}: class declaration ${
         match[1] ?? "<anonymous>"
@@ -48,10 +46,13 @@ for (const file of sourceFiles) {
   }
 }
 
-const contractFiles = [...sourceFiles, {
-  relativePath: "README.md",
-  source: await Deno.readTextFile(README),
-}];
+const contractFiles = [
+  ...sourceFiles,
+  {
+    relativePath: "README.md",
+    source: await Deno.readTextFile(README),
+  },
+];
 await collectContractFiles(TEST_ROOT, "tests", ".ts", contractFiles);
 await collectContractFiles(DOCS_ROOT, "docs", ".md", contractFiles);
 
@@ -79,11 +80,9 @@ for (const file of contractFiles) {
   }
 }
 
-for (
-  const file of sourceFiles.filter((candidate) =>
-    candidate.relativePath.startsWith("transport/")
-  )
-) {
+for (const file of sourceFiles.filter((candidate) =>
+  candidate.relativePath.startsWith("transport/"),
+)) {
   if (
     /from\s+["'][^"']*(?:worker\/session|hypervisor\/internal)[^"']*["']/.test(
       file.source,
@@ -95,8 +94,8 @@ for (
   }
 }
 
-const workerEntrypoint = sourceFiles.find((file) =>
-  file.relativePath === "worker/index.ts"
+const workerEntrypoint = sourceFiles.find(
+  (file) => file.relativePath === "worker/index.ts",
 );
 if (
   workerEntrypoint?.source.includes('from "./in-process.ts"') ||

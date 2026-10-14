@@ -46,23 +46,18 @@ export function createBoundedExponentialBackoff(
     "maxDelayMs",
     { min: initialDelayMs },
   );
-  const multiplier = expectFiniteNumber(
-    options.multiplier ?? 2,
-    "multiplier",
-    { min: 1 },
-  );
-  const jitter = expectFiniteNumber(
-    options.jitter ?? 0.2,
-    "jitter",
-    { min: 0, max: 1 },
-  );
-  const maxAttempts = options.maxAttempts === undefined
-    ? undefined
-    : expectFiniteNumber(options.maxAttempts, "maxAttempts", { min: 1 });
-  if (
-    maxAttempts !== undefined &&
-    !Number.isSafeInteger(maxAttempts)
-  ) {
+  const multiplier = expectFiniteNumber(options.multiplier ?? 2, "multiplier", {
+    min: 1,
+  });
+  const jitter = expectFiniteNumber(options.jitter ?? 0.2, "jitter", {
+    min: 0,
+    max: 1,
+  });
+  const maxAttempts =
+    options.maxAttempts === undefined
+      ? undefined
+      : expectFiniteNumber(options.maxAttempts, "maxAttempts", { min: 1 });
+  if (maxAttempts !== undefined && !Number.isSafeInteger(maxAttempts)) {
     throw new TypeError("maxAttempts must be a positive safe integer");
   }
   const random = options.random ?? Math.random;

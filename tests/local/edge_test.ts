@@ -81,9 +81,7 @@ test("configured edge gives a more-specific application mount priority over pare
       "<h1>compass shell</h1>",
     );
 
-    const asset = await handler(
-      new Request("https://example.test/asset.js"),
-    );
+    const asset = await handler(new Request("https://example.test/asset.js"));
     assert.deepStrictEqual(await asset.text(), "asset");
 
     assert.deepStrictEqual(calls, [
@@ -141,8 +139,9 @@ test("configured edge lets exact static files and regular routes coexist at equa
     );
 
     assert.deepStrictEqual(
-      await (await handler(new Request("https://example.test/asset.js")))
-        .text(),
+      await (
+        await handler(new Request("https://example.test/asset.js"))
+      ).text(),
       "asset",
     );
     assert.deepStrictEqual(

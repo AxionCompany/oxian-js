@@ -27,49 +27,34 @@ test("v0.20 parser accepts only the exact command-specific surface", () => {
       port: 0,
     },
   );
-  assert.deepStrictEqual(
-    parseCliArgs([
-      "init",
-      "--root=project",
-      "--force",
-    ]),
-    {
-      command: "init",
-      help: false,
-      force: true,
-      root: "project",
-    },
-  );
-  assert.deepStrictEqual(
-    parseCliArgs([
-      "worker",
-      "--manifest=worker.ts",
-    ]),
-    {
-      command: "worker",
-      help: false,
-      manifest: "worker.ts",
-    },
-  );
+  assert.deepStrictEqual(parseCliArgs(["init", "--root=project", "--force"]), {
+    command: "init",
+    help: false,
+    force: true,
+    root: "project",
+  });
+  assert.deepStrictEqual(parseCliArgs(["worker", "--manifest=worker.ts"]), {
+    command: "worker",
+    help: false,
+    manifest: "worker.ts",
+  });
 
-  for (
-    const args of [
-      [] as string[],
-      ["serve"],
-      ["start", "--source=."],
-      ["start", "--hypervisor=false"],
-      ["start", "--materialize"],
-      ["start", "--port=-1"],
-      ["start", "--port=65536"],
-      ["start", "--port=01"],
-      ["start", "--config=config.json"],
-      ["worker", "--manifest=https://example.com/worker.ts"],
-      ["init", "--force=true"],
-      ["check", "extra"],
-      ["routes", "--config"],
-      ["routes", "--config=a.ts", "--config=b.ts"],
-    ]
-  ) {
+  for (const args of [
+    [] as string[],
+    ["serve"],
+    ["start", "--source=."],
+    ["start", "--hypervisor=false"],
+    ["start", "--materialize"],
+    ["start", "--port=-1"],
+    ["start", "--port=65536"],
+    ["start", "--port=01"],
+    ["start", "--config=config.json"],
+    ["worker", "--manifest=https://example.com/worker.ts"],
+    ["init", "--force=true"],
+    ["check", "extra"],
+    ["routes", "--config"],
+    ["routes", "--config=a.ts", "--config=b.ts"],
+  ]) {
     assertThrows(() => parseCliArgs(args));
   }
 });

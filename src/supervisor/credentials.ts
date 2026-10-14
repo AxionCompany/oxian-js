@@ -80,9 +80,7 @@ function copyExchange(exchange: RegistrationExchange): RegistrationExchange {
     exchange.authenticatedWith !== "registration" &&
     exchange.authenticatedWith !== "resume"
   ) {
-    throw new TypeError(
-      "authenticatedWith must be registration or resume",
-    );
+    throw new TypeError("authenticatedWith must be registration or resume");
   }
   const identity = copyIdentity(exchange.identity);
   const resume = copyGrant(exchange.resume);
@@ -197,7 +195,8 @@ export function createEphemeralCredentialLifecycle(
   }> = {},
 ): CredentialLifecycle {
   const clock = options.clock ?? Date.now;
-  const createCapability = options.createCapability ??
+  const createCapability =
+    options.createCapability ??
     ((kind: WorkerCredential["kind"]) => `${kind}:${crypto.randomUUID()}`);
   const authorityNamespace = crypto.randomUUID();
   let mintSequence = 0;
@@ -285,10 +284,7 @@ export function createEphemeralCredentialLifecycle(
       resumeOrigins.delete(replay.exchange.resume.credential.capability);
       replays.delete(capability);
       const nowMs = expectFiniteTimestamp(clock(), "clock()");
-      tombstones.set(
-        capability,
-        expiresAt(nowMs, handshakeReplayTtlMs),
-      );
+      tombstones.set(capability, expiresAt(nowMs, handshakeReplayTtlMs));
     }
   };
 
@@ -297,10 +293,7 @@ export function createEphemeralCredentialLifecycle(
       if (sameIdentity(stored.grant.identity, identity)) {
         grants.delete(capability);
         const nowMs = expectFiniteTimestamp(clock(), "clock()");
-        tombstones.set(
-          capability,
-          expiresAt(nowMs, handshakeReplayTtlMs),
-        );
+        tombstones.set(capability, expiresAt(nowMs, handshakeReplayTtlMs));
       }
     }
     for (const [capability, replay] of replays) {
@@ -313,9 +306,10 @@ export function createEphemeralCredentialLifecycle(
   return createCredentialLifecycle({
     issueRegistration(identity, issueOptions) {
       revoke(identity);
-      const ttlMs = issueOptions?.ttlMs === undefined
-        ? registrationTtlMs
-        : expectPositiveInteger(issueOptions.ttlMs, "ttlMs");
+      const ttlMs =
+        issueOptions?.ttlMs === undefined
+          ? registrationTtlMs
+          : expectPositiveInteger(issueOptions.ttlMs, "ttlMs");
       return mint("registration", identity, ttlMs);
     },
 
@@ -396,10 +390,7 @@ export function createEphemeralCredentialLifecycle(
         // lifetime; consuming/revoking that resume invalidates it sooner.
         expiresAtMs: resume.expiresAtMs,
       });
-      resumeOrigins.set(
-        resume.credential.capability,
-        credential.capability,
-      );
+      resumeOrigins.set(resume.credential.capability, credential.capability);
       return exchange;
     },
 

@@ -31,9 +31,7 @@ function context(
   });
 }
 
-function resultObject(
-  result: WorkerWorkResult,
-): Readonly<{
+function resultObject(result: WorkerWorkResult): Readonly<{
   metadata?: JsonObject;
   body?: Uint8Array | ReadableStream<Uint8Array> | null;
 }> {
@@ -104,9 +102,7 @@ test("HTTP workload reconstructs Request and streams binary Response", async () 
       ["set-cookie", "second=2; Path=/"],
     ],
   );
-  const chunks = await readChunks(
-    result.body as ReadableStream<Uint8Array>,
-  );
+  const chunks = await readChunks(result.body as ReadableStream<Uint8Array>);
   assert.deepStrictEqual(
     chunks.every((chunk) => chunk.byteLength <= limit),
     true,
@@ -136,11 +132,14 @@ test("HTTP workload maps context cancellation to Request.signal", async () => {
 
 test("HTTP workload strips and cancels a HEAD response body", async () => {
   let cancellationReason: unknown;
-  const responseBody = new ReadableStream<Uint8Array>({
-    cancel(reason) {
-      cancellationReason = reason;
+  const responseBody = new ReadableStream<Uint8Array>(
+    {
+      cancel(reason) {
+        cancellationReason = reason;
+      },
     },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
   const workload = createHttpWorkload({
     fetch: () => new Response(responseBody),
   });
@@ -163,12 +162,15 @@ test("HTTP workload keeps execution active until HEAD body cancellation settles"
   const cancellationStarted = Promise.withResolvers<void>();
   const releaseCancellation = Promise.withResolvers<void>();
   let resultSettled = false;
-  const responseBody = new ReadableStream<Uint8Array>({
-    async cancel() {
-      cancellationStarted.resolve();
-      await releaseCancellation.promise;
+  const responseBody = new ReadableStream<Uint8Array>(
+    {
+      async cancel() {
+        cancellationStarted.resolve();
+        await releaseCancellation.promise;
+      },
     },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
   const workload = createHttpWorkload({
     fetch: () => new Response(responseBody),
   });
@@ -206,14 +208,16 @@ test("HTTP workload rejects malformed metadata before fetch", async () => {
 
   await assertRejects(
     async () =>
-      await workload(context({
-        schema: HTTP_REQUEST_METADATA_SCHEMA,
-        requestId: "request-1",
-        method: "POST",
-        url: "not-an-absolute-url",
-        headers: [],
-        hasBody: false,
-      })),
+      await workload(
+        context({
+          schema: HTTP_REQUEST_METADATA_SCHEMA,
+          requestId: "request-1",
+          method: "POST",
+          url: "not-an-absolute-url",
+          headers: [],
+          hasBody: false,
+        }),
+      ),
     TypeError,
     "expected an absolute URL",
   );

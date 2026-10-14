@@ -110,10 +110,7 @@ function normalizeLaunchSpec(
     });
   }
 
-  if (
-    typeof spec.command === "string" &&
-    spec.command.includes("\0")
-  ) {
+  if (typeof spec.command === "string" && spec.command.includes("\0")) {
     throw createProviderError({
       code: "invalid_launch_spec",
       message: "Local process command must not contain a null character",
@@ -122,9 +119,7 @@ function normalizeLaunchSpec(
   }
 
   const args = [...(spec.args ?? [])];
-  if (
-    args.some((value) => typeof value !== "string" || value.includes("\0"))
-  ) {
+  if (args.some((value) => typeof value !== "string" || value.includes("\0"))) {
     throw createProviderError({
       code: "invalid_launch_spec",
       message:
@@ -144,28 +139,19 @@ function normalizeLaunchSpec(
       providerId,
     });
   }
-  if (
-    spec.clearEnv !== undefined &&
-    typeof spec.clearEnv !== "boolean"
-  ) {
+  if (spec.clearEnv !== undefined && typeof spec.clearEnv !== "boolean") {
     throw createProviderError({
       code: "invalid_launch_spec",
       message: "Local process clearEnv must be a boolean",
       providerId,
     });
   }
-  for (
-    const [field, value] of [
-      ["stdin", spec.stdin],
-      ["stdout", spec.stdout],
-      ["stderr", spec.stderr],
-    ] as const
-  ) {
-    if (
-      value !== undefined &&
-      value !== "inherit" &&
-      value !== "null"
-    ) {
+  for (const [field, value] of [
+    ["stdin", spec.stdin],
+    ["stdout", spec.stdout],
+    ["stderr", spec.stderr],
+  ] as const) {
+    if (value !== undefined && value !== "inherit" && value !== "null") {
       throw createProviderError({
         code: "invalid_launch_spec",
         message: `Local process ${field} must be inherit or null`,
@@ -185,18 +171,17 @@ function normalizeLaunchSpec(
     ) {
       throw createProviderError({
         code: "invalid_launch_spec",
-        message: `Invalid local process environment entry ${
-          JSON.stringify(key)
-        }`,
+        message: `Invalid local process environment entry ${JSON.stringify(
+          key,
+        )}`,
         providerId,
       });
     }
     env[key] = value;
   }
 
-  const commandLabel = spec.command instanceof URL
-    ? spec.command.toString()
-    : spec.command;
+  const commandLabel =
+    spec.command instanceof URL ? spec.command.toString() : spec.command;
   return {
     command: spec.command,
     commandLabel,
@@ -251,10 +236,7 @@ async function settleWithin(
   if (timeoutMs === 0) return undefined;
   const timeout = delay(timeoutMs);
   try {
-    const result = await Promise.race([
-      statusPromise,
-      timeout.promise,
-    ]);
+    const result = await Promise.race([statusPromise, timeout.promise]);
     return result === "timeout" ? undefined : result;
   } finally {
     timeout.cancel();
@@ -302,12 +284,10 @@ function asPromise<T>(operation: () => T): Promise<T> {
 export function createLocalProcessProvider(
   options: LocalProcessProviderOptions = {},
 ): WorkerProvider<LocalProcessLaunchSpec> {
-  const providerId = validateProviderId(
-    options.providerId ?? "local-process",
-  );
+  const providerId = validateProviderId(options.providerId ?? "local-process");
   const now = options.now ?? Date.now;
-  const createResourceId = options.createResourceId ??
-    (() => crypto.randomUUID());
+  const createResourceId =
+    options.createResourceId ?? (() => crypto.randomUUID());
   const defaultGracePeriodMs = validateDuration(
     options.defaultGracePeriodMs ?? DEFAULT_GRACE_PERIOD_MS,
     "defaultGracePeriodMs",
@@ -318,7 +298,8 @@ export function createLocalProcessProvider(
   );
   const gracefulSignal = options.gracefulSignal ?? "SIGTERM";
   const forceSignal = options.forceSignal ?? "SIGKILL";
-  const spawnProcess = options.spawnProcess ??
+  const spawnProcess =
+    options.spawnProcess ??
     ((command: string | URL, commandOptions: Deno.CommandOptions) =>
       new Deno.Command(command, commandOptions).spawn());
   const processes = new Map<string, ProcessEntry>();
@@ -329,11 +310,13 @@ export function createLocalProcessProvider(
     async provision(request, operationOptions) {
       throwIfProviderOperationAborted(operationOptions?.signal);
       const launch = normalizeLaunchSpec(providerId, request.launch);
-      const resourceId = validateProviderResourceId(createResourceId({
-        workerId: request.identity.workerId,
-        attemptId: request.identity.attemptId,
-        epoch: request.identity.epoch,
-      }));
+      const resourceId = validateProviderResourceId(
+        createResourceId({
+          workerId: request.identity.workerId,
+          attemptId: request.identity.attemptId,
+          epoch: request.identity.epoch,
+        }),
+      );
       if (processes.has(resourceId)) {
         throw createProviderError({
           code: "conflict",
@@ -380,8 +363,7 @@ export function createLocalProcessProvider(
         }
         throw createProviderError({
           code: "provision_failed",
-          message:
-            `Failed to observe newly launched local process ${launch.commandLabel}`,
+          message: `Failed to observe newly launched local process ${launch.commandLabel}`,
           providerId,
           resourceId,
           cause,
@@ -431,10 +413,7 @@ export function createLocalProcessProvider(
     inspect(resourceInput, operationOptions) {
       return asPromise(() => {
         throwIfProviderOperationAborted(operationOptions?.signal);
-        const resource = assertProviderOwnsResource(
-          providerId,
-          resourceInput,
-        );
+        const resource = assertProviderOwnsResource(providerId, resourceInput);
         const entry = processes.get(resource.resourceId);
         if (!entry) {
           return createProviderInspection({
@@ -443,11 +422,7 @@ export function createLocalProcessProvider(
             observedAtMs: now(),
           });
         }
-        assertProviderResourceMatches(
-          providerId,
-          resource,
-          entry.resource,
-        );
+        assertProviderResourceMatches(providerId, resource, entry.resource);
 
         if (entry.statusRejected) {
           return createProviderInspection({
@@ -470,9 +445,10 @@ export function createLocalProcessProvider(
           });
         }
 
-        const state = entry.terminationRequested || entry.status.success
-          ? "absent"
-          : "failed";
+        const state =
+          entry.terminationRequested || entry.status.success
+            ? "absent"
+            : "failed";
         return createProviderInspection({
           resource: entry.resource,
           state,
@@ -484,10 +460,7 @@ export function createLocalProcessProvider(
 
     async terminate(resourceInput, operationOptions) {
       throwIfProviderOperationAborted(operationOptions?.signal);
-      const resource = assertProviderOwnsResource(
-        providerId,
-        resourceInput,
-      );
+      const resource = assertProviderOwnsResource(providerId, resourceInput);
       const entry = processes.get(resource.resourceId);
       if (!entry) {
         return createProviderTermination({
@@ -496,11 +469,7 @@ export function createLocalProcessProvider(
           observedAtMs: now(),
         });
       }
-      assertProviderResourceMatches(
-        providerId,
-        resource,
-        entry.resource,
-      );
+      assertProviderResourceMatches(providerId, resource, entry.resource);
 
       if (entry.statusRejected) {
         try {
@@ -537,17 +506,13 @@ export function createLocalProcessProvider(
             phase: string,
           ): Promise<Deno.CommandStatus | undefined> => {
             try {
-              return await settleWithin(
-                entry.statusPromise,
-                timeoutMs,
-              );
+              return await settleWithin(entry.statusPromise, timeoutMs);
             } catch (cause) {
               entry.statusError = cause;
               entry.statusRejected = true;
               throw createProviderError({
                 code: "termination_failed",
-                message:
-                  `Local process ${entry.child.pid} status observation failed ${phase}`,
+                message: `Local process ${entry.child.pid} status observation failed ${phase}`,
                 providerId,
                 resourceId: entry.resource.resourceId,
                 cause,
@@ -579,8 +544,7 @@ export function createLocalProcessProvider(
             if (!status) {
               throw createProviderError({
                 code: "termination_failed",
-                message:
-                  `Local process ${entry.child.pid} did not exit within ${forceExitTimeoutMs}ms after ${forceSignal}`,
+                message: `Local process ${entry.child.pid} did not exit within ${forceExitTimeoutMs}ms after ${forceSignal}`,
                 providerId,
                 resourceId: entry.resource.resourceId,
                 cause: forceKillError,

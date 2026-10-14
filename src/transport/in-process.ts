@@ -110,23 +110,26 @@ function createFabricQueue(
     }
   };
 
-  const readable = new ReadableStream<InProcessFabricEvent>({
-    start(value) {
-      controller = value;
-      flush();
+  const readable = new ReadableStream<InProcessFabricEvent>(
+    {
+      start(value) {
+        controller = value;
+        flush();
+      },
+      pull() {
+        controllerBytes = 0;
+        flush();
+      },
+      cancel() {
+        closed = true;
+        events.length = 0;
+        bytes = 0;
+        controllerBytes = 0;
+        controller = undefined;
+      },
     },
-    pull() {
-      controllerBytes = 0;
-      flush();
-    },
-    cancel() {
-      closed = true;
-      events.length = 0;
-      bytes = 0;
-      controllerBytes = 0;
-      controller = undefined;
-    },
-  }, new CountQueuingStrategy({ highWaterMark: 1 }));
+    new CountQueuingStrategy({ highWaterMark: 1 }),
+  );
 
   const publish = (event: InProcessFabricEvent): void => {
     if (closed) throw new TypeError("in-process event fabric is closed");
@@ -135,8 +138,7 @@ function createFabricQueue(
       throw new TypeError("in-process event-fabric frames must not be empty");
     }
     if (
-      events.length + (controllerBytes > 0 ? 1 : 0) >=
-        limits.maxQueuedFrames ||
+      events.length + (controllerBytes > 0 ? 1 : 0) >= limits.maxQueuedFrames ||
       weight > limits.maxQueuedBytes - bytes - controllerBytes
     ) {
       throw new RangeError("in-process event-fabric queue exceeded its bound");
@@ -207,17 +209,13 @@ function createConnectionPair(
     workerObservers.clear();
   };
 
-  const endpoint = (
-    side: "hypervisor" | "worker",
-  ): SocketConnection => {
+  const endpoint = (side: "hypervisor" | "worker"): SocketConnection => {
     const incoming = side === "hypervisor" ? hypervisorQueue : workerQueue;
     const outgoing = side === "hypervisor" ? workerQueue : hypervisorQueue;
-    const observers = side === "hypervisor"
-      ? hypervisorObservers
-      : workerObservers;
-    const direction: InProcessFabricDirection = side === "hypervisor"
-      ? "hypervisor-to-worker"
-      : "worker-to-hypervisor";
+    const observers =
+      side === "hypervisor" ? hypervisorObservers : workerObservers;
+    const direction: InProcessFabricDirection =
+      side === "hypervisor" ? "hypervisor-to-worker" : "worker-to-hypervisor";
     let pumping = false;
 
     const pump = (): void => {
@@ -351,9 +349,9 @@ export function connectInProcessFabric(
   const host = fabrics.get(topic);
   if (host === undefined) {
     throw new TypeError(
-      `no in-process Hypervisor transport is bound to topic ${
-        JSON.stringify(topic)
-      }`,
+      `no in-process Hypervisor transport is bound to topic ${JSON.stringify(
+        topic,
+      )}`,
     );
   }
   const maxQueuedBytes = input.maxQueuedBytes ?? DEFAULT_MAX_QUEUED_BYTES;

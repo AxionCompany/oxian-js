@@ -68,11 +68,13 @@ function harness(
           },
         }),
         cancel: () =>
-          Promise.resolve(dispatcher.withdrawOffer(
-            work.operationId,
-            work.assignment!.fence,
-            work.assignment!.streamId,
-          )),
+          Promise.resolve(
+            dispatcher.withdrawOffer(
+              work.operationId,
+              work.assignment!.fence,
+              work.assignment!.streamId,
+            ),
+          ),
       };
     },
   });
@@ -182,11 +184,14 @@ test("dispatch queue: independent lanes proceed, absent target retains exact rou
 test("dispatch queue: deadline, default timeout, abort cause, full queue, and untouched body", async () => {
   const h = harness(undefined, 2);
   let pulled = false;
-  const body = new ReadableStream<Uint8Array>({
-    pull() {
-      pulled = true;
+  const body = new ReadableStream<Uint8Array>(
+    {
+      pull() {
+        pulled = true;
+      },
     },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
   const abort = new AbortController();
   const first = code(
     h.dispatch({ workload: "job", deadlineAtMs: 1_010, body }),
@@ -297,7 +302,10 @@ test("dispatch queue: stale async selection retries with stable operation and in
   const replacement = h.attach("one", ["job"], 2);
   selection.resolve(old);
   const result = await waiting;
-  assert.deepStrictEqual(attempts.map((x) => x.callbackAttempt), [1, 2]);
+  assert.deepStrictEqual(
+    attempts.map((x) => x.callbackAttempt),
+    [1, 2],
+  );
   assert.deepStrictEqual(attempts[0].stageId, attempts[1].stageId);
   assert.deepStrictEqual(
     h.dispatcher.get(result.operationId)?.assignment?.fence,
@@ -352,7 +360,7 @@ test("dispatch queue: capacity stolen during assign waits for release before ret
   const selection = Promise.withResolvers<SessionFence | undefined>();
   let calls = 0;
   const h = harness((context) =>
-    ++calls === 1 ? selection.promise : context.available[0]
+    ++calls === 1 ? selection.promise : context.available[0],
   );
   const fence = h.attach();
   const waiting = h.dispatch({ workload: "job" });

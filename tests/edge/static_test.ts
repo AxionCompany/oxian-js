@@ -147,10 +147,7 @@ test("static adapter supports validators and one byte range", async () => {
 
 test("static adapter rejects decoded traversal and symlink escapes", async () => {
   await withStaticTree(async (root, outside) => {
-    await Deno.symlink(
-      `${outside}/secret.txt`,
-      `${root}/escaped-secret.txt`,
-    );
+    await Deno.symlink(`${outside}/secret.txt`, `${root}/escaped-secret.txt`);
     const handler = createStaticAdapter({
       root,
       prefix: "/assets",
@@ -158,9 +155,7 @@ test("static adapter rejects decoded traversal and symlink escapes", async () =>
     })(() => new Response("unreachable"));
 
     const traversal = await handler(
-      new Request(
-        "https://example.test/assets/%2e%2e%2foutside%2fsecret.txt",
-      ),
+      new Request("https://example.test/assets/%2e%2e%2foutside%2fsecret.txt"),
     );
     assert.deepStrictEqual(traversal.status, 404);
 
@@ -292,9 +287,7 @@ test("static adapter falls through routes before an HTML navigation fallback", a
         : new Response("application miss", { status: 404 });
     });
 
-    const exact = await handler(
-      new Request("https://example.test/hello.txt"),
-    );
+    const exact = await handler(new Request("https://example.test/hello.txt"));
     assert.deepStrictEqual(await exact.text(), "hello static");
     assert.deepStrictEqual(handled, []);
 

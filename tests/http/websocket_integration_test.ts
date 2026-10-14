@@ -41,10 +41,7 @@ type HttpWebSocketHarness = Readonly<{
   close(): Promise<void>;
 }>;
 
-function withTimeout<T>(
-  promise: Promise<T>,
-  message: string,
-): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new DOMException(message, "TimeoutError")),
@@ -76,10 +73,7 @@ async function waitFor(
   }
 }
 
-function workerUrl(
-  listener: HypervisorListener,
-  path: string,
-): URL {
+function workerUrl(listener: HypervisorListener, path: string): URL {
   const url = new URL(path, listener.url);
   url.protocol = "ws:";
   return url;
@@ -89,12 +83,14 @@ async function startHarness(
   workload: ReturnType<typeof createHttpWorkload>,
 ): Promise<HttpWebSocketHarness> {
   const repository = createEphemeralWorkerStore();
-  await repository.define(createWorkerDefinition({
-    workerId: "http-wss-worker",
-    providerId: "attached",
-    workloads: [HTTP_WORKLOAD],
-    capacity: 1,
-  }));
+  await repository.define(
+    createWorkerDefinition({
+      workerId: "http-wss-worker",
+      providerId: "attached",
+      workloads: [HTTP_WORKLOAD],
+      capacity: 1,
+    }),
+  );
   const identity = (await repository.activate("http-wss-worker")).attempt
     .identity;
   const authority = createEphemeralCredentialLifecycle();
@@ -157,10 +153,10 @@ async function startHarness(
       await hypervisor.shutdown("test_cleanup").catch(() => undefined);
       await worker.stop("test_cleanup").catch(() => undefined);
       await listener.shutdown().catch(() => undefined);
-      await withTimeout(workerClosed, "HTTP WebSocket worker did not stop")
-        .catch(
-          () => undefined,
-        );
+      await withTimeout(
+        workerClosed,
+        "HTTP WebSocket worker did not stop",
+      ).catch(() => undefined);
     })();
     return closed;
   };
@@ -184,9 +180,12 @@ test("HTTP gateway preserves large binary bodies and Set-Cookie over a real WebS
     fetch: async (request) => {
       if (new URL(request.url).pathname === "/cancel") {
         return new Response(
-          new ReadableStream<Uint8Array>({
-            cancel: responseCancelled.resolve,
-          }, { highWaterMark: 0 }),
+          new ReadableStream<Uint8Array>(
+            {
+              cancel: responseCancelled.resolve,
+            },
+            { highWaterMark: 0 },
+          ),
         );
       }
       const received = new Uint8Array(await request.arrayBuffer());
@@ -271,10 +270,12 @@ test("Fetch application streams and cancels SSE over a real WebSocket", async ()
         () => cancelled.resolve(context.signal.reason),
         { once: true },
       );
-      void events.send("ready", {
-        event: "status",
-        id: "first",
-      }).catch(() => undefined);
+      void events
+        .send("ready", {
+          event: "status",
+          id: "first",
+        })
+        .catch(() => undefined);
       return events.response;
     },
   });
@@ -290,16 +291,18 @@ test("Fetch application streams and cancels SSE over a real WebSocket", async ()
     match: (pathname: string) =>
       pathname === "/events"
         ? Object.freeze({
-          route,
-          params: Object.freeze({}),
-          middlewares: Object.freeze([]),
-        })
+            route,
+            params: Object.freeze({}),
+            middlewares: Object.freeze([]),
+          })
         : null,
   }) satisfies FileRouter<undefined>;
   const application = await createApplication({ router });
-  const harness = await startHarness(createHttpWorkload({
-    fetch: application.fetch,
-  }));
+  const harness = await startHarness(
+    createHttpWorkload({
+      fetch: application.fetch,
+    }),
+  );
 
   try {
     const gateway = createHttpGateway({

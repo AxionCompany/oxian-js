@@ -38,29 +38,34 @@ function createHypervisor(
     type: "in-process" as const,
     config: Object.freeze({ topic: `in-process-test-${crypto.randomUUID()}` }),
   });
-  const hypervisor = createPublicHypervisor({
-    transports: [transport],
-    ...(options.config === undefined ? {} : { config: options.config }),
-    ...(options.clock === undefined ? {} : { clock: options.clock }),
-    ...(options.scheduler === undefined
-      ? {}
-      : { scheduler: options.scheduler }),
-  }, {
-    onWorkAccepted: async (context) => {
-      await options.commitAcceptedWork(Object.freeze({
-        operationId: context.operationId,
-        workload: context.workload,
-        ...(context.target === undefined ? {} : { target: context.target }),
-        metadata: context.metadata,
-        ...(context.deadlineAtMs === undefined
-          ? {}
-          : { deadlineAtMs: context.deadlineAtMs }),
-        deliveryCount: context.deliveryCount,
-        assignment: context.assignment,
-        claimedAtMs: context.acceptedAtMs,
-      }));
+  const hypervisor = createPublicHypervisor(
+    {
+      transports: [transport],
+      ...(options.config === undefined ? {} : { config: options.config }),
+      ...(options.clock === undefined ? {} : { clock: options.clock }),
+      ...(options.scheduler === undefined
+        ? {}
+        : { scheduler: options.scheduler }),
     },
-  });
+    {
+      onWorkAccepted: async (context) => {
+        await options.commitAcceptedWork(
+          Object.freeze({
+            operationId: context.operationId,
+            workload: context.workload,
+            ...(context.target === undefined ? {} : { target: context.target }),
+            metadata: context.metadata,
+            ...(context.deadlineAtMs === undefined
+              ? {}
+              : { deadlineAtMs: context.deadlineAtMs }),
+            deliveryCount: context.deliveryCount,
+            assignment: context.assignment,
+            claimedAtMs: context.acceptedAtMs,
+          }),
+        );
+      },
+    },
+  );
   transports.set(hypervisor, transport);
   return hypervisor;
 }
@@ -72,9 +77,7 @@ function createWorker(
     workloads: Readonly<Record<string, WorkerWorkHandler>>;
     capacity?: number;
     signal?: AbortSignal;
-    beforeReady?: (
-      context: WorkerBeforeReadyContext,
-    ) => void | Promise<void>;
+    beforeReady?: (context: WorkerBeforeReadyContext) => void | Promise<void>;
     onStateChange?: (snapshot: WorkerSnapshot) => void | Promise<void>;
   }>,
 ): Worker {
@@ -84,15 +87,17 @@ function createWorker(
     workloads: options.workloads,
     ...(options.capacity === undefined ? {} : { capacity: options.capacity }),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
-    ...(options.beforeReady === undefined ? {} : {
-      handshake: (context) =>
-        options.beforeReady!({
-          bootstrap: context.bootstrap,
-          connectionId: context.connectionId,
-          signal: context.signal,
-          reconnecting: context.reconnecting,
+    ...(options.beforeReady === undefined
+      ? {}
+      : {
+          handshake: (context) =>
+            options.beforeReady!({
+              bootstrap: context.bootstrap,
+              connectionId: context.connectionId,
+              signal: context.signal,
+              reconnecting: context.reconnecting,
+            }),
         }),
-    }),
   });
   workers.add(worker);
   if (options.onStateChange !== undefined) {
@@ -196,8 +201,9 @@ test("in-process connections do not arm WebSocket age rotation", async () => {
   try {
     assert.deepStrictEqual(worker.snapshot().state, "ready");
     assert.deepStrictEqual(
-      timers.some((timer) =>
-        !timer.cancelled && timer.delayMs > 40_000 && timer.delayMs < 60_000
+      timers.some(
+        (timer) =>
+          !timer.cancelled && timer.delayMs > 40_000 && timer.delayMs < 60_000,
       ),
       false,
     );
@@ -406,10 +412,10 @@ test("in-process initialization is session-scoped across maintenance rebinds", a
     await reinitialized.promise;
     await waitUntil(() => worker.snapshot().state === "ready");
 
-    assert.deepStrictEqual(contexts.map(({ reconnecting }) => reconnecting), [
-      false,
-      true,
-    ]);
+    assert.deepStrictEqual(
+      contexts.map(({ reconnecting }) => reconnecting),
+      [false, true],
+    );
     assert.deepStrictEqual(contexts[0].signal.aborted, true);
     assert.deepStrictEqual(contexts[1].signal.aborted, false);
     assert.deepStrictEqual(worker.snapshot().state, "ready");
@@ -465,8 +471,8 @@ test("an overdue in-process lease sweep does not fence a live Worker", async () 
     // A request-scoped CPU pause makes the local heartbeat and lease sweep
     // overdue together. Resuming must not self-fence the live session.
     now = 10_000;
-    const overdueSweep = timers.find((timer) =>
-      !timer.cancelled && timer.delayMs === 10
+    const overdueSweep = timers.find(
+      (timer) => !timer.cancelled && timer.delayMs === 10,
     );
     if (overdueSweep === undefined) {
       throw new Error("expected the Hypervisor lease sweep to be scheduled");
@@ -562,7 +568,7 @@ test("capacity and exact worker targeting apply in process", async () => {
       hypervisor.dispatch({
         workload: "task",
         target: { workerId: "worker-a" },
-      })
+      }),
     );
     assert.deepStrictEqual((unavailable as Error).name, "HypervisorError");
     assert.deepStrictEqual(
@@ -652,8 +658,8 @@ test("maintenance drain settles active work and rebinds the Worker", async () =>
     await readText(handle.output);
     assert.deepStrictEqual((await handle.completed).status, "completed");
     await draining;
-    await waitUntil(() =>
-      hypervisor.sessions.get("draining-worker")?.phase === "ready"
+    await waitUntil(
+      () => hypervisor.sessions.get("draining-worker")?.phase === "ready",
     );
     const replacement = hypervisor.sessions.get("draining-worker")!;
     assert.deepStrictEqual(replacement.phase, "ready");
@@ -717,10 +723,14 @@ test("deadline cancellation reaches the active in-process handler", async () => 
     workloads: {
       task: ({ signal }) =>
         new Promise<void>((_resolve, reject) => {
-          signal.addEventListener("abort", () => {
-            aborted = true;
-            reject(signal.reason);
-          }, { once: true });
+          signal.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              reject(signal.reason);
+            },
+            { once: true },
+          );
         }),
     },
   });
@@ -753,7 +763,7 @@ test("cancelling output propagates to the workload stream", async () => {
     workerId: "output-worker",
     workloads: {
       stream: ({ signal }) => {
-        signal.addEventListener("abort", () => handlerAborted = true, {
+        signal.addEventListener("abort", () => (handlerAborted = true), {
           once: true,
         });
         return {

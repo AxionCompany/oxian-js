@@ -93,18 +93,20 @@ export async function runCli(
       io,
       dependencies: Object.freeze({
         loadConfig: dependencies.loadConfig ?? loadConfig,
-        createRouter: dependencies.createRouter ??
+        createRouter:
+          dependencies.createRouter ??
           ((options) => createFileRouter<unknown>(options)),
-        loadApplicationFactory: dependencies.loadApplicationFactory ??
-          loadApplicationFactory,
-        createLocalRuntime: dependencies.createLocalRuntime ??
-          createLocalRuntime,
-        loadWorkerManifest: dependencies.loadWorkerManifest ??
-          loadWorkerManifest,
-        createManifestWorkerRuntime: dependencies.createManifestWorkerRuntime ??
+        loadApplicationFactory:
+          dependencies.loadApplicationFactory ?? loadApplicationFactory,
+        createLocalRuntime:
+          dependencies.createLocalRuntime ?? createLocalRuntime,
+        loadWorkerManifest:
+          dependencies.loadWorkerManifest ?? loadWorkerManifest,
+        createManifestWorkerRuntime:
+          dependencies.createManifestWorkerRuntime ??
           createManifestWorkerRuntime,
-        waitForLifecycle: dependencies.waitForLifecycle ??
-          ((lifecycle) => lifecycle.finished),
+        waitForLifecycle:
+          dependencies.waitForLifecycle ?? ((lifecycle) => lifecycle.finished),
       }),
     });
     await execute(parsed, context);

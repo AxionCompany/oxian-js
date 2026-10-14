@@ -720,10 +720,7 @@ test("cancellation may cross an in-flight acceptance commit", async () => {
   persistence.resolve();
   const committedCancellation = await commitment;
   assert.deepStrictEqual(committedCancellation.status, "cancelling");
-  assert.deepStrictEqual(
-    typeof committedCancellation.committedAtMs,
-    "number",
-  );
+  assert.deepStrictEqual(typeof committedCancellation.committedAtMs, "number");
   const cancelled = dispatcher.confirmCancellation(
     offered.operationId,
     offered.assignment!.fence,
@@ -806,9 +803,7 @@ test("a surfaced reschedulable result can be explicitly evicted but an active of
     "cannot discard",
   );
 
-  const [reschedulable] = dispatcher.connectionLost(
-    offered.assignment!.fence,
-  );
+  const [reschedulable] = dispatcher.connectionLost(offered.assignment!.fence);
   assert.deepStrictEqual(reschedulable.status, "reschedulable");
   assert.deepStrictEqual(
     dispatcher.discard(offered.operationId),

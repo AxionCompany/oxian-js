@@ -142,9 +142,8 @@ async function harness(capacity = 1, maxQueuedDispatches = 32) {
 test("WebSocket dispatch queue completes 20 concurrent dispatches at capacity 8 in FIFO order", async () => {
   const h = await harness(8);
   try {
-    const results = Array.from(
-      { length: 20 },
-      (_, order) => h.dispatch(order, order < 8).then(consume),
+    const results = Array.from({ length: 20 }, (_, order) =>
+      h.dispatch(order, order < 8).then(consume),
     );
     const all = Promise.all(results);
     await waitFor(() => h.started.length === 8);
@@ -154,7 +153,10 @@ test("WebSocket dispatch queue completes 20 concurrent dispatches at capacity 8 
       await bounded(all),
       Array.from({ length: 20 }, (_, i) => String(i)),
     );
-    assert.deepStrictEqual(h.started, Array.from({ length: 20 }, (_, i) => i));
+    assert.deepStrictEqual(
+      h.started,
+      Array.from({ length: 20 }, (_, i) => i),
+    );
     assert.deepStrictEqual(h.hypervisor.snapshot().queuedDispatches, 0);
   } finally {
     await h.close();
@@ -218,8 +220,8 @@ test("WebSocket dispatch queue waits for an absent target to reconnect within it
   try {
     const previous = h.hypervisor.sessions.get(h.identity.workerId)!;
     h.disconnect();
-    await waitFor(() =>
-      h.hypervisor.sessions.get(h.identity.workerId) === undefined
+    await waitFor(
+      () => h.hypervisor.sessions.get(h.identity.workerId) === undefined,
     );
     const pending = h.dispatch(1).then(consume);
     assert.deepStrictEqual(h.hypervisor.snapshot().queuedDispatches, 1);

@@ -48,10 +48,7 @@ test("provider JSON is validated, deeply cloned, frozen, and __proto__ safe", ()
     Object.getPrototypeOf(resource.attributes),
     Object.prototype,
   );
-  assert.deepStrictEqual(
-    ({} as Record<string, unknown>).polluted,
-    undefined,
-  );
+  assert.deepStrictEqual(({} as Record<string, unknown>).polluted, undefined);
 
   const details = JSON.parse(
     '{"__proto__":{"inspection":true},"nested":{"ok":true}}',
@@ -73,32 +70,24 @@ test("provider JSON is validated, deeply cloned, frozen, and __proto__ safe", ()
   assert.ok(Object.isFrozen(inspection.details));
   assert.ok(Object.isFrozen(inspection.details.nested));
   assert.ok(Object.hasOwn(inspection.details, "__proto__"));
-  assert.deepStrictEqual(
-    (inspection.details.nested as JsonObject).ok,
-    true,
-  );
+  assert.deepStrictEqual((inspection.details.nested as JsonObject).ok, true);
   assert.ok(Object.isFrozen(termination.details));
   assert.ok(Object.isFrozen(termination.details.nested));
-  assert.deepStrictEqual(
-    (termination.details.nested as JsonObject).ok,
-    true,
-  );
+  assert.deepStrictEqual((termination.details.nested as JsonObject).ok, true);
 });
 
 test("provider JSON rejects non-JSON and unsafe object shapes", () => {
   const circular: Record<string, unknown> = {};
   circular.self = circular;
 
-  for (
-    const attributes of [
-      { invalid: undefined },
-      { invalid: Number.NaN },
-      { invalid: Number.POSITIVE_INFINITY },
-      { invalid: 1n },
-      circular,
-      new Date(),
-    ]
-  ) {
+  for (const attributes of [
+    { invalid: undefined },
+    { invalid: Number.NaN },
+    { invalid: Number.POSITIVE_INFINITY },
+    { invalid: 1n },
+    circular,
+    new Date(),
+  ]) {
     assertThrows(
       () => createResource(attributes as unknown as JsonObject),
       TypeError,

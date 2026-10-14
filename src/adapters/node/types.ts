@@ -3,8 +3,7 @@ import type {
   HypervisorListenOptions,
 } from "../../hypervisor/types.ts";
 
-export type NodeServeOptions =
-  & Readonly<{
-    hypervisor: Hypervisor;
-  }>
-  & HypervisorListenOptions;
+export type NodeServeOptions = Readonly<{
+  hypervisor: Hypervisor;
+}> &
+  HypervisorListenOptions;

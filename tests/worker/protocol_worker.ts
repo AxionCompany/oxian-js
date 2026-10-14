@@ -67,12 +67,13 @@ export function createProtocolTestWorker(
   if (physical.socket !== undefined && typeof physical.socket !== "function") {
     throw new TypeError("transport.socket must be a function");
   }
-  const persistence = options.credentialPersistence === "ephemeral"
-    ? Object.freeze({ credentialPersistence: "ephemeral" as const })
-    : Object.freeze({
-      credentialPersistence: "durable" as const,
-      persistResumeCredential: options.persistResumeCredential!,
-    });
+  const persistence =
+    options.credentialPersistence === "ephemeral"
+      ? Object.freeze({ credentialPersistence: "ephemeral" as const })
+      : Object.freeze({
+          credentialPersistence: "durable" as const,
+          persistResumeCredential: options.persistResumeCredential!,
+        });
   return createWorkerSession({
     transport: Object.freeze({
       type: "websocket" as const,
@@ -98,8 +99,8 @@ export function createProtocolTestWorker(
           maxPendingSendFrames: physical.limits?.maxPendingSendMessages,
           maxPendingSendBytes: physical.limits?.maxPendingSendBytes,
           maxBufferedAmountBytes: physical.limits?.maxBufferedAmountBytes,
-          bufferedAmountLowWaterBytes: physical.limits
-            ?.bufferedAmountLowWaterBytes,
+          bufferedAmountLowWaterBytes:
+            physical.limits?.bufferedAmountLowWaterBytes,
           bufferedAmountPollMs: physical.limits?.bufferedAmountPollMs,
         });
       },

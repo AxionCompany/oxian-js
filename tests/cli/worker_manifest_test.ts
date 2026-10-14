@@ -2,9 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { assertRejects } from "../support/assert.ts";
 import { join } from "@std/path";
-import {
-  createAtomicResumeCredentialStore,
-} from "../../src/local/credential_store.ts";
+import { createAtomicResumeCredentialStore } from "../../src/local/credential_store.ts";
 import { loadWorkerManifest } from "../../src/local/worker_manifest.ts";
 
 const identity = Object.freeze({
@@ -47,9 +45,7 @@ test("worker manifest is strict and rebases only local application/store paths",
     );
     assert.deepStrictEqual(
       manifest.applicationConfig,
-      new URL(
-        `file://${join(root, "application.ts")}`,
-      ).href,
+      new URL(`file://${join(root, "application.ts")}`).href,
     );
     assert.deepStrictEqual(manifest.credentialStore, {
       mode: "durable",
@@ -152,15 +148,18 @@ test("resume credentials use locked atomic compare-and-set persistence", async (
     }
     await assertRejects(
       async () => {
-        await store.persist({
-          credential: {
-            kind: "resume",
-            capability: "resume-secret-stale",
+        await store.persist(
+          {
+            credential: {
+              kind: "resume",
+              capability: "resume-secret-stale",
+            },
+            replacesHandshakeId: initialHandshakeId,
+            handshakeId: "handshake-stale",
+            resumeExpiresAtMs: 4_000_000_000_001,
           },
-          replacesHandshakeId: initialHandshakeId,
-          handshakeId: "handshake-stale",
-          resumeExpiresAtMs: 4_000_000_000_001,
-        }, persistenceContext);
+          persistenceContext,
+        );
       },
       Error,
       "predecessor does not match",

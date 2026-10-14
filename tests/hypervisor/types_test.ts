@@ -58,10 +58,12 @@ test("Hypervisor accepts plain admission and lifecycle functions", async () => {
   let assigned = false;
   const hypervisor = createHypervisor(
     {
-      transports: [{
-        type: "in-process",
-        config: { topic: `types-${crypto.randomUUID()}` },
-      }],
+      transports: [
+        {
+          type: "in-process",
+          config: { topic: `types-${crypto.randomUUID()}` },
+        },
+      ],
       admit: rejectUnknownWorker,
     },
     {
@@ -84,10 +86,12 @@ test("Hypervisor validates declarative transports and functions", () => {
   assertThrows(
     () =>
       createHypervisor({
-        transports: [{
-          type: "websocket",
-          config: { path: "relative" },
-        }],
+        transports: [
+          {
+            type: "websocket",
+            config: { path: "relative" },
+          },
+        ],
         admit: rejectUnknownWorker,
       }),
     TypeError,
@@ -96,10 +100,12 @@ test("Hypervisor validates declarative transports and functions", () => {
   assertThrows(
     () =>
       createHypervisor({
-        transports: [{
-          type: "websocket",
-          config: { path },
-        }],
+        transports: [
+          {
+            type: "websocket",
+            config: { path },
+          },
+        ],
       }),
     TypeError,
     "admit",
@@ -119,10 +125,12 @@ test("Hypervisor validates declarative transports and functions", () => {
     () =>
       createHypervisor(
         {
-          transports: [{
-            type: "in-process",
-            config: { topic: `callback-${crypto.randomUUID()}` },
-          }],
+          transports: [
+            {
+              type: "in-process",
+              config: { topic: `callback-${crypto.randomUUID()}` },
+            },
+          ],
         },
         { onReady: 42 } as never,
       ),

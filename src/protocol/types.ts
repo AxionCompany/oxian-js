@@ -12,10 +12,7 @@ export type WorkerProtocol = typeof WORKER_PROTOCOL;
 
 export type JsonPrimitive = boolean | number | string | null;
 
-export type JsonValue =
-  | JsonPrimitive
-  | JsonObject
-  | readonly JsonValue[];
+export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
 
 export type JsonObject = {
   readonly [key: string]: JsonValue;
@@ -36,13 +33,13 @@ export type WorkerIdentity = Readonly<{
 
 export type WorkerCredential =
   | Readonly<{
-    kind: "registration";
-    capability: string;
-  }>
+      kind: "registration";
+      capability: string;
+    }>
   | Readonly<{
-    kind: "resume";
-    capability: string;
-  }>;
+      kind: "resume";
+      capability: string;
+    }>;
 
 export type HelloFrame = Readonly<{
   protocol: WorkerProtocol;

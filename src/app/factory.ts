@@ -117,9 +117,7 @@ function expectApplication<State>(
   }
   for (const key of APPLICATION_KEYS) {
     if (!Object.hasOwn(record, key)) {
-      throw new TypeError(
-        `application factory result is missing "${key}"`,
-      );
+      throw new TypeError(`application factory result is missing "${key}"`);
     }
   }
   if (
@@ -194,7 +192,7 @@ export async function loadApplicationFactory<State = unknown>(
   source: LoadApplicationFactorySource,
 ): Promise<ApplicationFactory<State>> {
   const url = applicationFactoryModuleUrl(source);
-  const module = await import(url.href) as Readonly<Record<string, unknown>>;
+  const module = (await import(url.href)) as Readonly<Record<string, unknown>>;
   const exports = Object.keys(module).sort();
   if (!Object.hasOwn(module, "default")) {
     throw new TypeError(
@@ -207,7 +205,5 @@ export async function loadApplicationFactory<State = unknown>(
       `application factory module may only export "default"; found extra export "${extra}"`,
     );
   }
-  return defineApplicationFactory(
-    module.default as ApplicationFactory<State>,
-  );
+  return defineApplicationFactory(module.default as ApplicationFactory<State>);
 }

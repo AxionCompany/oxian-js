@@ -24,30 +24,28 @@ async function visit(url: URL): Promise<void> {
   const source = await Deno.readTextFile(url);
   const relative = decodeURIComponent(url.href.slice(PACKAGE_ROOT.href.length));
 
-  for (
-    const [label, pattern] of [
-      ["Deno API", /\bDeno\./],
-      ["Bun API", /\bBun\./],
-      ["Node builtin", /["']node:/],
-      ["Cloudflare runtime", /["']cloudflare:workers["']/],
-      ["runtime import map dependency", /["']@std\//],
-    ] as const
-  ) {
+  for (const [label, pattern] of [
+    ["Deno API", /\bDeno\./],
+    ["Bun API", /\bBun\./],
+    ["Node builtin", /["']node:/],
+    ["Cloudflare runtime", /["']cloudflare:workers["']/],
+    ["runtime import map dependency", /["']@std\//],
+  ] as const) {
     if (pattern.test(source)) errors.push(`${relative}: contains ${label}`);
   }
 
   const dependencies = new Set<string>();
-  for (
-    const match of source.matchAll(
-      /(?:\bfrom\s*|\bimport\s*\()\s*["']([^"']+)["']/g,
-    )
-  ) {
+  for (const match of source.matchAll(
+    /(?:\bfrom\s*|\bimport\s*\()\s*["']([^"']+)["']/g,
+  )) {
     dependencies.add(match[1]);
   }
-  await Promise.all([...dependencies].map(async (specifier) => {
-    if (!specifier.startsWith(".")) return;
-    const dependency = new URL(specifier, url);
-    if (!dependency.pathname.endsWith(".ts")) return;
-    await visit(dependency);
-  }));
+  await Promise.all(
+    [...dependencies].map(async (specifier) => {
+      if (!specifier.startsWith(".")) return;
+      const dependency = new URL(specifier, url);
+      if (!dependency.pathname.endsWith(".ts")) return;
+      await visit(dependency);
+    }),
+  );
 }

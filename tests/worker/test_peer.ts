@@ -104,17 +104,20 @@ export async function startTestPeer(): Promise<TestPeer> {
       const socket = ws as unknown as WebSocket;
       void createFrameConnection(adaptSocketConnection(socket), {
         negotiatedProtocol: WORKER_PROTOCOL,
-      }).then((connection) =>
-        createProtocolTransport({ connection, role: "hypervisor" })
-      ).then((transport) => {
-        transports.add(transport);
-        transport.closed.then(() => transports.delete(transport));
-        deliver({
-          socket,
-          transport,
-          iterator: transport.messages()[Symbol.asyncIterator](),
-        });
-      }).catch(fail);
+      })
+        .then((connection) =>
+          createProtocolTransport({ connection, role: "hypervisor" }),
+        )
+        .then((transport) => {
+          transports.add(transport);
+          transport.closed.then(() => transports.delete(transport));
+          deliver({
+            socket,
+            transport,
+            iterator: transport.messages()[Symbol.asyncIterator](),
+          });
+        })
+        .catch(fail);
     });
   });
   server.on("error", fail);
@@ -139,14 +142,14 @@ export async function startTestPeer(): Promise<TestPeer> {
       waiter.reject(new DOMException("test peer closed", "AbortError"));
     }
     await Promise.all(
-      Array.from(
-        transports,
-        (transport) =>
-          transport.close({
+      Array.from(transports, (transport) =>
+        transport
+          .close({
             code: 1000,
             reason: "test_complete",
             timeoutMs: 250,
-          }).catch(() => undefined),
+          })
+          .catch(() => undefined),
       ),
     );
     for (const client of sockets.clients) client.terminate();
@@ -221,8 +224,10 @@ export async function acceptTestHandshake(
   await connection.transport.sendControl(welcome);
   const readyMessage = await nextControl(connection, "ready");
   const ready = readyMessage.acceptance.frame as ReadyFrame;
-  await connection.transport.sendControl(createReadyAckFrame({
-    connectionId: welcome.connectionId,
-  }));
+  await connection.transport.sendControl(
+    createReadyAckFrame({
+      connectionId: welcome.connectionId,
+    }),
+  );
   return { hello, ready, welcome };
 }

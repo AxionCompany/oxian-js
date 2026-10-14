@@ -40,11 +40,13 @@ async function openAndStart(
   connection: TestPeerConnection,
   streamId: string,
 ): Promise<void> {
-  await connection.transport.sendControl(createWorkOpenFrame({
-    streamId,
-    workload: "echo",
-    metadata: { request: streamId },
-  }));
+  await connection.transport.sendControl(
+    createWorkOpenFrame({
+      streamId,
+      workload: "echo",
+      metadata: { request: streamId },
+    }),
+  );
   const accepted = await nextControl(connection, "work.accepted");
   assert.deepStrictEqual(
     "streamId" in accepted.acceptance.frame
@@ -59,10 +61,12 @@ async function shutdown(
   connection: TestPeerConnection,
   connectionId: string,
 ): Promise<void> {
-  await connection.transport.sendControl(createShutdownFrame({
-    connectionId,
-    reason: "test_complete",
-  }));
+  await connection.transport.sendControl(
+    createShutdownFrame({
+      connectionId,
+      reason: "test_complete",
+    }),
+  );
 }
 
 test("worker multiplexes concurrent credited streams", async () => {
@@ -90,11 +94,13 @@ test("worker multiplexes concurrent credited streams", async () => {
     const streamIds = [createStreamId(), createStreamId()];
 
     for (const streamId of streamIds) {
-      await connection.transport.sendControl(createWorkOpenFrame({
-        streamId,
-        workload: "echo",
-        metadata: {},
-      }));
+      await connection.transport.sendControl(
+        createWorkOpenFrame({
+          streamId,
+          workload: "echo",
+          metadata: {},
+        }),
+      );
     }
     const accepted = new Set<string>();
     while (accepted.size < 2) {
@@ -112,9 +118,7 @@ test("worker multiplexes concurrent credited streams", async () => {
       await connection.transport.sendControl(
         createWorkCreditFrame({ streamId, bytes: 1024 }),
       );
-      await connection.transport.sendControl(
-        createWorkEndFrame({ streamId }),
-      );
+      await connection.transport.sendControl(createWorkEndFrame({ streamId }));
     }
 
     const metadata = new Set<string>();
@@ -136,9 +140,7 @@ test("worker multiplexes concurrent credited streams", async () => {
     assert.deepStrictEqual(metadata, new Set(streamIds));
     for (const streamId of streamIds) {
       assert.deepStrictEqual(
-        new TextDecoder().decode(
-          new Uint8Array(output.get(streamId) ?? []),
-        ),
+        new TextDecoder().decode(new Uint8Array(output.get(streamId) ?? [])),
         `response:${streamId}`,
       );
     }
@@ -196,11 +198,13 @@ test("ignored request body stops at credit while response finishes promptly", as
       producer = producer.then(async () => {
         while (!sawOutputEnd && inputCredit >= chunk.byteLength) {
           inputCredit -= chunk.byteLength;
-          await connection.transport.sendData(createWorkDataFrame({
-            streamId,
-            sequence: inputSequence++,
-            payload: chunk,
-          }));
+          await connection.transport.sendData(
+            createWorkDataFrame({
+              streamId,
+              sequence: inputSequence++,
+              payload: chunk,
+            }),
+          );
           producedBytes += chunk.byteLength;
         }
       });
@@ -351,10 +355,14 @@ test("remote cancel aborts handler and receives directional acknowledgement", as
     workloads: {
       echo: ({ signal }) =>
         new Promise<void>((_resolve, reject) => {
-          signal.addEventListener("abort", () => {
-            aborted = true;
-            reject(signal.reason);
-          }, { once: true });
+          signal.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              reject(signal.reason);
+            },
+            { once: true },
+          );
         }),
     },
     reconnectDelay: () => 0,
@@ -366,14 +374,13 @@ test("remote cancel aborts handler and receives directional acknowledgement", as
     const handshake = await acceptTestHandshake(connection);
     const streamId = createStreamId();
     await openAndStart(connection, streamId);
-    await connection.transport.sendControl(createWorkCancelFrame({
-      streamId,
-      reason: "caller_cancelled",
-    }));
-    const acknowledgement = await nextControl(
-      connection,
-      "work.cancel",
+    await connection.transport.sendControl(
+      createWorkCancelFrame({
+        streamId,
+        reason: "caller_cancelled",
+      }),
     );
+    const acknowledgement = await nextControl(connection, "work.cancel");
     assert.deepStrictEqual(
       "streamId" in acknowledgement.acceptance.frame
         ? acknowledgement.acceptance.frame.streamId
@@ -419,12 +426,14 @@ test("deadline rejection discards a crossed Start after Accepted", async () => {
     const connection = await peer.nextConnection();
     const handshake = await acceptTestHandshake(connection);
     const streamId = createStreamId();
-    await connection.transport.sendControl(createWorkOpenFrame({
-      streamId,
-      workload: "echo",
-      metadata: {},
-      deadlineAtMs: Date.now() + 25,
-    }));
+    await connection.transport.sendControl(
+      createWorkOpenFrame({
+        streamId,
+        workload: "echo",
+        metadata: {},
+        deadlineAtMs: Date.now() + 25,
+      }),
+    );
     await nextControl(connection, "work.accepted");
     const deadlineCancel = await nextControl(connection, "work.cancel");
     assert.deepStrictEqual(
@@ -436,15 +445,17 @@ test("deadline rejection discards a crossed Start after Accepted", async () => {
 
     // Bypass the Hypervisor's local validator to model a Start already on the
     // wire before it observed the worker's deadline cancel.
-    connection.socket.send(encodeControlFrame(
-      createWorkStartFrame({ streamId }),
-    ));
+    connection.socket.send(
+      encodeControlFrame(createWorkStartFrame({ streamId })),
+    );
     await new Promise((resolve) => setTimeout(resolve, 25));
     assert.deepStrictEqual(invocations, 0);
-    await connection.transport.sendControl(createWorkCancelFrame({
-      streamId,
-      reason: "deadline_acknowledged",
-    }));
+    await connection.transport.sendControl(
+      createWorkCancelFrame({
+        streamId,
+        reason: "deadline_acknowledged",
+      }),
+    );
     assert.deepStrictEqual(
       connection.transport.snapshot().activeStreamCount,
       0,
@@ -475,10 +486,14 @@ test("loss before Start never invokes; loss after Start aborts without replay", 
       echo: ({ signal }) => {
         invocations++;
         return new Promise<void>((_resolve, reject) => {
-          signal.addEventListener("abort", () => {
-            aborts++;
-            reject(signal.reason);
-          }, { once: true });
+          signal.addEventListener(
+            "abort",
+            () => {
+              aborts++;
+              reject(signal.reason);
+            },
+            { once: true },
+          );
         });
       },
     },
@@ -490,11 +505,13 @@ test("loss before Start never invokes; loss after Start aborts without replay", 
     const beforeStart = await peer.nextConnection();
     await acceptTestHandshake(beforeStart);
     const stream1 = createStreamId();
-    await beforeStart.transport.sendControl(createWorkOpenFrame({
-      streamId: stream1,
-      workload: "echo",
-      metadata: {},
-    }));
+    await beforeStart.transport.sendControl(
+      createWorkOpenFrame({
+        streamId: stream1,
+        workload: "echo",
+        metadata: {},
+      }),
+    );
     await nextControl(beforeStart, "work.accepted");
     await beforeStart.transport.close({
       code: 1000,
@@ -553,11 +570,13 @@ test("drained waits: peer close reconnects, explicit Shutdown stops", async () =
   try {
     const first = await peer.nextConnection();
     const firstHandshake = await acceptTestHandshake(first);
-    await first.transport.sendControl(createDrainFrame({
-      connectionId: firstHandshake.welcome.connectionId,
-      reason: "max_connection_age",
-      deadlineAtMs: Date.now() + 5_000,
-    }));
+    await first.transport.sendControl(
+      createDrainFrame({
+        connectionId: firstHandshake.welcome.connectionId,
+        reason: "max_connection_age",
+        deadlineAtMs: Date.now() + 5_000,
+      }),
+    );
     await nextControl(first, "drained");
     assert.deepStrictEqual(
       await Promise.race([
@@ -577,11 +596,13 @@ test("drained waits: peer close reconnects, explicit Shutdown stops", async () =
       (secondHandshake.hello as HelloFrame).credential.kind,
       "resume",
     );
-    await second.transport.sendControl(createDrainFrame({
-      connectionId: secondHandshake.welcome.connectionId,
-      reason: "terminal_shutdown",
-      deadlineAtMs: Date.now() + 5_000,
-    }));
+    await second.transport.sendControl(
+      createDrainFrame({
+        connectionId: secondHandshake.welcome.connectionId,
+        reason: "terminal_shutdown",
+        deadlineAtMs: Date.now() + 5_000,
+      }),
+    );
     await nextControl(second, "drained");
     await shutdown(second, secondHandshake.welcome.connectionId);
     assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
@@ -607,11 +628,9 @@ test("resume rotation rejects racing Open as retryable before acceptance", async
       echo: ({ signal }) => {
         invocations++;
         return new Promise<void>((_resolve, reject) => {
-          signal.addEventListener(
-            "abort",
-            () => reject(signal.reason),
-            { once: true },
-          );
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
         });
       },
     },
@@ -644,17 +663,20 @@ test("resume rotation rejects racing Open as retryable before acceptance", async
     let drainingAvailability: number | undefined;
     while (drainingAvailability !== 0) {
       const heartbeat = await nextControl(first, "heartbeat");
-      drainingAvailability = heartbeat.acceptance.frame.type === "heartbeat"
-        ? heartbeat.acceptance.frame.availableCapacity
-        : undefined;
+      drainingAvailability =
+        heartbeat.acceptance.frame.type === "heartbeat"
+          ? heartbeat.acceptance.frame.availableCapacity
+          : undefined;
     }
 
     const racingStream = createStreamId();
-    await first.transport.sendControl(createWorkOpenFrame({
-      streamId: racingStream,
-      workload: "echo",
-      metadata: {},
-    }));
+    await first.transport.sendControl(
+      createWorkOpenFrame({
+        streamId: racingStream,
+        workload: "echo",
+        metadata: {},
+      }),
+    );
     const rejection = await nextControl(first, "work.cancel");
     if (rejection.acceptance.frame.type !== "work.cancel") {
       throw new TypeError("expected pre-accept draining rejection");
@@ -665,15 +687,19 @@ test("resume rotation rejects racing Open as retryable before acceptance", async
       "worker_draining",
     );
     assert.deepStrictEqual(invocations, 1);
-    await first.transport.sendControl(createWorkCancelFrame({
-      streamId: racingStream,
-      reason: "retry_acknowledged",
-    }));
+    await first.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: racingStream,
+        reason: "retry_acknowledged",
+      }),
+    );
 
-    await first.transport.sendControl(createWorkCancelFrame({
-      streamId: activeStream,
-      reason: "finish_rotation",
-    }));
+    await first.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: activeStream,
+        reason: "finish_rotation",
+      }),
+    );
     await nextControl(first, "work.cancel");
     await first.transport.closed;
 
@@ -726,10 +752,12 @@ test("hung execution keeps process capacity across cancel and reconnect", async 
       }),
     );
 
-    await first.transport.sendControl(createWorkCancelFrame({
-      streamId: hungStream,
-      reason: "caller_cancelled",
-    }));
+    await first.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: hungStream,
+        reason: "caller_cancelled",
+      }),
+    );
     await nextControl(first, "work.cancel");
     assert.deepStrictEqual(client.snapshot().activeStreams, 0);
     assert.deepStrictEqual(client.snapshot().occupiedExecutions, 1);
@@ -751,11 +779,13 @@ test("hung execution keeps process capacity across cancel and reconnect", async 
     assert.deepStrictEqual(heartbeat.acceptance.frame.availableCapacity, 0);
 
     const rejectedStream = createStreamId();
-    await second.transport.sendControl(createWorkOpenFrame({
-      streamId: rejectedStream,
-      workload: "echo",
-      metadata: {},
-    }));
+    await second.transport.sendControl(
+      createWorkOpenFrame({
+        streamId: rejectedStream,
+        workload: "echo",
+        metadata: {},
+      }),
+    );
     const rejection = await nextControl(second, "work.cancel");
     if (rejection.acceptance.frame.type !== "work.cancel") {
       throw new TypeError("expected capacity rejection");
@@ -766,16 +796,20 @@ test("hung execution keeps process capacity across cancel and reconnect", async 
       "worker_capacity",
     );
     assert.deepStrictEqual(invocations, 1);
-    await second.transport.sendControl(createWorkCancelFrame({
-      streamId: rejectedStream,
-      reason: "capacity_rejection_ack",
-    }));
+    await second.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: rejectedStream,
+        reason: "capacity_rejection_ack",
+      }),
+    );
 
-    await second.transport.sendControl(createDrainFrame({
-      connectionId: secondHandshake.welcome.connectionId,
-      reason: "test_drain",
-      deadlineAtMs: Date.now() + 5_000,
-    }));
+    await second.transport.sendControl(
+      createDrainFrame({
+        connectionId: secondHandshake.welcome.connectionId,
+        reason: "test_drain",
+        deadlineAtMs: Date.now() + 5_000,
+      }),
+    );
     await new Promise((resolve) => setTimeout(resolve, 50));
     assert.deepStrictEqual(client.snapshot().state, "draining");
     assert.deepStrictEqual(client.snapshot().occupiedExecutions, 1);
@@ -819,10 +853,12 @@ test("deferred output cancellation holds capacity and Drain until source settlem
     await openAndStart(connection, activeStream);
     await output.pulling;
 
-    await connection.transport.sendControl(createWorkCancelFrame({
-      streamId: activeStream,
-      reason: "caller_cancelled",
-    }));
+    await connection.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: activeStream,
+        reason: "caller_cancelled",
+      }),
+    );
     await nextControl(connection, "work.cancel");
     await output.cancelling;
     assert.deepStrictEqual(client.snapshot().activeStreams, 0);
@@ -830,11 +866,13 @@ test("deferred output cancellation holds capacity and Drain until source settlem
     assert.deepStrictEqual(output.cancelCalls(), 1);
 
     const capacityProbe = createStreamId();
-    await connection.transport.sendControl(createWorkOpenFrame({
-      streamId: capacityProbe,
-      workload: "echo",
-      metadata: {},
-    }));
+    await connection.transport.sendControl(
+      createWorkOpenFrame({
+        streamId: capacityProbe,
+        workload: "echo",
+        metadata: {},
+      }),
+    );
     const rejection = await nextControl(connection, "work.cancel");
     if (rejection.acceptance.frame.type !== "work.cancel") {
       throw new TypeError("expected capacity rejection");
@@ -845,16 +883,20 @@ test("deferred output cancellation holds capacity and Drain until source settlem
       "worker_capacity",
     );
     assert.deepStrictEqual(invocations, 1);
-    await connection.transport.sendControl(createWorkCancelFrame({
-      streamId: capacityProbe,
-      reason: "capacity_rejection_acknowledged",
-    }));
+    await connection.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: capacityProbe,
+        reason: "capacity_rejection_acknowledged",
+      }),
+    );
 
-    await connection.transport.sendControl(createDrainFrame({
-      connectionId: handshake.welcome.connectionId,
-      reason: "deferred_output_cancellation",
-      deadlineAtMs: Date.now() + 5_000,
-    }));
+    await connection.transport.sendControl(
+      createDrainFrame({
+        connectionId: handshake.welcome.connectionId,
+        reason: "deferred_output_cancellation",
+        deadlineAtMs: Date.now() + 5_000,
+      }),
+    );
     let drained = false;
     const drain = nextControl(connection, "drained").then(() => {
       drained = true;
@@ -925,9 +967,9 @@ test("deferred output cancellation keeps replacement-session capacity occupied",
     });
     let occupiedHeartbeat:
       | Extract<
-        Awaited<ReturnType<typeof nextControl>>["acceptance"]["frame"],
-        { type: "heartbeat" }
-      >
+          Awaited<ReturnType<typeof nextControl>>["acceptance"]["frame"],
+          { type: "heartbeat" }
+        >
       | undefined;
     while (occupiedHeartbeat === undefined) {
       const message = await nextControl(second, "heartbeat");
@@ -939,11 +981,13 @@ test("deferred output cancellation keeps replacement-session capacity occupied",
     assert.deepStrictEqual(occupiedHeartbeat.availableCapacity, 0);
 
     const capacityProbe = createStreamId();
-    await second.transport.sendControl(createWorkOpenFrame({
-      streamId: capacityProbe,
-      workload: "echo",
-      metadata: {},
-    }));
+    await second.transport.sendControl(
+      createWorkOpenFrame({
+        streamId: capacityProbe,
+        workload: "echo",
+        metadata: {},
+      }),
+    );
     const rejection = await nextControl(second, "work.cancel");
     if (rejection.acceptance.frame.type !== "work.cancel") {
       throw new TypeError("expected replacement-session capacity rejection");
@@ -953,10 +997,12 @@ test("deferred output cancellation keeps replacement-session capacity occupied",
       "worker_capacity",
     );
     assert.deepStrictEqual(invocations, 1);
-    await second.transport.sendControl(createWorkCancelFrame({
-      streamId: capacityProbe,
-      reason: "capacity_rejection_acknowledged",
-    }));
+    await second.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: capacityProbe,
+        reason: "capacity_rejection_acknowledged",
+      }),
+    );
 
     output.release();
     await waitForSnapshot(() => client.snapshot().occupiedExecutions === 0);
@@ -1104,9 +1150,11 @@ test("late zombie failure cannot terminate the replacement session", async () =>
 
     const healthyStream = createStreamId();
     await openAndStart(second, healthyStream);
-    await second.transport.sendControl(createWorkEndFrame({
-      streamId: healthyStream,
-    }));
+    await second.transport.sendControl(
+      createWorkEndFrame({
+        streamId: healthyStream,
+      }),
+    );
     await nextControl(second, "work.metadata");
     await nextControl(second, "work.end");
     assert.deepStrictEqual(invocations, 2);
@@ -1152,9 +1200,11 @@ test("crossed pre-start cancel stays stream-local on a multiplexed worker", asyn
     const handshake = await acceptTestHandshake(connection);
     const healthyStream = createStreamId();
     await openAndStart(connection, healthyStream);
-    await connection.transport.sendControl(createWorkEndFrame({
-      streamId: healthyStream,
-    }));
+    await connection.transport.sendControl(
+      createWorkEndFrame({
+        streamId: healthyStream,
+      }),
+    );
     await withTimeout(
       new Promise<void>((resolve) => {
         const poll = (): void => {
@@ -1166,15 +1216,19 @@ test("crossed pre-start cancel stays stream-local on a multiplexed worker", asyn
     );
 
     const cancelledStream = createStreamId();
-    const sendOpen = connection.transport.sendControl(createWorkOpenFrame({
-      streamId: cancelledStream,
-      workload: "echo",
-      metadata: {},
-    }));
-    const sendCancel = connection.transport.sendControl(createWorkCancelFrame({
-      streamId: cancelledStream,
-      reason: "caller_cancelled_before_acceptance",
-    }));
+    const sendOpen = connection.transport.sendControl(
+      createWorkOpenFrame({
+        streamId: cancelledStream,
+        workload: "echo",
+        metadata: {},
+      }),
+    );
+    const sendCancel = connection.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: cancelledStream,
+        reason: "caller_cancelled_before_acceptance",
+      }),
+    );
     await Promise.all([sendOpen, sendCancel]);
 
     while (true) {
@@ -1239,10 +1293,7 @@ test("worker validator exposes the stable crossed-acceptance error", () => {
       capacity: 2,
     }),
   );
-  validator.acceptControl(
-    "received",
-    createReadyAckFrame({ connectionId }),
-  );
+  validator.acceptControl("received", createReadyAckFrame({ connectionId }));
   validator.acceptControl(
     "received",
     createWorkOpenFrame({
@@ -1260,10 +1311,7 @@ test("worker validator exposes the stable crossed-acceptance error", () => {
   );
 
   const error = assertThrows(() =>
-    validator.acceptControl(
-      "sent",
-      createWorkAcceptedFrame({ streamId }),
-    )
+    validator.acceptControl("sent", createWorkAcceptedFrame({ streamId })),
   );
   assert.deepStrictEqual(
     (error as Error & Readonly<{ code?: string }>).code,
@@ -1284,17 +1332,20 @@ function deferredCancellationOutput(): Readonly<{
   const release = Promise.withResolvers<void>();
   let settled = false;
   let cancelCalls = 0;
-  const body = new ReadableStream<Uint8Array>({
-    pull() {
-      pulling.resolve();
+  const body = new ReadableStream<Uint8Array>(
+    {
+      pull() {
+        pulling.resolve();
+      },
+      async cancel() {
+        cancelCalls++;
+        cancelling.resolve();
+        await release.promise;
+        settled = true;
+      },
     },
-    async cancel() {
-      cancelCalls++;
-      cancelling.resolve();
-      await release.promise;
-      settled = true;
-    },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
   return Object.freeze({
     body,
     pulling: pulling.promise,

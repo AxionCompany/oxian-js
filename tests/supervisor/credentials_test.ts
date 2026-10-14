@@ -117,25 +117,25 @@ test("registration authority expires and revokes exact attempt credentials", asy
   });
   const expired = await authority.issueRegistration(IDENTITY);
   nowMs = 15;
-  const expiration = await assertRejects(() =>
+  const expiration = (await assertRejects(() =>
     authority.exchange({
       identity: IDENTITY,
       credential: expired.credential,
       handshakeId: "handshake-expired",
-    })
-  ) as SupervisorError;
+    }),
+  )) as SupervisorError;
   assert.deepStrictEqual(expiration.code, "credential_expired");
 
   nowMs = 20;
   const revoked = await authority.issueRegistration(IDENTITY);
   await authority.revoke(IDENTITY);
-  const revocation = await assertRejects(() =>
+  const revocation = (await assertRejects(() =>
     authority.exchange({
       identity: IDENTITY,
       credential: revoked.credential,
       handshakeId: "handshake-revoked",
-    })
-  ) as SupervisorError;
+    }),
+  )) as SupervisorError;
   assert.deepStrictEqual(revocation.code, "credential_invalid");
 });
 
@@ -156,9 +156,8 @@ test("pluggable registration authority cannot substitute identities or credentia
         identity: input.identity,
         handshakeId: input.handshakeId,
         sessionGeneration: 1,
-        authenticatedWith: input.credential.kind === "registration"
-          ? "resume"
-          : "registration",
+        authenticatedWith:
+          input.credential.kind === "registration" ? "resume" : "registration",
         resume: {
           identity: input.identity,
           credential: { kind: "resume", capability: "resume-1" },

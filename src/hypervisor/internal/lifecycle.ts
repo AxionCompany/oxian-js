@@ -56,9 +56,7 @@ export function createConnectionLifecycleController(
   let leaseSweepTimer: unknown;
   let leaseSweepArmed = false;
 
-  const cleanup = (
-    record: ConnectionRecord,
-  ): Promise<void> => {
+  const cleanup = (record: ConnectionRecord): Promise<void> => {
     if (record.cleanup !== undefined) return record.cleanup;
     const completion = createDeferred<void>();
     record.cleanup = completion.promise;
@@ -71,11 +69,11 @@ export function createConnectionLifecycleController(
       record.acceptingWork = false;
       const disconnectPhase = record.sessionPhase;
       const disconnectReason = record.disconnectReason ?? "peer_closed";
-      record.abort.abort(createHypervisorError(
-        "connection_lost",
-        "worker connection closed",
-        { identity: record.hello?.identity },
-      ));
+      record.abort.abort(
+        createHypervisorError("connection_lost", "worker connection closed", {
+          identity: record.hello?.identity,
+        }),
+      );
       cancelConnectionTimer(options.scheduler, record, "handshakeTimer");
       cancelConnectionTimer(options.scheduler, record, "attachmentTimer");
       cancelConnectionTimer(options.scheduler, record, "readyTimer");
@@ -88,8 +86,8 @@ export function createConnectionLifecycleController(
       if (record.fence !== undefined) {
         const changed = options.dispatcher.connectionLost(record.fence);
         for (const pending of [...record.pending.values()]) {
-          const dispatch = changed.find((candidate) =>
-            candidate.operationId === pending.operationId
+          const dispatch = changed.find(
+            (candidate) => candidate.operationId === pending.operationId,
           );
           if (dispatch === undefined) continue;
           if (
@@ -101,9 +99,10 @@ export function createConnectionLifecycleController(
             // Acceptance persistence owns the final indeterminate decision.
             continue;
           }
-          const code = dispatch.status === "reschedulable"
-            ? "reschedulable"
-            : "indeterminate";
+          const code =
+            dispatch.status === "reschedulable"
+              ? "reschedulable"
+              : "indeterminate";
           options.finishPending(
             pending,
             dispatch,
@@ -130,8 +129,7 @@ export function createConnectionLifecycleController(
           const observed: unknown = options.callbacks.onDisconnect(
             Object.freeze({
               stage: "disconnect" as const,
-              stageId:
-                `disconnect:${record.fence.connectionId}:${record.fence.sessionGeneration}`,
+              stageId: `disconnect:${record.fence.connectionId}:${record.fence.sessionGeneration}`,
               callbackAttempt: 1,
               signal: record.abort.signal,
               fence: record.fence,
@@ -196,10 +194,7 @@ export function createConnectionLifecycleController(
     disconnectReason,
     closeCode = POLICY_CLOSE_CODE,
   ) => {
-    if (
-      record.transport !== undefined &&
-      record.connection !== undefined
-    ) {
+    if (record.transport !== undefined && record.connection !== undefined) {
       const frame: ControlFrame = {
         protocol: WORKER_PROTOCOL,
         type: "protocol_error",

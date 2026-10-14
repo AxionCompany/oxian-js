@@ -48,13 +48,15 @@ export function createDispatch(
     const input: WorkInput = Object.freeze({
       ...original,
       workload: expectWorkload(original.workload, "workload"),
-      target: original.target === undefined
-        ? undefined
-        : createWorkDispatchTarget(original.target),
+      target:
+        original.target === undefined
+          ? undefined
+          : createWorkDispatchTarget(original.target),
       metadata: copyJsonObject(original.metadata),
-      deadlineAtMs: original.deadlineAtMs === undefined
-        ? undefined
-        : expectFiniteTimestamp(original.deadlineAtMs, "deadlineAtMs"),
+      deadlineAtMs:
+        original.deadlineAtMs === undefined
+          ? undefined
+          : expectFiniteTimestamp(original.deadlineAtMs, "deadlineAtMs"),
     });
     if (
       input.body !== undefined &&
@@ -91,42 +93,52 @@ export function createDispatch(
             return offered;
           } catch (error) {
             if (
-              waiting && error instanceof Error && "code" in error &&
+              waiting &&
+              error instanceof Error &&
+              "code" in error &&
               error.code === "capacity_exhausted"
-            ) return undefined;
+            )
+              return undefined;
             throw error;
           }
         };
         if (options.assign !== undefined) {
-          const available = options.sessions.list().filter((session) =>
-            session.phase === "ready" &&
-            session.workloads.includes(input.workload) &&
-            session.reserved < session.capacity &&
-            (input.target === undefined ||
-              input.target.workerId === session.identity.workerId)
-          ).map(fenceForSession);
-          const selection = options.assign(Object.freeze({
-            stage: "assign" as const,
-            stageId: `assign:${operationId}`,
-            callbackAttempt: attempt?.callbackAttempt ?? 1,
-            signal: attempt?.signal ?? input.signal ?? options.signal,
-            operationId,
-            workload: input.workload,
-            metadata: input.metadata ?? {},
-            ...(input.target === undefined ? {} : { target: input.target }),
-            available: Object.freeze(available),
-          }));
+          const available = options.sessions
+            .list()
+            .filter(
+              (session) =>
+                session.phase === "ready" &&
+                session.workloads.includes(input.workload) &&
+                session.reserved < session.capacity &&
+                (input.target === undefined ||
+                  input.target.workerId === session.identity.workerId),
+            )
+            .map(fenceForSession);
+          const selection = options.assign(
+            Object.freeze({
+              stage: "assign" as const,
+              stageId: `assign:${operationId}`,
+              callbackAttempt: attempt?.callbackAttempt ?? 1,
+              signal: attempt?.signal ?? input.signal ?? options.signal,
+              operationId,
+              workload: input.workload,
+              metadata: input.metadata ?? {},
+              ...(input.target === undefined ? {} : { target: input.target }),
+              available: Object.freeze(available),
+            }),
+          );
           const selectedOffer = (
             selected: Awaited<ReturnType<HypervisorAssign>>,
           ): WorkDispatch | undefined => {
             attempt?.assertActive();
             if (selected !== undefined) {
-              const candidate = available.find((fence) =>
-                fence.connectionId === selected.connectionId &&
-                fence.sessionGeneration === selected.sessionGeneration &&
-                fence.identity.workerId === selected.identity.workerId &&
-                fence.identity.attemptId === selected.identity.attemptId &&
-                fence.identity.epoch === selected.identity.epoch
+              const candidate = available.find(
+                (fence) =>
+                  fence.connectionId === selected.connectionId &&
+                  fence.sessionGeneration === selected.sessionGeneration &&
+                  fence.identity.workerId === selected.identity.workerId &&
+                  fence.identity.attemptId === selected.identity.attemptId &&
+                  fence.identity.epoch === selected.identity.epoch,
               );
               if (candidate === undefined) {
                 throw new TypeError(
@@ -161,22 +173,24 @@ export function createDispatch(
     }
     const assignment = offered.assignment!;
     try {
-      await options.onWorkAssigned?.(Object.freeze({
-        stage: "work_assigned" as const,
-        stageId: `work_assigned:${offered.operationId}:${assignment.streamId}`,
-        callbackAttempt: 1,
-        signal: input.signal ?? options.signal,
-        operationId: offered.operationId,
-        workload: offered.workload,
-        ...(offered.target === undefined ? {} : { target: offered.target }),
-        metadata: offered.metadata,
-        ...(offered.deadlineAtMs === undefined
-          ? {}
-          : { deadlineAtMs: offered.deadlineAtMs }),
-        deliveryCount: offered.deliveryCount,
-        assignment,
-        assignedAtMs: options.clock(),
-      }));
+      await options.onWorkAssigned?.(
+        Object.freeze({
+          stage: "work_assigned" as const,
+          stageId: `work_assigned:${offered.operationId}:${assignment.streamId}`,
+          callbackAttempt: 1,
+          signal: input.signal ?? options.signal,
+          operationId: offered.operationId,
+          workload: offered.workload,
+          ...(offered.target === undefined ? {} : { target: offered.target }),
+          metadata: offered.metadata,
+          ...(offered.deadlineAtMs === undefined
+            ? {}
+            : { deadlineAtMs: offered.deadlineAtMs }),
+          deliveryCount: offered.deliveryCount,
+          assignment,
+          assignedAtMs: options.clock(),
+        }),
+      );
     } catch (cause) {
       options.dispatcher.withdrawOffer(
         offered.operationId,
@@ -184,9 +198,10 @@ export function createDispatch(
         assignment.streamId,
         {
           code: "work_assignment_rejected",
-          message: cause instanceof Error
-            ? cause.message
-            : "work assignment callback failed",
+          message:
+            cause instanceof Error
+              ? cause.message
+              : "work assignment callback failed",
         },
       );
       throw cause;

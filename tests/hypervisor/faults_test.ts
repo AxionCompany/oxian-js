@@ -128,10 +128,7 @@ async function readAll(
   } finally {
     reader.releaseLock();
   }
-  const length = chunks.reduce(
-    (total, chunk) => total + chunk.byteLength,
-    0,
-  );
+  const length = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
   const joined = new Uint8Array(length);
   let offset = 0;
   for (const chunk of chunks) {
@@ -200,12 +197,14 @@ async function startControlledHarness(
 ): Promise<ControlledHarness> {
   const capacity = input.capacity ?? 4;
   const repository = createEphemeralWorkerStore();
-  await repository.define(createWorkerDefinition({
-    workerId: "controlled-worker",
-    providerId: "attached",
-    workloads: ["sandbox.command"],
-    capacity,
-  }));
+  await repository.define(
+    createWorkerDefinition({
+      workerId: "controlled-worker",
+      providerId: "attached",
+      workloads: ["sandbox.command"],
+      capacity,
+    }),
+  );
   const identity = (await repository.activate("controlled-worker")).attempt
     .identity;
   const authority = createEphemeralCredentialLifecycle();
@@ -279,12 +278,12 @@ async function startControlledHarness(
     closed = (async () => {
       await Promise.all(
         [...workers].map((candidate) =>
-          candidate.close("controlled_test_cleanup")
+          candidate.close("controlled_test_cleanup"),
         ),
       );
-      await hypervisor.shutdown("controlled_test_cleanup").catch(() =>
-        undefined
-      );
+      await hypervisor
+        .shutdown("controlled_test_cleanup")
+        .catch(() => undefined);
       await listener.shutdown().catch(() => undefined);
     })();
     return closed;
@@ -303,36 +302,43 @@ test("request chunk that exactly consumes credit still discovers EOF and sends w
   const request = encoder.encode("exact-credit-request");
   let pulls = 0;
   let emitted = false;
-  const body = new ReadableStream<Uint8Array>({
-    pull(controller) {
-      pulls++;
-      if (!emitted) {
-        emitted = true;
-        controller.enqueue(request);
-      } else {
-        controller.close();
-      }
+  const body = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        pulls++;
+        if (!emitted) {
+          emitted = true;
+          controller.enqueue(request);
+        } else {
+          controller.close();
+        }
+      },
     },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
   const harness = await startControlledHarness({
     commitAcceptedWork: () => Promise.resolve(),
   });
 
   try {
-    const handle = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-      body,
-    }));
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+        body,
+      }),
+    );
     const open = await nextControlledControl(harness.worker, "work.open");
     assert.deepStrictEqual(open.streamId, handle.streamId);
     await harness.worker.transport.sendControl(
       createWorkAcceptedFrame({ streamId: handle.streamId }),
     );
     await nextControlledControl(harness.worker, "work.start");
-    await harness.worker.transport.sendControl(createWorkCreditFrame({
-      streamId: handle.streamId,
-      bytes: request.byteLength,
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkCreditFrame({
+        streamId: handle.streamId,
+        bytes: request.byteLength,
+      }),
+    );
 
     let data: Uint8Array | undefined;
     let ended = false;
@@ -358,13 +364,17 @@ test("request chunk that exactly consumes credit still discovers EOF and sends w
     assert.deepStrictEqual(data, request);
     assert.deepStrictEqual(pulls, 2);
 
-    await harness.worker.transport.sendControl(createWorkMetadataFrame({
-      streamId: handle.streamId,
-      metadata: {},
-    }));
-    await harness.worker.transport.sendControl(createWorkEndFrame({
-      streamId: handle.streamId,
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
+        streamId: handle.streamId,
+        metadata: {},
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
+        streamId: handle.streamId,
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(handle.metadata), {});
     assert.deepStrictEqual(
       await withTimeout(readAll(handle.output)),
@@ -386,9 +396,11 @@ test("persistence rejection waits for peer cancellation acknowledgement before c
   });
 
   try {
-    const handle = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-    }));
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+      }),
+    );
     await nextControlledControl(harness.worker, "work.open");
     await harness.worker.transport.sendControl(
       createWorkAcceptedFrame({ streamId: handle.streamId }),
@@ -410,10 +422,12 @@ test("persistence rejection waits for peer cancellation acknowledgement before c
       1,
     );
 
-    await harness.worker.transport.sendControl(createWorkCancelFrame({
-      streamId: handle.streamId,
-      reason: "cancellation_acknowledged",
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: handle.streamId,
+        reason: "cancellation_acknowledged",
+      }),
+    );
     assert.deepStrictEqual(
       (await withTimeout(handle.completed)).status,
       "indeterminate",
@@ -421,8 +435,8 @@ test("persistence rejection waits for peer cancellation acknowledgement before c
     await expectRejectedHandle(handle);
     await waitFor(
       () =>
-        harness.hypervisor.sessions.get(harness.identity.workerId)
-          ?.reserved === 0,
+        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved ===
+        0,
       "cancellation acknowledgement did not release the reservation",
     );
     assert.deepStrictEqual(
@@ -446,9 +460,11 @@ test("caller cancellation before Accepted tolerates crossed Accepted without Sta
   });
 
   try {
-    const handle = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-    }));
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+      }),
+    );
     await nextControlledControl(harness.worker, "work.open");
 
     const cancellation = handle.cancel("cancelled_before_accepted");
@@ -462,10 +478,12 @@ test("caller cancellation before Accepted tolerates crossed Accepted without Sta
       "work.cancel",
     );
     assert.deepStrictEqual(cancelFrame.streamId, handle.streamId);
-    await harness.worker.transport.sendControl(createWorkCancelFrame({
-      streamId: handle.streamId,
-      reason: "cancelled_before_accepted_ack",
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: handle.streamId,
+        reason: "cancelled_before_accepted_ack",
+      }),
+    );
 
     assert.deepStrictEqual(
       (await withTimeout(cancellation)).status,
@@ -500,9 +518,11 @@ test("acceptance persistence admission cap reschedules one stream without distur
   });
 
   try {
-    const admitted = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-    }));
+    const admitted = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+      }),
+    );
     await nextControlledControl(harness.worker, "work.open");
     await harness.worker.transport.sendControl(
       createWorkAcceptedFrame({ streamId: admitted.streamId }),
@@ -513,9 +533,11 @@ test("acceptance persistence admission cap reschedules one stream without distur
       1,
     );
 
-    const rejected = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-    }));
+    const rejected = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+      }),
+    );
     await nextControlledControl(harness.worker, "work.open");
     await harness.worker.transport.sendControl(
       createWorkAcceptedFrame({ streamId: rejected.streamId }),
@@ -531,10 +553,12 @@ test("acceptance persistence admission cap reschedules one stream without distur
     assert.deepStrictEqual(rejectionCompletion.settled(), false);
     assert.deepStrictEqual(persistenceCalls, 1);
 
-    await harness.worker.transport.sendControl(createWorkCancelFrame({
-      streamId: rejected.streamId,
-      reason: "acceptance_commit_capacity_ack",
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: rejected.streamId,
+        reason: "acceptance_commit_capacity_ack",
+      }),
+    );
     assert.deepStrictEqual(
       (await withTimeout(rejected.completed)).status,
       "reschedulable",
@@ -549,13 +573,17 @@ test("acceptance persistence admission cap reschedules one stream without distur
     releasePersistence.resolve();
     await nextControlledControl(harness.worker, "work.start");
     await receiveRequestEnd(harness.worker, admitted.streamId);
-    await harness.worker.transport.sendControl(createWorkMetadataFrame({
-      streamId: admitted.streamId,
-      metadata: { admitted: true },
-    }));
-    await harness.worker.transport.sendControl(createWorkEndFrame({
-      streamId: admitted.streamId,
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
+        streamId: admitted.streamId,
+        metadata: { admitted: true },
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
+        streamId: admitted.streamId,
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(admitted.metadata), {
       admitted: true,
     });
@@ -588,9 +616,11 @@ test("socket loss during gated persistence settles only after the durable outcom
   });
 
   try {
-    const handle = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-    }));
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+      }),
+    );
     await nextControlledControl(harness.worker, "work.open");
     await harness.worker.transport.sendControl(
       createWorkAcceptedFrame({ streamId: handle.streamId }),
@@ -649,9 +679,11 @@ test("peer terminal during gated persistence becomes indeterminate without pendi
   });
 
   try {
-    const handle = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-    }));
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+      }),
+    );
     await nextControlledControl(harness.worker, "work.open");
     await harness.worker.transport.sendControl(
       createWorkAcceptedFrame({ streamId: handle.streamId }),
@@ -662,10 +694,12 @@ test("peer terminal during gated persistence becomes indeterminate without pendi
       1,
     );
 
-    await harness.worker.transport.sendControl(createWorkCancelFrame({
-      streamId: handle.streamId,
-      reason: "worker_rejected_before_start",
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: handle.streamId,
+        reason: "worker_rejected_before_start",
+      }),
+    );
     await nextControlledControl(harness.worker, "work.cancel");
     const completion = observeSettlement(handle.completed);
     await new Promise((resolve) => setTimeout(resolve, 40));
@@ -706,9 +740,11 @@ test("connection loss before Accepted is reschedulable", async () => {
   });
 
   try {
-    const handle = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-    }));
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+      }),
+    );
     await nextControlledControl(harness.worker, "work.open");
     await harness.worker.close("loss_before_accepted");
 
@@ -735,9 +771,11 @@ test("connection loss after Start is indeterminate and never replayed", async ()
   });
 
   try {
-    const handle = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-    }));
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+      }),
+    );
     await nextControlledControl(harness.worker, "work.open");
     await harness.worker.transport.sendControl(
       createWorkAcceptedFrame({ streamId: handle.streamId }),
@@ -756,10 +794,13 @@ test("connection loss after Start is indeterminate and never replayed", async ()
     await assertRejects(() => handle.metadata, Error);
     await assertRejects(() => readAll(handle.output), Error);
 
-    const replacement = await harness.connect({
-      kind: "resume",
-      capability: harness.worker.welcome.resumeCapability,
-    }, "replacement-handshake");
+    const replacement = await harness.connect(
+      {
+        kind: "resume",
+        capability: harness.worker.welcome.resumeCapability,
+      },
+      "replacement-handshake",
+    );
     await expectNoControlledMessage(replacement, 75);
     assert.deepStrictEqual(
       Object.values(harness.hypervisor.snapshot().work).every(
@@ -778,19 +819,23 @@ test("worker draining before Accepted rejects as reschedulable and releases its 
   });
 
   try {
-    const handle = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-    }));
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+      }),
+    );
     await nextControlledControl(harness.worker, "work.open");
     const drain = harness.hypervisor.drain(
       harness.identity.workerId,
       "preaccept_rotation",
     );
     await nextControlledControl(harness.worker, "drain");
-    await harness.worker.transport.sendControl(createWorkCancelFrame({
-      streamId: handle.streamId,
-      reason: "worker_draining",
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: handle.streamId,
+        reason: "worker_draining",
+      }),
+    );
     await nextControlledControl(harness.worker, "work.cancel");
 
     const result = await withTimeout(handle.completed);
@@ -800,9 +845,11 @@ test("worker draining before Accepted rejects as reschedulable and releases its 
       harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
       0,
     );
-    await harness.worker.transport.sendControl(createDrainedFrame({
-      connectionId: harness.worker.welcome.connectionId,
-    }));
+    await harness.worker.transport.sendControl(
+      createDrainedFrame({
+        connectionId: harness.worker.welcome.connectionId,
+      }),
+    );
     await withTimeout(drain);
     assert.deepStrictEqual(harness.hypervisor.snapshot().work.reschedulable, 0);
   } finally {
@@ -833,9 +880,7 @@ test("output cancellation upgrades a sent request End and leaves concurrent work
       "work.cancel",
     );
     assert.deepStrictEqual(cancelFrame.streamId, cancelledHandle.streamId);
-    const cancellationCompletion = observeSettlement(
-      cancelledHandle.completed,
-    );
+    const cancellationCompletion = observeSettlement(cancelledHandle.completed);
 
     // Keep the cancellation unacknowledged while another operation executes
     // to prove the stream-local End->Cancel upgrade does not close the
@@ -853,13 +898,17 @@ test("output cancellation upgrades a sent request End and leaves concurrent work
     );
     await nextControlledControl(harness.worker, "work.start");
     await receiveRequestEnd(harness.worker, healthyHandle.streamId);
-    await harness.worker.transport.sendControl(createWorkMetadataFrame({
-      streamId: healthyHandle.streamId,
-      metadata: { result: "healthy" },
-    }));
-    await harness.worker.transport.sendControl(createWorkEndFrame({
-      streamId: healthyHandle.streamId,
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
+        streamId: healthyHandle.streamId,
+        metadata: { result: "healthy" },
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
+        streamId: healthyHandle.streamId,
+      }),
+    );
 
     assert.deepStrictEqual(await withTimeout(healthyHandle.metadata), {
       result: "healthy",
@@ -875,10 +924,12 @@ test("output cancellation upgrades a sent request End and leaves concurrent work
     assert.deepStrictEqual(cancellationCompletion.settled(), false);
     assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
 
-    await harness.worker.transport.sendControl(createWorkCancelFrame({
-      streamId: cancelledHandle.streamId,
-      reason: "response_consumer_left_ack",
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: cancelledHandle.streamId,
+        reason: "response_consumer_left_ack",
+      }),
+    );
     await withTimeout(cancellation);
     assert.deepStrictEqual(
       (await withTimeout(cancelledHandle.completed)).status,
@@ -910,10 +961,12 @@ test("crossed worker End after Hypervisor Cancel settles only after worker abort
     );
     await nextControlledControl(harness.worker, "work.start");
     await receiveRequestEnd(harness.worker, crossed.streamId);
-    await harness.worker.transport.sendControl(createWorkMetadataFrame({
-      streamId: crossed.streamId,
-      metadata: { crossed: "normal_end" },
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
+        streamId: crossed.streamId,
+        metadata: { crossed: "normal_end" },
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(crossed.metadata), {
       crossed: "normal_end",
     });
@@ -927,9 +980,11 @@ test("crossed worker End after Hypervisor Cancel settles only after worker abort
     const cancellation = crossed.cancel("caller_cancelled");
     // Send the normal response End without first reading the Hypervisor's
     // Cancel. It therefore crosses the peer abort on the wire.
-    await harness.worker.transport.sendControl(createWorkEndFrame({
-      streamId: crossed.streamId,
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
+        streamId: crossed.streamId,
+      }),
+    );
     const peerCancel = await nextControlledControl(
       harness.worker,
       "work.cancel",
@@ -953,13 +1008,17 @@ test("crossed worker End after Hypervisor Cancel settles only after worker abort
     );
     await nextControlledControl(harness.worker, "work.start");
     await receiveRequestEnd(harness.worker, healthy.streamId);
-    await harness.worker.transport.sendControl(createWorkMetadataFrame({
-      streamId: healthy.streamId,
-      metadata: { healthy: true },
-    }));
-    await harness.worker.transport.sendControl(createWorkEndFrame({
-      streamId: healthy.streamId,
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
+        streamId: healthy.streamId,
+        metadata: { healthy: true },
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
+        streamId: healthy.streamId,
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(healthy.metadata), {
       healthy: true,
     });
@@ -972,10 +1031,12 @@ test("crossed worker End after Hypervisor Cancel settles only after worker abort
 
     // Upgrade the worker's already-sent End to Cancel after observing the
     // peer abort. Only this closes the cancellation handshake.
-    await harness.worker.transport.sendControl(createWorkCancelFrame({
-      streamId: crossed.streamId,
-      reason: "caller_cancelled_ack",
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: crossed.streamId,
+        reason: "caller_cancelled_ack",
+      }),
+    );
     assert.deepStrictEqual(
       (await withTimeout(cancellation)).status,
       "cancelled",
@@ -1000,16 +1061,19 @@ test("oversized streamed request chunk cancels only that stream and keeps multip
   const oversized = new Uint8Array(
     WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes + 1,
   ).fill(0x7b);
-  const oversizedBody = new ReadableStream<Uint8Array>({
-    pull(controller) {
-      if (pulled) {
-        controller.close();
-        return;
-      }
-      pulled = true;
-      controller.enqueue(oversized);
+  const oversizedBody = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        if (pulled) {
+          controller.close();
+          return;
+        }
+        pulled = true;
+        controller.enqueue(oversized);
+      },
     },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
   const harness = await startControlledHarness({
     commitAcceptedWork: () => Promise.resolve(),
   });
@@ -1026,10 +1090,12 @@ test("oversized streamed request chunk cancels only that stream and keeps multip
       createWorkAcceptedFrame({ streamId: oversizedHandle.streamId }),
     );
     await nextControlledControl(harness.worker, "work.start");
-    await harness.worker.transport.sendControl(createWorkCreditFrame({
-      streamId: oversizedHandle.streamId,
-      bytes: oversized.byteLength,
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkCreditFrame({
+        streamId: oversizedHandle.streamId,
+        bytes: oversized.byteLength,
+      }),
+    );
 
     let cancellationSeen = false;
     while (!cancellationSeen) {
@@ -1063,13 +1129,17 @@ test("oversized streamed request chunk cancels only that stream and keeps multip
     );
     await nextControlledControl(harness.worker, "work.start");
     await receiveRequestEnd(harness.worker, healthyHandle.streamId);
-    await harness.worker.transport.sendControl(createWorkMetadataFrame({
-      streamId: healthyHandle.streamId,
-      metadata: { isolated: true },
-    }));
-    await harness.worker.transport.sendControl(createWorkEndFrame({
-      streamId: healthyHandle.streamId,
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
+        streamId: healthyHandle.streamId,
+        metadata: { isolated: true },
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
+        streamId: healthyHandle.streamId,
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(healthyHandle.metadata), {
       isolated: true,
     });
@@ -1079,10 +1149,12 @@ test("oversized streamed request chunk cancels only that stream and keeps multip
     );
     assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
 
-    await harness.worker.transport.sendControl(createWorkCancelFrame({
-      streamId: oversizedHandle.streamId,
-      reason: "oversized_chunk_ack",
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: oversizedHandle.streamId,
+        reason: "oversized_chunk_ack",
+      }),
+    );
     assert.deepStrictEqual(
       (await withTimeout(oversizedHandle.completed)).status,
       "cancelled",
@@ -1119,27 +1191,26 @@ test("queued response data racing output cancellation is discarded without teari
       racedHandle.streamId,
     );
     assert.deepStrictEqual(responseCredit > 0, true);
-    await harness.worker.transport.sendControl(createWorkMetadataFrame({
-      streamId: racedHandle.streamId,
-      metadata: { response: "started" },
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
+        streamId: racedHandle.streamId,
+        metadata: { response: "started" },
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(racedHandle.metadata), {
       response: "started",
     });
 
     const chunkBytes = Math.min(1_024, responseCredit);
-    const chunkCount = Math.min(
-      64,
-      Math.floor(responseCredit / chunkBytes),
-    );
-    const sends = Array.from(
-      { length: chunkCount },
-      (_, sequence) =>
-        harness.worker.transport.sendData(createWorkDataFrame({
+    const chunkCount = Math.min(64, Math.floor(responseCredit / chunkBytes));
+    const sends = Array.from({ length: chunkCount }, (_, sequence) =>
+      harness.worker.transport.sendData(
+        createWorkDataFrame({
           streamId: racedHandle.streamId,
           sequence,
           payload: new Uint8Array(chunkBytes).fill(sequence),
-        })),
+        }),
+      ),
     );
     const racedReader = racedHandle.output.getReader();
     const cancellation = racedReader.cancel("queued_data_consumer_left");
@@ -1160,10 +1231,12 @@ test("queued response data racing output cancellation is discarded without teari
       }
       throw new TypeError(`unexpected frame ${frame.type}`);
     }
-    await harness.worker.transport.sendControl(createWorkCancelFrame({
-      streamId: racedHandle.streamId,
-      reason: "queued_data_consumer_left_ack",
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: racedHandle.streamId,
+        reason: "queued_data_consumer_left_ack",
+      }),
+    );
     await withTimeout(cancellation);
     assert.deepStrictEqual(
       (await withTimeout(racedHandle.completed)).status,
@@ -1184,13 +1257,17 @@ test("queued response data racing output cancellation is discarded without teari
     );
     await nextControlledControl(harness.worker, "work.start");
     await receiveRequestEnd(harness.worker, healthyHandle.streamId);
-    await harness.worker.transport.sendControl(createWorkMetadataFrame({
-      streamId: healthyHandle.streamId,
-      metadata: { afterRace: "healthy" },
-    }));
-    await harness.worker.transport.sendControl(createWorkEndFrame({
-      streamId: healthyHandle.streamId,
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
+        streamId: healthyHandle.streamId,
+        metadata: { afterRace: "healthy" },
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
+        streamId: healthyHandle.streamId,
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(healthyHandle.metadata), {
       afterRace: "healthy",
     });
@@ -1265,10 +1342,7 @@ test("caller abort racing direct dispatch sends Open then stream-local Cancel an
 
     // Even though the peer has not read WorkOpen yet, the wire order must
     // remain Open then Cancel.
-    const victimOpen = await nextControlledControl(
-      harness.worker,
-      "work.open",
-    );
+    const victimOpen = await nextControlledControl(harness.worker, "work.open");
     assert.deepStrictEqual(victimOpen.streamId, victim.streamId);
     const victimCancel = await nextControlledControl(
       harness.worker,
@@ -1276,13 +1350,17 @@ test("caller abort racing direct dispatch sends Open then stream-local Cancel an
     );
     assert.deepStrictEqual(victimCancel.streamId, victim.streamId);
 
-    await harness.worker.transport.sendControl(createWorkMetadataFrame({
-      streamId: survivor.streamId,
-      metadata: { survivor: true },
-    }));
-    await harness.worker.transport.sendControl(createWorkEndFrame({
-      streamId: survivor.streamId,
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
+        streamId: survivor.streamId,
+        metadata: { survivor: true },
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
+        streamId: survivor.streamId,
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(survivor.metadata), {
       survivor: true,
     });
@@ -1292,10 +1370,12 @@ test("caller abort racing direct dispatch sends Open then stream-local Cancel an
     );
     assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
 
-    await harness.worker.transport.sendControl(createWorkCancelFrame({
-      streamId: victim.streamId,
-      reason: "caller_left_ack",
-    }));
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
+        streamId: victim.streamId,
+        reason: "caller_left_ack",
+      }),
+    );
     assert.deepStrictEqual(
       (await withTimeout(victim.completed)).status,
       "cancelled",
@@ -1331,10 +1411,12 @@ test("post-Open deadline scheduler failure returns one handle and settles throug
 
   try {
     rejectScheduling = true;
-    const handle = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-      deadlineAtMs: Date.now() + 1_000,
-    }));
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+        deadlineAtMs: Date.now() + 1_000,
+      }),
+    );
 
     assert.deepStrictEqual(
       (await withTimeout(handle.completed)).status,
@@ -1371,30 +1453,35 @@ test("replacement session fences stale socket frames and remains routable", asyn
   });
 
   try {
-    const replacement = await harness.connect({
-      kind: "resume",
-      capability: harness.worker.welcome.resumeCapability,
-    }, "newer-session-handshake");
+    const replacement = await harness.connect(
+      {
+        kind: "resume",
+        capability: harness.worker.welcome.resumeCapability,
+      },
+      "newer-session-handshake",
+    );
     assert.deepStrictEqual(
-      harness.hypervisor.sessions.get(harness.identity.workerId)
-        ?.connectionId,
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.connectionId,
       replacement.welcome.connectionId,
     );
 
     // If the replacement close has not reached the old socket yet, this
     // stale heartbeat reaches the Hypervisor and must fail its current
     // session fence. If closure won the race, sendControl rejects locally.
-    await harness.worker.transport.sendControl(createHeartbeatFrame({
-      connectionId: harness.worker.welcome.connectionId,
-      sequence: 0,
-      inflight: 0,
-      availableCapacity: 4,
-    })).catch(() => undefined);
+    await harness.worker.transport
+      .sendControl(
+        createHeartbeatFrame({
+          connectionId: harness.worker.welcome.connectionId,
+          sequence: 0,
+          inflight: 0,
+          availableCapacity: 4,
+        }),
+      )
+      .catch(() => undefined);
     await withTimeout(harness.worker.transport.closed);
     await new Promise((resolve) => setTimeout(resolve, 30));
     assert.deepStrictEqual(
-      harness.hypervisor.sessions.get(harness.identity.workerId)
-        ?.connectionId,
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.connectionId,
       replacement.welcome.connectionId,
     );
     assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
@@ -1409,13 +1496,17 @@ test("replacement session fences stale socket frames and remains routable", asyn
     );
     await nextControlledControl(replacement, "work.start");
     await receiveRequestEnd(replacement, handle.streamId);
-    await replacement.transport.sendControl(createWorkMetadataFrame({
-      streamId: handle.streamId,
-      metadata: { owner: "replacement" },
-    }));
-    await replacement.transport.sendControl(createWorkEndFrame({
-      streamId: handle.streamId,
-    }));
+    await replacement.transport.sendControl(
+      createWorkMetadataFrame({
+        streamId: handle.streamId,
+        metadata: { owner: "replacement" },
+      }),
+    );
+    await replacement.transport.sendControl(
+      createWorkEndFrame({
+        streamId: handle.streamId,
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(handle.metadata), {
       owner: "replacement",
     });
@@ -1494,10 +1585,13 @@ test("expired lease event cannot close a newer generation reusing its connection
       "expired generation socket did not close",
     );
 
-    const replacement = await harness.connect({
-      kind: "resume",
-      capability: harness.worker.welcome.resumeCapability,
-    }, "reused-connection-generation-2");
+    const replacement = await harness.connect(
+      {
+        kind: "resume",
+        capability: harness.worker.welcome.resumeCapability,
+      },
+      "reused-connection-generation-2",
+    );
     assert.deepStrictEqual(
       replacement.welcome.connectionId,
       reusedConnectionId,
@@ -1513,8 +1607,7 @@ test("expired lease event cannot close a newer generation reusing its connection
     runNextSweep();
     assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
     assert.deepStrictEqual(
-      harness.hypervisor.sessions.get(harness.identity.workerId)
-        ?.connectionId,
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.connectionId,
       reusedConnectionId,
     );
 
@@ -1528,13 +1621,17 @@ test("expired lease event cannot close a newer generation reusing its connection
     );
     await nextControlledControl(replacement, "work.start");
     await receiveRequestEnd(replacement, handle.streamId);
-    await replacement.transport.sendControl(createWorkMetadataFrame({
-      streamId: handle.streamId,
-      metadata: { generation: 2 },
-    }));
-    await replacement.transport.sendControl(createWorkEndFrame({
-      streamId: handle.streamId,
-    }));
+    await replacement.transport.sendControl(
+      createWorkMetadataFrame({
+        streamId: handle.streamId,
+        metadata: { generation: 2 },
+      }),
+    );
+    await replacement.transport.sendControl(
+      createWorkEndFrame({
+        streamId: handle.streamId,
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(handle.metadata), {
       generation: 2,
     });
@@ -1560,13 +1657,12 @@ test("terminal shutdown remains open until the worker acknowledges its ordered S
     );
     const settlement = observeSettlement(shutdown);
     await nextControlledControl(harness.worker, "drain");
-    await harness.worker.transport.sendControl(createDrainedFrame({
-      connectionId: harness.worker.welcome.connectionId,
-    }));
-    const terminal = await nextControlledControl(
-      harness.worker,
-      "shutdown",
+    await harness.worker.transport.sendControl(
+      createDrainedFrame({
+        connectionId: harness.worker.welcome.connectionId,
+      }),
     );
+    const terminal = await nextControlledControl(harness.worker, "shutdown");
     assert.deepStrictEqual(terminal.reason, "drain_complete");
     await Promise.resolve();
     assert.deepStrictEqual(settlement.settled(), false);
@@ -1594,10 +1690,7 @@ test("terminal shutdown waits for drain deadline before Shutdown when worker doe
     await new Promise((resolve) => setTimeout(resolve, 30));
     assert.deepStrictEqual(settlement.settled(), false);
 
-    const terminal = await nextControlledControl(
-      harness.worker,
-      "shutdown",
-    );
+    const terminal = await nextControlledControl(harness.worker, "shutdown");
     assert.deepStrictEqual(
       terminal.connectionId,
       harness.worker.welcome.connectionId,

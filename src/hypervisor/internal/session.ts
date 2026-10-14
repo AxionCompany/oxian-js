@@ -75,10 +75,9 @@ export function createSessionProtocolController(
   const requireAdmit = () => {
     const admit = options.hypervisor.admit;
     if (admit === undefined) {
-      throw Object.assign(
-        new Error("Hypervisor does not admit Workers"),
-        { code: "authentication_failed" },
-      );
+      throw Object.assign(new Error("Hypervisor does not admit Workers"), {
+        code: "authentication_failed",
+      });
     }
     return admit;
   };
@@ -90,17 +89,16 @@ export function createSessionProtocolController(
     ensureOpen(record);
     record.hello = hello;
     const connectionId = options.directory.reserveId(record);
-    await awaitExternal(
-      record,
-      "handshake",
-      () =>
-        options.callbacks.onConnect?.(Object.freeze({
+    await awaitExternal(record, "handshake", () =>
+      options.callbacks.onConnect?.(
+        Object.freeze({
           stage: "connect" as const,
           stageId: `connect:${connectionId}`,
           callbackAttempt: 1,
           signal: record.abort.signal,
           connectionId,
-        })),
+        }),
+      ),
     );
     ensureOpen(record);
     const admitContext = Object.freeze({
@@ -114,10 +112,8 @@ export function createSessionProtocolController(
       workloads: hello.workloads,
       capacity: hello.capacity,
     });
-    const admitted = await awaitExternal(
-      record,
-      "handshake",
-      () => requireAdmit()(admitContext),
+    const admitted = await awaitExternal(record, "handshake", () =>
+      requireAdmit()(admitContext),
     );
     ensureOpen(record);
     const definition = admitted?.definition;
@@ -139,8 +135,8 @@ export function createSessionProtocolController(
     }
     if (
       hello.capacity > definition.capacity ||
-      hello.workloads.some((workload) =>
-        !definition.workloads.includes(workload)
+      hello.workloads.some(
+        (workload) => !definition.workloads.includes(workload),
       )
     ) {
       throw Object.assign(
@@ -151,14 +147,13 @@ export function createSessionProtocolController(
     options.admission.assertAuthenticatedAvailable();
     options.admission.reserveAuthenticated(record);
 
-    await awaitExternal(
-      record,
-      "handshake",
-      () =>
-        options.callbacks.onAdmit?.(Object.freeze({
+    await awaitExternal(record, "handshake", () =>
+      options.callbacks.onAdmit?.(
+        Object.freeze({
           ...admitContext,
           ...admitted,
-        })),
+        }),
+      ),
     );
     ensureOpen(record);
 
@@ -184,11 +179,9 @@ export function createSessionProtocolController(
     record.sessionPhase = "authenticated";
     options.directory.publish(record);
 
-    await awaitExternal(
-      record,
-      "handshake",
-      () =>
-        options.callbacks.onHandshake?.(Object.freeze({
+    await awaitExternal(record, "handshake", () =>
+      options.callbacks.onHandshake?.(
+        Object.freeze({
           stage: "handshake" as const,
           stageId: `handshake:${
             record.fence!.connectionId
@@ -197,7 +190,8 @@ export function createSessionProtocolController(
           signal: record.abort.signal,
           fence: record.fence!,
           definition,
-        })),
+        }),
+      ),
     );
     ensureOpen(record);
     const bootstrap = copyBootstrap(admitted.bootstrap ?? {});
@@ -264,11 +258,9 @@ export function createSessionProtocolController(
       }
 
       if (options.callbacks.onReady !== undefined) {
-        await awaitExternal(
-          record,
-          "ready",
-          () =>
-            options.callbacks.onReady!(Object.freeze({
+        await awaitExternal(record, "ready", () =>
+          options.callbacks.onReady!(
+            Object.freeze({
               stage: "ready" as const,
               stageId: `ready:${record.fence!.connectionId}:${
                 record.fence!.sessionGeneration
@@ -278,7 +270,8 @@ export function createSessionProtocolController(
               definition: record.definition!,
               metadata: frame.metadata,
               signal: record.abort.signal,
-            })),
+            }),
+          ),
         );
         ensureOpen(record);
       }
@@ -310,17 +303,20 @@ export function createSessionProtocolController(
             options.config.proactiveDrainMarginMs -
             Math.max(0, options.clock() - record.connectedAtMs),
         );
-        record.ageTimer = options.scheduler.schedule(() => {
-          void options.drainRecord(
-            record,
-            "connection_age",
-            "rotate",
-            Math.min(
-              options.config.shutdownTimeoutMs,
-              options.config.proactiveDrainMarginMs,
-            ),
-          );
-        }, Math.min(MAX_TIMER_MS, readyDrainAfterMs));
+        record.ageTimer = options.scheduler.schedule(
+          () => {
+            void options.drainRecord(
+              record,
+              "connection_age",
+              "rotate",
+              Math.min(
+                options.config.shutdownTimeoutMs,
+                options.config.proactiveDrainMarginMs,
+              ),
+            );
+          },
+          Math.min(MAX_TIMER_MS, readyDrainAfterMs),
+        );
       }
     } catch (error) {
       if (record.fence !== undefined) options.sessions.detach(record.fence);
@@ -337,11 +333,9 @@ export function createSessionProtocolController(
     if (await options.handleWorkControl(record, frame, disposition)) return;
     if (frame.type === "heartbeat") {
       if (options.callbacks.onHeartbeat !== undefined) {
-        await awaitExternal(
-          record,
-          "ready",
-          () =>
-            options.callbacks.onHeartbeat!(Object.freeze({
+        await awaitExternal(record, "ready", () =>
+          options.callbacks.onHeartbeat!(
+            Object.freeze({
               stage: "heartbeat" as const,
               stageId: `heartbeat:${
                 record.fence!.connectionId
@@ -354,7 +348,8 @@ export function createSessionProtocolController(
               availableCapacity: frame.availableCapacity,
               metadata: frame.metadata,
               signal: record.abort.signal,
-            })),
+            }),
+          ),
         );
         ensureOpen(record);
       }

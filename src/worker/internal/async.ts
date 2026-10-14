@@ -82,12 +82,7 @@ export function takeWithTimeout<T>(
   return new Promise<IteratorResult<T>>((resolve, reject) => {
     const timer = setTimeout(() => {
       cleanup();
-      reject(
-        createWorkerError(
-          "handshake_failed",
-          timeoutMessage,
-        ),
-      );
+      reject(createWorkerError("handshake_failed", timeoutMessage));
     }, timeoutMs);
 
     const cleanup = (): void => {
@@ -127,9 +122,7 @@ export function runBoundedHandshakeStep<T>(
   return new Promise<T>((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
-      settleReject(
-        new DOMException(`${label} timed out`, "TimeoutError"),
-      );
+      settleReject(new DOMException(`${label} timed out`, "TimeoutError"));
     }, timeoutMs);
     const cleanup = (): void => {
       clearTimeout(timer);
@@ -148,9 +141,7 @@ export function runBoundedHandshakeStep<T>(
       reject(error);
     };
     const abort = (): void =>
-      settleReject(
-        signal.reason ?? createAbortError(`${label} aborted`),
-      );
+      settleReject(signal.reason ?? createAbortError(`${label} aborted`));
     signal.addEventListener("abort", abort, { once: true });
     Promise.resolve().then(operation).then(settleResolve, settleReject);
   });

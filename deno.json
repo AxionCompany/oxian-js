@@ -53,7 +53,7 @@
     "ws": "npm:ws@8.22.0"
   },
   "tasks": {
-    "check": "deno task check:portability && deno task check:architecture && deno task check:source-graph && deno task check:api-reference && deno fmt --check && deno lint && deno check src/mod.ts cli.ts",
+    "check": "deno task check:portability && deno task check:architecture && deno task check:source-graph && deno task check:api-reference && deno lint && deno check src/mod.ts cli.ts",
     "check:api-reference": "deno run --allow-read=. --allow-run=deno scripts/check_api_reference.ts",
     "check:architecture": "deno run --allow-read=src,tests,docs,README.md,cli.ts scripts/check_architecture.ts",
     "check:portability": "deno run --allow-read=src scripts/check_portability.ts",

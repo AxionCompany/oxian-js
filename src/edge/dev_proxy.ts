@@ -72,9 +72,10 @@ function targetUrl(requestUrl: URL, config: DevProxyConfiguration): URL {
     forwardedPath = requestUrl.pathname.slice(config.prefix.length) || "/";
   }
 
-  const basePath = config.upstream.pathname === "/"
-    ? ""
-    : config.upstream.pathname.replace(/\/+$/, "");
+  const basePath =
+    config.upstream.pathname === "/"
+      ? ""
+      : config.upstream.pathname.replace(/\/+$/, "");
   const suffix = forwardedPath.startsWith("/")
     ? forwardedPath
     : `/${forwardedPath}`;
@@ -98,9 +99,8 @@ function connectionHeaders(headers: Headers): ReadonlySet<string> {
 function copyEndToEndHeaders(source: Headers): Headers {
   const target = new Headers();
   const connectionSpecific = connectionHeaders(source);
-  const cookies = typeof source.getSetCookie === "function"
-    ? source.getSetCookie()
-    : [];
+  const cookies =
+    typeof source.getSetCookie === "function" ? source.getSetCookie() : [];
   let copiedCookies = false;
 
   for (const [name, value] of source) {

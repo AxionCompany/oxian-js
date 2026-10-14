@@ -147,12 +147,14 @@ async function createOldLocalHarness(): Promise<BenchHarness> {
 
 async function createOldProvisioning(workerId: string) {
   const repository = oldSupervisorApi.createInMemoryWorkerRepository();
-  await repository.define(oldSupervisorApi.createWorkerDefinition({
-    workerId,
-    providerId: "benchmark",
-    workloads: ["bench.echo"],
-    capacity: 32,
-  }));
+  await repository.define(
+    oldSupervisorApi.createWorkerDefinition({
+      workerId,
+      providerId: "benchmark",
+      workloads: ["bench.echo"],
+      capacity: 32,
+    }),
+  );
   const identity = (await repository.activate(workerId)).attempt.identity;
   const authority = oldSupervisorApi.createInMemoryRegistrationAuthority();
   const registration = await authority.issueRegistration(identity);
@@ -310,10 +312,11 @@ async function benchmark(
     const concurrent: number[] = [];
     for (let batch = 0; batch < 20; batch++) {
       const started = performance.now();
-      await Promise.all(Array.from(
-        { length: 16 },
-        () => execute(harness, smallBody, smallBody.byteLength),
-      ));
+      await Promise.all(
+        Array.from({ length: 16 }, () =>
+          execute(harness, smallBody, smallBody.byteLength),
+        ),
+      );
       concurrent.push((performance.now() - started) / 16);
     }
 

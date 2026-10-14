@@ -106,15 +106,19 @@ test("worker handshake persists, bootstraps, then advertises Ready metadata", as
     });
     assert.deepStrictEqual(events, ["persist", "prepare"]);
     assert.deepStrictEqual(client.snapshot().state, "handshaking");
-    await connection.transport.sendControl(createReadyAckFrame({
-      connectionId: welcome.connectionId,
-    }));
+    await connection.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: welcome.connectionId,
+      }),
+    );
     assert.deepStrictEqual((await withTimeout(client.ready)).state, "ready");
 
-    await connection.transport.sendControl(createShutdownFrame({
-      connectionId: welcome.connectionId,
-      reason: "test_complete",
-    }));
+    await connection.transport.sendControl(
+      createShutdownFrame({
+        connectionId: welcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
@@ -158,14 +162,18 @@ test("worker delegates provider authentication to its socket factory", async () 
     });
     await connection.transport.sendControl(welcome);
     await nextControl(connection, "ready");
-    await connection.transport.sendControl(createReadyAckFrame({
-      connectionId: welcome.connectionId,
-    }));
+    await connection.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: welcome.connectionId,
+      }),
+    );
     assert.deepStrictEqual(factoryCalls, 1);
-    await connection.transport.sendControl(createShutdownFrame({
-      connectionId: welcome.connectionId,
-      reason: "test_complete",
-    }));
+    await connection.transport.sendControl(
+      createShutdownFrame({
+        connectionId: welcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
@@ -193,13 +201,15 @@ test("lost Ready acknowledgement reconnects without reporting a false ready stat
   try {
     const first = await peer.nextConnection();
     await nextControl(first, "hello");
-    await first.transport.sendControl(createWelcomeFrame({
-      connectionId: "connection-ready-ack-lost",
-      heartbeatIntervalMs: 1_000,
-      leaseTimeoutMs: 5_000,
-      resumeCapability: "resume-ready-ack-lost",
-      resumeExpiresAtMs: Date.now() + 600_000,
-    }));
+    await first.transport.sendControl(
+      createWelcomeFrame({
+        connectionId: "connection-ready-ack-lost",
+        heartbeatIntervalMs: 1_000,
+        leaseTimeoutMs: 5_000,
+        resumeCapability: "resume-ready-ack-lost",
+        resumeExpiresAtMs: Date.now() + 600_000,
+      }),
+    );
     await nextControl(first, "ready");
     assert.deepStrictEqual(client.snapshot().state, "handshaking");
     await withTimeout(
@@ -220,15 +230,19 @@ test("lost Ready acknowledgement reconnects without reporting a false ready stat
     await second.transport.sendControl(welcome);
     await nextControl(second, "ready");
     assert.deepStrictEqual(client.snapshot().state, "handshaking");
-    await second.transport.sendControl(createReadyAckFrame({
-      connectionId: welcome.connectionId,
-    }));
+    await second.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: welcome.connectionId,
+      }),
+    );
     assert.deepStrictEqual((await withTimeout(client.ready)).state, "ready");
 
-    await second.transport.sendControl(createShutdownFrame({
-      connectionId: welcome.connectionId,
-      reason: "test_complete",
-    }));
+    await second.transport.sendControl(
+      createShutdownFrame({
+        connectionId: welcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
@@ -272,14 +286,18 @@ test("worker Ready initialization has an independent long-running timeout", asyn
     const ready = (await nextControl(connection, "ready")).acceptance
       .frame as ReadyFrame;
     assert.deepStrictEqual(ready.metadata, { restored: true });
-    await connection.transport.sendControl(createReadyAckFrame({
-      connectionId: welcome.connectionId,
-    }));
+    await connection.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: welcome.connectionId,
+      }),
+    );
 
-    await connection.transport.sendControl(createShutdownFrame({
-      connectionId: welcome.connectionId,
-      reason: "test_complete",
-    }));
+    await connection.transport.sendControl(
+      createShutdownFrame({
+        connectionId: welcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
@@ -338,18 +356,22 @@ test("persistence failure retries the exact prior credential and handshake", asy
       connectionId: "connection-2",
     });
     await nextControl(second, "ready");
-    await second.transport.sendControl(createReadyAckFrame({
-      connectionId: "connection-2",
-    }));
+    await second.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: "connection-2",
+      }),
+    );
     assert.deepStrictEqual(persistenceAttempt, 2);
     assert.deepStrictEqual(handshakeSequence, 1);
     assert.deepStrictEqual(updates[1], updates[0]);
     assert.deepStrictEqual(updates[0]?.replacesHandshakeId, hello1.handshakeId);
 
-    await second.transport.sendControl(createShutdownFrame({
-      connectionId: "connection-2",
-      reason: "test_complete",
-    }));
+    await second.transport.sendControl(
+      createShutdownFrame({
+        connectionId: "connection-2",
+        reason: "test_complete",
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
@@ -384,10 +406,12 @@ test("revoked resume credential surfaces re-enrollment without reconnecting", as
   try {
     const connection = await peer.nextConnection();
     await nextControl(connection, "hello");
-    await connection.transport.sendControl(createProtocolErrorFrame({
-      code: "credential_invalid",
-      message: "Worker authentication failed",
-    }));
+    await connection.transport.sendControl(
+      createProtocolErrorFrame({
+        code: "credential_invalid",
+        message: "Worker authentication failed",
+      }),
+    );
     const result = await withTimeout(run);
     assert.deepStrictEqual(result.reason, "reenrollment_required");
     assert.deepStrictEqual(notifications.length, 1);
@@ -555,13 +579,15 @@ test("an unsettled pre-ready hook blocks reconnect but not stop", async () => {
   try {
     const first = await peer.nextConnection();
     await nextControl(first, "hello");
-    await first.transport.sendControl(createWelcomeFrame({
-      connectionId: "connection-hanging",
-      heartbeatIntervalMs: 1_000,
-      leaseTimeoutMs: 5_000,
-      resumeCapability: "resume-after-hang",
-      resumeExpiresAtMs: Date.now() + 600_000,
-    }));
+    await first.transport.sendControl(
+      createWelcomeFrame({
+        connectionId: "connection-hanging",
+        heartbeatIntervalMs: 1_000,
+        leaseTimeoutMs: 5_000,
+        resumeCapability: "resume-after-hang",
+        resumeExpiresAtMs: Date.now() + 600_000,
+      }),
+    );
     await withTimeout(entered.promise);
     await nextControl(first, "protocol_error");
     await first.transport.closed;
@@ -593,9 +619,13 @@ test("an unsettled durable persister blocks reconnect but not stop", async () =>
     reconnectDelay: () => 0,
     handshakeTimeoutMs: 50,
     persistResumeCredential: (_update, { signal }) => {
-      signal.addEventListener("abort", () => {
-        persistenceSignalAborted = true;
-      }, { once: true });
+      signal.addEventListener(
+        "abort",
+        () => {
+          persistenceSignalAborted = true;
+        },
+        { once: true },
+      );
       entered.resolve();
       return new Promise(() => undefined);
     },
@@ -605,13 +635,15 @@ test("an unsettled durable persister blocks reconnect but not stop", async () =>
   try {
     const first = await peer.nextConnection();
     await nextControl(first, "hello");
-    await first.transport.sendControl(createWelcomeFrame({
-      connectionId: "connection-persist-hanging",
-      heartbeatIntervalMs: 1_000,
-      leaseTimeoutMs: 5_000,
-      resumeCapability: "resume-not-persisted",
-      resumeExpiresAtMs: Date.now() + 600_000,
-    }));
+    await first.transport.sendControl(
+      createWelcomeFrame({
+        connectionId: "connection-persist-hanging",
+        heartbeatIntervalMs: 1_000,
+        leaseTimeoutMs: 5_000,
+        resumeCapability: "resume-not-persisted",
+        resumeExpiresAtMs: Date.now() + 600_000,
+      }),
+    );
     await withTimeout(entered.promise);
     await first.transport.closed;
     assert.deepStrictEqual(persistenceSignalAborted, true);
@@ -707,9 +739,11 @@ test("late durable completion is adopted before reconnect without overlapping wr
     });
     await second.transport.sendControl(secondWelcome);
     await nextControl(second, "ready");
-    await second.transport.sendControl(createReadyAckFrame({
-      connectionId: secondWelcome.connectionId,
-    }));
+    await second.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: secondWelcome.connectionId,
+      }),
+    );
     assert.deepStrictEqual(updates.length, 2);
     assert.deepStrictEqual(
       updates[1]?.replacesHandshakeId,
@@ -718,10 +752,12 @@ test("late durable completion is adopted before reconnect without overlapping wr
     assert.deepStrictEqual(handshakeSequence, 2);
     assert.deepStrictEqual(maximumActivePersistence, 1);
 
-    await second.transport.sendControl(createShutdownFrame({
-      connectionId: secondWelcome.connectionId,
-      reason: "test_complete",
-    }));
+    await second.transport.sendControl(
+      createShutdownFrame({
+        connectionId: secondWelcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
@@ -773,13 +809,15 @@ test("late pre-ready completion serializes bootstrap across reconnects", async (
   try {
     const first = await peer.nextConnection();
     await nextControl(first, "hello");
-    await first.transport.sendControl(createWelcomeFrame({
-      connectionId: "connection-initialization-1",
-      heartbeatIntervalMs: 1_000,
-      leaseTimeoutMs: 5_000,
-      resumeCapability: "resume-initialization-1",
-      resumeExpiresAtMs: Date.now() + 600_000,
-    }));
+    await first.transport.sendControl(
+      createWelcomeFrame({
+        connectionId: "connection-initialization-1",
+        heartbeatIntervalMs: 1_000,
+        leaseTimeoutMs: 5_000,
+        resumeCapability: "resume-initialization-1",
+        resumeExpiresAtMs: Date.now() + 600_000,
+      }),
+    );
     await withTimeout(firstInitializationEntered.promise);
     await nextControl(first, "protocol_error");
     await first.transport.closed;
@@ -803,14 +841,18 @@ test("late pre-ready completion serializes bootstrap across reconnects", async (
       .frame as ReadyFrame;
     assert.deepStrictEqual(ready.metadata, { initializationAttempt: 2 });
     assert.deepStrictEqual(maximumActiveInitialization, 1);
-    await second.transport.sendControl(createReadyAckFrame({
-      connectionId: secondWelcome.connectionId,
-    }));
+    await second.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: secondWelcome.connectionId,
+      }),
+    );
 
-    await second.transport.sendControl(createShutdownFrame({
-      connectionId: secondWelcome.connectionId,
-      reason: "test_complete",
-    }));
+    await second.transport.sendControl(
+      createShutdownFrame({
+        connectionId: secondWelcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();

@@ -154,17 +154,20 @@ function streamingBody(
   onPull?: () => void,
 ): ReadableStream<Uint8Array> {
   let index = 0;
-  return new ReadableStream<Uint8Array>({
-    pull(controller) {
-      onPull?.();
-      const chunk = chunks[index++];
-      if (chunk === undefined) {
-        controller.close();
-        return;
-      }
-      controller.enqueue(chunk);
+  return new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        onPull?.();
+        const chunk = chunks[index++];
+        if (chunk === undefined) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(chunk);
+      },
     },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
 }
 
 async function readAll(
@@ -188,9 +191,7 @@ async function startHarness(
   input: Readonly<{
     workloads: Readonly<Record<string, WorkerWorkHandler>>;
     capacity?: number;
-    commitAcceptedWork?(
-      commit: AcceptanceCommit,
-    ): Promise<void>;
+    commitAcceptedWork?(commit: AcceptanceCommit): Promise<void>;
     config?: Partial<HypervisorConfig>;
     onStateChange?(snapshot: WorkerSnapshot): void | Promise<void>;
     beforeReady?(context: WorkerBeforeReadyContext): void | Promise<void>;
@@ -203,20 +204,21 @@ async function startHarness(
   const capacity = input.capacity ?? 2;
   const workloadNames = Object.keys(input.workloads);
   const repository = createEphemeralWorkerStore();
-  await repository.define(createWorkerDefinition({
-    workerId: "worker-integration",
-    providerId: "attached",
-    workloads: workloadNames,
-    capacity,
-  }));
+  await repository.define(
+    createWorkerDefinition({
+      workerId: "worker-integration",
+      providerId: "attached",
+      workloads: workloadNames,
+      capacity,
+    }),
+  );
   const identity = (await repository.activate("worker-integration")).attempt
     .identity;
   const authority = createEphemeralCredentialLifecycle();
   const registration = await authority.issueRegistration(identity);
   const hypervisor = createHypervisor({
     control: { authority, repository },
-    commitAcceptedWork: input.commitAcceptedWork ??
-      (() => Promise.resolve()),
+    commitAcceptedWork: input.commitAcceptedWork ?? (() => Promise.resolve()),
     config: {
       heartbeatIntervalMs: 20,
       leaseTimeoutMs: 500,
@@ -363,10 +365,7 @@ test("real worker stream commits before Start and exchanges credited bodies thro
     encoder.encode(":complete"),
   ];
   const expectedInput = concat(requestChunks);
-  const expectedOutput = concat([
-    encoder.encode("response:"),
-    expectedInput,
-  ]);
+  const expectedOutput = concat([encoder.encode("response:"), expectedInput]);
   let inputPulls = 0;
   let persistCalls = 0;
 
@@ -386,21 +385,20 @@ test("real worker stream commits before Start and exchanges credited bodies thro
           source: "real-worker",
         });
         return {
-          body: streamingBody([
-            encoder.encode("response:"),
-            input,
-          ]),
+          body: streamingBody([encoder.encode("response:"), input]),
         };
       },
     },
   });
 
   try {
-    const handle = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-      metadata: { requestId: "integration-request" },
-      body: streamingBody(requestChunks, () => inputPulls++),
-    }));
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+        metadata: { requestId: "integration-request" },
+        body: streamingBody(requestChunks, () => inputPulls++),
+      }),
+    );
 
     const commit = await withTimeout(
       persistEntered.promise,
@@ -493,9 +491,11 @@ test("ambiguous acceptance persistence cancels only its stream and preserves mul
 
   try {
     const connectionId = harness.worker.snapshot().connectionId;
-    const ambiguous = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-    }));
+    const ambiguous = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+      }),
+    );
 
     assert.deepStrictEqual(
       (await withTimeout(ambiguous.completed)).status,
@@ -506,8 +506,8 @@ test("ambiguous acceptance persistence cancels only its stream and preserves mul
     await assertRejects(() => readAll(ambiguous.output), Error);
     await waitFor(
       () =>
-        harness.hypervisor.sessions.get(harness.identity.workerId)
-          ?.reserved === 0,
+        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved ===
+        0,
       "ambiguous stream did not release its reservation after peer terminal",
     );
     assert.deepStrictEqual(handlerCalls, 0);
@@ -517,9 +517,11 @@ test("ambiguous acceptance persistence cancels only its stream and preserves mul
       connectionId,
     );
 
-    const healthy = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-    }));
+    const healthy = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+      }),
+    );
     await withTimeout(healthy.started);
     assert.deepStrictEqual(await withTimeout(healthy.metadata), {
       execution: 1,
@@ -566,10 +568,12 @@ test("cancellation crossing an in-flight acceptance commit never starts the hand
   });
 
   try {
-    const handle = await withTimeout(harness.hypervisor.dispatch({
-      workload: "sandbox.command",
-      body: encoder.encode("must-not-be-consumed"),
-    }));
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+        body: encoder.encode("must-not-be-consumed"),
+      }),
+    );
     await withTimeout(persistEntered.promise);
 
     const cancellation = handle.cancel("caller_cancelled_before_start");
@@ -583,8 +587,8 @@ test("cancellation crossing an in-flight acceptance commit never starts the hand
     assert.deepStrictEqual(handlerCalls, 0);
     await waitFor(
       () =>
-        harness.hypervisor.sessions.get(harness.identity.workerId)
-          ?.reserved === 0,
+        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved ===
+        0,
       "cancelled stream did not release its reservation",
     );
     assert.deepStrictEqual(harness.worker.snapshot().state, "ready");
@@ -624,19 +628,18 @@ test("proactive connection-age drain closes without Shutdown and worker reconnec
   try {
     const firstConnectionId = harness.worker.snapshot().connectionId;
     assert.ok(firstConnectionId != null);
-    await waitFor(
-      () => {
-        const session = harness.hypervisor.sessions.get(
-          harness.identity.workerId,
-        );
-        const worker = harness.worker.snapshot();
-        return session?.phase === "ready" &&
-          session.connectionId !== firstConnectionId &&
-          worker.state === "ready" &&
-          worker.connectionId === session.connectionId;
-      },
-      "worker and Hypervisor did not converge on a ready replacement session",
-    );
+    await waitFor(() => {
+      const session = harness.hypervisor.sessions.get(
+        harness.identity.workerId,
+      );
+      const worker = harness.worker.snapshot();
+      return (
+        session?.phase === "ready" &&
+        session.connectionId !== firstConnectionId &&
+        worker.state === "ready" &&
+        worker.connectionId === session.connectionId
+      );
+    }, "worker and Hypervisor did not converge on a ready replacement session");
 
     assert.deepStrictEqual(workerClosedSettled, false);
     assert.deepStrictEqual(harness.worker.snapshot().state, "ready");
@@ -691,16 +694,14 @@ test("public maintenance drain reconnects while terminal worker shutdown ends ru
         "integration_rotation",
       ),
     );
-    await waitFor(
-      () => {
-        const session = harness.hypervisor.sessions.get(
-          harness.identity.workerId,
-        );
-        return session?.phase === "ready" &&
-          session.connectionId !== firstConnectionId;
-      },
-      "maintenance drain did not reconnect the worker",
-    );
+    await waitFor(() => {
+      const session = harness.hypervisor.sessions.get(
+        harness.identity.workerId,
+      );
+      return (
+        session?.phase === "ready" && session.connectionId !== firstConnectionId
+      );
+    }, "maintenance drain did not reconnect the worker");
 
     assert.deepStrictEqual(workerClosedSettled, false);
     assert.deepStrictEqual(readyHooks, 2);
@@ -825,11 +826,7 @@ test("terminal worker shutdown fences a pending heartbeat until in-flight work c
       TEST_TIMEOUT_MS,
       "work dispatch did not open",
     );
-    await withTimeout(
-      handle.started,
-      TEST_TIMEOUT_MS,
-      "work did not start",
-    );
+    await withTimeout(handle.started, TEST_TIMEOUT_MS, "work did not start");
     await withTimeout(
       handlerEntered.promise,
       TEST_TIMEOUT_MS,
@@ -875,11 +872,13 @@ test("terminal worker shutdown fences a pending heartbeat until in-flight work c
       encoder.encode("completed-before-shutdown"),
     );
     assert.deepStrictEqual(
-      (await withTimeout(
-        handle.completed,
-        TEST_TIMEOUT_MS,
-        "work completion did not settle",
-      )).status,
+      (
+        await withTimeout(
+          handle.completed,
+          TEST_TIMEOUT_MS,
+          "work completion did not settle",
+        )
+      ).status,
       "completed",
     );
     await withTimeout(
@@ -903,9 +902,9 @@ test("terminal worker shutdown fences a pending heartbeat until in-flight work c
     await withTimeout(
       shutdownReceived.promise,
       TEST_TIMEOUT_MS,
-      `Worker socket did not receive Shutdown; worker=${harness.worker.snapshot().state}; sessions=${harness.hypervisor.snapshot().sessions}; connections=${harness.hypervisor.snapshot().connections}; closes=${
-        socketCloses.join(",")
-      }; wire=${wireEvents.join(",")}`,
+      `Worker socket did not receive Shutdown; worker=${harness.worker.snapshot().state}; sessions=${harness.hypervisor.snapshot().sessions}; connections=${harness.hypervisor.snapshot().connections}; closes=${socketCloses.join(
+        ",",
+      )}; wire=${wireEvents.join(",")}`,
     );
     await withTimeout(
       shutdown,
@@ -917,9 +916,9 @@ test("terminal worker shutdown fences a pending heartbeat until in-flight work c
       await withTimeout(
         harness.workerClosed,
         TEST_TIMEOUT_MS,
-        `Worker lifecycle did not close from ${harness.worker.snapshot().state}; states=${
-          states.map((value) => value.state).join(",")
-        }; closes=${socketCloses.join(",")}`,
+        `Worker lifecycle did not close from ${harness.worker.snapshot().state}; states=${states
+          .map((value) => value.state)
+          .join(",")}; closes=${socketCloses.join(",")}`,
       ),
       {
         reason: "shutdown",
@@ -960,16 +959,15 @@ test("exact session shutdown cannot terminate a replacement connection", async (
         "replace_exact_session",
       ),
     );
-    await waitFor(
-      () => {
-        const current = harness.hypervisor.sessions.get(
-          harness.identity.workerId,
-        );
-        return current?.phase === "ready" &&
-          current.connectionId !== staleFence.connectionId;
-      },
-      "worker did not replace its drained session",
-    );
+    await waitFor(() => {
+      const current = harness.hypervisor.sessions.get(
+        harness.identity.workerId,
+      );
+      return (
+        current?.phase === "ready" &&
+        current.connectionId !== staleFence.connectionId
+      );
+    }, "worker did not replace its drained session");
 
     const replacement = harness.hypervisor.sessions.get(
       harness.identity.workerId,
@@ -977,16 +975,12 @@ test("exact session shutdown cannot terminate a replacement connection", async (
     assert.ok(replacement != null);
     const replacementFence = fenceForSession(replacement);
     await withTimeout(
-      harness.hypervisor.shutdownSession(
-        staleFence,
-        "stale_attempt_cleanup",
-      ),
+      harness.hypervisor.shutdownSession(staleFence, "stale_attempt_cleanup"),
     );
     await new Promise((resolve) => setTimeout(resolve, 25));
     assert.deepStrictEqual(harness.worker.snapshot().state, "ready");
     assert.deepStrictEqual(
-      harness.hypervisor.sessions.get(harness.identity.workerId)
-        ?.connectionId,
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.connectionId,
       replacementFence.connectionId,
     );
 
@@ -1006,18 +1000,22 @@ test("exact session shutdown cannot terminate a replacement connection", async (
 
 test("exact worker dispatch never spills while untargeted work still balances", async () => {
   const repository = createEphemeralWorkerStore();
-  await repository.define(createWorkerDefinition({
-    workerId: "worker-target-a",
-    providerId: "attached",
-    workloads: ["sandbox.command"],
-    capacity: 1,
-  }));
-  await repository.define(createWorkerDefinition({
-    workerId: "worker-target-b",
-    providerId: "attached",
-    workloads: ["sandbox.command", "sandbox.other"],
-    capacity: 1,
-  }));
+  await repository.define(
+    createWorkerDefinition({
+      workerId: "worker-target-a",
+      providerId: "attached",
+      workloads: ["sandbox.command"],
+      capacity: 1,
+    }),
+  );
+  await repository.define(
+    createWorkerDefinition({
+      workerId: "worker-target-b",
+      providerId: "attached",
+      workloads: ["sandbox.command", "sandbox.other"],
+      capacity: 1,
+    }),
+  );
   const identityA = (await repository.activate("worker-target-a")).attempt
     .identity;
   const identityB = (await repository.activate("worker-target-b")).attempt
@@ -1092,10 +1090,7 @@ test("exact worker dispatch never spills while untargeted work still balances", 
   const workerBRun = workerB.closed;
 
   try {
-    await withTimeout(Promise.all([
-      workerA.ready,
-      workerB.ready,
-    ]));
+    await withTimeout(Promise.all([workerA.ready, workerB.ready]));
     await waitFor(
       () =>
         hypervisor.sessions.get(identityA.workerId)?.phase === "ready" &&
@@ -1103,26 +1098,28 @@ test("exact worker dispatch never spills while untargeted work still balances", 
       "Hypervisor did not attach both target workers",
     );
 
-    const missing = await assertRejects(() =>
+    const missing = (await assertRejects(() =>
       hypervisor.dispatch({
         workload: "sandbox.command",
         target: { workerId: "worker-target-missing" },
-      })
-    ) as HypervisorError;
+      }),
+    )) as HypervisorError;
     assert.deepStrictEqual(missing.code, "worker_unavailable");
 
-    const wrongWorkload = await assertRejects(() =>
+    const wrongWorkload = (await assertRejects(() =>
       hypervisor.dispatch({
         workload: "sandbox.other",
         target: { workerId: identityA.workerId },
-      })
-    ) as HypervisorError;
+      }),
+    )) as HypervisorError;
     assert.deepStrictEqual(wrongWorkload.code, "worker_unavailable");
 
-    const targeted = await withTimeout(hypervisor.dispatch({
-      workload: "sandbox.command",
-      target: { workerId: identityB.workerId },
-    }));
+    const targeted = await withTimeout(
+      hypervisor.dispatch({
+        workload: "sandbox.command",
+        target: { workerId: identityB.workerId },
+      }),
+    );
     await withTimeout(targeted.started);
     await withTimeout(workerBEntered.promise);
     assert.deepStrictEqual(
@@ -1134,21 +1131,23 @@ test("exact worker dispatch never spills while untargeted work still balances", 
       0,
     );
 
-    const atCapacity = await assertRejects(() =>
+    const atCapacity = (await assertRejects(() =>
       hypervisor.dispatch({
         workload: "sandbox.command",
         target: { workerId: identityB.workerId },
-      })
-    ) as HypervisorError;
+      }),
+    )) as HypervisorError;
     assert.deepStrictEqual(atCapacity.code, "worker_unavailable");
     assert.deepStrictEqual(
       hypervisor.sessions.get(identityA.workerId)?.reserved,
       0,
     );
 
-    const balanced = await withTimeout(hypervisor.dispatch({
-      workload: "sandbox.command",
-    }));
+    const balanced = await withTimeout(
+      hypervisor.dispatch({
+        workload: "sandbox.command",
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(balanced.metadata), {
       handledBy: identityA.workerId,
     });

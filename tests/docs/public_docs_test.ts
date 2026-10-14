@@ -143,9 +143,7 @@ test("the getting-started curriculum is complete and progressive", async () => {
   ]);
 
   for (const [index, relative] of GETTING_STARTED_CHAPTERS.entries()) {
-    const chapter = await Deno.readTextFile(
-      new URL(relative, import.meta.url),
-    );
+    const chapter = await Deno.readTextFile(new URL(relative, import.meta.url));
     assert.ok(
       chapter.includes(`# Chapter ${index + 1}:`),
       `${relative} must identify its chapter number`,
@@ -184,11 +182,9 @@ test("public documentation uses published subpaths and valid local links", async
       `${document.relative} must not import Oxian internals`,
     );
 
-    for (
-      const match of document.content.matchAll(
-        /jsr:@oxian\/oxian-js(?:@([^/\s"'`)]+))?(?:\/([a-z][a-z\d-]*(?:\/[a-z][a-z\d-]*)*))?/g,
-      )
-    ) {
+    for (const match of document.content.matchAll(
+      /jsr:@oxian\/oxian-js(?:@([^/\s"'`)]+))?(?:\/([a-z][a-z\d-]*(?:\/[a-z][a-z\d-]*)*))?/g,
+    )) {
       assert.deepStrictEqual(
         match[1],
         packageConfig.version,
@@ -201,11 +197,9 @@ test("public documentation uses published subpaths and valid local links", async
       );
     }
 
-    for (
-      const match of document.content.matchAll(
-        /!?\[[^\]]*]\(([^)\s]+)(?:\s+["'][^)]*["'])?\)/g,
-      )
-    ) {
+    for (const match of document.content.matchAll(
+      /!?\[[^\]]*]\(([^)\s]+)(?:\s+["'][^)]*["'])?\)/g,
+    )) {
       const href = match[1];
       if (/^[a-z][a-z\d+.-]*:/i.test(href)) {
         continue;
@@ -215,15 +209,15 @@ test("public documentation uses published subpaths and valid local links", async
       const fragment = hashIndex === -1 ? undefined : href.slice(hashIndex + 1);
       if (path.length > 0 && !path.endsWith(".md")) continue;
 
-      const targetUrl = path.length === 0
-        ? document.url
-        : new URL(path, document.url);
+      const targetUrl =
+        path.length === 0 ? document.url : new URL(path, document.url);
       if (path.length > 0) await Deno.stat(targetUrl);
       if (fragment === undefined || fragment.length === 0) continue;
 
-      const target = targetUrl.href === document.url.href
-        ? document.content
-        : await Deno.readTextFile(targetUrl);
+      const target =
+        targetUrl.href === document.url.href
+          ? document.content
+          : await Deno.readTextFile(targetUrl);
       const decodedFragment = decodeURIComponent(fragment);
       assert.ok(
         markdownHeadingAnchors(target).has(decodedFragment),

@@ -42,12 +42,15 @@ function startLoopback(
   close(): Promise<void>;
 }> {
   const abortController = new AbortController();
-  const server = Deno.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    signal: abortController.signal,
-    onListen: () => undefined,
-  }, handler);
+  const server = Deno.serve(
+    {
+      hostname: "127.0.0.1",
+      port: 0,
+      signal: abortController.signal,
+      onListen: () => undefined,
+    },
+    handler,
+  );
   if (server.addr.transport !== "tcp") {
     abortController.abort();
     throw new TypeError("proxy test server did not bind TCP");
@@ -70,22 +73,25 @@ test("dev proxy preserves request semantics and forwards original authority", {
   skip: loopbackPermission.state !== "granted",
 }, async () => {
   const upstream = startLoopback(async (request) => {
-    return Response.json({
-      method: request.method,
-      path: new URL(request.url).pathname,
-      query: new URL(request.url).search,
-      host: request.headers.get("host"),
-      forwardedHost: request.headers.get("x-forwarded-host"),
-      custom: request.headers.get("x-custom"),
-      removed: request.headers.get("x-remove"),
-      body: await request.text(),
-    }, {
-      headers: [
-        ["set-cookie", "first=1; Path=/"],
-        ["set-cookie", "second=2; Path=/"],
-        ["x-upstream", "yes"],
-      ],
-    });
+    return Response.json(
+      {
+        method: request.method,
+        path: new URL(request.url).pathname,
+        query: new URL(request.url).search,
+        host: request.headers.get("host"),
+        forwardedHost: request.headers.get("x-forwarded-host"),
+        custom: request.headers.get("x-custom"),
+        removed: request.headers.get("x-remove"),
+        body: await request.text(),
+      },
+      {
+        headers: [
+          ["set-cookie", "first=1; Path=/"],
+          ["set-cookie", "second=2; Path=/"],
+          ["x-upstream", "yes"],
+        ],
+      },
+    );
   });
   try {
     const handler = createDevProxyAdapter({
@@ -98,8 +104,8 @@ test("dev proxy preserves request semantics and forwards original authority", {
       new Request("https://public.example/dev/items?id=42&sort=asc", {
         method: "POST",
         headers: {
-          "connection": "x-remove",
-          "host": "public.example",
+          connection: "x-remove",
+          host: "public.example",
           "x-custom": "preserved",
           "x-remove": "secret",
         },
@@ -139,7 +145,7 @@ test("dev proxy defaults Host to upstream and removes response hop headers", {
   const upstream = startLoopback((request) => {
     return new Response(request.headers.get("host"), {
       headers: {
-        "connection": "x-response-hop",
+        connection: "x-response-hop",
         "x-response-hop": "remove",
         "x-end-to-end": "preserve",
       },
@@ -192,10 +198,7 @@ test("dev proxy streams the response and propagates downstream cancellation", {
     assert.ok(response.body);
     const reader = response.body.getReader();
     const first = await reader.read();
-    assert.deepStrictEqual(
-      new TextDecoder().decode(first.value),
-      "first",
-    );
+    assert.deepStrictEqual(new TextDecoder().decode(first.value), "first");
     await reader.cancel("client stopped");
     await withTimeout(
       cancelled.promise,
@@ -215,9 +218,7 @@ test("dev proxy falls through outside its prefix and validates upstream", async 
     calls++;
     return new Response("application", { status: 201 });
   });
-  const response = await handler(
-    new Request("https://public.example/api"),
-  );
+  const response = await handler(new Request("https://public.example/api"));
   assert.deepStrictEqual(response.status, 201);
   assert.deepStrictEqual(await response.text(), "application");
   assert.deepStrictEqual(calls, 1);
@@ -254,9 +255,7 @@ test("dev proxy converts connection failures to Bad Gateway", {
   const handler = createDevProxyAdapter({ upstream })(
     () => new Response("fallback"),
   );
-  const response = await handler(
-    new Request("https://public.example/path"),
-  );
+  const response = await handler(new Request("https://public.example/path"));
   assert.deepStrictEqual(response.status, 502);
   assert.deepStrictEqual(await response.text(), "Bad Gateway");
 });

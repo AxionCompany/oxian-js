@@ -36,11 +36,12 @@ test("defineApplicationFactory rejects structural and mount mismatches", async (
   const otherRouter = createRouter("file:///other/");
   const signal = new AbortController().signal;
 
-  const missing = defineApplicationFactory(() =>
-    Object.freeze({
-      router,
-      basePath: "/",
-    }) as never
+  const missing = defineApplicationFactory(
+    () =>
+      Object.freeze({
+        router,
+        basePath: "/",
+      }) as never,
   );
   await assertRejects(
     async () => await missing({ router, basePath: "/", signal }),
@@ -104,14 +105,17 @@ test("factory cleanup cannot replace a Proxy validation error", async () => {
   const signal = new AbortController().signal;
   const validationError = new Error("factory_result_reflection_failed");
   const cleanupError = new Error("cleanup_reflection_failed");
-  const hostileResult = new Proxy({}, {
-    ownKeys() {
-      throw validationError;
+  const hostileResult = new Proxy(
+    {},
+    {
+      ownKeys() {
+        throw validationError;
+      },
+      getOwnPropertyDescriptor() {
+        throw cleanupError;
+      },
     },
-    getOwnPropertyDescriptor() {
-      throw cleanupError;
-    },
-  });
+  );
   const factory = defineApplicationFactory(() => hostileResult as never);
 
   let rejection: unknown;
@@ -142,26 +146,20 @@ test("loadApplicationFactory requires one local default .ts export", async () =>
       );
     },
   );
-  await withModule(
-    `export const factory = () => {};\n`,
-    async (path) => {
-      await assertRejects(
-        () => loadApplicationFactory(path),
-        TypeError,
-        "must export exactly one default factory",
-      );
-    },
-  );
-  await withModule(
-    `export default 42;\n`,
-    async (path) => {
-      await assertRejects(
-        () => loadApplicationFactory(path),
-        TypeError,
-        "must be a function",
-      );
-    },
-  );
+  await withModule(`export const factory = () => {};\n`, async (path) => {
+    await assertRejects(
+      () => loadApplicationFactory(path),
+      TypeError,
+      "must export exactly one default factory",
+    );
+  });
+  await withModule(`export default 42;\n`, async (path) => {
+    await assertRejects(
+      () => loadApplicationFactory(path),
+      TypeError,
+      "must be a function",
+    );
+  });
   await assertRejects(
     () => loadApplicationFactory("https://example.test/application.ts"),
     TypeError,

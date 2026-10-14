@@ -25,8 +25,7 @@ async function withFixture(
 }
 
 const GET_ROUTE = `export const GET = () => new Response("ok");`;
-const MIDDLEWARE =
-  `export const middleware = async (_request, _context, next) => await next();`;
+const MIDDLEWARE = `export const middleware = async (_request, _context, next) => await next();`;
 
 function relativeModulePath(fileUrl: string, rootUrl: string): string {
   const rootPath = new URL(rootUrl).pathname;
@@ -52,7 +51,7 @@ test("v0.20 file router matches static, param, and one-or-more catchall routes b
       assert.deepStrictEqual(staticMatch.params, {});
       assert.deepStrictEqual(
         staticMatch.middlewares.map(({ fileUrl }) =>
-          relativeModulePath(fileUrl, router.root)
+          relativeModulePath(fileUrl, router.root),
         ),
         ["_middleware.ts", "users/_middleware.ts"],
       );
@@ -175,7 +174,7 @@ test("v0.20 file router returns frozen catchall values and stable root-to-leaf m
       assert.ok(Object.isFrozen(match.params.parts));
       assert.deepStrictEqual(
         match.middlewares.map(({ fileUrl }) =>
-          relativeModulePath(fileUrl, router.root)
+          relativeModulePath(fileUrl, router.root),
         ),
         [
           "_middleware.ts",
@@ -191,9 +190,9 @@ test("v0.20 file router is a startup snapshot and performs no request-time loadi
   const counterKey = `__oxian_router_load_${crypto.randomUUID()}`;
   const counterSource = (body: string) => `
     const state = globalThis as unknown as Record<string, number>;
-    state[${JSON.stringify(counterKey)}] = (state[${
-    JSON.stringify(counterKey)
-  }] ?? 0) + 1;
+    state[${JSON.stringify(counterKey)}] = (state[${JSON.stringify(
+      counterKey,
+    )}] ?? 0) + 1;
     export const GET = () => new Response(${JSON.stringify(body)});
   `;
 

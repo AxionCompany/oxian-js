@@ -81,10 +81,9 @@ test("worker propagates heartbeat metadata from an immutable status context", as
       );
       assertThrows(
         () =>
-          Object.assign(
-            next.identity as unknown as Record<string, unknown>,
-            { workerId: "mutated" },
-          ),
+          Object.assign(next.identity as unknown as Record<string, unknown>, {
+            workerId: "mutated",
+          }),
         TypeError,
       );
       return {
@@ -126,10 +125,12 @@ test("worker propagates heartbeat metadata from an immutable status context", as
     });
     assert.deepStrictEqual(capturedContext.signal.aborted, false);
 
-    await connection.transport.sendControl(createShutdownFrame({
-      connectionId: handshake.welcome.connectionId,
-      reason: "test_complete",
-    }));
+    await connection.transport.sendControl(
+      createShutdownFrame({
+        connectionId: handshake.welcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
     assert.deepStrictEqual(capturedContext.signal.aborted, true);
   } finally {
@@ -187,7 +188,10 @@ test("worker heartbeat metadata callback is single-flight and stop aborts a hung
     await new Promise((resolve) => setTimeout(resolve, 75));
     assert.deepStrictEqual(contexts.length, 2);
     assert.deepStrictEqual(maximumActive, 1);
-    assert.deepStrictEqual(contexts.map(({ sequence }) => sequence), [0, 1]);
+    assert.deepStrictEqual(
+      contexts.map(({ sequence }) => sequence),
+      [0, 1],
+    );
 
     await withTimeout(client.stop("hung_heartbeat_test"));
     assert.deepStrictEqual(await withTimeout(run), { reason: "stopped" });
@@ -229,10 +233,12 @@ test("hung heartbeat metadata does not block remote shutdown", async () => {
     const connection = await peer.nextConnection();
     const handshake = await acceptTestHandshake(connection);
     await waitUntil(() => context !== undefined);
-    await connection.transport.sendControl(createShutdownFrame({
-      connectionId: handshake.welcome.connectionId,
-      reason: "test_complete",
-    }));
+    await connection.transport.sendControl(
+      createShutdownFrame({
+        connectionId: handshake.welcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
     assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
     assert.deepStrictEqual(context?.signal.aborted, true);
   } finally {

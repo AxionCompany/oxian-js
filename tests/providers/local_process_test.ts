@@ -52,12 +52,10 @@ async function assertTamperedReferencesRejected(
   ];
 
   for (const tampered of tamperedResources) {
-    for (
-      const operation of [
-        () => provider.inspect(tampered),
-        () => provider.terminate(tampered),
-      ]
-    ) {
+    for (const operation of [
+      () => provider.inspect(tampered),
+      () => provider.terminate(tampered),
+    ]) {
       const error = await assertRejects(operation, Error);
       assert.deepStrictEqual(isProviderError(error), true);
       if (isProviderError(error)) {
@@ -89,14 +87,8 @@ test("local process provider passes conformance with a real child", async () => 
   assert.deepStrictEqual(report.initialInspection.state, "present");
   assert.deepStrictEqual(report.termination.outcome, "terminated");
   assert.deepStrictEqual(report.finalInspection.state, "absent");
-  assert.deepStrictEqual(
-    typeof report.initialInspection.details.pid,
-    "number",
-  );
-  await assertTamperedReferencesRejected(
-    provider,
-    report.resource,
-  );
+  assert.deepStrictEqual(typeof report.initialInspection.details.pid, "number");
+  await assertTamperedReferencesRejected(provider, report.resource);
 });
 
 test("local process provider passes explicit args, env, and cwd", async () => {
@@ -105,10 +97,7 @@ test("local process provider passes explicit args, env, and cwd", async () => {
   });
   const markerPath = `${directory}/marker.json`;
   const expectedArgument = "expected-argument";
-  Deno.env.set(
-    "OXIAN_PROVIDER_TEST_INHERITED",
-    "must-not-reach-the-child",
-  );
+  Deno.env.set("OXIAN_PROVIDER_TEST_INHERITED", "must-not-reach-the-child");
   const provider = createLocalProcessProvider({
     createResourceId: () => "explicit-launch-child",
     defaultGracePeriodMs: 500,
@@ -187,8 +176,8 @@ test("local process provider reports unexpected non-zero exits", async () => {
     },
   });
 
-  await waitFor(async () =>
-    (await provider.inspect(resource)).state === "failed"
+  await waitFor(
+    async () => (await provider.inspect(resource)).state === "failed",
   );
   const inspection = await provider.inspect(resource);
   assert.deepStrictEqual(inspection.state, "failed");
@@ -245,10 +234,7 @@ test("local process provider reports rejected child status as unknown", async ()
 
   await Promise.resolve();
   assert.deepStrictEqual((await provider.inspect(resource)).state, "unknown");
-  const error = await assertRejects(
-    () => provider.terminate(resource),
-    Error,
-  );
+  const error = await assertRejects(() => provider.terminate(resource), Error);
   assert.deepStrictEqual(isProviderError(error), true);
   if (isProviderError(error)) {
     assert.deepStrictEqual(error.code, "termination_failed");
@@ -284,10 +270,7 @@ test("local process forced termination has a bounded status wait", async () => {
   });
 
   const startedAt = performance.now();
-  const error = await assertRejects(
-    () => provider.terminate(resource),
-    Error,
-  );
+  const error = await assertRejects(() => provider.terminate(resource), Error);
   assert.deepStrictEqual(isProviderError(error), true);
   if (isProviderError(error)) {
     assert.deepStrictEqual(error.code, "termination_failed");

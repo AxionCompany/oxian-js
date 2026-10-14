@@ -21,9 +21,8 @@ const protocolViolationMarker = Symbol.for(
   "oxian.worker.v1.protocol-violation",
 );
 
-export type ProtocolViolation =
-  & TypeError
-  & Readonly<{
+export type ProtocolViolation = TypeError &
+  Readonly<{
     code: ProtocolViolationCode;
     protocolViolation: true;
   }>;
@@ -62,10 +61,12 @@ export function createProtocolViolation(
 export function isProtocolViolation(
   value: unknown,
 ): value is ProtocolViolation {
-  return value instanceof TypeError &&
+  return (
+    value instanceof TypeError &&
     (value as unknown as Record<PropertyKey, unknown>)[
-        protocolViolationMarker
-      ] === true;
+      protocolViolationMarker
+    ] === true
+  );
 }
 
 export function throwProtocolViolation(

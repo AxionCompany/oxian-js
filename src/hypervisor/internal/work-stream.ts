@@ -173,11 +173,14 @@ export function createWorkStreamController(
   const sendLocalEnd = async (pending: PendingWork): Promise<void> => {
     if (pending.localTerminal || pending.localAborted) return;
     pending.localTerminal = true;
-    await pending.record.transport!.sendControl({
-      protocol: WORKER_PROTOCOL,
-      type: "work.end",
-      streamId: pending.streamId,
-    }, { signal: pending.record.abort.signal });
+    await pending.record.transport!.sendControl(
+      {
+        protocol: WORKER_PROTOCOL,
+        type: "work.end",
+        streamId: pending.streamId,
+      },
+      { signal: pending.record.abort.signal },
+    );
   };
 
   const sendLocalCancel = async (
@@ -187,12 +190,15 @@ export function createWorkStreamController(
     if (pending.localAborted) return;
     pending.localTerminal = true;
     pending.localAborted = true;
-    await pending.record.transport!.sendControl({
-      protocol: WORKER_PROTOCOL,
-      type: "work.cancel",
-      streamId: pending.streamId,
-      reason: reason.slice(0, 512) || "cancelled",
-    }, { signal: pending.record.abort.signal });
+    await pending.record.transport!.sendControl(
+      {
+        protocol: WORKER_PROTOCOL,
+        type: "work.cancel",
+        streamId: pending.streamId,
+        reason: reason.slice(0, 512) || "cancelled",
+      },
+      { signal: pending.record.abort.signal },
+    );
   };
 
   const armCancellationTimeout = (
@@ -229,9 +235,10 @@ export function createWorkStreamController(
     }
     if (current.status !== "cancelling") {
       dispatcher.cancel(pending.operationId, {
-        code: reason === "deadline_exceeded"
-          ? "deadline_exceeded"
-          : "caller_cancelled",
+        code:
+          reason === "deadline_exceeded"
+            ? "deadline_exceeded"
+            : "caller_cancelled",
         message: reason,
       });
     }
@@ -258,9 +265,7 @@ export function createWorkStreamController(
     return await pending.completed.promise;
   };
 
-  const grantOutputCredit = async (
-    pending: PendingWork,
-  ): Promise<void> => {
+  const grantOutputCredit = async (pending: PendingWork): Promise<void> => {
     if (
       !pending.startedValue ||
       pending.peerTerminal ||
@@ -271,22 +276,22 @@ export function createWorkStreamController(
       return;
     }
     const desired = pending.outputController?.desiredSize ?? 0;
-    const window = Math.min(
-      OUTPUT_WINDOW_BYTES,
-      config.maxReceiveCreditBytes,
-    );
+    const window = Math.min(OUTPUT_WINDOW_BYTES, config.maxReceiveCreditBytes);
     const target = Math.min(window, Math.max(0, Math.floor(desired)));
     const bytes = target - pending.outputCredit;
     if (bytes < 1) return;
     pending.outputGranting = true;
     pending.outputCredit += bytes;
     try {
-      await pending.record.transport!.sendControl({
-        protocol: WORKER_PROTOCOL,
-        type: "work.credit",
-        streamId: pending.streamId,
-        bytes,
-      }, { signal: pending.record.abort.signal });
+      await pending.record.transport!.sendControl(
+        {
+          protocol: WORKER_PROTOCOL,
+          type: "work.credit",
+          streamId: pending.streamId,
+          bytes,
+        },
+        { signal: pending.record.abort.signal },
+      );
     } catch (error) {
       if (
         errorCode(error) === "post_terminal_frame" ||
@@ -316,10 +321,7 @@ export function createWorkStreamController(
     }
     pending.inputPumping = true;
     try {
-      while (
-        !pending.localTerminal &&
-        !pending.inputAbort.signal.aborted
-      ) {
+      while (!pending.localTerminal && !pending.inputAbort.signal.aborted) {
         if (
           pending.inputBuffer === undefined ||
           pending.inputOffset >= pending.inputBuffer.byteLength
@@ -365,8 +367,7 @@ export function createWorkStreamController(
         // One validated chunk of lookahead lets an exact-credit final chunk
         // discover EOF and promptly send the local work.end half-close.
         if (pending.inputCredit < 1) return;
-        const remaining = pending.inputBuffer.byteLength -
-          pending.inputOffset;
+        const remaining = pending.inputBuffer.byteLength - pending.inputOffset;
         const bytes = Math.min(
           remaining,
           pending.inputCredit,
@@ -378,12 +379,15 @@ export function createWorkStreamController(
         );
         pending.inputOffset += bytes;
         pending.inputCredit -= bytes;
-        await pending.record.transport!.sendData({
-          type: "work.data",
-          streamId: pending.streamId,
-          sequence: pending.inputSequence++,
-          payload,
-        }, { signal: pending.inputAbort.signal });
+        await pending.record.transport!.sendData(
+          {
+            type: "work.data",
+            streamId: pending.streamId,
+            sequence: pending.inputSequence++,
+            payload,
+          },
+          { signal: pending.inputAbort.signal },
+        );
       }
     } catch {
       if (!pending.inputAbort.signal.aborted) {
@@ -401,9 +405,7 @@ export function createWorkStreamController(
     }
   };
 
-  const commitAndStart = async (
-    pending: PendingWork,
-  ): Promise<void> => {
+  const commitAndStart = async (pending: PendingWork): Promise<void> => {
     let acceptanceCommitAdmitted = false;
     try {
       const workerId = pending.fence.identity.workerId;
@@ -456,14 +458,8 @@ export function createWorkStreamController(
           }
           // Capacity remains reserved until cancellation acknowledgement or
           // connection loss resolves the ambiguous persistence boundary.
-          armCancellationTimeout(
-            pending,
-            "indeterminate_cancellation_timeout",
-          );
-          await sendLocalCancel(
-            pending,
-            "acceptance_persistence_unknown",
-          );
+          armCancellationTimeout(pending, "indeterminate_cancellation_timeout");
+          await sendLocalCancel(pending, "acceptance_persistence_unknown");
         } else if (
           committed.status === "failed" ||
           committed.status === "cancelled"
@@ -484,24 +480,29 @@ export function createWorkStreamController(
         return;
       }
       const dispatch = dispatcher.get(pending.operationId)!;
-      await options.callbacks.onStart?.(Object.freeze({
-        stage: "start" as const,
-        stageId: `start:${pending.operationId}:${pending.streamId}`,
-        callbackAttempt: 1,
-        signal: pending.record.abort.signal,
-        identity: pending.fence.identity,
-        connectionId: pending.fence.connectionId,
-        operationId: pending.operationId,
-        streamId: pending.streamId,
-        workload: dispatch.workload,
-        metadata: dispatch.metadata,
-        fence: pending.fence,
-      }));
-      await pending.record.transport!.sendControl({
-        protocol: WORKER_PROTOCOL,
-        type: "work.start",
-        streamId: pending.streamId,
-      }, { signal: pending.record.abort.signal });
+      await options.callbacks.onStart?.(
+        Object.freeze({
+          stage: "start" as const,
+          stageId: `start:${pending.operationId}:${pending.streamId}`,
+          callbackAttempt: 1,
+          signal: pending.record.abort.signal,
+          identity: pending.fence.identity,
+          connectionId: pending.fence.connectionId,
+          operationId: pending.operationId,
+          streamId: pending.streamId,
+          workload: dispatch.workload,
+          metadata: dispatch.metadata,
+          fence: pending.fence,
+        }),
+      );
+      await pending.record.transport!.sendControl(
+        {
+          protocol: WORKER_PROTOCOL,
+          type: "work.start",
+          streamId: pending.streamId,
+        },
+        { signal: pending.record.abort.signal },
+      );
       pending.startedValue = true;
       pending.started.resolve();
       void grantOutputCredit(pending);
@@ -540,8 +541,8 @@ export function createWorkStreamController(
             current.status === "indeterminate"
               ? "indeterminate"
               : current.status === "reschedulable"
-              ? "reschedulable"
-              : "work_failed",
+                ? "reschedulable"
+                : "work_failed",
             error instanceof Error ? error.message : "work start failed",
           ),
         );
@@ -582,12 +583,15 @@ export function createWorkStreamController(
         disposition === "discard" &&
         (frame.type === "work.cancel" || frame.type === "work.error")
       ) {
-        await record.transport!.sendControl({
-          protocol: WORKER_PROTOCOL,
-          type: "work.cancel",
-          streamId: frame.streamId,
-          reason: "late_abort_ack",
-        }, { signal: record.abort.signal });
+        await record.transport!.sendControl(
+          {
+            protocol: WORKER_PROTOCOL,
+            type: "work.cancel",
+            streamId: frame.streamId,
+            reason: "late_abort_ack",
+          },
+          { signal: record.abort.signal },
+        );
         return true;
       }
       throw createHypervisorError(
@@ -626,9 +630,9 @@ export function createWorkStreamController(
       pending.peerTerminal = "end";
       pending.outputCredit = 0;
       pending.inputAbort.abort("worker_response_complete");
-      void pending.inputReader?.cancel("worker_response_complete").catch(() =>
-        undefined
-      );
+      void pending.inputReader
+        ?.cancel("worker_response_complete")
+        .catch(() => undefined);
       if (pending.localAborted) {
         // A crossed normal End does not acknowledge a local Cancel/Error.
         return true;
@@ -650,21 +654,22 @@ export function createWorkStreamController(
         pending.streamId,
       );
       try {
-        await options.callbacks.onComplete?.(Object.freeze({
-          stage: "complete" as const,
-          stageId:
-            `complete:${pending.operationId}:${pending.streamId}:completed`,
-          callbackAttempt: 1,
-          signal: record.abort.signal,
-          identity: pending.fence.identity,
-          connectionId: pending.fence.connectionId,
-          operationId: pending.operationId,
-          streamId: pending.streamId,
-          workload: completed.workload,
-          metadata: completed.metadata,
-          fence: pending.fence,
-          outcome: "completed" as const,
-        }));
+        await options.callbacks.onComplete?.(
+          Object.freeze({
+            stage: "complete" as const,
+            stageId: `complete:${pending.operationId}:${pending.streamId}:completed`,
+            callbackAttempt: 1,
+            signal: record.abort.signal,
+            identity: pending.fence.identity,
+            connectionId: pending.fence.connectionId,
+            operationId: pending.operationId,
+            streamId: pending.streamId,
+            workload: completed.workload,
+            metadata: completed.metadata,
+            fence: pending.fence,
+            outcome: "completed" as const,
+          }),
+        );
       } catch {
         // Completion observes an authoritative terminal and cannot rewrite it.
       }
@@ -690,44 +695,47 @@ export function createWorkStreamController(
     }
     const current = dispatcher.get(pending.operationId);
     if (current === undefined) return true;
-    const terminal = current.status === "cancelling"
-      ? dispatcher.confirmCancellation(
-        pending.operationId,
-        pending.fence,
-        pending.streamId,
-      )
-      : dispatcher.settlePeerTerminal(
-        pending.operationId,
-        pending.fence,
-        pending.streamId,
-        frame.type === "work.cancel"
-          ? { type: "cancel", reason: frame.reason }
-          : { type: "error", code: frame.code, message: frame.message },
-      );
+    const terminal =
+      current.status === "cancelling"
+        ? dispatcher.confirmCancellation(
+            pending.operationId,
+            pending.fence,
+            pending.streamId,
+          )
+        : dispatcher.settlePeerTerminal(
+            pending.operationId,
+            pending.fence,
+            pending.streamId,
+            frame.type === "work.cancel"
+              ? { type: "cancel", reason: frame.reason }
+              : { type: "error", code: frame.code, message: frame.message },
+          );
     if (terminal.status !== "committing") {
       try {
-        await options.callbacks.onComplete?.(Object.freeze({
-          stage: "complete" as const,
-          stageId:
-            `complete:${pending.operationId}:${pending.streamId}:${terminal.status}`,
-          callbackAttempt: 1,
-          signal: record.abort.signal,
-          identity: pending.fence.identity,
-          connectionId: pending.fence.connectionId,
-          operationId: pending.operationId,
-          streamId: pending.streamId,
-          workload: terminal.workload,
-          metadata: terminal.metadata,
-          fence: pending.fence,
-          outcome: terminal.status === "indeterminate"
-            ? "indeterminate" as const
-            : terminal.status === "cancelled"
-            ? "cancelled" as const
-            : "failed" as const,
-          ...(terminal.terminal === undefined
-            ? {}
-            : { error: terminal.terminal }),
-        }));
+        await options.callbacks.onComplete?.(
+          Object.freeze({
+            stage: "complete" as const,
+            stageId: `complete:${pending.operationId}:${pending.streamId}:${terminal.status}`,
+            callbackAttempt: 1,
+            signal: record.abort.signal,
+            identity: pending.fence.identity,
+            connectionId: pending.fence.connectionId,
+            operationId: pending.operationId,
+            streamId: pending.streamId,
+            workload: terminal.workload,
+            metadata: terminal.metadata,
+            fence: pending.fence,
+            outcome:
+              terminal.status === "indeterminate"
+                ? ("indeterminate" as const)
+                : terminal.status === "cancelled"
+                  ? ("cancelled" as const)
+                  : ("failed" as const),
+            ...(terminal.terminal === undefined
+              ? {}
+              : { error: terminal.terminal }),
+          }),
+        );
       } catch {
         // Completion observes an authoritative terminal and cannot rewrite it.
       }
@@ -741,8 +749,8 @@ export function createWorkStreamController(
           terminal.status === "indeterminate"
             ? "indeterminate"
             : terminal.status === "reschedulable"
-            ? "reschedulable"
-            : "work_failed",
+              ? "reschedulable"
+              : "work_failed",
           terminal.terminal?.message ?? "worker terminated work",
         ),
       );
@@ -817,9 +825,11 @@ export function createWorkStreamController(
     let active = true;
     const abort = (): void => {
       if (!active) return;
-      void handle.cancel(
-        typeof signal.reason === "string" ? signal.reason : "caller_aborted",
-      ).catch(() => undefined);
+      void handle
+        .cancel(
+          typeof signal.reason === "string" ? signal.reason : "caller_aborted",
+        )
+        .catch(() => undefined);
     };
     const dispose = (): void => {
       if (!active) return;
@@ -874,26 +884,29 @@ export function createWorkStreamController(
     let outputController:
       | ReadableStreamDefaultController<Uint8Array>
       | undefined;
-    const output = new ReadableStream<Uint8Array>({
-      start(controller) {
-        outputController = controller;
+    const output = new ReadableStream<Uint8Array>(
+      {
+        start(controller) {
+          outputController = controller;
+        },
+        pull() {
+          void grantOutputCredit(pending);
+        },
+        cancel(reason) {
+          return cancelPendingWork(
+            pending,
+            typeof reason === "string" ? reason : "output_cancelled",
+          ).then(() => undefined);
+        },
       },
-      pull() {
-        void grantOutputCredit(pending);
+      {
+        highWaterMark: Math.min(
+          OUTPUT_WINDOW_BYTES,
+          config.maxReceiveCreditBytes,
+        ),
+        size: (chunk) => chunk.byteLength,
       },
-      cancel(reason) {
-        return cancelPendingWork(
-          pending,
-          typeof reason === "string" ? reason : "output_cancelled",
-        ).then(() => undefined);
-      },
-    }, {
-      highWaterMark: Math.min(
-        OUTPUT_WINDOW_BYTES,
-        config.maxReceiveCreditBytes,
-      ),
-      size: (chunk) => chunk.byteLength,
-    });
+    );
     pending = {
       record,
       operationId,
@@ -940,16 +953,19 @@ export function createWorkStreamController(
     };
     let openDelivery: Promise<unknown>;
     try {
-      openDelivery = record.transport.sendControl({
-        protocol: WORKER_PROTOCOL,
-        type: "work.open",
-        streamId: payload.streamId,
-        workload: payload.workload,
-        metadata: payload.metadata,
-        ...(payload.deadlineAtMs === undefined
-          ? {}
-          : { deadlineAtMs: payload.deadlineAtMs }),
-      }, { signal: record.abort.signal });
+      openDelivery = record.transport.sendControl(
+        {
+          protocol: WORKER_PROTOCOL,
+          type: "work.open",
+          streamId: payload.streamId,
+          workload: payload.workload,
+          metadata: payload.metadata,
+          ...(payload.deadlineAtMs === undefined
+            ? {}
+            : { deadlineAtMs: payload.deadlineAtMs }),
+        },
+        { signal: record.abort.signal },
+      );
     } catch {
       failAfterOpen("work_open_failed");
       return handle;

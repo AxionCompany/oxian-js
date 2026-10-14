@@ -26,7 +26,7 @@ test("credit window: grants and consumes bounded byte credit", () => {
 test("credit window: failed consumption does not mutate credit", () => {
   const window = createCreditWindow({ initialCredit: 3 });
 
-  assert.ok(!(window.tryConsume(4)));
+  assert.ok(!window.tryConsume(4));
   assert.deepStrictEqual(window.available(), 3);
   assertThrows(
     () => window.consume(4),

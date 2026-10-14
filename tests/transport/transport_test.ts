@@ -39,9 +39,8 @@ const HELLO = createHelloFrame({
   capacity: 1,
 });
 
-type TestTransportOptions =
-  & Omit<ProtocolTransportOptions, "connection">
-  & Readonly<{
+type TestTransportOptions = Omit<ProtocolTransportOptions, "connection"> &
+  Readonly<{
     socket: WebSocket | SocketConnection;
     negotiatedProtocol?: string;
     maxBufferedAmountBytes?: number;
@@ -49,9 +48,7 @@ type TestTransportOptions =
     bufferedAmountPollMs?: number;
   }>;
 
-async function createTestTransport(
-  options: TestTransportOptions,
-) {
+async function createTestTransport(options: TestTransportOptions) {
   const maxDataPayloadBytes = options.protocol?.maxDataPayloadBytes;
   if (
     options.maxBufferedAmountBytes !== undefined &&
@@ -267,9 +264,7 @@ function createFakeSocket(
 
 test("real transport closes an invalid protocol peer with stable 4xxx code", async () => {
   const peer = await startTestPeer();
-  let worker:
-    | Awaited<ReturnType<typeof createTestTransport>>
-    | undefined;
+  let worker: Awaited<ReturnType<typeof createTestTransport>> | undefined;
   try {
     const socket = await connectWorkerWebSocket({
       url: peer.url,
@@ -342,13 +337,11 @@ test("worker socket factory authentication is inside the connect deadline", asyn
 
 test("worker socket URL rejects embedded credentials before invoking its factory", async () => {
   let factoryCalls = 0;
-  for (
-    const url of [
-      "wss://worker:secret@example.test/workers",
-      "wss://example.test/workers?capability=secret",
-      "wss://example.test/workers#credential",
-    ]
-  ) {
+  for (const url of [
+    "wss://worker:secret@example.test/workers",
+    "wss://example.test/workers?capability=secret",
+    "wss://example.test/workers#credential",
+  ]) {
     await assertRejects(
       () =>
         connectWorkerWebSocket({
@@ -404,11 +397,7 @@ test("send failure poisons advanced protocol state deterministically", async () 
     reason: "transport_failed",
     wasClean: false,
   });
-  await assertRejects(
-    () => transport.sendControl(HELLO),
-    TypeError,
-    "closed",
-  );
+  await assertRejects(() => transport.sendControl(HELLO), TypeError, "closed");
 });
 
 test("transport drains a received terminal frame before peer close", async () => {

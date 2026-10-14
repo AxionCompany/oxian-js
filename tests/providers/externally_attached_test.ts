@@ -38,12 +38,10 @@ async function assertTamperedReferencesRejected(
   ];
 
   for (const tampered of tamperedResources) {
-    for (
-      const operation of [
-        () => provider.inspect(tampered),
-        () => provider.terminate(tampered),
-      ]
-    ) {
+    for (const operation of [
+      () => provider.inspect(tampered),
+      () => provider.terminate(tampered),
+    ]) {
       const error = await assertRejects(operation, Error);
       assert.deepStrictEqual(isProviderError(error), true);
       if (isProviderError(error)) {

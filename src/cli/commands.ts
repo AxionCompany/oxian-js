@@ -75,12 +75,11 @@ export async function runInitCommand(
   const routesRoot = resolve(root, "routes");
   const routePath = resolve(routesRoot, "index.ts");
   const existing = (
-    await Promise.all([
-      pathExists(configPath),
-      pathExists(routePath),
-    ])
+    await Promise.all([pathExists(configPath), pathExists(routePath)])
   )
-    .map((exists, index) => exists ? [configPath, routePath][index] : undefined)
+    .map((exists, index) =>
+      exists ? [configPath, routePath][index] : undefined,
+    )
     .filter((path): path is string => path !== undefined);
   if (existing.length > 0 && parsed.force !== true) {
     throw new Error(
@@ -120,11 +119,7 @@ async function loadApplicationConfig(
   parsed: ParsedCli,
   context: CommandContext,
 ): Promise<OxianConfig> {
-  const source = moduleSource(
-    context.cwd,
-    parsed.config,
-    "oxian.config.ts",
-  );
+  const source = moduleSource(context.cwd, parsed.config, "oxian.config.ts");
   return await context.dependencies.loadConfig(source);
 }
 
@@ -169,11 +164,7 @@ export async function runServerCommand(
   if (parsed.command !== "start" && parsed.command !== "dev") {
     throw new TypeError("server command must be start or dev");
   }
-  const source = moduleSource(
-    context.cwd,
-    parsed.config,
-    "oxian.config.ts",
-  );
+  const source = moduleSource(context.cwd, parsed.config, "oxian.config.ts");
   const config = await context.dependencies.loadConfig(source);
   const lifecycle = context.dependencies.createLocalRuntime({
     config,
@@ -200,11 +191,7 @@ export async function runWorkerCommand(
   parsed: ParsedCli,
   context: CommandContext,
 ): Promise<void> {
-  const source = moduleSource(
-    context.cwd,
-    parsed.manifest,
-    "oxian.worker.ts",
-  );
+  const source = moduleSource(context.cwd, parsed.manifest, "oxian.worker.ts");
   const manifest = await context.dependencies.loadWorkerManifest(source);
   const lifecycle = context.dependencies.createManifestWorkerRuntime({
     manifest,

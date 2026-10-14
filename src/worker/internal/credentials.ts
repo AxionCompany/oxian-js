@@ -162,7 +162,7 @@ export function createCredentialRotationCoordinator(
           connectionId: welcome.connectionId,
           bootstrap: welcome.bootstrap,
           reconnecting: source.credential.kind === "resume",
-        })
+        }),
       );
     }
     try {

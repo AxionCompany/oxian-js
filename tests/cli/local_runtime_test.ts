@@ -5,15 +5,9 @@ import { join } from "@std/path";
 import { defineConfig } from "../../src/config/index.ts";
 import { createLocalRuntime } from "../../src/local/runtime.ts";
 
-const APP_MODULE_URL = new URL(
-  "../../src/app/index.ts",
-  import.meta.url,
-).href;
+const APP_MODULE_URL = new URL("../../src/app/index.ts", import.meta.url).href;
 
-function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new DOMException("test timed out", "TimeoutError")),
@@ -88,10 +82,9 @@ test("start lifecycle serves real HTTP through an outbound loopback WebSocket wo
       "ready",
     );
 
-    const response = await fetch(
-      new URL("/", running.listenerUrl),
-      { headers: { origin: "https://client.example" } },
-    );
+    const response = await fetch(new URL("/", running.listenerUrl), {
+      headers: { origin: "https://client.example" },
+    });
     assert.deepStrictEqual(response.status, 200);
     assert.deepStrictEqual(
       response.headers.get("access-control-allow-origin"),
@@ -267,7 +260,8 @@ export function GET(request: Request): Response {
         if (
           running.hypervisor.sessions.get(running.identity.workerId)
             ?.reserved === 0
-        ) break;
+        )
+          break;
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
       assert.deepStrictEqual(
@@ -374,17 +368,13 @@ export default defineApplicationFactory((context) => {
       await mounted.text(),
       "configured-factory:middleware",
     );
-    const outsideMount = await fetch(
-      new URL("/apix", running.listenerUrl),
-    );
+    const outsideMount = await fetch(new URL("/apix", running.listenerUrl));
     assert.deepStrictEqual(outsideMount.status, 404);
     // Reading status alone leaves this request concurrent with the next one:
     // Fetch resolves when headers arrive, while capacity is released only
     // after the worker's response stream reaches its protocol terminal.
     await outsideMount.arrayBuffer();
-    const failed = await fetch(
-      new URL("/api?fail=1", running.listenerUrl),
-    );
+    const failed = await fetch(new URL("/api?fail=1", running.listenerUrl));
     assert.deepStrictEqual(failed.status, 598);
     assert.deepStrictEqual(await failed.text(), "factory_route_failed");
 

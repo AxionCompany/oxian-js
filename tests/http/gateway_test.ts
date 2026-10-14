@@ -24,9 +24,11 @@ test("HTTP gateway defaults to the versioned HTTP workload", async () => {
   const gateway = createHttpGateway({
     dispatch: (input) => {
       workload = input.workload;
-      return Promise.resolve(createHandle({
-        metadata: encodeHttpResponseMetadata(new Response(null)),
-      }));
+      return Promise.resolve(
+        createHandle({
+          metadata: encodeHttpResponseMetadata(new Response(null)),
+        }),
+      );
     },
   });
 
@@ -57,10 +59,12 @@ test("HTTP gateway maps request and streaming response without buffering", async
     deadlineAtMs: () => 123_456,
     dispatch: (input) => {
       dispatched = input;
-      return Promise.resolve(createHandle({
-        metadata: responseMetadata,
-        output: streamOf(responseBytes),
-      }));
+      return Promise.resolve(
+        createHandle({
+          metadata: responseMetadata,
+          output: streamOf(responseBytes),
+        }),
+      );
     },
   });
 
@@ -113,10 +117,12 @@ test("HTTP gateway maps request abort while awaiting metadata", async () => {
   const controller = new AbortController();
   const gateway = createHttpGateway({
     dispatch: () =>
-      Promise.resolve(createHandle({
-        metadata: metadata.promise,
-        cancel: cancellation.resolve,
-      })),
+      Promise.resolve(
+        createHandle({
+          metadata: metadata.promise,
+          cancel: cancellation.resolve,
+        }),
+      ),
   });
   const operation = gateway(
     new Request("https://gateway.test/", {
@@ -126,11 +132,7 @@ test("HTTP gateway maps request abort while awaiting metadata", async () => {
   await Promise.resolve();
   controller.abort(new DOMException("browser disconnected", "AbortError"));
 
-  await assertRejects(
-    () => operation,
-    DOMException,
-    "browser disconnected",
-  );
+  await assertRejects(() => operation, DOMException, "browser disconnected");
   assert.deepStrictEqual(await cancellation.promise, "browser disconnected");
 });
 
@@ -138,17 +140,19 @@ test("HTTP gateway cancels a malformed worker response", async () => {
   const cancellations: (string | undefined)[] = [];
   const gateway = createHttpGateway({
     dispatch: () =>
-      Promise.resolve(createHandle({
-        metadata: {
-          schema: HTTP_RESPONSE_METADATA_SCHEMA,
-          status: 200,
-          statusText: "OK",
-          headers: [],
-          hasBody: true,
-          extra: "not allowed",
-        },
-        cancel: (reason) => cancellations.push(reason),
-      })),
+      Promise.resolve(
+        createHandle({
+          metadata: {
+            schema: HTTP_RESPONSE_METADATA_SCHEMA,
+            status: 200,
+            statusText: "OK",
+            headers: [],
+            hasBody: true,
+            extra: "not allowed",
+          },
+          cancel: (reason) => cancellations.push(reason),
+        }),
+      ),
   });
 
   await assertRejects(
@@ -164,17 +168,22 @@ test("HTTP gateway propagates response-body cancellation", async () => {
   const metadata = encodeHttpResponseMetadata(
     new Response(new Uint8Array([1])),
   );
-  const output = new ReadableStream<Uint8Array>({
-    cancel(reason) {
-      cancelledWith = reason;
+  const output = new ReadableStream<Uint8Array>(
+    {
+      cancel(reason) {
+        cancelledWith = reason;
+      },
     },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
   const gateway = createHttpGateway({
     dispatch: () =>
-      Promise.resolve(createHandle({
-        metadata,
-        output,
-      })),
+      Promise.resolve(
+        createHandle({
+          metadata,
+          output,
+        }),
+      ),
   });
 
   const response = await gateway(new Request("https://gateway.test/"));
@@ -184,11 +193,14 @@ test("HTTP gateway propagates response-body cancellation", async () => {
 
 test("HTTP gateway cancels an unread request body when dispatch fails", async () => {
   let cancelledWith: unknown;
-  const requestBody = new ReadableStream<Uint8Array>({
-    cancel(reason) {
-      cancelledWith = reason;
+  const requestBody = new ReadableStream<Uint8Array>(
+    {
+      cancel(reason) {
+        cancelledWith = reason;
+      },
     },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
   const failure = new Error("no worker available");
   const gateway = createHttpGateway({
     dispatch: () => Promise.reject(failure),

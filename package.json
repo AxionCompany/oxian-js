@@ -8,7 +8,7 @@
   "scripts": {
     "check": "npm run check:types && npm run check:biome && npm run check:node",
     "check:types": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
-    "check:biome": "biome lint .",
+    "check:biome": "biome check .",
     "check:node": "node scripts/check_node_portability.mjs",
     "test": "node scripts/test-node.mjs"
   },

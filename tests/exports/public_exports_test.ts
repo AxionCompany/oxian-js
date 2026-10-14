@@ -36,16 +36,14 @@ test("package root is exactly the portable execution core", () => {
   assert.deepStrictEqual("connectWorkerWebSocket" in root, false);
   assert.deepStrictEqual(typeof transport.connectWorkerWebSocket, "function");
 
-  for (
-    const platformExport of [
-      "defineConfig",
-      "createCorsAdapter",
-      "createFileRouter",
-      "createLocalProcessProvider",
-      "createLocalRuntime",
-      "serve",
-    ]
-  ) {
+  for (const platformExport of [
+    "defineConfig",
+    "createCorsAdapter",
+    "createFileRouter",
+    "createLocalProcessProvider",
+    "createLocalRuntime",
+    "serve",
+  ]) {
     assert.deepStrictEqual(platformExport in root, false);
   }
 

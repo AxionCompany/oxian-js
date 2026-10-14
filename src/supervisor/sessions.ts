@@ -174,10 +174,12 @@ export function createSessionRegistry(
     session: WorkerSession | undefined,
     fence: SessionFence,
   ): session is WorkerSession => {
-    return session !== undefined &&
+    return (
+      session !== undefined &&
       session.connectionId === fence.connectionId &&
       session.sessionGeneration === fence.sessionGeneration &&
-      sameIdentity(session.identity, fence.identity);
+      sameIdentity(session.identity, fence.identity)
+    );
   };
 
   const assertCurrent = (fenceInput: SessionFence): WorkerSession => {
@@ -285,9 +287,8 @@ export function createSessionRegistry(
       }
     }
 
-    const replaced = existing === undefined
-      ? expiredExisting
-      : remove(existing, "closed");
+    const replaced =
+      existing === undefined ? expiredExisting : remove(existing, "closed");
     sessions.set(incoming.identity.workerId, incoming);
     connectionOwners.set(incoming.connectionId, incoming.identity.workerId);
     highWatermarks.set(
@@ -324,8 +325,8 @@ export function createSessionRegistry(
         );
       }
       const currentTime = now();
-      const leaseTimeoutMs = session.leaseExpiresAtMs -
-        session.lastHeartbeatAtMs;
+      const leaseTimeoutMs =
+        session.leaseExpiresAtMs - session.lastHeartbeatAtMs;
       const leaseExpiresAtMs = currentTime + leaseTimeoutMs;
       if (!Number.isSafeInteger(leaseExpiresAtMs)) {
         throw new TypeError("lease expiration exceeds safe integer range");
@@ -359,8 +360,8 @@ export function createSessionRegistry(
         );
       }
       const currentTime = now();
-      const leaseTimeoutMs = session.leaseExpiresAtMs -
-        session.lastHeartbeatAtMs;
+      const leaseTimeoutMs =
+        session.leaseExpiresAtMs - session.lastHeartbeatAtMs;
       const leaseExpiresAtMs = currentTime + leaseTimeoutMs;
       if (!Number.isSafeInteger(leaseExpiresAtMs)) {
         throw new TypeError("lease expiration exceeds safe integer range");
@@ -376,10 +377,7 @@ export function createSessionRegistry(
   const startDrain = (fence: SessionFence): WorkerSession => {
     return replace(fence, (session) => {
       if (session.phase !== "ready") {
-        return fail(
-          "invalid_state",
-          `cannot drain a ${session.phase} session`,
-        );
+        return fail("invalid_state", `cannot drain a ${session.phase} session`);
       }
       return withSession(session, { phase: "draining" });
     });
@@ -456,28 +454,31 @@ export function createSessionRegistry(
       throw new TypeError("session reservation input must be an object");
     }
     const workload = expectWorkload(input.workload, "workload");
-    const target = input.target === undefined
-      ? undefined
-      : createWorkDispatchTarget(input.target);
+    const target =
+      input.target === undefined
+        ? undefined
+        : createWorkDispatchTarget(input.target);
     scanExpired();
-    const candidates = target === undefined
-      ? Array.from(sessions.values()).filter((session) =>
-        session.phase === "ready" &&
-        session.workloads.includes(workload) &&
-        session.reserved < session.capacity
-      )
-      : [sessions.get(target.workerId)].filter((
-        session,
-      ): session is WorkerSession =>
-        session !== undefined &&
-        session.phase === "ready" &&
-        session.workloads.includes(workload) &&
-        session.reserved < session.capacity
-      );
-    candidates.sort((left, right) =>
-      left.reserved / left.capacity - right.reserved / right.capacity ||
-      left.connectedAtMs - right.connectedAtMs ||
-      left.identity.workerId.localeCompare(right.identity.workerId)
+    const candidates =
+      target === undefined
+        ? Array.from(sessions.values()).filter(
+            (session) =>
+              session.phase === "ready" &&
+              session.workloads.includes(workload) &&
+              session.reserved < session.capacity,
+          )
+        : [sessions.get(target.workerId)].filter(
+            (session): session is WorkerSession =>
+              session !== undefined &&
+              session.phase === "ready" &&
+              session.workloads.includes(workload) &&
+              session.reserved < session.capacity,
+          );
+    candidates.sort(
+      (left, right) =>
+        left.reserved / left.capacity - right.reserved / right.capacity ||
+        left.connectedAtMs - right.connectedAtMs ||
+        left.identity.workerId.localeCompare(right.identity.workerId),
     );
     const selected = candidates[0];
     if (selected === undefined) {
@@ -503,9 +504,7 @@ export function createSessionRegistry(
     });
   };
 
-  const releaseIfCurrent = (
-    fence: SessionFence,
-  ): WorkerSession | undefined => {
+  const releaseIfCurrent = (fence: SessionFence): WorkerSession | undefined => {
     if (!isCurrent(fence)) return undefined;
     const session = assertCurrent(fence);
     if (session.reserved < 1) return session;

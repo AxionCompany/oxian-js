@@ -86,16 +86,11 @@ export async function createApplication<State = undefined>(
   if (setup !== undefined && "state" in options) {
     throw new TypeError("application accepts either setup or state, not both");
   }
-  if (
-    options.middleware !== undefined &&
-    !Array.isArray(options.middleware)
-  ) {
+  if (options.middleware !== undefined && !Array.isArray(options.middleware)) {
     throw new TypeError("application middleware must be an array");
   }
   const globalMiddleware = Object.freeze([...(options.middleware ?? [])]);
-  if (
-    globalMiddleware.some((middleware) => typeof middleware !== "function")
-  ) {
+  if (globalMiddleware.some((middleware) => typeof middleware !== "function")) {
     throw new TypeError("application middleware must contain only functions");
   }
   const onError = options.onError;
@@ -110,9 +105,10 @@ export async function createApplication<State = undefined>(
   const lifecycle = new AbortController();
   let state: State;
   try {
-    state = setup === undefined
-      ? options.state as State
-      : await setup({ signal: lifecycle.signal });
+    state =
+      setup === undefined
+        ? (options.state as State)
+        : await setup({ signal: lifecycle.signal });
   } catch (error) {
     lifecycle.abort(error);
     throw error;
@@ -201,10 +197,10 @@ export async function createApplication<State = undefined>(
           headers: { allow: allow.join(", ") },
         });
       } else {
-        const selected = method === "HEAD" &&
-            match.route.methods.HEAD === undefined
-          ? match.route.methods.GET
-          : match.route.methods[method as HttpMethod];
+        const selected =
+          method === "HEAD" && match.route.methods.HEAD === undefined
+            ? match.route.methods.GET
+            : match.route.methods[method as HttpMethod];
         if (selected === undefined) {
           response = methodNotAllowed(allow);
         } else {
@@ -228,9 +224,10 @@ export async function createApplication<State = undefined>(
       if (method === "HEAD") response = await withoutBody(response);
       return trackResponse(response, signal, { finish });
     } catch (error) {
-      let response = error instanceof URIError
-        ? malformedPathResponse()
-        : await handleError(error, baseErrorContext);
+      let response =
+        error instanceof URIError
+          ? malformedPathResponse()
+          : await handleError(error, baseErrorContext);
       if (request.method.toUpperCase() === "HEAD") {
         response = await withoutBody(response);
       }

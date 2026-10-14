@@ -54,14 +54,13 @@ export function createWorkerAttempt(
   });
 }
 
-function copyFailure(
-  failure: WorkerAttemptFailure,
-): WorkerAttemptFailure {
+function copyFailure(failure: WorkerAttemptFailure): WorkerAttemptFailure {
   return freeze({
     code: expectIdentifier(failure.code, "failure.code"),
-    message: typeof failure.message === "string" && failure.message.length > 0
-      ? failure.message
-      : fail("invalid_state", "failure.message must be a non-empty string"),
+    message:
+      typeof failure.message === "string" && failure.message.length > 0
+        ? failure.message
+        : fail("invalid_state", "failure.message must be a non-empty string"),
   });
 }
 
@@ -138,10 +137,7 @@ export function transitionWorkerAttempt(
     }
 
     case "failed": {
-      if (
-        attempt.phase === "terminated" ||
-        attempt.phase === "failed"
-      ) {
+      if (attempt.phase === "terminated" || attempt.phase === "failed") {
         return fail(
           "invalid_state",
           `cannot fail an attempt in phase ${attempt.phase}`,
@@ -159,9 +155,7 @@ export function isTerminalAttempt(attempt: WorkerAttempt): boolean {
   return attempt.phase === "terminated" || attempt.phase === "failed";
 }
 
-export function createSessionFence(
-  input: SessionFence,
-): SessionFence {
+export function createSessionFence(input: SessionFence): SessionFence {
   return freeze({
     identity: copyIdentity(input.identity),
     connectionId: expectIdentifier(input.connectionId, "connectionId"),

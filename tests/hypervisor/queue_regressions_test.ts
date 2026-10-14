@@ -100,10 +100,7 @@ for (const transport of ["in-process", "websocket"] as const) {
       releaseHook.resolve();
       assert.deepStrictEqual(
         (await bounded(all)).map((result) => result.status),
-        [
-          "fulfilled",
-          "fulfilled",
-        ],
+        ["fulfilled", "fulfilled"],
       );
       assert.deepStrictEqual(starts, ["first", "second"]);
       assert.deepStrictEqual(occupiedAtSecondAssignment, 0);
@@ -149,10 +146,7 @@ for (const transport of ["in-process", "websocket"] as const) {
       releaseB.resolve();
       assert.deepStrictEqual(
         await bounded(Promise.all([untargeted, targeted])),
-        [
-          "U2",
-          "B1",
-        ],
+        ["U2", "B1"],
       );
       assert.deepStrictEqual(starts, ["A1", "U1", "U2", "B1"]);
       assert.deepStrictEqual(h.hypervisor.snapshot().queuedDispatches, 1);
@@ -167,17 +161,21 @@ for (const transport of ["in-process", "websocket"] as const) {
   test(`${transport}: handler failure releases execution capacity before notifying the Hypervisor`, async () => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const h = await queueHarness(transport, ({ metadata }) => {
-      if (metadata.fail) throw new Error("expected handler failure");
-      return new TextEncoder().encode("ok");
-    }, {
-      async onComplete({ metadata }) {
-        if (metadata.fail) {
-          entered.resolve();
-          await release.promise;
-        }
+    const h = await queueHarness(
+      transport,
+      ({ metadata }) => {
+        if (metadata.fail) throw new Error("expected handler failure");
+        return new TextEncoder().encode("ok");
       },
-    });
+      {
+        async onComplete({ metadata }) {
+          if (metadata.fail) {
+            entered.resolve();
+            await release.promise;
+          }
+        },
+      },
+    );
     const tasks: Promise<unknown>[] = [];
     try {
       tasks.push(

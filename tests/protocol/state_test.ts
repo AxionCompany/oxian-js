@@ -812,20 +812,14 @@ test("protocol order: same-direction frames after terminal are rejected", () => 
   );
   assert.deepStrictEqual(validator.snapshot().activeStreamCount, 1);
 
-  validator.acceptControl(
-    "sent",
-    createWorkEndFrame({ streamId: STREAM_ID }),
-  );
+  validator.acceptControl("sent", createWorkEndFrame({ streamId: STREAM_ID }));
   assert.deepStrictEqual(validator.snapshot().activeStreamCount, 0);
 });
 
 test("protocol order: a normal End may be upgraded once to whole-stream Cancel", () => {
   const validator = createReadyValidator("hypervisor");
   openAcceptStart(validator, "hypervisor");
-  validator.acceptControl(
-    "sent",
-    createWorkEndFrame({ streamId: STREAM_ID }),
-  );
+  validator.acceptControl("sent", createWorkEndFrame({ streamId: STREAM_ID }));
   assert.deepStrictEqual(validator.snapshot().streams[0].sentTerminal, "end");
 
   validator.acceptControl(
@@ -872,10 +866,7 @@ test("protocol order: a normal End may be upgraded once to whole-stream Cancel",
 test("protocol order: mixed End and Abort stays active until reciprocal upgrade", () => {
   const validator = createReadyValidator("hypervisor");
   openAcceptStart(validator, "hypervisor");
-  validator.acceptControl(
-    "sent",
-    createWorkEndFrame({ streamId: STREAM_ID }),
-  );
+  validator.acceptControl("sent", createWorkEndFrame({ streamId: STREAM_ID }));
   validator.acceptControl(
     "received",
     createWorkCancelFrame({
@@ -904,10 +895,7 @@ test("protocol order: mixed End and Abort stays active until reciprocal upgrade"
 test("protocol order: normal terminal tombstone reciprocates a late abort upgrade", () => {
   const validator = createReadyValidator("hypervisor");
   openAcceptStart(validator, "hypervisor");
-  validator.acceptControl(
-    "sent",
-    createWorkEndFrame({ streamId: STREAM_ID }),
-  );
+  validator.acceptControl("sent", createWorkEndFrame({ streamId: STREAM_ID }));
   validator.acceptControl(
     "received",
     createWorkEndFrame({ streamId: STREAM_ID }),

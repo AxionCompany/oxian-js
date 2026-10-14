@@ -63,11 +63,7 @@ function listenerPort(value: number): number {
 }
 
 function workerCapacity(value: number, maximum: number): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < 1
-  ) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
     throw new TypeError(
       "local runtime capacity must be a positive safe integer",
     );
@@ -81,10 +77,12 @@ function workerCapacity(value: number, maximum: number): number {
 }
 
 function isUnavailableWorkerError(error: unknown): boolean {
-  return error instanceof Error &&
+  return (
+    error instanceof Error &&
     error.name === "HypervisorError" &&
     "code" in error &&
-    (error.code === "worker_unavailable" || error.code === "shutting_down");
+    (error.code === "worker_unavailable" || error.code === "shutting_down")
+  );
 }
 
 function withAvailabilityBoundary(
@@ -124,9 +122,7 @@ function localRuntimeError(result: WorkerResult): Error {
  * performs no imports, filesystem reads, network binds, or signal registration;
  * `start()` owns all runtime effects and `stop()` is idempotent.
  */
-export function createLocalRuntime(
-  options: LocalRuntimeOptions,
-): LocalRuntime {
+export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntime {
   if (options === null || typeof options !== "object") {
     throw new TypeError("local runtime options are required");
   }
@@ -134,8 +130,8 @@ export function createLocalRuntime(
   if (mode !== "start" && mode !== "dev") {
     throw new TypeError('local runtime mode must be "start" or "dev"');
   }
-  const hostname = options.listener?.hostname ??
-    options.config.gateway.listener.hostname;
+  const hostname =
+    options.listener?.hostname ?? options.config.gateway.listener.hostname;
   const port = listenerPort(
     options.listener?.port ?? options.config.gateway.listener.port,
   );
@@ -144,12 +140,9 @@ export function createLocalRuntime(
     options.capacity ?? options.config.gateway.workerCapacity,
     options.config.gateway.hypervisor.maxWorkerCapacity,
   );
-  const workerTransport = options.workerTransport ??
-    options.config.gateway.workerTransport;
-  if (
-    workerTransport !== "in-process" &&
-    workerTransport !== "websocket"
-  ) {
+  const workerTransport =
+    options.workerTransport ?? options.config.gateway.workerTransport;
+  if (workerTransport !== "in-process" && workerTransport !== "websocket") {
     throw new TypeError(
       'local runtime workerTransport must be "in-process" or "websocket"',
     );
@@ -178,11 +171,13 @@ export function createLocalRuntime(
     const hypervisor = resources.hypervisor;
     const listener = resources.listener;
     const worker = resources.worker;
-    await Promise.allSettled([
-      hypervisor?.shutdown(reason),
-      listener?.shutdown(),
-      worker?.stop(reason),
-    ].filter((task): task is Promise<void> => task !== undefined));
+    await Promise.allSettled(
+      [
+        hypervisor?.shutdown(reason),
+        listener?.shutdown(),
+        worker?.stop(reason),
+      ].filter((task): task is Promise<void> => task !== undefined),
+    );
     await resources.workerClosed?.catch(() => undefined);
     await resources.application?.dispose(reason).catch(() => undefined);
   };
@@ -214,9 +209,9 @@ export function createLocalRuntime(
         });
         const { router, application } = configured;
         if (lifecycleAbort.signal.aborted) {
-          await application.dispose(lifecycleAbort.signal.reason).catch(
-            () => undefined,
-          );
+          await application
+            .dispose(lifecycleAbort.signal.reason)
+            .catch(() => undefined);
           lifecycleAbort.signal.throwIfAborted();
         }
         resources.application = application;
@@ -249,14 +244,15 @@ export function createLocalRuntime(
           }),
         });
         const hypervisor = createHypervisor({
-          transports: workerTransport === "websocket"
-            ? [
-              Object.freeze({
-                type: "websocket" as const,
-                config: Object.freeze({ path: websocketPath }),
-              }),
-            ]
-            : [localTransport],
+          transports:
+            workerTransport === "websocket"
+              ? [
+                  Object.freeze({
+                    type: "websocket" as const,
+                    config: Object.freeze({ path: websocketPath }),
+                  }),
+                ]
+              : [localTransport],
           admit: workerLifecycle.admit,
           config: options.config.gateway.hypervisor,
           fallback,
@@ -273,21 +269,22 @@ export function createLocalRuntime(
         });
         resources.listener = listener;
 
-        const outboundUrl = workerTransport === "websocket"
-          ? workerUrl(
-            listener,
-            websocketPath,
-          )
-          : undefined;
+        const outboundUrl =
+          workerTransport === "websocket"
+            ? workerUrl(listener, websocketPath)
+            : undefined;
         const worker = createWorker({
           id: workerId,
-          transport: outboundUrl === undefined ? localTransport : {
-            type: "websocket",
-            config: {
-              url: outboundUrl,
-              allowInsecureLoopback: outboundUrl.protocol === "ws:",
-            },
-          },
+          transport:
+            outboundUrl === undefined
+              ? localTransport
+              : {
+                  type: "websocket",
+                  config: {
+                    url: outboundUrl,
+                    allowInsecureLoopback: outboundUrl.protocol === "ws:",
+                  },
+                },
           activate: workerLifecycle.activate,
           register: workerLifecycle.register,
           workloads: { [HTTP_WORKLOAD]: workload },
@@ -297,10 +294,7 @@ export function createLocalRuntime(
         resources.worker = worker;
         const workerClosed = worker.closed;
         resources.workerClosed = workerClosed;
-        workerClosed.then(
-          (result) => fail(localRuntimeError(result)),
-          fail,
-        );
+        workerClosed.then((result) => fail(localRuntimeError(result)), fail);
 
         const ready = await worker.ready;
         lifecycleAbort.signal.throwIfAborted();
@@ -356,14 +350,16 @@ export function createLocalRuntime(
   const snapshot = (): LocalRuntimeSnapshot =>
     Object.freeze({
       state,
-      ...(running === undefined ? {} : {
-        listenerUrl: running.listenerUrl.href,
-        ...(running.workerUrl === undefined
-          ? {}
-          : { workerUrl: running.workerUrl.href }),
-        workerTransport: running.workerTransport,
-        identity: running.identity,
-      }),
+      ...(running === undefined
+        ? {}
+        : {
+            listenerUrl: running.listenerUrl.href,
+            ...(running.workerUrl === undefined
+              ? {}
+              : { workerUrl: running.workerUrl.href }),
+            workerTransport: running.workerTransport,
+            identity: running.identity,
+          }),
     });
 
   return Object.freeze({

@@ -49,7 +49,7 @@ async function documentedSymbols(source: string): Promise<readonly string[]> {
   return [
     ...new Set(
       Object.values(document.nodes).flatMap((node) =>
-        node.symbols.map((symbol) => symbol.name)
+        node.symbols.map((symbol) => symbol.name),
       ),
     ),
   ].sort();
@@ -74,8 +74,7 @@ for (const [subpath, source] of librarySubpaths) {
     );
   }
 
-  const packageSpecifier =
-    `${packageConfig.name}@${packageConfig.version}/${moduleName}`;
+  const packageSpecifier = `${packageConfig.name}@${packageConfig.version}/${moduleName}`;
   if (!page.includes(packageSpecifier)) {
     throw new Error(
       `${pagePath} must show the exact published specifier ${packageSpecifier}`,
@@ -100,14 +99,14 @@ if (rootSource === undefined) {
 }
 const rootSymbols = await documentedSymbols(rootSource);
 const combinedApiPages = apiPages.join("\n");
-const undocumentedRootSymbols = rootSymbols.filter((symbol) =>
-  !combinedApiPages.includes(`\`${symbol}\``)
+const undocumentedRootSymbols = rootSymbols.filter(
+  (symbol) => !combinedApiPages.includes(`\`${symbol}\``),
 );
 if (undocumentedRootSymbols.length > 0) {
   throw new Error(
-    `the aggregate package root contains undocumented symbols: ${
-      undocumentedRootSymbols.join(", ")
-    }`,
+    `the aggregate package root contains undocumented symbols: ${undocumentedRootSymbols.join(
+      ", ",
+    )}`,
   );
 }
 

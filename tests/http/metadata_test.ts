@@ -64,10 +64,10 @@ test("HTTP response metadata preserves repeated Set-Cookie order", () => {
       ["set-cookie", "second=2; Path=/"],
     ],
   );
-  assert.deepStrictEqual(
-    createHeaders(metadata.headers).getSetCookie(),
-    ["first=1; Path=/", "second=2; Path=/"],
-  );
+  assert.deepStrictEqual(createHeaders(metadata.headers).getSetCookie(), [
+    "first=1; Path=/",
+    "second=2; Path=/",
+  ]);
 });
 
 test("HTTP metadata rejects unknown fields and malformed pairs", () => {

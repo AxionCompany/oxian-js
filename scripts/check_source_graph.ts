@@ -11,14 +11,14 @@ const bareSourceImports = new Set<string>();
 
 await Promise.all(
   Object.values(config.exports).map((entry) =>
-    visit(new URL(entry, PACKAGE_ROOT), bareSourceImports)
+    visit(new URL(entry, PACKAGE_ROOT), bareSourceImports),
   ),
 );
 
 const sourceFiles: string[] = [];
 await collectTypeScript(SOURCE_ROOT, sourceFiles);
-const unreachable = sourceFiles.filter((file) =>
-  !visited.has(new URL(file, SOURCE_ROOT).href)
+const unreachable = sourceFiles.filter(
+  (file) => !visited.has(new URL(file, SOURCE_ROOT).href),
 );
 
 const testAndToolImports = new Set<string>();
@@ -34,8 +34,9 @@ for (const directory of ["tests/", "scripts/"]) {
 }
 
 const declared = new Set(Object.keys(config.imports ?? {}));
-const unexplainedDependencies = [...declared].filter((specifier) =>
-  !bareSourceImports.has(specifier) && !testAndToolImports.has(specifier)
+const unexplainedDependencies = [...declared].filter(
+  (specifier) =>
+    !bareSourceImports.has(specifier) && !testAndToolImports.has(specifier),
 );
 // Test and tooling sources intentionally contain package-import examples inside
 // strings and fixtures. Only production imports are authoritative for this
@@ -46,11 +47,12 @@ const undeclaredAliases = [...bareSourceImports].filter(
 
 const errors = [
   ...unreachable.map((file) => `src/${file}: unreachable from package exports`),
-  ...unexplainedDependencies.map((specifier) =>
-    `deno.json imports: ${specifier} is unused by source, tests, and tools`
+  ...unexplainedDependencies.map(
+    (specifier) =>
+      `deno.json imports: ${specifier} is unused by source, tests, and tools`,
   ),
-  ...undeclaredAliases.map((specifier) =>
-    `bare alias ${specifier} is used without a deno.json import`
+  ...undeclaredAliases.map(
+    (specifier) => `bare alias ${specifier} is used without a deno.json import`,
   ),
 ];
 if (errors.length > 0) {
@@ -59,12 +61,15 @@ if (errors.length > 0) {
   Deno.exit(1);
 }
 
-const productionDependencies = [...declared].filter((specifier) =>
-  bareSourceImports.has(specifier)
-).sort();
-const testOnlyDependencies = [...declared].filter((specifier) =>
-  !bareSourceImports.has(specifier) && testAndToolImports.has(specifier)
-).sort();
+const productionDependencies = [...declared]
+  .filter((specifier) => bareSourceImports.has(specifier))
+  .sort();
+const testOnlyDependencies = [...declared]
+  .filter(
+    (specifier) =>
+      !bareSourceImports.has(specifier) && testAndToolImports.has(specifier),
+  )
+  .sort();
 console.log(
   `Oxian source graph passed (${sourceFiles.length} source modules reachable; production dependencies: ${
     productionDependencies.join(", ") || "none"
@@ -92,11 +97,9 @@ async function visit(url: URL, bareImports: Set<string>): Promise<void> {
 
 function dependenciesOf(source: string): Set<string> {
   const dependencies = new Set<string>();
-  for (
-    const match of source.matchAll(
-      /(?:\bfrom\s*|\bimport\s*\()\s*["']([^"']+)["']/g,
-    )
-  ) {
+  for (const match of source.matchAll(
+    /(?:\bfrom\s*|\bimport\s*\()\s*["']([^"']+)["']/g,
+  )) {
     dependencies.add(match[1]);
   }
   return dependencies;

@@ -177,11 +177,7 @@ test("control frames: decoder rejects unsupported protocol and type", () => {
     TypeError,
     "unsupported frame type",
   );
-  assertThrows(
-    () => parseControlFrame("{"),
-    TypeError,
-    "expected valid JSON",
-  );
+  assertThrows(() => parseControlFrame("{"), TypeError, "expected valid JSON");
 });
 
 test("control frames: parser and encoder enforce UTF-8 byte limits", () => {
@@ -223,9 +219,7 @@ test("control frames: parser and encoder enforce UTF-8 byte limits", () => {
       parseControlFrame(
         JSON.stringify({
           ...frame,
-          message: "x".repeat(
-            WORKER_PROTOCOL_LIMITS.maxControlFrameBytes,
-          ),
+          message: "x".repeat(WORKER_PROTOCOL_LIMITS.maxControlFrameBytes),
         }),
       ),
     TypeError,
