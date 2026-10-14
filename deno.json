@@ -13,6 +13,7 @@
     "./http": "./src/http/index.ts",
     "./hypervisor": "./src/hypervisor/index.ts",
     "./local": "./src/local/index.ts",
+    "./owner": "./src/owner/index.ts",
     "./protocol": "./src/protocol/index.ts",
     "./providers": "./src/providers/index.ts",
     "./router": "./src/router/index.ts",

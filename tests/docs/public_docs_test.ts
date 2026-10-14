@@ -32,6 +32,7 @@ const API_REFERENCE_MODULES = Object.freeze([
   "../../docs/api/http.md",
   "../../docs/api/hypervisor.md",
   "../../docs/api/local.md",
+  "../../docs/api/owner.md",
   "../../docs/api/protocol.md",
   "../../docs/api/providers.md",
   "../../docs/api/router.md",

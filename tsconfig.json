@@ -8,6 +8,7 @@
     "src/http/index.ts",
     "src/hypervisor/index.ts",
     "src/lifecycle/index.ts",
+    "src/owner/index.ts",
     "src/protocol/index.ts",
     "src/providers/core.ts",
     "src/supervisor/index.ts",
