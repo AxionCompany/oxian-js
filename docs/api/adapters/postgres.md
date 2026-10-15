@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.2/adapters/postgres`
+# `jsr:@oxian/oxian-js@0.21.3/adapters/postgres`
 
 Postgres store for one owner. The owner id is opaque. `owner_epochs` fences
 it: a takeover increments the epoch and waits until any open transaction on
@@ -10,8 +10,8 @@ Exports: `createPostgresOwnerStore`, `PostgresOwnerStoreOptions`, and
 ## Open a store
 
 ```ts
-import { createPostgresOwnerStore } from "jsr:@oxian/oxian-js@0.21.2/adapters/postgres";
-import { createOwner } from "jsr:@oxian/oxian-js@0.21.2/owner";
+import { createPostgresOwnerStore } from "jsr:@oxian/oxian-js@0.21.3/adapters/postgres";
+import { createOwner } from "jsr:@oxian/oxian-js@0.21.3/owner";
 
 const store = await createPostgresOwnerStore({
   pool,

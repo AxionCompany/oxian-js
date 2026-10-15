@@ -159,39 +159,45 @@ test("a pending snapshot read fails when the session expires or is cancelled", a
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const expiring = await createSnapshotSession({
-    owner,
-    store,
-    ownerId: "owner-1",
-    connectionId: "pending",
-    lifetimeMs: 40,
-    idleMs: 1_000,
-  });
-  await assert.rejects(
-    expiring.read(async () => {
+  // Snapshot timers do not hold the process open. A server socket would.
+  const keepAlive = setInterval(() => undefined, 1_000);
+  try {
+    const expiring = await createSnapshotSession({
+      owner,
+      store,
+      ownerId: "owner-1",
+      connectionId: "pending",
+      lifetimeMs: 40,
+      idleMs: 1_000,
+    });
+    await assert.rejects(
+      expiring.read(async () => {
+        await gate;
+        return "late";
+      }),
+      /snapshot expired/,
+    );
+
+    const signal = new AbortController();
+    const cancelled = await createSnapshotSession({
+      owner,
+      store,
+      ownerId: "owner-1",
+      connectionId: "wired",
+      signal: signal.signal,
+      lifetimeMs: 60_000,
+    });
+    const pending = cancelled.read(async () => {
       await gate;
       return "late";
-    }),
-    /snapshot expired/,
-  );
-
-  const signal = new AbortController();
-  const cancelled = await createSnapshotSession({
-    owner,
-    store,
-    ownerId: "owner-1",
-    connectionId: "wired",
-    signal: signal.signal,
-    lifetimeMs: 60_000,
-  });
-  const pending = cancelled.read(async () => {
-    await gate;
-    return "late";
-  });
-  signal.abort();
-  await assert.rejects(pending, /snapshot cancelled/);
-  release?.();
-  await owner.stop();
+    });
+    signal.abort();
+    await assert.rejects(pending, /snapshot cancelled/);
+  } finally {
+    clearInterval(keepAlive);
+    release?.();
+    await owner.stop();
+  }
 });
 
 test("an epoch check failure closes the snapshot", async () => {

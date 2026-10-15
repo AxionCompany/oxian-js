@@ -1,11 +1,11 @@
 {
-  "name": "@oxian/oxian-js",
+  "name": "oxianjs",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=24"
   },
-  "version": "0.21.2",
+  "version": "0.21.3",
   "scripts": {
     "check": "npm run check:types && npm run check:biome && npm run check:node",
     "check:types": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",

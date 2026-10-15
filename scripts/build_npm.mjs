@@ -8,6 +8,8 @@ import {
 } from "node:fs";
 import { nextVersion, stableVersion } from "./next_version.mjs";
 
+const NPM_NAME = "oxianjs";
+
 const sha = process.argv[2];
 const source = JSON.parse(readFileSync("deno.json", "utf8"));
 if (typeof source.name !== "string" || typeof source.version !== "string") {
@@ -30,7 +32,7 @@ writeFileSync(
   "build/npm/package.json",
   `${JSON.stringify(
     {
-      name: source.name,
+      name: NPM_NAME,
       version,
       description: "Oxian owners and the in-process host",
       type: "module",
@@ -56,4 +58,4 @@ writeFileSync(
     2,
   )}\n`,
 );
-console.log(`${source.name}@${version}`);
+console.log(`${NPM_NAME}@${version}`);

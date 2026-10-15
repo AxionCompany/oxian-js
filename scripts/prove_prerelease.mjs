@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const PROOF = `
-import { createOwnerHost, createShardMap } from "@oxian/oxian-js/host";
-import { createMemoryOwnerStore, createOwner } from "@oxian/oxian-js/owner";
+import { createOwnerHost, createShardMap } from "oxianjs/host";
+import { createMemoryOwnerStore, createOwner } from "oxianjs/owner";
 
 const host = createOwnerHost({
   map: createShardMap("local", { "owner-1": "local" }),
@@ -55,10 +55,7 @@ try {
     stdio: "inherit",
   });
   const installed = JSON.parse(
-    readFileSync(
-      join(directory, "node_modules/@oxian/oxian-js/package.json"),
-      "utf8",
-    ),
+    readFileSync(join(directory, "node_modules/oxianjs/package.json"), "utf8"),
   );
   console.log(`installed ${installed.name}@${installed.version}`);
 } finally {

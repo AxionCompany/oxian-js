@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.21.2/owner`
+# `jsr:@oxian/oxian-js@0.21.3/owner`
 
 One owner, addressed by the store the caller provides. Commands are serialized
 and committed in groups, each with its own receipt. The core defines the store
@@ -18,7 +18,7 @@ and `SnapshotSession`.
 ## Run commands
 
 ```ts
-import { createMemoryOwnerStore, createOwner } from "jsr:@oxian/oxian-js@0.21.2/owner";
+import { createMemoryOwnerStore, createOwner } from "jsr:@oxian/oxian-js@0.21.3/owner";
 
 const store = createMemoryOwnerStore();
 const owner = createOwner({
