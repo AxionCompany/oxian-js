@@ -1,5 +1,7 @@
-import { assertEquals, assertRejects } from "@std/assert";
-import { serve } from "../../src/adapters/deno/index.ts";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
+import { serve } from "../../src/adapters/node/index.ts";
 import type {
   Hypervisor,
   HypervisorConfig,
@@ -126,10 +128,7 @@ async function readAll(
   } finally {
     reader.releaseLock();
   }
-  const length = chunks.reduce(
-    (total, chunk) => total + chunk.byteLength,
-    0,
-  );
+  const length = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
   const joined = new Uint8Array(length);
   let offset = 0;
   for (const chunk of chunks) {
@@ -174,12 +173,12 @@ async function receiveRequestEnd(
     }
     const frame = message.acceptance.frame;
     if (frame.type === "work.credit") {
-      assertEquals(frame.streamId, streamId);
+      assert.deepStrictEqual(frame.streamId, streamId);
       responseCredit += frame.bytes;
       continue;
     }
     if (frame.type === "work.end") {
-      assertEquals(frame.streamId, streamId);
+      assert.deepStrictEqual(frame.streamId, streamId);
       return responseCredit;
     }
     throw new TypeError(`unexpected frame ${frame.type}`);
@@ -198,12 +197,14 @@ async function startControlledHarness(
 ): Promise<ControlledHarness> {
   const capacity = input.capacity ?? 4;
   const repository = createEphemeralWorkerStore();
-  await repository.define(createWorkerDefinition({
-    workerId: "controlled-worker",
-    providerId: "attached",
-    workloads: ["sandbox.command"],
-    capacity,
-  }));
+  await repository.define(
+    createWorkerDefinition({
+      workerId: "controlled-worker",
+      providerId: "attached",
+      workloads: ["sandbox.command"],
+      capacity,
+    }),
+  );
   const identity = (await repository.activate("controlled-worker")).attempt
     .identity;
   const authority = createEphemeralCredentialLifecycle();
@@ -227,7 +228,7 @@ async function startControlledHarness(
       ...input.config,
     },
   });
-  const listener = serve({
+  const listener = await serve({
     hypervisor,
     hostname: "127.0.0.1",
     port: 0,
@@ -277,12 +278,12 @@ async function startControlledHarness(
     closed = (async () => {
       await Promise.all(
         [...workers].map((candidate) =>
-          candidate.close("controlled_test_cleanup")
+          candidate.close("controlled_test_cleanup"),
         ),
       );
-      await hypervisor.shutdown("controlled_test_cleanup").catch(() =>
-        undefined
-      );
+      await hypervisor
+        .shutdown("controlled_test_cleanup")
+        .catch(() => undefined);
       await listener.shutdown().catch(() => undefined);
     })();
     return closed;
@@ -297,15 +298,12 @@ async function startControlledHarness(
   });
 }
 
-Deno.test({
-  name:
-    "request chunk that exactly consumes credit still discovers EOF and sends work.end",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const request = encoder.encode("exact-credit-request");
-    let pulls = 0;
-    let emitted = false;
-    const body = new ReadableStream<Uint8Array>({
+test("request chunk that exactly consumes credit still discovers EOF and sends work.end", async () => {
+  const request = encoder.encode("exact-credit-request");
+  let pulls = 0;
+  let emitted = false;
+  const body = new ReadableStream<Uint8Array>(
+    {
       pull(controller) {
         pulls++;
         if (!emitted) {
@@ -315,713 +313,756 @@ Deno.test({
           controller.close();
         }
       },
-    }, { highWaterMark: 0 });
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
-    });
+    },
+    { highWaterMark: 0 },
+  );
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+  });
 
-    try {
-      const handle = await withTimeout(harness.hypervisor.dispatch({
+  try {
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
         workload: "sandbox.command",
         body,
-      }));
-      const open = await nextControlledControl(harness.worker, "work.open");
-      assertEquals(open.streamId, handle.streamId);
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: handle.streamId }),
-      );
-      await nextControlledControl(harness.worker, "work.start");
-      await harness.worker.transport.sendControl(createWorkCreditFrame({
+      }),
+    );
+    const open = await nextControlledControl(harness.worker, "work.open");
+    assert.deepStrictEqual(open.streamId, handle.streamId);
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: handle.streamId }),
+    );
+    await nextControlledControl(harness.worker, "work.start");
+    await harness.worker.transport.sendControl(
+      createWorkCreditFrame({
         streamId: handle.streamId,
         bytes: request.byteLength,
-      }));
+      }),
+    );
 
-      let data: Uint8Array | undefined;
-      let ended = false;
-      while (!ended) {
-        const message = await nextControlledMessage(harness.worker);
-        if (message.kind === "data") {
-          assertEquals(message.acceptance.frame.streamId, handle.streamId);
-          data = message.acceptance.frame.payload;
-          continue;
-        }
-        const frame = message.acceptance.frame;
-        if (frame.type === "work.credit") continue;
-        if (frame.type === "work.end") {
-          assertEquals(frame.streamId, handle.streamId);
-          ended = true;
-          continue;
-        }
-        throw new TypeError(`unexpected frame ${frame.type}`);
+    let data: Uint8Array | undefined;
+    let ended = false;
+    while (!ended) {
+      const message = await nextControlledMessage(harness.worker);
+      if (message.kind === "data") {
+        assert.deepStrictEqual(
+          message.acceptance.frame.streamId,
+          handle.streamId,
+        );
+        data = message.acceptance.frame.payload;
+        continue;
       }
-      assertEquals(data, request);
-      assertEquals(pulls, 2);
+      const frame = message.acceptance.frame;
+      if (frame.type === "work.credit") continue;
+      if (frame.type === "work.end") {
+        assert.deepStrictEqual(frame.streamId, handle.streamId);
+        ended = true;
+        continue;
+      }
+      throw new TypeError(`unexpected frame ${frame.type}`);
+    }
+    assert.deepStrictEqual(data, request);
+    assert.deepStrictEqual(pulls, 2);
 
-      await harness.worker.transport.sendControl(createWorkMetadataFrame({
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
         streamId: handle.streamId,
         metadata: {},
-      }));
-      await harness.worker.transport.sendControl(createWorkEndFrame({
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
         streamId: handle.streamId,
-      }));
-      assertEquals(await withTimeout(handle.metadata), {});
-      assertEquals(await withTimeout(readAll(handle.output)), new Uint8Array());
-      assertEquals((await withTimeout(handle.completed)).status, "completed");
-    } finally {
-      await harness.close();
-    }
-  },
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(handle.metadata), {});
+    assert.deepStrictEqual(
+      await withTimeout(readAll(handle.output)),
+      new Uint8Array(),
+    );
+    assert.deepStrictEqual(
+      (await withTimeout(handle.completed)).status,
+      "completed",
+    );
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "persistence rejection waits for peer cancellation acknowledgement before completion",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () =>
-        Promise.reject(new Error("commit outcome unavailable")),
-    });
+test("persistence rejection waits for peer cancellation acknowledgement before completion", async () => {
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () =>
+      Promise.reject(new Error("commit outcome unavailable")),
+  });
 
-    try {
-      const handle = await withTimeout(harness.hypervisor.dispatch({
+  try {
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
         workload: "sandbox.command",
-      }));
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: handle.streamId }),
-      );
-      const cancellation = await nextControlledControl(
-        harness.worker,
-        "work.cancel",
-      );
-      assertEquals(cancellation.reason, "acceptance_persistence_unknown");
+      }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: handle.streamId }),
+    );
+    const cancellation = await nextControlledControl(
+      harness.worker,
+      "work.cancel",
+    );
+    assert.deepStrictEqual(
+      cancellation.reason,
+      "acceptance_persistence_unknown",
+    );
 
-      const completion = observeSettlement(handle.completed);
-      await new Promise((resolve) => setTimeout(resolve, 40));
-      assertEquals(completion.settled(), false);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
-        1,
-      );
+    const completion = observeSettlement(handle.completed);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.deepStrictEqual(completion.settled(), false);
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
+      1,
+    );
 
-      await harness.worker.transport.sendControl(createWorkCancelFrame({
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
         streamId: handle.streamId,
         reason: "cancellation_acknowledged",
-      }));
-      assertEquals(
-        (await withTimeout(handle.completed)).status,
-        "indeterminate",
-      );
-      await expectRejectedHandle(handle);
-      await waitFor(
-        () =>
-          harness.hypervisor.sessions.get(harness.identity.workerId)
-            ?.reserved === 0,
-        "cancellation acknowledgement did not release the reservation",
-      );
-      assertEquals(
-        Object.values(harness.hypervisor.snapshot().work).every(
-          (count) => count === 0,
-        ),
-        true,
-      );
-    } finally {
-      await harness.close();
-    }
-  },
+      }),
+    );
+    assert.deepStrictEqual(
+      (await withTimeout(handle.completed)).status,
+      "indeterminate",
+    );
+    await expectRejectedHandle(handle);
+    await waitFor(
+      () =>
+        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved ===
+        0,
+      "cancellation acknowledgement did not release the reservation",
+    );
+    assert.deepStrictEqual(
+      Object.values(harness.hypervisor.snapshot().work).every(
+        (count) => count === 0,
+      ),
+      true,
+    );
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "caller cancellation before Accepted tolerates crossed Accepted without Start",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    let persistenceCalls = 0;
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => {
-        persistenceCalls++;
-        return Promise.resolve();
-      },
-    });
+test("caller cancellation before Accepted tolerates crossed Accepted without Start", async () => {
+  let persistenceCalls = 0;
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => {
+      persistenceCalls++;
+      return Promise.resolve();
+    },
+  });
 
-    try {
-      const handle = await withTimeout(harness.hypervisor.dispatch({
+  try {
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
         workload: "sandbox.command",
-      }));
-      await nextControlledControl(harness.worker, "work.open");
+      }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
 
-      const cancellation = handle.cancel("cancelled_before_accepted");
-      // Send Accepted without first reading the Hypervisor's Cancel. The two
-      // frames cross on the wire, exercising the explicit pre-Start race.
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: handle.streamId }),
-      );
-      const cancelFrame = await nextControlledControl(
-        harness.worker,
-        "work.cancel",
-      );
-      assertEquals(cancelFrame.streamId, handle.streamId);
-      await harness.worker.transport.sendControl(createWorkCancelFrame({
+    const cancellation = handle.cancel("cancelled_before_accepted");
+    // Send Accepted without first reading the Hypervisor's Cancel. The two
+    // frames cross on the wire, exercising the explicit pre-Start race.
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: handle.streamId }),
+    );
+    const cancelFrame = await nextControlledControl(
+      harness.worker,
+      "work.cancel",
+    );
+    assert.deepStrictEqual(cancelFrame.streamId, handle.streamId);
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
         streamId: handle.streamId,
         reason: "cancelled_before_accepted_ack",
-      }));
+      }),
+    );
 
-      assertEquals((await withTimeout(cancellation)).status, "cancelled");
-      assertEquals(persistenceCalls, 0);
-      await expectRejectedHandle(handle);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
-        0,
-      );
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
-    } finally {
-      await harness.close();
-    }
-  },
+    assert.deepStrictEqual(
+      (await withTimeout(cancellation)).status,
+      "cancelled",
+    );
+    assert.deepStrictEqual(persistenceCalls, 0);
+    await expectRejectedHandle(handle);
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
+      0,
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "acceptance persistence admission cap reschedules one stream without disturbing the admitted commit",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const persistEntered = createDeferred<void>();
-    const releasePersistence = createDeferred<void>();
-    let persistenceCalls = 0;
-    const harness = await startControlledHarness({
-      commitAcceptedWork: async () => {
-        persistenceCalls++;
-        persistEntered.resolve();
-        await releasePersistence.promise;
-      },
-      config: {
-        maxPendingAcceptanceCommits: 1,
-        maxPendingAcceptanceCommitsPerWorker: 1,
-      },
-    });
+test("acceptance persistence admission cap reschedules one stream without disturbing the admitted commit", async () => {
+  const persistEntered = createDeferred<void>();
+  const releasePersistence = createDeferred<void>();
+  let persistenceCalls = 0;
+  const harness = await startControlledHarness({
+    commitAcceptedWork: async () => {
+      persistenceCalls++;
+      persistEntered.resolve();
+      await releasePersistence.promise;
+    },
+    config: {
+      maxPendingAcceptanceCommits: 1,
+      maxPendingAcceptanceCommitsPerWorker: 1,
+    },
+  });
 
-    try {
-      const admitted = await withTimeout(harness.hypervisor.dispatch({
+  try {
+    const admitted = await withTimeout(
+      harness.hypervisor.dispatch({
         workload: "sandbox.command",
-      }));
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: admitted.streamId }),
-      );
-      await withTimeout(persistEntered.promise);
-      assertEquals(
-        harness.hypervisor.snapshot().pendingAcceptanceCommits,
-        1,
-      );
+      }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: admitted.streamId }),
+    );
+    await withTimeout(persistEntered.promise);
+    assert.deepStrictEqual(
+      harness.hypervisor.snapshot().pendingAcceptanceCommits,
+      1,
+    );
 
-      const rejected = await withTimeout(harness.hypervisor.dispatch({
+    const rejected = await withTimeout(
+      harness.hypervisor.dispatch({
         workload: "sandbox.command",
-      }));
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: rejected.streamId }),
-      );
-      const capacityCancel = await nextControlledControl(
-        harness.worker,
-        "work.cancel",
-      );
-      assertEquals(capacityCancel.streamId, rejected.streamId);
-      assertEquals(capacityCancel.reason, "acceptance_commit_capacity");
-      const rejectionCompletion = observeSettlement(rejected.completed);
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      assertEquals(rejectionCompletion.settled(), false);
-      assertEquals(persistenceCalls, 1);
+      }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: rejected.streamId }),
+    );
+    const capacityCancel = await nextControlledControl(
+      harness.worker,
+      "work.cancel",
+    );
+    assert.deepStrictEqual(capacityCancel.streamId, rejected.streamId);
+    assert.deepStrictEqual(capacityCancel.reason, "acceptance_commit_capacity");
+    const rejectionCompletion = observeSettlement(rejected.completed);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepStrictEqual(rejectionCompletion.settled(), false);
+    assert.deepStrictEqual(persistenceCalls, 1);
 
-      await harness.worker.transport.sendControl(createWorkCancelFrame({
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
         streamId: rejected.streamId,
         reason: "acceptance_commit_capacity_ack",
-      }));
-      assertEquals(
-        (await withTimeout(rejected.completed)).status,
-        "reschedulable",
-      );
-      await expectRejectedHandle(rejected);
-      assertEquals(
-        harness.hypervisor.snapshot().pendingAcceptanceCommits,
-        1,
-      );
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
+      }),
+    );
+    assert.deepStrictEqual(
+      (await withTimeout(rejected.completed)).status,
+      "reschedulable",
+    );
+    await expectRejectedHandle(rejected);
+    assert.deepStrictEqual(
+      harness.hypervisor.snapshot().pendingAcceptanceCommits,
+      1,
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
 
-      releasePersistence.resolve();
-      await nextControlledControl(harness.worker, "work.start");
-      await receiveRequestEnd(harness.worker, admitted.streamId);
-      await harness.worker.transport.sendControl(createWorkMetadataFrame({
+    releasePersistence.resolve();
+    await nextControlledControl(harness.worker, "work.start");
+    await receiveRequestEnd(harness.worker, admitted.streamId);
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
         streamId: admitted.streamId,
         metadata: { admitted: true },
-      }));
-      await harness.worker.transport.sendControl(createWorkEndFrame({
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
         streamId: admitted.streamId,
-      }));
-      assertEquals(await withTimeout(admitted.metadata), { admitted: true });
-      assertEquals((await withTimeout(admitted.completed)).status, "completed");
-      assertEquals(
-        harness.hypervisor.snapshot().pendingAcceptanceCommits,
-        0,
-      );
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
-        0,
-      );
-    } finally {
-      releasePersistence.resolve();
-      await harness.close();
-    }
-  },
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(admitted.metadata), {
+      admitted: true,
+    });
+    assert.deepStrictEqual(
+      (await withTimeout(admitted.completed)).status,
+      "completed",
+    );
+    assert.deepStrictEqual(
+      harness.hypervisor.snapshot().pendingAcceptanceCommits,
+      0,
+    );
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
+      0,
+    );
+  } finally {
+    releasePersistence.resolve();
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "socket loss during gated persistence settles only after the durable outcome",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const persistEntered = createDeferred<void>();
-    const releasePersistence = createDeferred<void>();
-    const harness = await startControlledHarness({
-      commitAcceptedWork: async () => {
-        persistEntered.resolve();
-        await releasePersistence.promise;
-      },
-    });
+test("socket loss during gated persistence settles only after the durable outcome", async () => {
+  const persistEntered = createDeferred<void>();
+  const releasePersistence = createDeferred<void>();
+  const harness = await startControlledHarness({
+    commitAcceptedWork: async () => {
+      persistEntered.resolve();
+      await releasePersistence.promise;
+    },
+  });
 
-    try {
-      const handle = await withTimeout(harness.hypervisor.dispatch({
+  try {
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
         workload: "sandbox.command",
-      }));
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: handle.streamId }),
-      );
-      await withTimeout(persistEntered.promise);
-      const completion = observeSettlement(handle.completed);
-      assertEquals(
-        harness.hypervisor.snapshot().pendingAcceptanceCommits,
-        1,
-      );
-      assertEquals(
-        harness.hypervisor.snapshot().pendingAcceptanceCommitsByWorker,
-        [{ workerId: harness.identity.workerId, count: 1 }],
-      );
+      }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: handle.streamId }),
+    );
+    await withTimeout(persistEntered.promise);
+    const completion = observeSettlement(handle.completed);
+    assert.deepStrictEqual(
+      harness.hypervisor.snapshot().pendingAcceptanceCommits,
+      1,
+    );
+    assert.deepStrictEqual(
+      harness.hypervisor.snapshot().pendingAcceptanceCommitsByWorker,
+      [{ workerId: harness.identity.workerId, count: 1 }],
+    );
 
-      await harness.worker.close("loss_during_acceptance_commit");
-      await new Promise((resolve) => setTimeout(resolve, 40));
-      assertEquals(completion.settled(), false);
-      releasePersistence.resolve();
+    await harness.worker.close("loss_during_acceptance_commit");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.deepStrictEqual(completion.settled(), false);
+    releasePersistence.resolve();
 
-      const result = await withTimeout(handle.completed);
-      assertEquals(result.status, "indeterminate");
-      assertEquals(result.terminal?.code, "connection_lost_before_start");
-      await expectRejectedHandle(handle);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId),
-        undefined,
-      );
-      assertEquals(
-        Object.values(harness.hypervisor.snapshot().work).every(
-          (count) => count === 0,
-        ),
-        true,
-      );
-      assertEquals(
-        harness.hypervisor.snapshot().pendingAcceptanceCommits,
-        0,
-      );
-    } finally {
-      releasePersistence.resolve();
-      await harness.close();
-    }
-  },
+    const result = await withTimeout(handle.completed);
+    assert.deepStrictEqual(result.status, "indeterminate");
+    assert.deepStrictEqual(
+      result.terminal?.code,
+      "connection_lost_before_start",
+    );
+    await expectRejectedHandle(handle);
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId),
+      undefined,
+    );
+    assert.deepStrictEqual(
+      Object.values(harness.hypervisor.snapshot().work).every(
+        (count) => count === 0,
+      ),
+      true,
+    );
+    assert.deepStrictEqual(
+      harness.hypervisor.snapshot().pendingAcceptanceCommits,
+      0,
+    );
+  } finally {
+    releasePersistence.resolve();
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "peer terminal during gated persistence becomes indeterminate without pending leak",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const persistEntered = createDeferred<void>();
-    const releasePersistence = createDeferred<void>();
-    const harness = await startControlledHarness({
-      commitAcceptedWork: async () => {
-        persistEntered.resolve();
-        await releasePersistence.promise;
-      },
-    });
+test("peer terminal during gated persistence becomes indeterminate without pending leak", async () => {
+  const persistEntered = createDeferred<void>();
+  const releasePersistence = createDeferred<void>();
+  const harness = await startControlledHarness({
+    commitAcceptedWork: async () => {
+      persistEntered.resolve();
+      await releasePersistence.promise;
+    },
+  });
 
-    try {
-      const handle = await withTimeout(harness.hypervisor.dispatch({
+  try {
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
         workload: "sandbox.command",
-      }));
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: handle.streamId }),
-      );
-      await withTimeout(persistEntered.promise);
-      assertEquals(
-        harness.hypervisor.snapshot().pendingAcceptanceCommits,
-        1,
-      );
+      }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: handle.streamId }),
+    );
+    await withTimeout(persistEntered.promise);
+    assert.deepStrictEqual(
+      harness.hypervisor.snapshot().pendingAcceptanceCommits,
+      1,
+    );
 
-      await harness.worker.transport.sendControl(createWorkCancelFrame({
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
         streamId: handle.streamId,
         reason: "worker_rejected_before_start",
-      }));
-      await nextControlledControl(harness.worker, "work.cancel");
-      const completion = observeSettlement(handle.completed);
-      await new Promise((resolve) => setTimeout(resolve, 40));
-      assertEquals(completion.settled(), false);
+      }),
+    );
+    await nextControlledControl(harness.worker, "work.cancel");
+    const completion = observeSettlement(handle.completed);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.deepStrictEqual(completion.settled(), false);
 
-      releasePersistence.resolve();
-      const result = await withTimeout(handle.completed);
-      assertEquals(result.status, "indeterminate");
-      assertEquals(result.terminal?.code, "accepted_worker_rejection");
-      await expectRejectedHandle(handle);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
-        0,
-      );
-      assertEquals(
-        Object.values(harness.hypervisor.snapshot().work).every(
-          (count) => count === 0,
-        ),
-        true,
-      );
-      assertEquals(
-        harness.hypervisor.snapshot().pendingAcceptanceCommits,
-        0,
-      );
-    } finally {
-      releasePersistence.resolve();
-      await harness.close();
-    }
-  },
+    releasePersistence.resolve();
+    const result = await withTimeout(handle.completed);
+    assert.deepStrictEqual(result.status, "indeterminate");
+    assert.deepStrictEqual(result.terminal?.code, "accepted_worker_rejection");
+    await expectRejectedHandle(handle);
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
+      0,
+    );
+    assert.deepStrictEqual(
+      Object.values(harness.hypervisor.snapshot().work).every(
+        (count) => count === 0,
+      ),
+      true,
+    );
+    assert.deepStrictEqual(
+      harness.hypervisor.snapshot().pendingAcceptanceCommits,
+      0,
+    );
+  } finally {
+    releasePersistence.resolve();
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name: "connection loss before Accepted is reschedulable",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    let persistenceCalls = 0;
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => {
-        persistenceCalls++;
-        return Promise.resolve();
-      },
-    });
+test("connection loss before Accepted is reschedulable", async () => {
+  let persistenceCalls = 0;
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => {
+      persistenceCalls++;
+      return Promise.resolve();
+    },
+  });
 
-    try {
-      const handle = await withTimeout(harness.hypervisor.dispatch({
+  try {
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
         workload: "sandbox.command",
-      }));
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.close("loss_before_accepted");
+      }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.close("loss_before_accepted");
 
-      const result = await withTimeout(handle.completed);
-      assertEquals(result.status, "reschedulable");
-      assertEquals(result.deliveryCount, 1);
-      assertEquals(persistenceCalls, 0);
-      await expectRejectedHandle(handle);
-      // The caller receives the immutable rescheduling decision; the
-      // Hypervisor does not retain an in-process retry queue.
-      assertEquals(harness.hypervisor.snapshot().work.reschedulable, 0);
-    } finally {
-      await harness.close();
-    }
-  },
+    const result = await withTimeout(handle.completed);
+    assert.deepStrictEqual(result.status, "reschedulable");
+    assert.deepStrictEqual(result.deliveryCount, 1);
+    assert.deepStrictEqual(persistenceCalls, 0);
+    await expectRejectedHandle(handle);
+    // The caller receives the immutable rescheduling decision; the
+    // Hypervisor does not retain an in-process retry queue.
+    assert.deepStrictEqual(harness.hypervisor.snapshot().work.reschedulable, 0);
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name: "connection loss after Start is indeterminate and never replayed",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    let persistenceCalls = 0;
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => {
-        persistenceCalls++;
-        return Promise.resolve();
-      },
-    });
+test("connection loss after Start is indeterminate and never replayed", async () => {
+  let persistenceCalls = 0;
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => {
+      persistenceCalls++;
+      return Promise.resolve();
+    },
+  });
 
-    try {
-      const handle = await withTimeout(harness.hypervisor.dispatch({
+  try {
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
         workload: "sandbox.command",
-      }));
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: handle.streamId }),
-      );
-      await nextControlledControl(harness.worker, "work.start");
-      await withTimeout(handle.started);
-      await harness.worker.close("loss_after_start");
+      }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: handle.streamId }),
+    );
+    await nextControlledControl(harness.worker, "work.start");
+    await withTimeout(handle.started);
+    await harness.worker.close("loss_after_start");
 
-      const result = await withTimeout(handle.completed);
-      assertEquals(result.status, "indeterminate");
-      assertEquals(result.terminal?.code, "connection_lost_after_commit");
-      assertEquals(persistenceCalls, 1);
-      await assertRejects(() => handle.metadata, Error);
-      await assertRejects(() => readAll(handle.output), Error);
+    const result = await withTimeout(handle.completed);
+    assert.deepStrictEqual(result.status, "indeterminate");
+    assert.deepStrictEqual(
+      result.terminal?.code,
+      "connection_lost_after_commit",
+    );
+    assert.deepStrictEqual(persistenceCalls, 1);
+    await assertRejects(() => handle.metadata, Error);
+    await assertRejects(() => readAll(handle.output), Error);
 
-      const replacement = await harness.connect({
+    const replacement = await harness.connect(
+      {
         kind: "resume",
         capability: harness.worker.welcome.resumeCapability,
-      }, "replacement-handshake");
-      await expectNoControlledMessage(replacement, 75);
-      assertEquals(
-        Object.values(harness.hypervisor.snapshot().work).every(
-          (count) => count === 0,
-        ),
-        true,
-      );
-    } finally {
-      await harness.close();
-    }
-  },
+      },
+      "replacement-handshake",
+    );
+    await expectNoControlledMessage(replacement, 75);
+    assert.deepStrictEqual(
+      Object.values(harness.hypervisor.snapshot().work).every(
+        (count) => count === 0,
+      ),
+      true,
+    );
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "worker draining before Accepted rejects as reschedulable and releases its reservation",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
-    });
+test("worker draining before Accepted rejects as reschedulable and releases its reservation", async () => {
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+  });
 
-    try {
-      const handle = await withTimeout(harness.hypervisor.dispatch({
+  try {
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
         workload: "sandbox.command",
-      }));
-      await nextControlledControl(harness.worker, "work.open");
-      const drain = harness.hypervisor.drain(
-        harness.identity.workerId,
-        "preaccept_rotation",
-      );
-      await nextControlledControl(harness.worker, "drain");
-      await harness.worker.transport.sendControl(createWorkCancelFrame({
+      }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    const drain = harness.hypervisor.drain(
+      harness.identity.workerId,
+      "preaccept_rotation",
+    );
+    await nextControlledControl(harness.worker, "drain");
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
         streamId: handle.streamId,
         reason: "worker_draining",
-      }));
-      await nextControlledControl(harness.worker, "work.cancel");
+      }),
+    );
+    await nextControlledControl(harness.worker, "work.cancel");
 
-      const result = await withTimeout(handle.completed);
-      assertEquals(result.status, "reschedulable");
-      await expectRejectedHandle(handle);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
-        0,
-      );
-      await harness.worker.transport.sendControl(createDrainedFrame({
+    const result = await withTimeout(handle.completed);
+    assert.deepStrictEqual(result.status, "reschedulable");
+    await expectRejectedHandle(handle);
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
+      0,
+    );
+    await harness.worker.transport.sendControl(
+      createDrainedFrame({
         connectionId: harness.worker.welcome.connectionId,
-      }));
-      await withTimeout(drain);
-      assertEquals(harness.hypervisor.snapshot().work.reschedulable, 0);
-    } finally {
-      await harness.close();
-    }
-  },
+      }),
+    );
+    await withTimeout(drain);
+    assert.deepStrictEqual(harness.hypervisor.snapshot().work.reschedulable, 0);
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "output cancellation upgrades a sent request End and leaves concurrent work healthy",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
-    });
+test("output cancellation upgrades a sent request End and leaves concurrent work healthy", async () => {
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+  });
 
-    try {
-      const cancelledHandle = await withTimeout(
-        harness.hypervisor.dispatch({ workload: "sandbox.command" }),
-      );
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: cancelledHandle.streamId }),
-      );
-      await nextControlledControl(harness.worker, "work.start");
-      await receiveRequestEnd(harness.worker, cancelledHandle.streamId);
+  try {
+    const cancelledHandle = await withTimeout(
+      harness.hypervisor.dispatch({ workload: "sandbox.command" }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: cancelledHandle.streamId }),
+    );
+    await nextControlledControl(harness.worker, "work.start");
+    await receiveRequestEnd(harness.worker, cancelledHandle.streamId);
 
-      const cancelledReader = cancelledHandle.output.getReader();
-      const cancellation = cancelledReader.cancel("response_consumer_left");
-      const cancelFrame = await nextControlledControl(
-        harness.worker,
-        "work.cancel",
-      );
-      assertEquals(cancelFrame.streamId, cancelledHandle.streamId);
-      const cancellationCompletion = observeSettlement(
-        cancelledHandle.completed,
-      );
+    const cancelledReader = cancelledHandle.output.getReader();
+    const cancellation = cancelledReader.cancel("response_consumer_left");
+    const cancelFrame = await nextControlledControl(
+      harness.worker,
+      "work.cancel",
+    );
+    assert.deepStrictEqual(cancelFrame.streamId, cancelledHandle.streamId);
+    const cancellationCompletion = observeSettlement(cancelledHandle.completed);
 
-      // Keep the cancellation unacknowledged while another operation executes
-      // to prove the stream-local End->Cancel upgrade does not close the
-      // multiplexed worker socket.
-      const healthyHandle = await withTimeout(
-        harness.hypervisor.dispatch({ workload: "sandbox.command" }),
-      );
-      const healthyOpen = await nextControlledControl(
-        harness.worker,
-        "work.open",
-      );
-      assertEquals(healthyOpen.streamId, healthyHandle.streamId);
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: healthyHandle.streamId }),
-      );
-      await nextControlledControl(harness.worker, "work.start");
-      await receiveRequestEnd(harness.worker, healthyHandle.streamId);
-      await harness.worker.transport.sendControl(createWorkMetadataFrame({
+    // Keep the cancellation unacknowledged while another operation executes
+    // to prove the stream-local End->Cancel upgrade does not close the
+    // multiplexed worker socket.
+    const healthyHandle = await withTimeout(
+      harness.hypervisor.dispatch({ workload: "sandbox.command" }),
+    );
+    const healthyOpen = await nextControlledControl(
+      harness.worker,
+      "work.open",
+    );
+    assert.deepStrictEqual(healthyOpen.streamId, healthyHandle.streamId);
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: healthyHandle.streamId }),
+    );
+    await nextControlledControl(harness.worker, "work.start");
+    await receiveRequestEnd(harness.worker, healthyHandle.streamId);
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
         streamId: healthyHandle.streamId,
         metadata: { result: "healthy" },
-      }));
-      await harness.worker.transport.sendControl(createWorkEndFrame({
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
         streamId: healthyHandle.streamId,
-      }));
+      }),
+    );
 
-      assertEquals(await withTimeout(healthyHandle.metadata), {
-        result: "healthy",
-      });
-      assertEquals(
-        await withTimeout(readAll(healthyHandle.output)),
-        new Uint8Array(),
-      );
-      assertEquals(
-        (await withTimeout(healthyHandle.completed)).status,
-        "completed",
-      );
-      assertEquals(cancellationCompletion.settled(), false);
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
+    assert.deepStrictEqual(await withTimeout(healthyHandle.metadata), {
+      result: "healthy",
+    });
+    assert.deepStrictEqual(
+      await withTimeout(readAll(healthyHandle.output)),
+      new Uint8Array(),
+    );
+    assert.deepStrictEqual(
+      (await withTimeout(healthyHandle.completed)).status,
+      "completed",
+    );
+    assert.deepStrictEqual(cancellationCompletion.settled(), false);
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
 
-      await harness.worker.transport.sendControl(createWorkCancelFrame({
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
         streamId: cancelledHandle.streamId,
         reason: "response_consumer_left_ack",
-      }));
-      await withTimeout(cancellation);
-      assertEquals(
-        (await withTimeout(cancelledHandle.completed)).status,
-        "cancelled",
-      );
-      await assertRejects(() => cancelledHandle.metadata, Error);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
-        0,
-      );
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
-    } finally {
-      await harness.close();
-    }
-  },
+      }),
+    );
+    await withTimeout(cancellation);
+    assert.deepStrictEqual(
+      (await withTimeout(cancelledHandle.completed)).status,
+      "cancelled",
+    );
+    await assertRejects(() => cancelledHandle.metadata, Error);
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
+      0,
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "crossed worker End after Hypervisor Cancel settles only after worker abort upgrade",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
-    });
+test("crossed worker End after Hypervisor Cancel settles only after worker abort upgrade", async () => {
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+  });
 
-    try {
-      const crossed = await withTimeout(
-        harness.hypervisor.dispatch({ workload: "sandbox.command" }),
-      );
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: crossed.streamId }),
-      );
-      await nextControlledControl(harness.worker, "work.start");
-      await receiveRequestEnd(harness.worker, crossed.streamId);
-      await harness.worker.transport.sendControl(createWorkMetadataFrame({
+  try {
+    const crossed = await withTimeout(
+      harness.hypervisor.dispatch({ workload: "sandbox.command" }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: crossed.streamId }),
+    );
+    await nextControlledControl(harness.worker, "work.start");
+    await receiveRequestEnd(harness.worker, crossed.streamId);
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
         streamId: crossed.streamId,
         metadata: { crossed: "normal_end" },
-      }));
-      assertEquals(await withTimeout(crossed.metadata), {
-        crossed: "normal_end",
-      });
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(crossed.metadata), {
+      crossed: "normal_end",
+    });
 
-      // Observe the response stream before cancellation so its expected
-      // terminal error cannot surface as an unhandled stream rejection.
-      const crossedOutputFailure = assertRejects(
-        () => readAll(crossed.output),
-        Error,
-      );
-      const cancellation = crossed.cancel("caller_cancelled");
-      // Send the normal response End without first reading the Hypervisor's
-      // Cancel. It therefore crosses the peer abort on the wire.
-      await harness.worker.transport.sendControl(createWorkEndFrame({
+    // Observe the response stream before cancellation so its expected
+    // terminal error cannot surface as an unhandled stream rejection.
+    const crossedOutputFailure = assertRejects(
+      () => readAll(crossed.output),
+      Error,
+    );
+    const cancellation = crossed.cancel("caller_cancelled");
+    // Send the normal response End without first reading the Hypervisor's
+    // Cancel. It therefore crosses the peer abort on the wire.
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
         streamId: crossed.streamId,
-      }));
-      const peerCancel = await nextControlledControl(
-        harness.worker,
-        "work.cancel",
-      );
-      assertEquals(peerCancel.streamId, crossed.streamId);
-      const completion = observeSettlement(crossed.completed);
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      assertEquals(completion.settled(), false);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
-        1,
-      );
-      assertEquals(harness.hypervisor.snapshot().work.cancelling, 1);
+      }),
+    );
+    const peerCancel = await nextControlledControl(
+      harness.worker,
+      "work.cancel",
+    );
+    assert.deepStrictEqual(peerCancel.streamId, crossed.streamId);
+    const completion = observeSettlement(crossed.completed);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepStrictEqual(completion.settled(), false);
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
+      1,
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().work.cancelling, 1);
 
-      const healthy = await withTimeout(
-        harness.hypervisor.dispatch({ workload: "sandbox.command" }),
-      );
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: healthy.streamId }),
-      );
-      await nextControlledControl(harness.worker, "work.start");
-      await receiveRequestEnd(harness.worker, healthy.streamId);
-      await harness.worker.transport.sendControl(createWorkMetadataFrame({
+    const healthy = await withTimeout(
+      harness.hypervisor.dispatch({ workload: "sandbox.command" }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: healthy.streamId }),
+    );
+    await nextControlledControl(harness.worker, "work.start");
+    await receiveRequestEnd(harness.worker, healthy.streamId);
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
         streamId: healthy.streamId,
         metadata: { healthy: true },
-      }));
-      await harness.worker.transport.sendControl(createWorkEndFrame({
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
         streamId: healthy.streamId,
-      }));
-      assertEquals(await withTimeout(healthy.metadata), { healthy: true });
-      assertEquals((await withTimeout(healthy.completed)).status, "completed");
-      assertEquals(completion.settled(), false);
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(healthy.metadata), {
+      healthy: true,
+    });
+    assert.deepStrictEqual(
+      (await withTimeout(healthy.completed)).status,
+      "completed",
+    );
+    assert.deepStrictEqual(completion.settled(), false);
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
 
-      // Upgrade the worker's already-sent End to Cancel after observing the
-      // peer abort. Only this closes the cancellation handshake.
-      await harness.worker.transport.sendControl(createWorkCancelFrame({
+    // Upgrade the worker's already-sent End to Cancel after observing the
+    // peer abort. Only this closes the cancellation handshake.
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
         streamId: crossed.streamId,
         reason: "caller_cancelled_ack",
-      }));
-      assertEquals((await withTimeout(cancellation)).status, "cancelled");
-      assertEquals(
-        (await withTimeout(crossed.completed)).status,
-        "cancelled",
-      );
-      await crossedOutputFailure;
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
-        0,
-      );
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
-    } finally {
-      await harness.close();
-    }
-  },
+      }),
+    );
+    assert.deepStrictEqual(
+      (await withTimeout(cancellation)).status,
+      "cancelled",
+    );
+    assert.deepStrictEqual(
+      (await withTimeout(crossed.completed)).status,
+      "cancelled",
+    );
+    await crossedOutputFailure;
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
+      0,
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "oversized streamed request chunk cancels only that stream and keeps multiplexed work healthy",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    let pulled = false;
-    const oversized = new Uint8Array(
-      WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes + 1,
-    ).fill(0x7b);
-    const oversizedBody = new ReadableStream<Uint8Array>({
+test("oversized streamed request chunk cancels only that stream and keeps multiplexed work healthy", async () => {
+  let pulled = false;
+  const oversized = new Uint8Array(
+    WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes + 1,
+  ).fill(0x7b);
+  const oversizedBody = new ReadableStream<Uint8Array>(
+    {
       pull(controller) {
         if (pulled) {
           controller.close();
@@ -1030,622 +1071,638 @@ Deno.test({
         pulled = true;
         controller.enqueue(oversized);
       },
-    }, { highWaterMark: 0 });
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
-    });
+    },
+    { highWaterMark: 0 },
+  );
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+  });
 
-    try {
-      const oversizedHandle = await withTimeout(
-        harness.hypervisor.dispatch({
-          workload: "sandbox.command",
-          body: oversizedBody,
-        }),
-      );
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: oversizedHandle.streamId }),
-      );
-      await nextControlledControl(harness.worker, "work.start");
-      await harness.worker.transport.sendControl(createWorkCreditFrame({
+  try {
+    const oversizedHandle = await withTimeout(
+      harness.hypervisor.dispatch({
+        workload: "sandbox.command",
+        body: oversizedBody,
+      }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: oversizedHandle.streamId }),
+    );
+    await nextControlledControl(harness.worker, "work.start");
+    await harness.worker.transport.sendControl(
+      createWorkCreditFrame({
         streamId: oversizedHandle.streamId,
         bytes: oversized.byteLength,
-      }));
+      }),
+    );
 
-      let cancellationSeen = false;
-      while (!cancellationSeen) {
-        const message = await nextControlledMessage(harness.worker);
-        if (message.kind === "data") {
-          throw new TypeError(
-            "oversized source chunk was partially emitted instead of rejected",
-          );
-        }
-        const frame = message.acceptance.frame;
-        if (frame.type === "work.credit") continue;
-        if (frame.type === "work.cancel") {
-          assertEquals(frame.streamId, oversizedHandle.streamId);
-          cancellationSeen = true;
-          continue;
-        }
-        throw new TypeError(`unexpected frame ${frame.type}`);
+    let cancellationSeen = false;
+    while (!cancellationSeen) {
+      const message = await nextControlledMessage(harness.worker);
+      if (message.kind === "data") {
+        throw new TypeError(
+          "oversized source chunk was partially emitted instead of rejected",
+        );
       }
-      assertEquals(pulled, true);
+      const frame = message.acceptance.frame;
+      if (frame.type === "work.credit") continue;
+      if (frame.type === "work.cancel") {
+        assert.deepStrictEqual(frame.streamId, oversizedHandle.streamId);
+        cancellationSeen = true;
+        continue;
+      }
+      throw new TypeError(`unexpected frame ${frame.type}`);
+    }
+    assert.deepStrictEqual(pulled, true);
 
-      const healthyHandle = await withTimeout(
-        harness.hypervisor.dispatch({ workload: "sandbox.command" }),
-      );
-      const healthyOpen = await nextControlledControl(
-        harness.worker,
-        "work.open",
-      );
-      assertEquals(healthyOpen.streamId, healthyHandle.streamId);
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: healthyHandle.streamId }),
-      );
-      await nextControlledControl(harness.worker, "work.start");
-      await receiveRequestEnd(harness.worker, healthyHandle.streamId);
-      await harness.worker.transport.sendControl(createWorkMetadataFrame({
+    const healthyHandle = await withTimeout(
+      harness.hypervisor.dispatch({ workload: "sandbox.command" }),
+    );
+    const healthyOpen = await nextControlledControl(
+      harness.worker,
+      "work.open",
+    );
+    assert.deepStrictEqual(healthyOpen.streamId, healthyHandle.streamId);
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: healthyHandle.streamId }),
+    );
+    await nextControlledControl(harness.worker, "work.start");
+    await receiveRequestEnd(harness.worker, healthyHandle.streamId);
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
         streamId: healthyHandle.streamId,
         metadata: { isolated: true },
-      }));
-      await harness.worker.transport.sendControl(createWorkEndFrame({
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
         streamId: healthyHandle.streamId,
-      }));
-      assertEquals(await withTimeout(healthyHandle.metadata), {
-        isolated: true,
-      });
-      assertEquals(
-        (await withTimeout(healthyHandle.completed)).status,
-        "completed",
-      );
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(healthyHandle.metadata), {
+      isolated: true,
+    });
+    assert.deepStrictEqual(
+      (await withTimeout(healthyHandle.completed)).status,
+      "completed",
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
 
-      await harness.worker.transport.sendControl(createWorkCancelFrame({
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
         streamId: oversizedHandle.streamId,
         reason: "oversized_chunk_ack",
-      }));
-      assertEquals(
-        (await withTimeout(oversizedHandle.completed)).status,
-        "cancelled",
-      );
-      await withTimeout(oversizedHandle.started);
-      await assertRejects(() => oversizedHandle.metadata, Error);
-      await assertRejects(() => readAll(oversizedHandle.output), Error);
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
-        0,
-      );
-    } finally {
-      await harness.close();
-    }
-  },
+      }),
+    );
+    assert.deepStrictEqual(
+      (await withTimeout(oversizedHandle.completed)).status,
+      "cancelled",
+    );
+    await withTimeout(oversizedHandle.started);
+    await assertRejects(() => oversizedHandle.metadata, Error);
+    await assertRejects(() => readAll(oversizedHandle.output), Error);
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
+      0,
+    );
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "queued response data racing output cancellation is discarded without tearing down the socket",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
-    });
+test("queued response data racing output cancellation is discarded without tearing down the socket", async () => {
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+  });
 
-    try {
-      const racedHandle = await withTimeout(
-        harness.hypervisor.dispatch({ workload: "sandbox.command" }),
-      );
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: racedHandle.streamId }),
-      );
-      await nextControlledControl(harness.worker, "work.start");
-      const responseCredit = await receiveRequestEnd(
-        harness.worker,
-        racedHandle.streamId,
-      );
-      assertEquals(responseCredit > 0, true);
-      await harness.worker.transport.sendControl(createWorkMetadataFrame({
+  try {
+    const racedHandle = await withTimeout(
+      harness.hypervisor.dispatch({ workload: "sandbox.command" }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: racedHandle.streamId }),
+    );
+    await nextControlledControl(harness.worker, "work.start");
+    const responseCredit = await receiveRequestEnd(
+      harness.worker,
+      racedHandle.streamId,
+    );
+    assert.deepStrictEqual(responseCredit > 0, true);
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
         streamId: racedHandle.streamId,
         metadata: { response: "started" },
-      }));
-      assertEquals(await withTimeout(racedHandle.metadata), {
-        response: "started",
-      });
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(racedHandle.metadata), {
+      response: "started",
+    });
 
-      const chunkBytes = Math.min(1_024, responseCredit);
-      const chunkCount = Math.min(
-        64,
-        Math.floor(responseCredit / chunkBytes),
-      );
-      const sends = Array.from(
-        { length: chunkCount },
-        (_, sequence) =>
-          harness.worker.transport.sendData(createWorkDataFrame({
-            streamId: racedHandle.streamId,
-            sequence,
-            payload: new Uint8Array(chunkBytes).fill(sequence),
-          })),
-      );
-      const racedReader = racedHandle.output.getReader();
-      const cancellation = racedReader.cancel("queued_data_consumer_left");
-      await Promise.allSettled(sends);
+    const chunkBytes = Math.min(1_024, responseCredit);
+    const chunkCount = Math.min(64, Math.floor(responseCredit / chunkBytes));
+    const sends = Array.from({ length: chunkCount }, (_, sequence) =>
+      harness.worker.transport.sendData(
+        createWorkDataFrame({
+          streamId: racedHandle.streamId,
+          sequence,
+          payload: new Uint8Array(chunkBytes).fill(sequence),
+        }),
+      ),
+    );
+    const racedReader = racedHandle.output.getReader();
+    const cancellation = racedReader.cancel("queued_data_consumer_left");
+    await Promise.allSettled(sends);
 
-      let cancelSeen = false;
-      while (!cancelSeen) {
-        const message = await nextControlledMessage(harness.worker);
-        if (message.kind !== "control") {
-          throw new TypeError("Hypervisor sent unexpected response data");
-        }
-        const frame = message.acceptance.frame;
-        if (frame.type === "work.credit") continue;
-        if (frame.type === "work.cancel") {
-          assertEquals(frame.streamId, racedHandle.streamId);
-          cancelSeen = true;
-          continue;
-        }
-        throw new TypeError(`unexpected frame ${frame.type}`);
+    let cancelSeen = false;
+    while (!cancelSeen) {
+      const message = await nextControlledMessage(harness.worker);
+      if (message.kind !== "control") {
+        throw new TypeError("Hypervisor sent unexpected response data");
       }
-      await harness.worker.transport.sendControl(createWorkCancelFrame({
+      const frame = message.acceptance.frame;
+      if (frame.type === "work.credit") continue;
+      if (frame.type === "work.cancel") {
+        assert.deepStrictEqual(frame.streamId, racedHandle.streamId);
+        cancelSeen = true;
+        continue;
+      }
+      throw new TypeError(`unexpected frame ${frame.type}`);
+    }
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
         streamId: racedHandle.streamId,
         reason: "queued_data_consumer_left_ack",
-      }));
-      await withTimeout(cancellation);
-      assertEquals(
-        (await withTimeout(racedHandle.completed)).status,
-        "cancelled",
-      );
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
+      }),
+    );
+    await withTimeout(cancellation);
+    assert.deepStrictEqual(
+      (await withTimeout(racedHandle.completed)).status,
+      "cancelled",
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
 
-      const healthyHandle = await withTimeout(
-        harness.hypervisor.dispatch({ workload: "sandbox.command" }),
-      );
-      const healthyOpen = await nextControlledControl(
-        harness.worker,
-        "work.open",
-      );
-      assertEquals(healthyOpen.streamId, healthyHandle.streamId);
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: healthyHandle.streamId }),
-      );
-      await nextControlledControl(harness.worker, "work.start");
-      await receiveRequestEnd(harness.worker, healthyHandle.streamId);
-      await harness.worker.transport.sendControl(createWorkMetadataFrame({
+    const healthyHandle = await withTimeout(
+      harness.hypervisor.dispatch({ workload: "sandbox.command" }),
+    );
+    const healthyOpen = await nextControlledControl(
+      harness.worker,
+      "work.open",
+    );
+    assert.deepStrictEqual(healthyOpen.streamId, healthyHandle.streamId);
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: healthyHandle.streamId }),
+    );
+    await nextControlledControl(harness.worker, "work.start");
+    await receiveRequestEnd(harness.worker, healthyHandle.streamId);
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
         streamId: healthyHandle.streamId,
         metadata: { afterRace: "healthy" },
-      }));
-      await harness.worker.transport.sendControl(createWorkEndFrame({
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
         streamId: healthyHandle.streamId,
-      }));
-      assertEquals(await withTimeout(healthyHandle.metadata), {
-        afterRace: "healthy",
-      });
-      assertEquals(
-        (await withTimeout(healthyHandle.completed)).status,
-        "completed",
-      );
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
-        0,
-      );
-    } finally {
-      await harness.close();
-    }
-  },
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(healthyHandle.metadata), {
+      afterRace: "healthy",
+    });
+    assert.deepStrictEqual(
+      (await withTimeout(healthyHandle.completed)).status,
+      "completed",
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
+      0,
+    );
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "pre-aborted dispatch emits no work frame and leaves the worker routable",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
-    });
+test("pre-aborted dispatch emits no work frame and leaves the worker routable", async () => {
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+  });
+  const abort = new AbortController();
+  abort.abort(new DOMException("already_gone", "AbortError"));
+
+  try {
+    await assertRejects(
+      () =>
+        harness.hypervisor.dispatch({
+          workload: "sandbox.command",
+          signal: abort.signal,
+        }),
+      DOMException,
+      "already_gone",
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
+      0,
+    );
+    await expectNoControlledMessage(harness.worker, 50);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("caller abort racing direct dispatch sends Open then stream-local Cancel and preserves concurrent work", async () => {
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+  });
+
+  try {
+    const survivor = await withTimeout(
+      harness.hypervisor.dispatch({ workload: "sandbox.command" }),
+    );
+    await nextControlledControl(harness.worker, "work.open");
+    await harness.worker.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: survivor.streamId }),
+    );
+    await nextControlledControl(harness.worker, "work.start");
+    await receiveRequestEnd(harness.worker, survivor.streamId);
+
     const abort = new AbortController();
-    abort.abort(new DOMException("already_gone", "AbortError"));
-
-    try {
-      await assertRejects(
-        () =>
-          harness.hypervisor.dispatch({
-            workload: "sandbox.command",
-            signal: abort.signal,
-          }),
-        DOMException,
-        "already_gone",
-      );
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
-        0,
-      );
-      await expectNoControlledMessage(harness.worker, 50);
-    } finally {
-      await harness.close();
-    }
-  },
-});
-
-Deno.test({
-  name:
-    "caller abort racing direct dispatch sends Open then stream-local Cancel and preserves concurrent work",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
+    const victimPromise = harness.hypervisor.dispatch({
+      workload: "sandbox.command",
+      signal: abort.signal,
     });
+    // dispatch() has crossed its initial pre-abort check. Direct session
+    // routing must finish the single WorkOpen delivery, then bind this
+    // already-fired cancellation to that handle.
+    abort.abort(new DOMException("caller_left", "AbortError"));
+    const victim = await withTimeout(victimPromise);
 
-    try {
-      const survivor = await withTimeout(
-        harness.hypervisor.dispatch({ workload: "sandbox.command" }),
-      );
-      await nextControlledControl(harness.worker, "work.open");
-      await harness.worker.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: survivor.streamId }),
-      );
-      await nextControlledControl(harness.worker, "work.start");
-      await receiveRequestEnd(harness.worker, survivor.streamId);
+    // Even though the peer has not read WorkOpen yet, the wire order must
+    // remain Open then Cancel.
+    const victimOpen = await nextControlledControl(harness.worker, "work.open");
+    assert.deepStrictEqual(victimOpen.streamId, victim.streamId);
+    const victimCancel = await nextControlledControl(
+      harness.worker,
+      "work.cancel",
+    );
+    assert.deepStrictEqual(victimCancel.streamId, victim.streamId);
 
-      const abort = new AbortController();
-      const victimPromise = harness.hypervisor.dispatch({
-        workload: "sandbox.command",
-        signal: abort.signal,
-      });
-      // dispatch() has crossed its initial pre-abort check. Direct session
-      // routing must finish the single WorkOpen delivery, then bind this
-      // already-fired cancellation to that handle.
-      abort.abort(new DOMException("caller_left", "AbortError"));
-      const victim = await withTimeout(victimPromise);
-
-      // Even though the peer has not read WorkOpen yet, the wire order must
-      // remain Open then Cancel.
-      const victimOpen = await nextControlledControl(
-        harness.worker,
-        "work.open",
-      );
-      assertEquals(victimOpen.streamId, victim.streamId);
-      const victimCancel = await nextControlledControl(
-        harness.worker,
-        "work.cancel",
-      );
-      assertEquals(victimCancel.streamId, victim.streamId);
-
-      await harness.worker.transport.sendControl(createWorkMetadataFrame({
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
         streamId: survivor.streamId,
         metadata: { survivor: true },
-      }));
-      await harness.worker.transport.sendControl(createWorkEndFrame({
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({
         streamId: survivor.streamId,
-      }));
-      assertEquals(await withTimeout(survivor.metadata), { survivor: true });
-      assertEquals((await withTimeout(survivor.completed)).status, "completed");
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(survivor.metadata), {
+      survivor: true,
+    });
+    assert.deepStrictEqual(
+      (await withTimeout(survivor.completed)).status,
+      "completed",
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
 
-      await harness.worker.transport.sendControl(createWorkCancelFrame({
+    await harness.worker.transport.sendControl(
+      createWorkCancelFrame({
         streamId: victim.streamId,
         reason: "caller_left_ack",
-      }));
-      assertEquals((await withTimeout(victim.completed)).status, "cancelled");
-      await expectRejectedHandle(victim);
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
-        0,
-      );
-    } finally {
-      await harness.close();
-    }
-  },
+      }),
+    );
+    assert.deepStrictEqual(
+      (await withTimeout(victim.completed)).status,
+      "cancelled",
+    );
+    await expectRejectedHandle(victim);
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
+      0,
+    );
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "post-Open deadline scheduler failure returns one handle and settles through connection loss",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    let rejectScheduling = false;
-    const scheduler: HypervisorScheduler = Object.freeze({
-      schedule(callback, delayMs) {
-        if (rejectScheduling) {
-          throw new Error("injected post-ready scheduler failure");
-        }
-        return setTimeout(callback, delayMs);
-      },
-      cancel(handle) {
-        clearTimeout(handle as ReturnType<typeof setTimeout>);
-      },
-    });
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
-      scheduler,
-    });
+test("post-Open deadline scheduler failure returns one handle and settles through connection loss", async () => {
+  let rejectScheduling = false;
+  const scheduler: HypervisorScheduler = Object.freeze({
+    schedule(callback, delayMs) {
+      if (rejectScheduling) {
+        throw new Error("injected post-ready scheduler failure");
+      }
+      return setTimeout(callback, delayMs);
+    },
+    cancel(handle) {
+      clearTimeout(handle as ReturnType<typeof setTimeout>);
+    },
+  });
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+    scheduler,
+  });
 
-    try {
-      rejectScheduling = true;
-      const handle = await withTimeout(harness.hypervisor.dispatch({
+  try {
+    rejectScheduling = true;
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({
         workload: "sandbox.command",
         deadlineAtMs: Date.now() + 1_000,
-      }));
+      }),
+    );
 
-      assertEquals(
-        (await withTimeout(handle.completed)).status,
-        "reschedulable",
-      );
-      await expectRejectedHandle(handle);
-      await waitFor(
-        () => harness.hypervisor.snapshot().connections === 0,
-        "post-Open setup failure did not close its connection",
-      );
-      assertEquals(harness.hypervisor.snapshot().sessions, 0);
-      assertEquals(
-        Object.values(harness.hypervisor.snapshot().work).every(
-          (count) => count === 0,
-        ),
-        true,
-      );
-      await assertRejects(
-        () =>
-          harness.hypervisor.dispatch({
-            workload: "sandbox.command",
-          }),
-        Error,
-        "no ready Worker has capacity",
-      );
-    } finally {
-      await harness.close();
-    }
-  },
+    assert.deepStrictEqual(
+      (await withTimeout(handle.completed)).status,
+      "reschedulable",
+    );
+    await expectRejectedHandle(handle);
+    await waitFor(
+      () => harness.hypervisor.snapshot().connections === 0,
+      "post-Open setup failure did not close its connection",
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().sessions, 0);
+    assert.deepStrictEqual(
+      Object.values(harness.hypervisor.snapshot().work).every(
+        (count) => count === 0,
+      ),
+      true,
+    );
+    await assertRejects(
+      () =>
+        harness.hypervisor.dispatch({
+          workload: "sandbox.command",
+        }),
+      Error,
+      "no ready Worker has capacity",
+    );
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name: "replacement session fences stale socket frames and remains routable",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
-    });
+test("replacement session fences stale socket frames and remains routable", async () => {
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+  });
 
-    try {
-      const replacement = await harness.connect({
+  try {
+    const replacement = await harness.connect(
+      {
         kind: "resume",
         capability: harness.worker.welcome.resumeCapability,
-      }, "newer-session-handshake");
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)
-          ?.connectionId,
-        replacement.welcome.connectionId,
-      );
+      },
+      "newer-session-handshake",
+    );
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.connectionId,
+      replacement.welcome.connectionId,
+    );
 
-      // If the replacement close has not reached the old socket yet, this
-      // stale heartbeat reaches the Hypervisor and must fail its current
-      // session fence. If closure won the race, sendControl rejects locally.
-      await harness.worker.transport.sendControl(createHeartbeatFrame({
-        connectionId: harness.worker.welcome.connectionId,
-        sequence: 0,
-        inflight: 0,
-        availableCapacity: 4,
-      })).catch(() => undefined);
-      await withTimeout(harness.worker.transport.closed);
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)
-          ?.connectionId,
-        replacement.welcome.connectionId,
-      );
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
+    // If the replacement close has not reached the old socket yet, this
+    // stale heartbeat reaches the Hypervisor and must fail its current
+    // session fence. If closure won the race, sendControl rejects locally.
+    await harness.worker.transport
+      .sendControl(
+        createHeartbeatFrame({
+          connectionId: harness.worker.welcome.connectionId,
+          sequence: 0,
+          inflight: 0,
+          availableCapacity: 4,
+        }),
+      )
+      .catch(() => undefined);
+    await withTimeout(harness.worker.transport.closed);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.connectionId,
+      replacement.welcome.connectionId,
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
 
-      const handle = await withTimeout(
-        harness.hypervisor.dispatch({ workload: "sandbox.command" }),
-      );
-      const open = await nextControlledControl(replacement, "work.open");
-      assertEquals(open.streamId, handle.streamId);
-      await replacement.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: handle.streamId }),
-      );
-      await nextControlledControl(replacement, "work.start");
-      await receiveRequestEnd(replacement, handle.streamId);
-      await replacement.transport.sendControl(createWorkMetadataFrame({
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({ workload: "sandbox.command" }),
+    );
+    const open = await nextControlledControl(replacement, "work.open");
+    assert.deepStrictEqual(open.streamId, handle.streamId);
+    await replacement.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: handle.streamId }),
+    );
+    await nextControlledControl(replacement, "work.start");
+    await receiveRequestEnd(replacement, handle.streamId);
+    await replacement.transport.sendControl(
+      createWorkMetadataFrame({
         streamId: handle.streamId,
         metadata: { owner: "replacement" },
-      }));
-      await replacement.transport.sendControl(createWorkEndFrame({
+      }),
+    );
+    await replacement.transport.sendControl(
+      createWorkEndFrame({
         streamId: handle.streamId,
-      }));
-      assertEquals(await withTimeout(handle.metadata), {
-        owner: "replacement",
-      });
-      assertEquals((await withTimeout(handle.completed)).status, "completed");
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
-    } finally {
-      await harness.close();
-    }
-  },
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(handle.metadata), {
+      owner: "replacement",
+    });
+    assert.deepStrictEqual(
+      (await withTimeout(handle.completed)).status,
+      "completed",
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "expired lease event cannot close a newer generation reusing its connection ID",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    type HeldSweep = {
-      callback: () => void;
-      cancelled: boolean;
-    };
-    const heldSweeps: HeldSweep[] = [];
-    const heldHandles = new Set<HeldSweep>();
-    const leaseSweepIntervalMs = 333;
-    const scheduler: HypervisorScheduler = Object.freeze({
-      schedule(callback, delayMs) {
-        if (delayMs === leaseSweepIntervalMs) {
-          const held = { callback, cancelled: false };
-          heldSweeps.push(held);
-          heldHandles.add(held);
-          return held;
-        }
-        return setTimeout(callback, delayMs);
-      },
-      cancel(handle) {
-        const held = handle as HeldSweep;
-        if (heldHandles.has(held)) {
-          held.cancelled = true;
-          heldHandles.delete(held);
-          return;
-        }
-        clearTimeout(handle as ReturnType<typeof setTimeout>);
-      },
-    });
-    const runNextSweep = (): void => {
-      while (true) {
-        const held = heldSweeps.shift();
-        if (held === undefined) {
-          throw new TypeError("expected a held lease sweep");
-        }
+test("expired lease event cannot close a newer generation reusing its connection ID", async () => {
+  type HeldSweep = {
+    callback: () => void;
+    cancelled: boolean;
+  };
+  const heldSweeps: HeldSweep[] = [];
+  const heldHandles = new Set<HeldSweep>();
+  const leaseSweepIntervalMs = 333;
+  const scheduler: HypervisorScheduler = Object.freeze({
+    schedule(callback, delayMs) {
+      if (delayMs === leaseSweepIntervalMs) {
+        const held = { callback, cancelled: false };
+        heldSweeps.push(held);
+        heldHandles.add(held);
+        return held;
+      }
+      return setTimeout(callback, delayMs);
+    },
+    cancel(handle) {
+      const held = handle as HeldSweep;
+      if (heldHandles.has(held)) {
+        held.cancelled = true;
         heldHandles.delete(held);
-        if (held.cancelled) continue;
-        held.callback();
         return;
       }
-    };
-    let nowMs = 1_000;
-    const reusedConnectionId = "reused-connection";
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
-      scheduler,
-      clock: () => nowMs,
-      createConnectionId: () => reusedConnectionId,
-      config: { leaseSweepIntervalMs },
-    });
+      clearTimeout(handle as ReturnType<typeof setTimeout>);
+    },
+  });
+  const runNextSweep = (): void => {
+    while (true) {
+      const held = heldSweeps.shift();
+      if (held === undefined) {
+        throw new TypeError("expected a held lease sweep");
+      }
+      heldHandles.delete(held);
+      if (held.cancelled) continue;
+      held.callback();
+      return;
+    }
+  };
+  let nowMs = 1_000;
+  const reusedConnectionId = "reused-connection";
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+    scheduler,
+    clock: () => nowMs,
+    createConnectionId: () => reusedConnectionId,
+    config: { leaseSweepIntervalMs },
+  });
 
-    try {
-      const firstSession = harness.hypervisor.sessions.get(
-        harness.identity.workerId,
-      )!;
-      assertEquals(firstSession.sessionGeneration, 1);
-      nowMs = firstSession.leaseExpiresAtMs;
-      // A public read expires generation 1 and queues its lifecycle event, but
-      // the intentionally held Hypervisor sweep has not consumed it yet.
-      assertEquals(harness.hypervisor.sessions.list(), []);
-      await harness.worker.close("expired_generation_closed");
-      await waitFor(
-        () => harness.hypervisor.snapshot().connections === 0,
-        "expired generation socket did not close",
-      );
+  try {
+    const firstSession = harness.hypervisor.sessions.get(
+      harness.identity.workerId,
+    )!;
+    assert.deepStrictEqual(firstSession.sessionGeneration, 1);
+    nowMs = firstSession.leaseExpiresAtMs;
+    // A public read expires generation 1 and queues its lifecycle event, but
+    // the intentionally held Hypervisor sweep has not consumed it yet.
+    assert.deepStrictEqual(harness.hypervisor.sessions.list(), []);
+    await harness.worker.close("expired_generation_closed");
+    await waitFor(
+      () => harness.hypervisor.snapshot().connections === 0,
+      "expired generation socket did not close",
+    );
 
-      const replacement = await harness.connect({
+    const replacement = await harness.connect(
+      {
         kind: "resume",
         capability: harness.worker.welcome.resumeCapability,
-      }, "reused-connection-generation-2");
-      assertEquals(replacement.welcome.connectionId, reusedConnectionId);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)
-          ?.sessionGeneration,
-        2,
-      );
+      },
+      "reused-connection-generation-2",
+    );
+    assert.deepStrictEqual(
+      replacement.welcome.connectionId,
+      reusedConnectionId,
+    );
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)
+        ?.sessionGeneration,
+      2,
+    );
 
-      // Draining generation 1's queued event must compare the complete fence,
-      // not resolve generation 2 through the reused connection ID.
-      runNextSweep();
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
-      assertEquals(
-        harness.hypervisor.sessions.get(harness.identity.workerId)
-          ?.connectionId,
-        reusedConnectionId,
-      );
+    // Draining generation 1's queued event must compare the complete fence,
+    // not resolve generation 2 through the reused connection ID.
+    runNextSweep();
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
+    assert.deepStrictEqual(
+      harness.hypervisor.sessions.get(harness.identity.workerId)?.connectionId,
+      reusedConnectionId,
+    );
 
-      const handle = await withTimeout(
-        harness.hypervisor.dispatch({ workload: "sandbox.command" }),
-      );
-      const open = await nextControlledControl(replacement, "work.open");
-      assertEquals(open.streamId, handle.streamId);
-      await replacement.transport.sendControl(
-        createWorkAcceptedFrame({ streamId: handle.streamId }),
-      );
-      await nextControlledControl(replacement, "work.start");
-      await receiveRequestEnd(replacement, handle.streamId);
-      await replacement.transport.sendControl(createWorkMetadataFrame({
+    const handle = await withTimeout(
+      harness.hypervisor.dispatch({ workload: "sandbox.command" }),
+    );
+    const open = await nextControlledControl(replacement, "work.open");
+    assert.deepStrictEqual(open.streamId, handle.streamId);
+    await replacement.transport.sendControl(
+      createWorkAcceptedFrame({ streamId: handle.streamId }),
+    );
+    await nextControlledControl(replacement, "work.start");
+    await receiveRequestEnd(replacement, handle.streamId);
+    await replacement.transport.sendControl(
+      createWorkMetadataFrame({
         streamId: handle.streamId,
         metadata: { generation: 2 },
-      }));
-      await replacement.transport.sendControl(createWorkEndFrame({
+      }),
+    );
+    await replacement.transport.sendControl(
+      createWorkEndFrame({
         streamId: handle.streamId,
-      }));
-      assertEquals(await withTimeout(handle.metadata), { generation: 2 });
-      assertEquals((await withTimeout(handle.completed)).status, "completed");
-      assertEquals(harness.hypervisor.snapshot().connections, 1);
-    } finally {
-      await harness.close();
-    }
-  },
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(handle.metadata), {
+      generation: 2,
+    });
+    assert.deepStrictEqual(
+      (await withTimeout(handle.completed)).status,
+      "completed",
+    );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "terminal shutdown remains open until the worker acknowledges its ordered Shutdown",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
-    });
+test("terminal shutdown remains open until the worker acknowledges its ordered Shutdown", async () => {
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+  });
 
-    try {
-      const shutdown = harness.hypervisor.shutdownWorker(
-        harness.identity.workerId,
-        "acknowledged_shutdown",
-      );
-      const settlement = observeSettlement(shutdown);
-      await nextControlledControl(harness.worker, "drain");
-      await harness.worker.transport.sendControl(createDrainedFrame({
+  try {
+    const shutdown = harness.hypervisor.shutdownWorker(
+      harness.identity.workerId,
+      "acknowledged_shutdown",
+    );
+    const settlement = observeSettlement(shutdown);
+    await nextControlledControl(harness.worker, "drain");
+    await harness.worker.transport.sendControl(
+      createDrainedFrame({
         connectionId: harness.worker.welcome.connectionId,
-      }));
-      const terminal = await nextControlledControl(
-        harness.worker,
-        "shutdown",
-      );
-      assertEquals(terminal.reason, "drain_complete");
-      await Promise.resolve();
-      assertEquals(settlement.settled(), false);
+      }),
+    );
+    const terminal = await nextControlledControl(harness.worker, "shutdown");
+    assert.deepStrictEqual(terminal.reason, "drain_complete");
+    await Promise.resolve();
+    assert.deepStrictEqual(settlement.settled(), false);
 
-      await harness.worker.close("shutdown_acknowledged");
-      await withTimeout(shutdown);
-      assertEquals(harness.hypervisor.snapshot().connections, 0);
-      assertEquals(harness.hypervisor.snapshot().sessions, 0);
-    } finally {
-      await harness.close();
-    }
-  },
+    await harness.worker.close("shutdown_acknowledged");
+    await withTimeout(shutdown);
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 0);
+    assert.deepStrictEqual(harness.hypervisor.snapshot().sessions, 0);
+  } finally {
+    await harness.close();
+  }
 });
 
-Deno.test({
-  name:
-    "terminal shutdown waits for drain deadline before Shutdown when worker does not acknowledge",
-  permissions: { net: ["127.0.0.1"] },
-  async fn() {
-    const harness = await startControlledHarness({
-      commitAcceptedWork: () => Promise.resolve(),
-      config: { shutdownTimeoutMs: 80 },
-    });
+test("terminal shutdown waits for drain deadline before Shutdown when worker does not acknowledge", async () => {
+  const harness = await startControlledHarness({
+    commitAcceptedWork: () => Promise.resolve(),
+    config: { shutdownTimeoutMs: 80 },
+  });
 
-    try {
-      const shutdown = harness.hypervisor.shutdown("deadline_shutdown");
-      const settlement = observeSettlement(shutdown);
-      const drain = await nextControlledControl(harness.worker, "drain");
-      assertEquals(drain.reason, "deadline_shutdown");
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      assertEquals(settlement.settled(), false);
+  try {
+    const shutdown = harness.hypervisor.shutdown("deadline_shutdown");
+    const settlement = observeSettlement(shutdown);
+    const drain = await nextControlledControl(harness.worker, "drain");
+    assert.deepStrictEqual(drain.reason, "deadline_shutdown");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.deepStrictEqual(settlement.settled(), false);
 
-      const terminal = await nextControlledControl(
-        harness.worker,
-        "shutdown",
-      );
-      assertEquals(terminal.connectionId, harness.worker.welcome.connectionId);
-      await withTimeout(shutdown);
-      await withTimeout(harness.worker.transport.closed);
-      assertEquals(harness.hypervisor.snapshot().connections, 0);
-      assertEquals(harness.hypervisor.snapshot().acceptingConnections, false);
-    } finally {
-      await harness.close();
-    }
-  },
+    const terminal = await nextControlledControl(harness.worker, "shutdown");
+    assert.deepStrictEqual(
+      terminal.connectionId,
+      harness.worker.welcome.connectionId,
+    );
+    await withTimeout(shutdown);
+    await withTimeout(harness.worker.transport.closed);
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 0);
+    assert.deepStrictEqual(
+      harness.hypervisor.snapshot().acceptingConnections,
+      false,
+    );
+  } finally {
+    await harness.close();
+  }
 });

@@ -1,4 +1,6 @@
-import { assert, assertEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import { CLI_USAGE, parseCliArgs, runCli } from "../../src/cli/index.ts";
 import { defineConfig } from "../../src/config/index.ts";
 import type {
@@ -7,8 +9,8 @@ import type {
   WorkerManifest,
 } from "../../src/local/types.ts";
 
-Deno.test("v0.20 parser accepts only the exact command-specific surface", () => {
-  assertEquals(
+test("v0.20 parser accepts only the exact command-specific surface", () => {
+  assert.deepStrictEqual(
     parseCliArgs([
       "dev",
       "--config",
@@ -25,54 +27,39 @@ Deno.test("v0.20 parser accepts only the exact command-specific surface", () => 
       port: 0,
     },
   );
-  assertEquals(
-    parseCliArgs([
-      "init",
-      "--root=project",
-      "--force",
-    ]),
-    {
-      command: "init",
-      help: false,
-      force: true,
-      root: "project",
-    },
-  );
-  assertEquals(
-    parseCliArgs([
-      "worker",
-      "--manifest=worker.ts",
-    ]),
-    {
-      command: "worker",
-      help: false,
-      manifest: "worker.ts",
-    },
-  );
+  assert.deepStrictEqual(parseCliArgs(["init", "--root=project", "--force"]), {
+    command: "init",
+    help: false,
+    force: true,
+    root: "project",
+  });
+  assert.deepStrictEqual(parseCliArgs(["worker", "--manifest=worker.ts"]), {
+    command: "worker",
+    help: false,
+    manifest: "worker.ts",
+  });
 
-  for (
-    const args of [
-      [] as string[],
-      ["serve"],
-      ["start", "--source=."],
-      ["start", "--hypervisor=false"],
-      ["start", "--materialize"],
-      ["start", "--port=-1"],
-      ["start", "--port=65536"],
-      ["start", "--port=01"],
-      ["start", "--config=config.json"],
-      ["worker", "--manifest=https://example.com/worker.ts"],
-      ["init", "--force=true"],
-      ["check", "extra"],
-      ["routes", "--config"],
-      ["routes", "--config=a.ts", "--config=b.ts"],
-    ]
-  ) {
+  for (const args of [
+    [] as string[],
+    ["serve"],
+    ["start", "--source=."],
+    ["start", "--hypervisor=false"],
+    ["start", "--materialize"],
+    ["start", "--port=-1"],
+    ["start", "--port=65536"],
+    ["start", "--port=01"],
+    ["start", "--config=config.json"],
+    ["worker", "--manifest=https://example.com/worker.ts"],
+    ["init", "--force=true"],
+    ["check", "extra"],
+    ["routes", "--config"],
+    ["routes", "--config=a.ts", "--config=b.ts"],
+  ]) {
     assertThrows(() => parseCliArgs(args));
   }
 });
 
-Deno.test("v0.20 CLI help, input failures, and runtime failures map to 0/2/1", async () => {
+test("v0.20 CLI help, input failures, and runtime failures map to 0/2/1", async () => {
   const stdout: string[] = [];
   const stderr: string[] = [];
   const io = {
@@ -80,17 +67,17 @@ Deno.test("v0.20 CLI help, input failures, and runtime failures map to 0/2/1", a
     stderr: (message: string) => stderr.push(message),
   };
 
-  assertEquals(await runCli(["--help"], { io }), 0);
-  assertEquals(stdout, [CLI_USAGE]);
-  assertEquals(stderr, []);
+  assert.deepStrictEqual(await runCli(["--help"], { io }), 0);
+  assert.deepStrictEqual(stdout, [CLI_USAGE]);
+  assert.deepStrictEqual(stderr.length, 0);
 
   stdout.length = 0;
-  assertEquals(await runCli(["unknown"], { io }), 2);
-  assert(stderr[0].includes("unknown command"));
-  assert(stderr[0].includes("Usage:"));
+  assert.deepStrictEqual(await runCli(["unknown"], { io }), 2);
+  assert.ok(stderr[0].includes("unknown command"));
+  assert.ok(stderr[0].includes("Usage:"));
 
   stderr.length = 0;
-  assertEquals(
+  assert.deepStrictEqual(
     await runCli(["check"], {
       io,
       cwd: () => "/virtual/project",
@@ -98,10 +85,10 @@ Deno.test("v0.20 CLI help, input failures, and runtime failures map to 0/2/1", a
     }),
     1,
   );
-  assertEquals(stderr, ["error: config exploded"]);
+  assert.deepStrictEqual(stderr, ["error: config exploded"]);
 });
 
-Deno.test("dev and worker commands own and stop their injected lifecycles", async () => {
+test("dev and worker commands own and stop their injected lifecycles", async () => {
   const stdout: string[] = [];
   let serverStops = 0;
   let workerStops = 0;
@@ -111,7 +98,7 @@ Deno.test("dev and worker commands own and stop their injected lifecycles", asyn
     gateway: { listener: { port: 0 } },
   });
 
-  assertEquals(
+  assert.deepStrictEqual(
     await runCli(["dev", "--config=oxian.config.ts"], {
       io: {
         stdout: (message) => stdout.push(message),
@@ -137,9 +124,9 @@ Deno.test("dev and worker commands own and stop their injected lifecycles", asyn
     }),
     0,
   );
-  assertEquals(observedMode, "dev");
-  assertEquals(serverStops, 1);
-  assert(stdout[0].includes("http://127.0.0.1:4321/"));
+  assert.deepStrictEqual(observedMode, "dev");
+  assert.deepStrictEqual(serverStops, 1);
+  assert.ok(stdout[0].includes("http://127.0.0.1:4321/"));
 
   const manifest: WorkerManifest = Object.freeze({
     gatewayUrl: "wss://gateway.example/workers",
@@ -157,7 +144,7 @@ Deno.test("dev and worker commands own and stop their injected lifecycles", asyn
     applicationConfig: "file:///virtual/oxian.config.ts",
     credentialStore: Object.freeze({ mode: "ephemeral" }),
   });
-  assertEquals(
+  assert.deepStrictEqual(
     await runCli(["worker"], {
       io: {
         stdout: (message) => stdout.push(message),
@@ -178,6 +165,6 @@ Deno.test("dev and worker commands own and stop their injected lifecycles", asyn
     }),
     0,
   );
-  assertEquals(workerStops, 1);
-  assert(stdout.some((line) => line.includes("worker worker-1 is ready")));
+  assert.deepStrictEqual(workerStops, 1);
+  assert.ok(stdout.some((line) => line.includes("worker worker-1 is ready")));
 });

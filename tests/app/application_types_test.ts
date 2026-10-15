@@ -1,4 +1,5 @@
-import { assertEquals } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
 import { createApplication } from "../../src/app/application.ts";
 import type { FileRouter } from "../../src/router/types.ts";
 
@@ -21,20 +22,20 @@ function assertApplicationOptionTypes(): void {
 }
 void assertApplicationOptionTypes;
 
-Deno.test("application state sources preserve stateless and stateful runtime values", async () => {
+test("application state sources preserve stateless and stateful runtime values", async () => {
   const statelessRouter = Object.freeze({
     root: "file:///routes/",
     routes: Object.freeze([]),
     match: () => null,
   }) satisfies FileRouter<undefined>;
   const stateless = await createApplication({ router: statelessRouter });
-  assertEquals(stateless.state, undefined);
+  assert.deepStrictEqual(stateless.state, undefined);
   await stateless.dispose();
 
   const stateful = await createApplication({
     router: statefulRouter,
     state: { required: "present" },
   });
-  assertEquals(stateful.state, { required: "present" });
+  assert.deepStrictEqual(stateful.state, { required: "present" });
   await stateful.dispose();
 });

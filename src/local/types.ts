@@ -48,9 +48,8 @@ type LocalRuntimeRunningBase = Readonly<{
   hypervisor: Hypervisor;
 }>;
 
-export type LocalRuntimeRunning =
-  & LocalRuntimeRunningBase
-  & Readonly<{
+export type LocalRuntimeRunning = LocalRuntimeRunningBase &
+  Readonly<{
     workerTransport: LocalWorkerTransport;
     worker: Worker;
     workerUrl?: URL;

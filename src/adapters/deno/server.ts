@@ -25,10 +25,7 @@ export function handler(
       return new Response("Invalid WebSocket upgrade", { status: 400 });
     }
     try {
-      decision.attach(
-        adaptWebSocket(upgraded.socket),
-        decision.protocol,
-      );
+      decision.attach(adaptWebSocket(upgraded.socket), decision.protocol);
     } catch {
       try {
         upgraded.socket.close(4400, "connection_rejected");
@@ -60,7 +57,10 @@ export function serve(options: DenoServeOptions): HypervisorListener {
   let closed: Promise<void> | undefined;
   const shutdown = (): Promise<void> => {
     if (closed !== undefined) return closed;
-    closed = server.shutdown().catch(() => undefined).then(() => undefined);
+    closed = server
+      .shutdown()
+      .catch(() => undefined)
+      .then(() => undefined);
     return closed;
   };
   const listener: HypervisorListener = Object.freeze({

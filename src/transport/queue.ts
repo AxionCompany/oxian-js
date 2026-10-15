@@ -23,11 +23,7 @@ type Waiter<T> = {
 };
 
 function expectPositiveInteger(value: unknown, name: string): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < 1
-  ) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
     throw new TypeError(`${name} must be a positive safe integer`);
   }
   return value;
@@ -47,10 +43,7 @@ export function createBoundedAsyncQueue<T>(
   const push = (value: T): boolean => {
     if (closed) return false;
     const valueWeight = options.weigh(value);
-    if (
-      !Number.isSafeInteger(valueWeight) ||
-      valueWeight < 0
-    ) {
+    if (!Number.isSafeInteger(valueWeight) || valueWeight < 0) {
       throw new TypeError("queue item weight must be a non-negative integer");
     }
 
@@ -59,10 +52,7 @@ export function createBoundedAsyncQueue<T>(
       waiter.resolve({ done: false, value });
       return true;
     }
-    if (
-      values.length >= maxItems ||
-      valueWeight > maxWeight - weight
-    ) {
+    if (values.length >= maxItems || valueWeight > maxWeight - weight) {
       return false;
     }
     values.push({ value, weight: valueWeight });

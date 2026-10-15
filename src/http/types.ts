@@ -7,9 +7,8 @@ export const HTTP_WORKLOAD = "oxian.http.v1" as const;
 
 export type HttpHeaderPair = readonly [name: string, value: string];
 
-export type HttpRequestMetadata =
-  & JsonObject
-  & Readonly<{
+export type HttpRequestMetadata = JsonObject &
+  Readonly<{
     schema: typeof HTTP_REQUEST_METADATA_SCHEMA;
     requestId: string;
     method: string;
@@ -18,9 +17,8 @@ export type HttpRequestMetadata =
     hasBody: boolean;
   }>;
 
-export type HttpResponseMetadata =
-  & JsonObject
-  & Readonly<{
+export type HttpResponseMetadata = JsonObject &
+  Readonly<{
     schema: typeof HTTP_RESPONSE_METADATA_SCHEMA;
     status: number;
     statusText: string;
@@ -28,13 +26,9 @@ export type HttpResponseMetadata =
     hasBody: boolean;
   }>;
 
-export type HttpDispatch = (
-  input: WorkInput,
-) => Promise<WorkHandle>;
+export type HttpDispatch = (input: WorkInput) => Promise<WorkHandle>;
 
-export type HttpGatewayDeadline = (
-  request: Request,
-) => number | undefined;
+export type HttpGatewayDeadline = (request: Request) => number | undefined;
 
 export type HttpGatewayOptions = Readonly<{
   dispatch: HttpDispatch;
@@ -43,9 +37,7 @@ export type HttpGatewayOptions = Readonly<{
   deadlineAtMs?: HttpGatewayDeadline;
 }>;
 
-export type HttpGateway = (
-  request: Request,
-) => Promise<Response>;
+export type HttpGateway = (request: Request) => Promise<Response>;
 
 export type HttpFetchHandler = (
   request: Request,

@@ -81,18 +81,22 @@ export function createHypervisorError(
       enumerable: true,
       value: code,
     },
-    ...(details.identity === undefined ? {} : {
-      identity: {
-        enumerable: true,
-        value: Object.freeze({ ...details.identity }),
-      },
-    }),
-    ...(details.operationId === undefined ? {} : {
-      operationId: {
-        enumerable: true,
-        value: details.operationId,
-      },
-    }),
+    ...(details.identity === undefined
+      ? {}
+      : {
+          identity: {
+            enumerable: true,
+            value: Object.freeze({ ...details.identity }),
+          },
+        }),
+    ...(details.operationId === undefined
+      ? {}
+      : {
+          operationId: {
+            enumerable: true,
+            value: details.operationId,
+          },
+        }),
   });
   return error;
 }
@@ -144,9 +148,7 @@ export function assertCurrentFrame(
   sessions.assertCurrent(record.fence);
 }
 
-export function copyPeerClose(
-  close: ConnectionClose,
-): HypervisorPeerClose {
+export function copyPeerClose(close: ConnectionClose): HypervisorPeerClose {
   return Object.freeze({
     code: close.code,
     reason: close.reason,

@@ -13,16 +13,14 @@ export const CLI_COMMANDS: readonly [
   "worker",
   "routes",
   "check",
-] = Object.freeze(
-  [
-    "init",
-    "dev",
-    "start",
-    "worker",
-    "routes",
-    "check",
-  ] as const,
-);
+] = Object.freeze([
+  "init",
+  "dev",
+  "start",
+  "worker",
+  "routes",
+  "check",
+] as const);
 
 export type CliCommand = (typeof CLI_COMMANDS)[number];
 
@@ -37,9 +35,7 @@ export type ParsedCli = Readonly<{
   root?: string;
 }>;
 
-export type CliInputError =
-  & Error
-  & Readonly<{ cliInputError: true }>;
+export type CliInputError = Error & Readonly<{ cliInputError: true }>;
 
 export type CliIo = Readonly<{
   stdout(message: string): void;
@@ -57,16 +53,13 @@ export type CliDependencies = Readonly<{
   createRouter?: (
     options: Readonly<{ root: string | URL }>,
   ) => Promise<FileRouter<unknown>>;
-  loadApplicationFactory?:
-    typeof import("../app/factory.ts").loadApplicationFactory;
+  loadApplicationFactory?: typeof import("../app/factory.ts").loadApplicationFactory;
   createLocalRuntime?: (
     options: Parameters<
       typeof import("../local/runtime.ts").createLocalRuntime
     >[0],
   ) => LocalRuntime;
-  loadWorkerManifest?: (
-    source: string | URL,
-  ) => Promise<WorkerManifest>;
+  loadWorkerManifest?: (source: string | URL) => Promise<WorkerManifest>;
   createManifestWorkerRuntime?: (
     options: Readonly<{ manifest: WorkerManifest }>,
   ) => ManifestWorkerRuntime;

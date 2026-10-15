@@ -52,9 +52,7 @@ export function createConnectionAdmission(
     directory: ConnectionDirectory;
     admission: AdmissionController;
     isAcceptingConnections(): boolean;
-    fallback?: (
-      request: Request,
-    ) => Response | Promise<Response>;
+    fallback?: (request: Request) => Response | Promise<Response>;
     armLeaseSweep(): void;
     welcome(record: ConnectionRecord, frame: HelloFrame): Promise<void>;
     ready(record: ConnectionRecord, frame: ReadyFrame): Promise<void>;
@@ -186,15 +184,16 @@ export function createConnectionAdmission(
       }
     } catch (error) {
       if (record.phase !== "closed") {
-        const code = record.phase === "unauthenticated"
-          ? authenticationCode(error)
-          : errorCode(error) ?? "connection_failed";
+        const code =
+          record.phase === "unauthenticated"
+            ? authenticationCode(error)
+            : (errorCode(error) ?? "connection_failed");
         const disconnectReason: HypervisorDisconnectReason =
           record.phase === "unauthenticated"
             ? "authentication_rejected"
             : code === "connection_failed"
-            ? "connection_failed"
-            : "protocol_rejected";
+              ? "connection_failed"
+              : "protocol_rejected";
         await options.rejectRecord(
           record,
           code,
@@ -218,10 +217,7 @@ export function createConnectionAdmission(
 
   const reserve = (
     transportType: "in-process" | "websocket",
-  ): Extract<
-    HypervisorRequestDecision,
-    Readonly<{ kind: "upgrade" }>
-  > => {
+  ): Extract<HypervisorRequestDecision, Readonly<{ kind: "upgrade" }>> => {
     const record: ConnectionRecord = {
       transportType,
       phase: "pending",
@@ -264,7 +260,8 @@ export function createConnectionAdmission(
       const selectedProtocol = connection.protocol || negotiatedProtocol;
       if (
         selectedProtocol !== WORKER_PROTOCOL ||
-        (connection.protocol !== "" && negotiatedProtocol !== undefined &&
+        (connection.protocol !== "" &&
+          negotiatedProtocol !== undefined &&
           connection.protocol !== negotiatedProtocol)
       ) {
         try {

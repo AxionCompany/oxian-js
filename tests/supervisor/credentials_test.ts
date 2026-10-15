@@ -1,4 +1,6 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
 import {
   createCredentialLifecycle,
   createEphemeralCredentialLifecycle,
@@ -16,7 +18,7 @@ function capabilityFactory() {
   return (kind: "registration" | "resume") => `${kind}-${++sequence}`;
 }
 
-Deno.test("registration exchange replays only the exact lost-welcome handshake", async () => {
+test("registration exchange replays only the exact lost-welcome handshake", async () => {
   const authority = createEphemeralCredentialLifecycle({
     clock: () => 100,
     createCapability: capabilityFactory(),
@@ -28,10 +30,10 @@ Deno.test("registration exchange replays only the exact lost-welcome handshake",
     handshakeId: "handshake-1",
   });
 
-  assertEquals(exchange.authenticatedWith, "registration");
-  assertEquals(exchange.sessionGeneration, 1);
-  assertEquals(exchange.resume.credential.kind, "resume");
-  assertEquals(
+  assert.deepStrictEqual(exchange.authenticatedWith, "registration");
+  assert.deepStrictEqual(exchange.sessionGeneration, 1);
+  assert.deepStrictEqual(exchange.resume.credential.kind, "resume");
+  assert.deepStrictEqual(
     await authority.exchange({
       identity: IDENTITY,
       credential: registration.credential,
@@ -55,9 +57,9 @@ Deno.test("registration exchange replays only the exact lost-welcome handshake",
     credential: exchange.resume.credential,
     handshakeId: "handshake-2",
   });
-  assertEquals(resumed.authenticatedWith, "resume");
-  assertEquals(resumed.sessionGeneration, 2);
-  assertEquals(
+  assert.deepStrictEqual(resumed.authenticatedWith, "resume");
+  assert.deepStrictEqual(resumed.sessionGeneration, 2);
+  assert.deepStrictEqual(
     await authority.exchange({
       identity: IDENTITY,
       credential: exchange.resume.credential,
@@ -77,7 +79,7 @@ Deno.test("registration exchange replays only the exact lost-welcome handshake",
   );
 });
 
-Deno.test("concurrent exact handshake exchanges return one stable resume credential", async () => {
+test("concurrent exact handshake exchanges return one stable resume credential", async () => {
   const authority = createEphemeralCredentialLifecycle({
     clock: () => 100,
     createCapability: capabilityFactory(),
@@ -97,16 +99,16 @@ Deno.test("concurrent exact handshake exchanges return one stable resume credent
     }),
   ]);
 
-  assertEquals(
+  assert.deepStrictEqual(
     results.filter((result) => result.status === "fulfilled").length,
     2,
   );
   if (results[0].status === "fulfilled" && results[1].status === "fulfilled") {
-    assertEquals(results[0].value, results[1].value);
+    assert.deepStrictEqual(results[0].value, results[1].value);
   }
 });
 
-Deno.test("registration authority expires and revokes exact attempt credentials", async () => {
+test("registration authority expires and revokes exact attempt credentials", async () => {
   let nowMs = 10;
   const authority = createEphemeralCredentialLifecycle({
     clock: () => nowMs,
@@ -115,29 +117,29 @@ Deno.test("registration authority expires and revokes exact attempt credentials"
   });
   const expired = await authority.issueRegistration(IDENTITY);
   nowMs = 15;
-  const expiration = await assertRejects(() =>
+  const expiration = (await assertRejects(() =>
     authority.exchange({
       identity: IDENTITY,
       credential: expired.credential,
       handshakeId: "handshake-expired",
-    })
-  ) as SupervisorError;
-  assertEquals(expiration.code, "credential_expired");
+    }),
+  )) as SupervisorError;
+  assert.deepStrictEqual(expiration.code, "credential_expired");
 
   nowMs = 20;
   const revoked = await authority.issueRegistration(IDENTITY);
   await authority.revoke(IDENTITY);
-  const revocation = await assertRejects(() =>
+  const revocation = (await assertRejects(() =>
     authority.exchange({
       identity: IDENTITY,
       credential: revoked.credential,
       handshakeId: "handshake-revoked",
-    })
-  ) as SupervisorError;
-  assertEquals(revocation.code, "credential_invalid");
+    }),
+  )) as SupervisorError;
+  assert.deepStrictEqual(revocation.code, "credential_invalid");
 });
 
-Deno.test("pluggable registration authority cannot substitute identities or credential kinds", async () => {
+test("pluggable registration authority cannot substitute identities or credential kinds", async () => {
   const authority = createCredentialLifecycle({
     issueRegistration() {
       return {
@@ -154,9 +156,8 @@ Deno.test("pluggable registration authority cannot substitute identities or cred
         identity: input.identity,
         handshakeId: input.handshakeId,
         sessionGeneration: 1,
-        authenticatedWith: input.credential.kind === "registration"
-          ? "resume"
-          : "registration",
+        authenticatedWith:
+          input.credential.kind === "registration" ? "resume" : "registration",
         resume: {
           identity: input.identity,
           credential: { kind: "resume", capability: "resume-1" },
@@ -187,7 +188,7 @@ Deno.test("pluggable registration authority cannot substitute identities or cred
   );
 });
 
-Deno.test("handshake replay is bounded and revocation removes a minted replay", async () => {
+test("handshake replay is bounded and revocation removes a minted replay", async () => {
   let nowMs = 100;
   const authority = createEphemeralCredentialLifecycle({
     clock: () => nowMs,
@@ -234,7 +235,7 @@ Deno.test("handshake replay is bounded and revocation removes a minted replay", 
   );
 });
 
-Deno.test("authority namespace and mint sequence prevent suffix reuse", async () => {
+test("authority namespace and mint sequence prevent suffix reuse", async () => {
   let nowMs = 100;
   const authority = createEphemeralCredentialLifecycle({
     clock: () => nowMs,
@@ -250,7 +251,7 @@ Deno.test("authority namespace and mint sequence prevent suffix reuse", async ()
   await authority.revoke(IDENTITY);
   nowMs = 1_000;
   const next = await authority.issueRegistration(IDENTITY);
-  assertEquals(
+  assert.deepStrictEqual(
     new Set([
       registration.credential.capability,
       first.resume.credential.capability,
@@ -260,7 +261,7 @@ Deno.test("authority namespace and mint sequence prevent suffix reuse", async ()
   );
 });
 
-Deno.test("resume mint cannot reuse a repeated generator suffix", async () => {
+test("resume mint cannot reuse a repeated generator suffix", async () => {
   const authority = createEphemeralCredentialLifecycle({
     clock: () => 100,
     createCapability: () => "same-suffix",
@@ -272,12 +273,12 @@ Deno.test("resume mint cannot reuse a repeated generator suffix", async () => {
     handshakeId: "handshake-1",
   });
 
-  assertEquals(
+  assert.deepStrictEqual(
     registration.credential.capability ===
       exchange.resume.credential.capability,
     false,
   );
-  assertEquals(
+  assert.deepStrictEqual(
     await authority.exchange({
       identity: IDENTITY,
       credential: registration.credential,
@@ -287,7 +288,7 @@ Deno.test("resume mint cannot reuse a repeated generator suffix", async () => {
   );
 });
 
-Deno.test("failed resume mint leaves current grant and predecessor replay intact", async () => {
+test("failed resume mint leaves current grant and predecessor replay intact", async () => {
   let calls = 0;
   let failMint = false;
   const authority = createEphemeralCredentialLifecycle({
@@ -316,7 +317,7 @@ Deno.test("failed resume mint leaves current grant and predecessor replay intact
     Error,
     "mint unavailable",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     await authority.exchange({
       identity: IDENTITY,
       credential: registration.credential,
@@ -331,5 +332,5 @@ Deno.test("failed resume mint leaves current grant and predecessor replay intact
     credential: first.resume.credential,
     handshakeId: "handshake-2",
   });
-  assertEquals(second.sessionGeneration, 2);
+  assert.deepStrictEqual(second.sessionGeneration, 2);
 });

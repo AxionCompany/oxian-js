@@ -62,18 +62,18 @@ function sameIdentity(
   left: ReturnType<typeof createWorkerIdentity>,
   right: ReturnType<typeof createWorkerIdentity>,
 ): boolean {
-  return left.workerId === right.workerId &&
+  return (
+    left.workerId === right.workerId &&
     left.attemptId === right.attemptId &&
-    left.epoch === right.epoch;
+    left.epoch === right.epoch
+  );
 }
 
-function normalizeActivation(
-  value: unknown,
-): WorkerActivationResult {
-  const candidate = value !== null && typeof value === "object" &&
-      "identity" in value
-    ? (value as Readonly<{ identity: unknown }>).identity
-    : value;
+function normalizeActivation(value: unknown): WorkerActivationResult {
+  const candidate =
+    value !== null && typeof value === "object" && "identity" in value
+      ? (value as Readonly<{ identity: unknown }>).identity
+      : value;
   return Object.freeze({
     identity: createWorkerIdentity(
       candidate as Parameters<typeof createWorkerIdentity>[0],
@@ -88,9 +88,8 @@ function normalizeRegistration(
   if (value === null || typeof value !== "object") {
     throw new TypeError("register must return a Worker registration record");
   }
-  const candidate = value as
-    & Partial<WorkerRegistration>
-    & Readonly<{ identity?: unknown }>;
+  const candidate = value as Partial<WorkerRegistration> &
+    Readonly<{ identity?: unknown }>;
   if (candidate.identity !== undefined) {
     const registeredIdentity = createWorkerIdentity(
       candidate.identity as Parameters<typeof createWorkerIdentity>[0],
@@ -151,7 +150,8 @@ function validateCallbacks(callbacks: WorkerLifecycleCallbacks): void {
   ] as const;
   for (const name of names) {
     if (
-      callbacks[name] !== undefined && typeof callbacks[name] !== "function"
+      callbacks[name] !== undefined &&
+      typeof callbacks[name] !== "function"
     ) {
       throw new TypeError(`${name} must be a function`);
     }
@@ -180,8 +180,8 @@ export function createWorker(
   const workloadEntries = Object.entries(options.workloads ?? {});
   if (
     workloadEntries.length === 0 ||
-    workloadEntries.some(([name, handler]) =>
-      name.length === 0 || typeof handler !== "function"
+    workloadEntries.some(
+      ([name, handler]) => name.length === 0 || typeof handler !== "function",
     )
   ) {
     throw new TypeError(
@@ -192,9 +192,7 @@ export function createWorker(
   const workloadNames = Object.freeze(workloadEntries.map(([name]) => name));
   const capacity = expectPositiveInteger(options.capacity, "capacity", 1);
   const transport = options.transport;
-  if (
-    transport?.type !== "in-process" && transport?.type !== "websocket"
-  ) {
+  if (transport?.type !== "in-process" && transport?.type !== "websocket") {
     throw new TypeError('transport.type must be "in-process" or "websocket"');
   }
   if (transport.config === null || typeof transport.config !== "object") {
@@ -237,17 +235,21 @@ export function createWorker(
   let eventController:
     | ReadableStreamDefaultController<WorkerLifecycleEvent>
     | undefined;
-  const events = new ReadableStream<WorkerLifecycleEvent>({
-    start(controller) {
-      eventController = controller;
+  const events = new ReadableStream<WorkerLifecycleEvent>(
+    {
+      start(controller) {
+        eventController = controller;
+      },
+      cancel() {
+        eventController = undefined;
+      },
     },
-    cancel() {
-      eventController = undefined;
-    },
-  }, new CountQueuingStrategy({ highWaterMark: 64 }));
+    new CountQueuingStrategy({ highWaterMark: 64 }),
+  );
 
   const snapshot = (): WorkerSnapshot =>
-    current?.snapshot() ?? Object.freeze({
+    current?.snapshot() ??
+    Object.freeze({
       state,
       transport: transport.type,
       ...(identity === undefined ? {} : { identity }),
@@ -260,10 +262,12 @@ export function createWorker(
     state = value.state;
     identity = value.identity;
     if ((eventController?.desiredSize ?? 0) > 0) {
-      eventController?.enqueue(Object.freeze({
-        type: "state" as const,
-        snapshot: value,
-      }));
+      eventController?.enqueue(
+        Object.freeze({
+          type: "state" as const,
+          snapshot: value,
+        }),
+      );
     }
   };
 
@@ -273,10 +277,12 @@ export function createWorker(
       lifecycle.signal.throwIfAborted();
       state = "connecting";
       publish(snapshot());
-      const localProvisioning = transport.type === "in-process"
-        ? inProcessFabricProvisioning(transport.config.topic)
-        : undefined;
-      const activationOperation = options.activate ??
+      const localProvisioning =
+        transport.type === "in-process"
+          ? inProcessFabricProvisioning(transport.config.topic)
+          : undefined;
+      const activationOperation =
+        options.activate ??
         (localProvisioning?.activate as typeof options.activate | undefined);
       if (activationOperation === undefined) {
         throw new TypeError(
@@ -293,13 +299,16 @@ export function createWorker(
         await activationOperation(activationContext),
       );
       identity = activation.identity;
-      await callbacks.onActivate?.(Object.freeze({
-        ...activationContext,
-        ...activation,
-      }));
+      await callbacks.onActivate?.(
+        Object.freeze({
+          ...activationContext,
+          ...activation,
+        }),
+      );
       lifecycle.signal.throwIfAborted();
 
-      const registrationOperation = options.register ??
+      const registrationOperation =
+        options.register ??
         (localProvisioning?.register as typeof options.register | undefined);
       if (registrationOperation === undefined) {
         throw new TypeError(
@@ -314,63 +323,66 @@ export function createWorker(
         await registrationOperation(registrationContext),
         activation.identity,
       );
-      await callbacks.onRegister?.(Object.freeze({
-        ...registrationContext,
-        ...registration,
-      }));
+      await callbacks.onRegister?.(
+        Object.freeze({
+          ...registrationContext,
+          ...registration,
+        }),
+      );
       lifecycle.signal.throwIfAborted();
 
       const handshakeMetadata = new Map<string, JsonObject | void>();
       current = createWorkerSession({
-        transport: transport.type === "in-process"
-          ? Object.freeze({
-            type: "in-process" as const,
-            limits: undefined,
-            connect: async (signal: AbortSignal) => {
-              signal.throwIfAborted();
-              return await createFrameConnection(
-                connectInProcessFabric(transport.config),
-                { signal },
-              );
-            },
-          })
-          : Object.freeze({
-            type: "websocket" as const,
-            limits: transport.config.limits,
-            connect: async (signal: AbortSignal) => {
-              const socket = await connectWorkerWebSocket({
-                url: transport.config.url,
-                signal,
-                ...(transport.config.connectTimeoutMs === undefined
-                  ? {}
-                  : { timeoutMs: transport.config.connectTimeoutMs }),
-                ...(transport.config.allowInsecureLoopback === undefined
-                  ? {}
-                  : {
-                    allowInsecureLoopback:
-                      transport.config.allowInsecureLoopback,
-                  }),
-                ...(transport.config.socket === undefined
-                  ? {}
-                  : { createWebSocket: transport.config.socket }),
-              });
-              const limits = transport.config.limits;
-              return await createFrameConnection(
-                adaptSocketConnection(socket),
-                {
-                  signal,
-                  maxInboundFrames: limits?.maxInboundMessages,
-                  maxInboundBytes: limits?.maxInboundBytes,
-                  maxPendingSendFrames: limits?.maxPendingSendMessages,
-                  maxPendingSendBytes: limits?.maxPendingSendBytes,
-                  maxBufferedAmountBytes: limits?.maxBufferedAmountBytes,
-                  bufferedAmountLowWaterBytes: limits
-                    ?.bufferedAmountLowWaterBytes,
-                  bufferedAmountPollMs: limits?.bufferedAmountPollMs,
+        transport:
+          transport.type === "in-process"
+            ? Object.freeze({
+                type: "in-process" as const,
+                limits: undefined,
+                connect: async (signal: AbortSignal) => {
+                  signal.throwIfAborted();
+                  return await createFrameConnection(
+                    connectInProcessFabric(transport.config),
+                    { signal },
+                  );
                 },
-              );
-            },
-          }),
+              })
+            : Object.freeze({
+                type: "websocket" as const,
+                limits: transport.config.limits,
+                connect: async (signal: AbortSignal) => {
+                  const socket = await connectWorkerWebSocket({
+                    url: transport.config.url,
+                    signal,
+                    ...(transport.config.connectTimeoutMs === undefined
+                      ? {}
+                      : { timeoutMs: transport.config.connectTimeoutMs }),
+                    ...(transport.config.allowInsecureLoopback === undefined
+                      ? {}
+                      : {
+                          allowInsecureLoopback:
+                            transport.config.allowInsecureLoopback,
+                        }),
+                    ...(transport.config.socket === undefined
+                      ? {}
+                      : { createWebSocket: transport.config.socket }),
+                  });
+                  const limits = transport.config.limits;
+                  return await createFrameConnection(
+                    adaptSocketConnection(socket),
+                    {
+                      signal,
+                      maxInboundFrames: limits?.maxInboundMessages,
+                      maxInboundBytes: limits?.maxInboundBytes,
+                      maxPendingSendFrames: limits?.maxPendingSendMessages,
+                      maxPendingSendBytes: limits?.maxPendingSendBytes,
+                      maxBufferedAmountBytes: limits?.maxBufferedAmountBytes,
+                      bufferedAmountLowWaterBytes:
+                        limits?.bufferedAmountLowWaterBytes,
+                      bufferedAmountPollMs: limits?.bufferedAmountPollMs,
+                    },
+                  );
+                },
+              }),
         identity: activation.identity,
         credential: registration.credential,
         ...(registration.handshakeId === undefined
@@ -450,19 +462,23 @@ export function createWorker(
     } finally {
       options.signal?.removeEventListener("abort", abortFromOwner);
       try {
-        await callbacks.onDisconnect?.(Object.freeze({
-          ...lifecycleContext("disconnect", lifecycle.signal),
-          ...(identity === undefined ? {} : { identity }),
-          reason: disconnectReason,
-        }));
+        await callbacks.onDisconnect?.(
+          Object.freeze({
+            ...lifecycleContext("disconnect", lifecycle.signal),
+            ...(identity === undefined ? {} : { identity }),
+            reason: disconnectReason,
+          }),
+        );
       } catch {
         // Disconnect is deliberately a nonblocking observer.
       }
       if ((eventController?.desiredSize ?? 0) > 0) {
-        eventController?.enqueue(Object.freeze({
-          type: "closed" as const,
-          reason: disconnectReason,
-        }));
+        eventController?.enqueue(
+          Object.freeze({
+            type: "closed" as const,
+            reason: disconnectReason,
+          }),
+        );
       }
       eventController?.close();
       eventController = undefined;
@@ -478,7 +494,10 @@ export function createWorker(
         lifecycle.abort(createAbortError(reason));
       }
       await current?.stop(reason);
-      await closed.then(() => undefined, () => undefined);
+      await closed.then(
+        () => undefined,
+        () => undefined,
+      );
     })();
     return stopping;
   };

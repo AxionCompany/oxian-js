@@ -15,11 +15,7 @@ export type ProviderResource = Readonly<{
   attributes: JsonObject;
 }>;
 
-export type ProviderResourceState =
-  | "present"
-  | "absent"
-  | "failed"
-  | "unknown";
+export type ProviderResourceState = "present" | "absent" | "failed" | "unknown";
 
 /**
  * `present` only means that the provider can still observe the resource. It
@@ -96,9 +92,8 @@ export type ProviderErrorCode =
   | "provision_indeterminate"
   | "termination_failed";
 
-export type ProviderError =
-  & Error
-  & Readonly<{
+export type ProviderError = Error &
+  Readonly<{
     name: "ProviderError";
     code: ProviderErrorCode;
     providerId: string;

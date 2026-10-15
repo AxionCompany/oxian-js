@@ -55,8 +55,8 @@ export function createEphemeralWorkerStore(
   }> = {},
 ): WorkerStore {
   const clock = options.clock ?? Date.now;
-  const createAttemptId = options.createAttemptId ??
-    (() => crypto.randomUUID());
+  const createAttemptId =
+    options.createAttemptId ?? (() => crypto.randomUUID());
   const definitions = new Map<string, WorkerDefinition>();
   const attempts = new Map<string, WorkerAttempt[]>();
   const current = new Map<string, WorkerAttempt>();
@@ -70,9 +70,7 @@ export function createEphemeralWorkerStore(
     }
   };
 
-  const define = (
-    definition: WorkerDefinition,
-  ): Promise<WorkerDefinition> => {
+  const define = (definition: WorkerDefinition): Promise<WorkerDefinition> => {
     return asPromise(() => {
       const copy = createWorkerDefinition(definition);
       if (definitions.has(copy.workerId)) {
@@ -90,7 +88,7 @@ export function createEphemeralWorkerStore(
     workerId: string,
   ): Promise<WorkerDefinition | undefined> => {
     return asPromise(() =>
-      definitions.get(expectIdentifier(workerId, "workerId"))
+      definitions.get(expectIdentifier(workerId, "workerId")),
     );
   };
 
@@ -98,9 +96,7 @@ export function createEphemeralWorkerStore(
     return asPromise(() => Object.freeze(Array.from(definitions.values())));
   };
 
-  const activate = (
-    workerIdInput: string,
-  ): Promise<WorkerActivation> => {
+  const activate = (workerIdInput: string): Promise<WorkerActivation> => {
     return asPromise(() => {
       const workerId = expectIdentifier(workerIdInput, "workerId");
       if (!definitions.has(workerId)) {
@@ -137,9 +133,7 @@ export function createEphemeralWorkerStore(
     });
   };
 
-  const assertCurrentValue = (
-    identityInput: WorkerIdentity,
-  ): WorkerAttempt => {
+  const assertCurrentValue = (identityInput: WorkerIdentity): WorkerAttempt => {
     const identity = copyIdentity(identityInput);
     const active = current.get(identity.workerId);
     if (active === undefined) {
@@ -157,9 +151,7 @@ export function createEphemeralWorkerStore(
     return active;
   };
 
-  const assertCurrent = (
-    identity: WorkerIdentity,
-  ): Promise<WorkerAttempt> => {
+  const assertCurrent = (identity: WorkerIdentity): Promise<WorkerAttempt> => {
     return asPromise(() => assertCurrentValue(identity));
   };
 
@@ -169,7 +161,7 @@ export function createEphemeralWorkerStore(
       return fail("not_found", "attempt history is missing");
     }
     const index = history.findIndex((candidate) =>
-      sameIdentity(candidate.identity, attempt.identity)
+      sameIdentity(candidate.identity, attempt.identity),
     );
     if (index < 0) {
       return fail("not_found", "attempt history entry is missing");
@@ -201,9 +193,9 @@ export function createEphemeralWorkerStore(
   ): Promise<WorkerAttempt | undefined> => {
     return asPromise(() => {
       const copy = copyIdentity(identity);
-      return attempts.get(copy.workerId)?.find((attempt) =>
-        sameIdentity(attempt.identity, copy)
-      );
+      return attempts
+        .get(copy.workerId)
+        ?.find((attempt) => sameIdentity(attempt.identity, copy));
     });
   };
 
@@ -211,8 +203,8 @@ export function createEphemeralWorkerStore(
     workerId: string,
   ): Promise<readonly WorkerAttempt[]> => {
     return asPromise(() => {
-      const history = attempts.get(expectIdentifier(workerId, "workerId")) ??
-        [];
+      const history =
+        attempts.get(expectIdentifier(workerId, "workerId")) ?? [];
       return Object.freeze([...history]);
     });
   };

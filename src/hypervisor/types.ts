@@ -91,9 +91,7 @@ export type HypervisorOptions = Readonly<{
   signal?: AbortSignal;
   config?: Partial<HypervisorConfig>;
   sessions?: SessionRegistry;
-  fallback?: (
-    request: Request,
-  ) => Response | Promise<Response>;
+  fallback?: (request: Request) => Response | Promise<Response>;
   clock?: () => number;
   scheduler?: HypervisorScheduler;
   createConnectionId?: () => string;
@@ -139,24 +137,21 @@ export type HypervisorSnapshot = Readonly<{
 
 export type HypervisorRequestDecision =
   | Readonly<{
-    kind: "response";
-    response: Response | Promise<Response>;
-  }>
+      kind: "response";
+      response: Response | Promise<Response>;
+    }>
   | Readonly<{
-    kind: "upgrade";
-    protocol: string;
-    /**
-     * Attaches the runtime-upgraded server connection exactly once.
-     * `negotiatedProtocol` is required only when the native connection cannot
-     * expose the selected subprotocol itself.
-     */
-    attach(
-      connection: SocketConnection,
-      negotiatedProtocol?: string,
-    ): void;
-    /** Releases the reserved admission slot when a runtime upgrade fails. */
-    cancel(reason?: string): void;
-  }>;
+      kind: "upgrade";
+      protocol: string;
+      /**
+       * Attaches the runtime-upgraded server connection exactly once.
+       * `negotiatedProtocol` is required only when the native connection cannot
+       * expose the selected subprotocol itself.
+       */
+      attach(connection: SocketConnection, negotiatedProtocol?: string): void;
+      /** Releases the reserved admission slot when a runtime upgrade fails. */
+      cancel(reason?: string): void;
+    }>;
 
 export type Hypervisor = Readonly<{
   /**
@@ -214,9 +209,8 @@ export type HypervisorErrorCode =
   | "shutting_down"
   | "work_failed";
 
-export type HypervisorError =
-  & Error
-  & Readonly<{
+export type HypervisorError = Error &
+  Readonly<{
     name: "HypervisorError";
     code: HypervisorErrorCode;
     identity?: WorkerIdentity;

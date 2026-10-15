@@ -21,20 +21,13 @@ function fail(
   message: string,
   code: ProtocolViolationCode = "invalid_binary_frame",
 ): never {
-  return throwProtocolViolation(
-    code,
-    `Invalid Oxian binary frame: ${message}`,
-  );
+  return throwProtocolViolation(code, `Invalid Oxian binary frame: ${message}`);
 }
 
 function expectPayloadLimit(options: BinaryFrameOptions): number {
-  const limit = options.maxPayloadBytes ??
-    WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes;
-  if (
-    typeof limit !== "number" ||
-    !Number.isSafeInteger(limit) ||
-    limit < 1
-  ) {
+  const limit =
+    options.maxPayloadBytes ?? WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes;
+  if (typeof limit !== "number" || !Number.isSafeInteger(limit) || limit < 1) {
     throw new TypeError("maxPayloadBytes must be a positive safe integer");
   }
   if (limit > WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes) {
@@ -93,8 +86,9 @@ function streamIdToBytes(streamId: string): Uint8Array {
 }
 
 function bytesToStreamId(bytes: Uint8Array): string {
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  const hex = Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
   return [
     hex.slice(0, 8),
     hex.slice(8, 12),
@@ -150,10 +144,13 @@ export function createWorkDataFrame(
   input: Omit<WorkDataFrame, "type">,
   options: BinaryFrameOptions = {},
 ): WorkDataFrame {
-  const validated = validateWorkDataFrame({
-    type: "work.data",
-    ...input,
-  }, options);
+  const validated = validateWorkDataFrame(
+    {
+      type: "work.data",
+      ...input,
+    },
+    options,
+  );
   return {
     ...validated,
     payload: validated.payload.slice(),
@@ -204,9 +201,10 @@ export function decodeBinaryFrame(
   options: BinaryFrameOptions = {},
 ): WorkDataFrame {
   const maxPayloadBytes = expectPayloadLimit(options);
-  const encoded = input instanceof Uint8Array
-    ? new Uint8Array(input.buffer, input.byteOffset, input.byteLength)
-    : new Uint8Array(input);
+  const encoded =
+    input instanceof Uint8Array
+      ? new Uint8Array(input.buffer, input.byteOffset, input.byteLength)
+      : new Uint8Array(input);
 
   if (encoded.byteLength < BINARY_HEADER_BYTES) {
     return fail(`frame is shorter than ${BINARY_HEADER_BYTES} bytes`);
@@ -218,10 +216,7 @@ export function decodeBinaryFrame(
     }
   }
   if (encoded[4] !== BINARY_VERSION) {
-    return fail(
-      `unsupported version ${encoded[4]}`,
-      "unsupported_protocol",
-    );
+    return fail(`unsupported version ${encoded[4]}`, "unsupported_protocol");
   }
   if (encoded[5] !== WORK_DATA_TYPE) {
     return fail(

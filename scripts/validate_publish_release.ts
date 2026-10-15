@@ -21,7 +21,8 @@ export function validatePublishRelease(input: ReleaseReference): void {
 async function readPackageVersion(): Promise<string> {
   const parsed: unknown = JSON.parse(await Deno.readTextFile("deno.json"));
   if (
-    typeof parsed !== "object" || parsed === null ||
+    typeof parsed !== "object" ||
+    parsed === null ||
     typeof (parsed as { version?: unknown }).version !== "string"
   ) {
     throw new Error("deno.json must contain a string version");
@@ -31,10 +32,9 @@ async function readPackageVersion(): Promise<string> {
 
 function expectVersion(value: string): string {
   if (
-    !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
-      .test(
-        value,
-      )
+    !/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(
+      value,
+    )
   ) {
     throw new Error("deno.json version must be a semantic version");
   }

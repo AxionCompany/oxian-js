@@ -52,10 +52,12 @@ function expectPositiveInteger(
 
 function isLoopbackHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
-  return normalized === "localhost" ||
+  return (
+    normalized === "localhost" ||
     normalized === "127.0.0.1" ||
     normalized === "::1" ||
-    normalized === "[::1]";
+    normalized === "[::1]"
+  );
 }
 
 function closeSocket(socket: WebSocket, code: number, reason: string): void {
@@ -112,9 +114,9 @@ function createAbortWaiter(signal: AbortSignal): Readonly<{
   const promise = signal.aborted
     ? Promise.reject(signal.reason)
     : new Promise<never>((_resolve, reject) => {
-      abort = () => reject(signal.reason);
-      signal.addEventListener("abort", abort, { once: true });
-    });
+        abort = () => reject(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+      });
   return Object.freeze({
     promise,
     dispose() {
@@ -143,7 +145,8 @@ async function createWorkerSocket(
   url: URL,
   deadline: ReturnType<typeof createConnectionDeadline>,
 ): Promise<WebSocket> {
-  const factory = options.createWebSocket ??
+  const factory =
+    options.createWebSocket ??
     ((context) => new WebSocket(context.url, context.protocol));
   if (typeof factory !== "function") {
     throw new TypeError("createWebSocket must be a function");
@@ -185,10 +188,7 @@ async function createWorkerSocket(
   }
 }
 
-function validatePublicClose(
-  code: number,
-  reason: string,
-): void {
+function validatePublicClose(code: number, reason: string): void {
   if (
     !Number.isSafeInteger(code) ||
     (code !== 1000 && (code < 3000 || code > 4999))
@@ -383,9 +383,7 @@ export function createProtocolTransport(
   let sendTail = Promise.resolve();
   let pendingSendMessages = 0;
   let pendingSendBytes = 0;
-  let resolveClosed:
-    | ((close: ConnectionClose) => void)
-    | undefined;
+  let resolveClosed: ((close: ConnectionClose) => void) | undefined;
   const closed = new Promise<ConnectionClose>((resolve) => {
     resolveClosed = resolve;
   });
@@ -416,11 +414,13 @@ export function createProtocolTransport(
         code,
         message: `Worker protocol violation: ${code}`,
       });
-      void connection.send(encodeControlFrame(frame), {
-        beforeSend() {
-          validator.acceptControl("sent", frame);
-        },
-      }).catch(() => undefined)
+      void connection
+        .send(encodeControlFrame(frame), {
+          beforeSend() {
+            validator.acceptControl("sent", frame);
+          },
+        })
+        .catch(() => undefined)
         .finally(() => {
           connection.close(code, PROTOCOL_CLOSE_CODE);
         });
@@ -477,9 +477,8 @@ export function createProtocolTransport(
   };
 
   function abortTransport(): void {
-    const error = options.signal?.reason ?? createAbortError(
-      "Transport aborted",
-    );
+    const error =
+      options.signal?.reason ?? createAbortError("Transport aborted");
     connection.close("transport_aborted", NORMAL_CLOSE_CODE);
     finish(
       { code: NORMAL_CLOSE_CODE, reason: "transport_aborted", wasClean: true },
@@ -505,9 +504,7 @@ export function createProtocolTransport(
   })();
   options.signal?.addEventListener("abort", abortTransport, { once: true });
 
-  const serializeSend = <T>(
-    operation: () => Promise<T>,
-  ): Promise<T> => {
+  const serializeSend = <T>(operation: () => Promise<T>): Promise<T> => {
     const result = sendTail.then(operation, operation);
     sendTail = result.then(
       () => undefined,
@@ -516,7 +513,7 @@ export function createProtocolTransport(
     return result;
   };
 
-  const reserveSend = (wireBytes: number): () => void => {
+  const reserveSend = (wireBytes: number): (() => void) => {
     if (
       pendingSendMessages >= maxPendingSendMessages ||
       wireBytes > maxPendingSendBytes - pendingSendBytes

@@ -20,15 +20,15 @@ export type TransportCloseOptions = Readonly<{
 
 export type ProtocolTransportMessage =
   | Readonly<{
-    kind: "control";
-    acceptance: ProtocolFrameAcceptance<ControlFrame>;
-    wireBytes: number;
-  }>
+      kind: "control";
+      acceptance: ProtocolFrameAcceptance<ControlFrame>;
+      wireBytes: number;
+    }>
   | Readonly<{
-    kind: "data";
-    acceptance: ProtocolFrameAcceptance<WorkDataFrame>;
-    wireBytes: number;
-  }>;
+      kind: "data";
+      acceptance: ProtocolFrameAcceptance<WorkDataFrame>;
+      wireBytes: number;
+    }>;
 
 /** Runtime-neutral lifecycle state for one worker wire connection. */
 export type SocketConnectionState =
@@ -37,11 +37,7 @@ export type SocketConnectionState =
   | "closing"
   | "closed";
 
-export type SocketMessage =
-  | string
-  | ArrayBuffer
-  | ArrayBufferView
-  | Blob;
+export type SocketMessage = string | ArrayBuffer | ArrayBufferView | Blob;
 
 export type SocketClose = Readonly<{
   code: number;

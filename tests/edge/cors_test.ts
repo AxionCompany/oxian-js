@@ -1,21 +1,24 @@
-import { assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects, assertThrows } from "../support/assert.ts";
 import { createCorsAdapter } from "../../src/edge/cors.ts";
 
-Deno.test("cors grants only configured origins and safely merges Vary", async () => {
+test("cors grants only configured origins and safely merges Vary", async () => {
   const handler = createCorsAdapter({
     origins: ["https://compass.example"],
     credentials: true,
     exposeHeaders: ["x-request-id"],
-  })(() =>
-    new Response("ok", {
-      headers: {
-        "access-control-allow-origin": "*",
-        "access-control-allow-credentials": "true",
-        "access-control-expose-headers": "x-untrusted",
-        "vary": "Accept-Encoding, origin",
-        "x-request-id": "request-1",
-      },
-    })
+  })(
+    () =>
+      new Response("ok", {
+        headers: {
+          "access-control-allow-origin": "*",
+          "access-control-allow-credentials": "true",
+          "access-control-expose-headers": "x-untrusted",
+          vary: "Accept-Encoding, origin",
+          "x-request-id": "request-1",
+        },
+      }),
   );
 
   const allowed = await handler(
@@ -23,45 +26,58 @@ Deno.test("cors grants only configured origins and safely merges Vary", async ()
       headers: { origin: "https://compass.example" },
     }),
   );
-  assertEquals(await allowed.text(), "ok");
-  assertEquals(
+  assert.deepStrictEqual(await allowed.text(), "ok");
+  assert.deepStrictEqual(
     allowed.headers.get("access-control-allow-origin"),
     "https://compass.example",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     allowed.headers.get("access-control-allow-credentials"),
     "true",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     allowed.headers.get("access-control-expose-headers"),
     "x-request-id",
   );
-  assertEquals(allowed.headers.get("vary"), "Accept-Encoding, origin");
+  assert.deepStrictEqual(
+    allowed.headers.get("vary"),
+    "Accept-Encoding, origin",
+  );
 
   const denied = await handler(
     new Request("https://api.example/items", {
       headers: { origin: "https://hostile.example" },
     }),
   );
-  assertEquals(denied.status, 200);
-  assertEquals(denied.headers.get("access-control-allow-origin"), null);
-  assertEquals(
+  assert.deepStrictEqual(denied.status, 200);
+  assert.deepStrictEqual(
+    denied.headers.get("access-control-allow-origin"),
+    null,
+  );
+  assert.deepStrictEqual(
     denied.headers.get("access-control-allow-credentials"),
     null,
   );
-  assertEquals(denied.headers.get("access-control-expose-headers"), null);
-  assertEquals(denied.headers.get("vary"), "Accept-Encoding, origin");
+  assert.deepStrictEqual(
+    denied.headers.get("access-control-expose-headers"),
+    null,
+  );
+  assert.deepStrictEqual(denied.headers.get("vary"), "Accept-Encoding, origin");
   await denied.body?.cancel();
 
-  const noOrigin = await handler(
-    new Request("https://api.example/items"),
+  const noOrigin = await handler(new Request("https://api.example/items"));
+  assert.deepStrictEqual(
+    noOrigin.headers.get("access-control-allow-origin"),
+    null,
   );
-  assertEquals(noOrigin.headers.get("access-control-allow-origin"), null);
-  assertEquals(noOrigin.headers.get("vary"), "Accept-Encoding, origin");
+  assert.deepStrictEqual(
+    noOrigin.headers.get("vary"),
+    "Accept-Encoding, origin",
+  );
   await noOrigin.body?.cancel();
 });
 
-Deno.test("cors handles valid preflight without invoking the application", async () => {
+test("cors handles valid preflight without invoking the application", async () => {
   let applicationCalls = 0;
   const handler = createCorsAdapter({
     origins: (origin) => origin.endsWith(".example"),
@@ -78,34 +94,34 @@ Deno.test("cors handles valid preflight without invoking the application", async
     new Request("https://api.example/items", {
       method: "OPTIONS",
       headers: {
-        "origin": "https://compass.example",
+        origin: "https://compass.example",
         "access-control-request-method": "post",
         "access-control-request-headers": "X-Client, Authorization",
       },
     }),
   );
-  assertEquals(response.status, 204);
-  assertEquals(applicationCalls, 0);
-  assertEquals(
+  assert.deepStrictEqual(response.status, 204);
+  assert.deepStrictEqual(applicationCalls, 0);
+  assert.deepStrictEqual(
     response.headers.get("access-control-allow-origin"),
     "https://compass.example",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     response.headers.get("access-control-allow-methods"),
     "GET, POST",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     response.headers.get("access-control-allow-headers"),
     "authorization, x-client",
   );
-  assertEquals(response.headers.get("access-control-max-age"), "600");
-  assertEquals(
+  assert.deepStrictEqual(response.headers.get("access-control-max-age"), "600");
+  assert.deepStrictEqual(
     response.headers.get("vary"),
     "Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
   );
 });
 
-Deno.test("cors permits QUERY by default", async () => {
+test("cors permits QUERY by default", async () => {
   const handler = createCorsAdapter({ origins: "*" })(
     () => new Response("unreachable"),
   );
@@ -119,14 +135,14 @@ Deno.test("cors permits QUERY by default", async () => {
     }),
   );
 
-  assertEquals(response.status, 204);
-  assertEquals(
+  assert.deepStrictEqual(response.status, 204);
+  assert.deepStrictEqual(
     response.headers.get("access-control-allow-methods"),
     "GET, HEAD, QUERY, POST, PUT, PATCH, DELETE, OPTIONS",
   );
 });
 
-Deno.test("cors rejects denied preflights and never reflects wildcard credentials", async () => {
+test("cors rejects denied preflights and never reflects wildcard credentials", async () => {
   const handler = createCorsAdapter({
     origins: ["https://compass.example"],
     methods: ["POST"],
@@ -137,13 +153,13 @@ Deno.test("cors rejects denied preflights and never reflects wildcard credential
     new Request("https://api.example/items", {
       method: "OPTIONS",
       headers: {
-        "origin": "https://compass.example",
+        origin: "https://compass.example",
         "access-control-request-method": "DELETE",
       },
     }),
   );
-  assertEquals(deniedMethod.status, 403);
-  assertEquals(
+  assert.deepStrictEqual(deniedMethod.status, 403);
+  assert.deepStrictEqual(
     deniedMethod.headers.get("access-control-allow-origin"),
     null,
   );
@@ -152,13 +168,13 @@ Deno.test("cors rejects denied preflights and never reflects wildcard credential
     new Request("https://api.example/items", {
       method: "OPTIONS",
       headers: {
-        "origin": "https://compass.example",
+        origin: "https://compass.example",
         "access-control-request-method": "POST",
         "access-control-request-headers": "x-unconfigured",
       },
     }),
   );
-  assertEquals(deniedHeader.status, 403);
+  assert.deepStrictEqual(deniedHeader.status, 403);
 
   assertThrows(
     () => createCorsAdapter({ origins: "*", credentials: true }),
@@ -170,15 +186,15 @@ Deno.test("cors rejects denied preflights and never reflects wildcard credential
     () => new Response("ok"),
   );
   const sameOrigin = await wildcard(new Request("https://api.example/items"));
-  assertEquals(
+  assert.deepStrictEqual(
     sameOrigin.headers.get("access-control-allow-origin"),
     "*",
   );
-  assertEquals(sameOrigin.headers.get("vary"), null);
+  assert.deepStrictEqual(sameOrigin.headers.get("vary"), null);
   await sameOrigin.body?.cancel();
 });
 
-Deno.test("cors validates origin policy and contains predicate errors", async () => {
+test("cors validates origin policy and contains predicate errors", async () => {
   assertThrows(
     () => createCorsAdapter({ origins: ["https://example.com/"] }),
     TypeError,

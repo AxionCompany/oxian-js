@@ -1,4 +1,4 @@
-import { serve } from "../../src/adapters/deno/index.ts";
+import { serve } from "../../src/adapters/node/index.ts";
 import type {
   HypervisorLifecycleCallbacks,
   WorkerLifecycleCallbacks,
@@ -59,49 +59,60 @@ export async function queueHarness(
     type: "in-process",
     config: { topic: `queue-regression-${crypto.randomUUID()}` },
   } as const;
-  const hypervisor = createHypervisor({
-    transports: type === "in-process"
-      ? [local]
-      : [{ type: "websocket", config: { path: "/workers" } }],
-    admit: async ({ identity, credential, handshakeId }) => {
-      await repository.assertCurrent(identity);
-      const exchange = await authority.exchange({
-        identity,
-        credential,
-        handshakeId,
-      });
-      return {
-        definition: (await repository.getDefinition(identity.workerId))!,
-        sessionGeneration: exchange.sessionGeneration,
-        authenticatedWith: exchange.authenticatedWith,
-        resume: exchange.resume,
-      };
+  const hypervisor = createHypervisor(
+    {
+      transports:
+        type === "in-process"
+          ? [local]
+          : [{ type: "websocket", config: { path: "/workers" } }],
+      admit: async ({ identity, credential, handshakeId }) => {
+        await repository.assertCurrent(identity);
+        const exchange = await authority.exchange({
+          identity,
+          credential,
+          handshakeId,
+        });
+        return {
+          definition: (await repository.getDefinition(identity.workerId))!,
+          sessionGeneration: exchange.sessionGeneration,
+          authenticatedWith: exchange.authenticatedWith,
+          resume: exchange.resume,
+        };
+      },
+      config: {
+        maxQueuedDispatches,
+        dispatchQueueTimeoutMs: 10_000,
+        shutdownTimeoutMs: 500,
+      },
     },
-    config: {
-      maxQueuedDispatches,
-      dispatchQueueTimeoutMs: 10_000,
-      shutdownTimeoutMs: 500,
-    },
-  }, hostCallbacks);
-  const listener = type === "websocket"
-    ? serve({ hypervisor, hostname: "127.0.0.1", port: 0 })
-    : undefined;
-  const url = listener === undefined
-    ? undefined
-    : new URL("/workers", listener.url);
+    hostCallbacks,
+  );
+  const listener =
+    type === "websocket"
+      ? await serve({ hypervisor, hostname: "127.0.0.1", port: 0 })
+      : undefined;
+  const url =
+    listener === undefined ? undefined : new URL("/workers", listener.url);
   if (url !== undefined) url.protocol = "ws:";
   const workers = ["A", "B"].map((id) =>
-    createWorker({
-      id,
-      capacity,
-      transport: url === undefined
-        ? local
-        : { type: "websocket", config: { url, allowInsecureLoopback: true } },
-      activate: async ({ workerId }) =>
-        (await repository.activate(workerId)).attempt.identity,
-      register: ({ identity }) => authority.issueRegistration(identity),
-      workloads: { exec: handler },
-    }, callbacks)
+    createWorker(
+      {
+        id,
+        capacity,
+        transport:
+          url === undefined
+            ? local
+            : {
+                type: "websocket",
+                config: { url, allowInsecureLoopback: true },
+              },
+        activate: async ({ workerId }) =>
+          (await repository.activate(workerId)).attempt.identity,
+        register: ({ identity }) => authority.issueRegistration(identity),
+        workloads: { exec: handler },
+      },
+      callbacks,
+    ),
   );
   const close = async () => {
     await Promise.all(workers.map((worker) => worker.stop()));

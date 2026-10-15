@@ -30,8 +30,12 @@ function expectRetry(value: number, name: string): number {
 
 function expectStatus(value: number): number {
   if (
-    !Number.isSafeInteger(value) || value < 200 || value > 599 ||
-    value === 204 || value === 205 || value === 304
+    !Number.isSafeInteger(value) ||
+    value < 200 ||
+    value > 599 ||
+    value === 204 ||
+    value === 205 ||
+    value === 304
   ) {
     throw new TypeError(
       "SSE status must be a body-compatible HTTP status from 200 through 599",
@@ -46,10 +50,7 @@ function formatData(data: unknown): string {
   return encoded === undefined ? "null" : encoded;
 }
 
-function formatEvent(
-  data: unknown,
-  options: ServerSentEventOptions,
-): string {
+function formatEvent(data: unknown, options: ServerSentEventOptions): string {
   const lines: string[] = [];
   if (options.id !== undefined) {
     lines.push(`id: ${expectSingleLine(options.id, "event id")}`);
@@ -83,9 +84,10 @@ export function createServerSentEvents(
     "bufferBytes",
   );
   const status = expectStatus(options.status ?? 200);
-  const retry = options.retry === undefined
-    ? undefined
-    : expectRetry(options.retry, "retry");
+  const retry =
+    options.retry === undefined
+      ? undefined
+      : expectRetry(options.retry, "retry");
   const headers = new Headers(options.headers);
   headers.delete("content-length");
   headers.delete("transfer-encoding");
@@ -135,7 +137,8 @@ export function createServerSentEvents(
 
   const comment = (text: string): Promise<void> =>
     writeText(() => {
-      const formatted = text.split(/\r\n|\r|\n/)
+      const formatted = text
+        .split(/\r\n|\r|\n/)
         .map((line) => `:${line}`)
         .join("\n");
       return `${formatted}\n\n`;
@@ -186,10 +189,12 @@ export function createServerSentEvents(
   signal?.addEventListener("abort", onAbort, { once: true });
   if (signal?.aborted) onAbort();
 
-  const closed = writer.closed.catch(() => undefined).finally(() => {
-    state = "closed";
-    signal?.removeEventListener("abort", onAbort);
-  });
+  const closed = writer.closed
+    .catch(() => undefined)
+    .finally(() => {
+      state = "closed";
+      signal?.removeEventListener("abort", onAbort);
+    });
 
   if (retry !== undefined) {
     void writeText(() => `retry: ${retry}\n\n`).catch(() => undefined);

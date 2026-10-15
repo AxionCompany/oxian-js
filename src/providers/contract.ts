@@ -43,11 +43,7 @@ function assertNonEmptyString(
 }
 
 export function validateProviderId(providerId: string): string {
-  assertNonEmptyString(
-    providerId,
-    "providerId",
-    MAX_PROVIDER_ID_LENGTH,
-  );
+  assertNonEmptyString(providerId, "providerId", MAX_PROVIDER_ID_LENGTH);
   if (!PROVIDER_ID_PATTERN.test(providerId)) {
     throw new TypeError(
       "providerId must start with an alphanumeric character and contain only alphanumeric, dot, underscore, colon, or dash characters",
@@ -57,11 +53,7 @@ export function validateProviderId(providerId: string): string {
 }
 
 export function validateProviderResourceId(resourceId: string): string {
-  assertNonEmptyString(
-    resourceId,
-    "resourceId",
-    MAX_RESOURCE_ID_LENGTH,
-  );
+  assertNonEmptyString(resourceId, "resourceId", MAX_RESOURCE_ID_LENGTH);
   for (const character of resourceId) {
     const code = character.charCodeAt(0);
     if (code <= 0x1f || code === 0x7f) {
@@ -190,19 +182,10 @@ export function cloneProviderJsonObject(
   value: unknown,
   path = "$",
 ): JsonObject {
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    Array.isArray(value)
-  ) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return failJson(path, "expected a plain object");
   }
-  return cloneAndFreezeJsonValue(
-    value,
-    path,
-    0,
-    new WeakSet(),
-  ) as JsonObject;
+  return cloneAndFreezeJsonValue(value, path, 0, new WeakSet()) as JsonObject;
 }
 
 function providerJsonEquals(left: JsonValue, right: JsonValue): boolean {
@@ -217,19 +200,24 @@ function providerJsonEquals(left: JsonValue, right: JsonValue): boolean {
     return false;
   }
   if (Array.isArray(left) && Array.isArray(right)) {
-    return left.length === right.length &&
-      left.every((value, index) => providerJsonEquals(value, right[index]));
+    return (
+      left.length === right.length &&
+      left.every((value, index) => providerJsonEquals(value, right[index]))
+    );
   }
 
   const leftObject = left as JsonObject;
   const rightObject = right as JsonObject;
   const leftKeys = Object.keys(leftObject);
   const rightKeys = Object.keys(rightObject);
-  return leftKeys.length === rightKeys.length &&
-    leftKeys.every((key) =>
-      Object.hasOwn(rightObject, key) &&
-      providerJsonEquals(leftObject[key], rightObject[key])
-    );
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        Object.hasOwn(rightObject, key) &&
+        providerJsonEquals(leftObject[key], rightObject[key]),
+    )
+  );
 }
 
 export function createProviderError(input: {
@@ -267,9 +255,11 @@ export function createProviderError(input: {
 export function isProviderError(value: unknown): value is ProviderError {
   if (!(value instanceof Error)) return false;
   const candidate = value as Partial<ProviderError>;
-  return candidate.name === "ProviderError" &&
+  return (
+    candidate.name === "ProviderError" &&
     typeof candidate.code === "string" &&
-    typeof candidate.providerId === "string";
+    typeof candidate.providerId === "string"
+  );
 }
 
 export function throwIfProviderOperationAborted(
@@ -287,10 +277,7 @@ export function createProviderResource(input: {
 }): ProviderResource {
   const providerId = validateProviderId(input.providerId);
   const resourceId = validateProviderResourceId(input.resourceId);
-  if (
-    !Number.isSafeInteger(input.createdAtMs) ||
-    input.createdAtMs < 0
-  ) {
+  if (!Number.isSafeInteger(input.createdAtMs) || input.createdAtMs < 0) {
     throw new TypeError("createdAtMs must be a non-negative safe integer");
   }
 
@@ -299,10 +286,7 @@ export function createProviderResource(input: {
     resourceId,
     identity: Object.freeze(createWorkerIdentity(input.identity)),
     createdAtMs: input.createdAtMs,
-    attributes: cloneProviderJsonObject(
-      input.attributes ?? {},
-      "$.attributes",
-    ),
+    attributes: cloneProviderJsonObject(input.attributes ?? {}, "$.attributes"),
   });
 }
 
@@ -315,8 +299,7 @@ export function assertProviderOwnsResource(
   if (validated.providerId !== expectedProviderId) {
     throw createProviderError({
       code: "invalid_resource",
-      message:
-        `Provider ${expectedProviderId} cannot operate on resource ${validated.resourceId} owned by ${validated.providerId}`,
+      message: `Provider ${expectedProviderId} cannot operate on resource ${validated.resourceId} owned by ${validated.providerId}`,
       providerId: expectedProviderId,
       resourceId: validated.resourceId,
     });
@@ -329,12 +312,10 @@ export function assertProviderResourceMatches(
   suppliedResource: ProviderResource,
   storedResource: ProviderResource,
 ): ProviderResource {
-  const supplied = assertProviderOwnsResource(
-    providerId,
-    suppliedResource,
-  );
+  const supplied = assertProviderOwnsResource(providerId, suppliedResource);
   const stored = assertProviderOwnsResource(providerId, storedResource);
-  const matches = supplied.providerId === stored.providerId &&
+  const matches =
+    supplied.providerId === stored.providerId &&
     supplied.resourceId === stored.resourceId &&
     supplied.createdAtMs === stored.createdAtMs &&
     supplied.identity.workerId === stored.identity.workerId &&
@@ -345,8 +326,7 @@ export function assertProviderResourceMatches(
   if (!matches) {
     throw createProviderError({
       code: "invalid_resource",
-      message:
-        `Provider resource ${supplied.resourceId} does not match its stored fenced reference`,
+      message: `Provider resource ${supplied.resourceId} does not match its stored fenced reference`,
       providerId,
       resourceId: supplied.resourceId,
     });

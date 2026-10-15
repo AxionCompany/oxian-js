@@ -41,31 +41,27 @@ type ApplicationCommonOptions<State> = Readonly<{
 
 type ApplicationStateOptions<State> =
   | Readonly<{
-    state: State;
-    setup?: never;
-  }>
+      state: State;
+      setup?: never;
+    }>
   | Readonly<{
-    setup: (
-      context: ApplicationSetupContext,
-    ) => State | Promise<State>;
-    state?: never;
-  }>
-  | (
-    undefined extends State ? Readonly<{
-        state?: never;
-        setup?: never;
-      }>
-      : never
-  );
+      setup: (context: ApplicationSetupContext) => State | Promise<State>;
+      state?: never;
+    }>
+  | (undefined extends State
+      ? Readonly<{
+          state?: never;
+          setup?: never;
+        }>
+      : never);
 
 /**
  * Stateful applications must provide exactly one state source. Omitting both
  * is allowed only when `undefined` is assignable to State, preserving ergonomic
  * stateless applications without manufacturing an unsound typed state.
  */
-export type ApplicationOptions<State> =
-  & ApplicationCommonOptions<State>
-  & ApplicationStateOptions<State>;
+export type ApplicationOptions<State> = ApplicationCommonOptions<State> &
+  ApplicationStateOptions<State>;
 
 export type ApplicationSnapshot = Readonly<{
   acceptingRequests: boolean;

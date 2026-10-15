@@ -141,9 +141,9 @@ export function createManifestWorkerRuntime(
         });
         const { router, application: configuredApplication } = configured;
         if (lifecycleAbort.signal.aborted) {
-          await configuredApplication.dispose(
-            lifecycleAbort.signal.reason,
-          ).catch(() => undefined);
+          await configuredApplication
+            .dispose(lifecycleAbort.signal.reason)
+            .catch(() => undefined);
           lifecycleAbort.signal.throwIfAborted();
         }
         application = configuredApplication;
@@ -180,30 +180,30 @@ export function createManifestWorkerRuntime(
           register: () => ({
             credential,
             handshakeId,
-            expiresAtMs: credential.kind === "resume"
-              ? resumeExpiresAtMs!
-              : Date.now() + 5 * 60_000,
+            expiresAtMs:
+              credential.kind === "resume"
+                ? resumeExpiresAtMs!
+                : Date.now() + 5 * 60_000,
             ...(resumeExpiresAtMs === undefined ? {} : { resumeExpiresAtMs }),
           }),
-          ...(credentialStore === undefined ? {} : {
-            handshake: (context) =>
-              credentialStore!.persist(context.rotation, {
-                signal: context.signal,
-                connectionId: context.connectionId,
-                bootstrap: context.bootstrap,
-                reconnecting: context.reconnecting,
+          ...(credentialStore === undefined
+            ? {}
+            : {
+                handshake: (context) =>
+                  credentialStore!.persist(context.rotation, {
+                    signal: context.signal,
+                    connectionId: context.connectionId,
+                    bootstrap: context.bootstrap,
+                    reconnecting: context.reconnecting,
+                  }),
               }),
-          }),
           workloads: { [HTTP_WORKLOAD]: workload },
           capacity: manifest.capacity,
           signal: lifecycleAbort.signal,
         });
         workerClosed = worker.closed;
         const runningWorker = workerClosed;
-        runningWorker.then(
-          finishWorkerRun,
-          fail,
-        );
+        runningWorker.then(finishWorkerRun, fail);
         await worker.ready;
         if (stopRequested || state !== "starting") {
           throw new DOMException(

@@ -20,16 +20,12 @@ export type SupervisorErrorCode =
   | "stale_attempt"
   | "stale_session";
 
-export type SupervisorError =
-  & Error
-  & Readonly<{
+export type SupervisorError = Error &
+  Readonly<{
     code: SupervisorErrorCode;
   }>;
 
-export function fail(
-  code: SupervisorErrorCode,
-  message: string,
-): never {
+export function fail(code: SupervisorErrorCode, message: string): never {
   const error = new Error(message) as SupervisorError;
   Object.defineProperty(error, "code", {
     configurable: false,
@@ -86,9 +82,11 @@ export function sameIdentity(
   left: WorkerIdentity,
   right: WorkerIdentity,
 ): boolean {
-  return left.workerId === right.workerId &&
+  return (
+    left.workerId === right.workerId &&
     left.attemptId === right.attemptId &&
-    left.epoch === right.epoch;
+    left.epoch === right.epoch
+  );
 }
 
 function copyJsonValue(
@@ -156,11 +154,7 @@ function copyJsonValue(
 }
 
 export function copyJsonObject(value: JsonObject = {}): JsonObject {
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    Array.isArray(value)
-  ) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new TypeError("expected a JSON object");
   }
   return copyJsonValue(value, 0, new WeakSet()) as JsonObject;
@@ -173,7 +167,7 @@ export function copyUniqueWorkloads(
     throw new TypeError("workloads must be a non-empty array");
   }
   const copy = workloads.map((workload, index) =>
-    expectWorkload(workload, `workloads[${index}]`)
+    expectWorkload(workload, `workloads[${index}]`),
   );
   if (new Set(copy).size !== copy.length) {
     throw new TypeError("workloads must be unique");

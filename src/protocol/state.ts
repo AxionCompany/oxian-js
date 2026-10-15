@@ -143,11 +143,7 @@ function expectAdmissionLimit(
   name: string,
   hardLimit: number,
 ): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < 1
-  ) {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
     throw new TypeError(`${name} must be a positive safe integer`);
   }
   if (value > hardLimit) {
@@ -166,9 +162,7 @@ function senderFor(
   return role === "worker" ? "hypervisor" : "worker";
 }
 
-function isAbortTerminal(
-  terminal: WorkStreamTerminal | undefined,
-): boolean {
+function isAbortTerminal(terminal: WorkStreamTerminal | undefined): boolean {
   return terminal === "cancel" || terminal === "error";
 }
 
@@ -205,10 +199,7 @@ function streamStatus(stream: MutableWorkStream): WorkStreamStatus {
   ) {
     return "terminating";
   }
-  if (
-    stream.sentTerminal === "end" ||
-    stream.receivedTerminal === "end"
-  ) {
+  if (stream.sentTerminal === "end" || stream.receivedTerminal === "end") {
     return "half_closed";
   }
   if (stream.started) return "started";
@@ -244,14 +235,12 @@ export function createProtocolOrderValidator(
     WORKER_PROTOCOL_LIMITS.maxWorkerCapacity,
   );
   const maxLifetimeStreams = expectAdmissionLimit(
-    options.maxLifetimeStreams ??
-      WORKER_PROTOCOL_LIMITS.maxLifetimeStreams,
+    options.maxLifetimeStreams ?? WORKER_PROTOCOL_LIMITS.maxLifetimeStreams,
     "maxLifetimeStreams",
     WORKER_PROTOCOL_LIMITS.maxLifetimeStreams,
   );
   const maxDataPayloadBytes = expectAdmissionLimit(
-    options.maxDataPayloadBytes ??
-      WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes,
+    options.maxDataPayloadBytes ?? WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes,
     "maxDataPayloadBytes",
     WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes,
   );
@@ -273,10 +262,7 @@ export function createProtocolOrderValidator(
   // Normal End/End streams retain only bounded wire-order state. They no
   // longer consume capacity or block Drained, but either side may still have
   // sent an End→Abort upgrade before observing the peer's End.
-  const normalTerminalTombstones = new Map<
-    string,
-    NormalTerminalTombstone
-  >();
+  const normalTerminalTombstones = new Map<string, NormalTerminalTombstone>();
   const usedStreamIds = new Set<string>();
 
   const ensureDirection = (
@@ -412,10 +398,7 @@ export function createProtocolOrderValidator(
     }
   };
 
-  const grantCredit = (
-    window: CreditWindow,
-    bytes: number,
-  ): void => {
+  const grantCredit = (window: CreditWindow, bytes: number): void => {
     try {
       window.grant(bytes);
     } catch (error) {
@@ -523,9 +506,11 @@ export function createProtocolOrderValidator(
 
       case "shutdown": {
         if (
-          phase !== "welcomed" && phase !== "readied" &&
+          phase !== "welcomed" &&
+          phase !== "readied" &&
           phase !== "ready" &&
-          phase !== "draining" && phase !== "drained"
+          phase !== "draining" &&
+          phase !== "drained"
         ) {
           fail(`shutdown is not allowed while connection is ${phase}`);
         }
@@ -630,9 +615,8 @@ export function createProtocolOrderValidator(
         const stream = ensureStream(frame.streamId, frame.type);
         requireStarted(stream, frame.type);
         ensureSenderMayContinue(stream, direction, frame.type);
-        const alreadySent = direction === "sent"
-          ? stream.sentMetadata
-          : stream.receivedMetadata;
+        const alreadySent =
+          direction === "sent" ? stream.sentMetadata : stream.receivedMetadata;
         if (alreadySent) {
           fail(
             `${frame.type} may appear at most once per stream direction for ${frame.streamId}`,
@@ -721,9 +705,10 @@ export function createProtocolOrderValidator(
         requireWorkingPhase(frame.type);
         const tombstone = normalTerminalTombstones.get(frame.streamId);
         if (tombstone !== undefined) {
-          const alreadyAborted = direction === "sent"
-            ? tombstone.sentAborted
-            : tombstone.receivedAborted;
+          const alreadyAborted =
+            direction === "sent"
+              ? tombstone.sentAborted
+              : tombstone.receivedAborted;
           if (alreadyAborted) {
             fail(
               `${frame.type} follows a terminal frame on the same stream half ${tombstone.streamId}`,
@@ -743,10 +728,7 @@ export function createProtocolOrderValidator(
         }
         const stream = ensureStream(frame.streamId, frame.type);
         const senderTerminal = terminalFor(stream, direction);
-        if (
-          senderTerminal !== undefined &&
-          senderTerminal !== "end"
-        ) {
+        if (senderTerminal !== undefined && senderTerminal !== "end") {
           fail(
             `${frame.type} follows a terminal frame on the same stream half ${stream.streamId}`,
             "post_terminal_frame",
@@ -797,9 +779,10 @@ export function createProtocolOrderValidator(
       );
     }
 
-    const expectedSequence = direction === "sent"
-      ? stream.nextSentSequence
-      : stream.nextReceivedSequence;
+    const expectedSequence =
+      direction === "sent"
+        ? stream.nextSentSequence
+        : stream.nextReceivedSequence;
     if (expectedSequence > UINT32_MAX) {
       return fail(
         `work.data sequence is exhausted for stream ${frame.streamId}`,
@@ -813,9 +796,8 @@ export function createProtocolOrderValidator(
       );
     }
 
-    const credit = direction === "sent"
-      ? stream.sendCredit
-      : stream.receiveCredit;
+    const credit =
+      direction === "sent" ? stream.sendCredit : stream.receiveCredit;
     try {
       credit.consume(frame.payload.byteLength);
     } catch (error) {
@@ -830,10 +812,7 @@ export function createProtocolOrderValidator(
     } else {
       stream.nextReceivedSequence++;
     }
-    return createAcceptance(
-      frame,
-      inboundDisposition(stream, direction),
-    );
+    return createAcceptance(frame, inboundDisposition(stream, direction));
   };
 
   const snapshot = (): ProtocolStateSnapshot => {

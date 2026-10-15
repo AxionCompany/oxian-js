@@ -1,4 +1,6 @@
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
 import type { SupervisorError } from "../../src/supervisor/types.ts";
 import { createEphemeralWorkerStore } from "../../src/supervisor/store.ts";
 import { createWorkerDefinition } from "../../src/supervisor/state.ts";
@@ -10,35 +12,37 @@ async function createRepository() {
     clock: () => nowMs++,
     createAttemptId: () => `attempt-${++attemptNumber}`,
   });
-  await repository.define(createWorkerDefinition({
-    workerId: "worker-1",
-    providerId: "local",
-    workloads: ["sandbox.command"],
-    capacity: 1,
-  }));
+  await repository.define(
+    createWorkerDefinition({
+      workerId: "worker-1",
+      providerId: "local",
+      workloads: ["sandbox.command"],
+      capacity: 1,
+    }),
+  );
   return repository;
 }
 
-Deno.test("repository activation is atomic and reuses the active attempt", async () => {
+test("repository activation is atomic and reuses the active attempt", async () => {
   const repository = await createRepository();
 
   const activations = await Promise.all(
     Array.from({ length: 32 }, () => repository.activate("worker-1")),
   );
 
-  assertEquals(
+  assert.deepStrictEqual(
     activations.filter((activation) => activation.created).length,
     1,
   );
-  assert(
-    activations.every((activation) =>
-      activation.attempt.identity.attemptId === "attempt-1"
+  assert.ok(
+    activations.every(
+      (activation) => activation.attempt.identity.attemptId === "attempt-1",
     ),
   );
-  assertEquals((await repository.listAttempts("worker-1")).length, 1);
+  assert.deepStrictEqual((await repository.listAttempts("worker-1")).length, 1);
 });
 
-Deno.test("repository transition uses attempt identity and source phase as a CAS", async () => {
+test("repository transition uses attempt identity and source phase as a CAS", async () => {
   const repository = await createRepository();
   const attempt = (await repository.activate("worker-1")).attempt;
 
@@ -47,21 +51,21 @@ Deno.test("repository transition uses attempt identity and source phase as a CAS
     repository.transition(attempt.identity, { type: "launching" }),
   ]);
 
-  assertEquals(
+  assert.deepStrictEqual(
     transitions.filter((result) => result.status === "fulfilled").length,
     1,
   );
-  assertEquals(
+  assert.deepStrictEqual(
     transitions.filter((result) => result.status === "rejected").length,
     1,
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (await repository.currentAttempt("worker-1"))?.phase,
     "launching",
   );
 });
 
-Deno.test("repository fences transitions by attempt ID and epoch", async () => {
+test("repository fences transitions by attempt ID and epoch", async () => {
   const repository = await createRepository();
   const first = (await repository.activate("worker-1")).attempt;
   await repository.transition(first.identity, { type: "launching" });
@@ -72,25 +76,28 @@ Deno.test("repository fences transitions by attempt ID and epoch", async () => {
   });
 
   const second = (await repository.activate("worker-1")).attempt;
-  assertEquals(second.identity.epoch, 2);
-  assertEquals(second.identity.attemptId, "attempt-2");
+  assert.deepStrictEqual(second.identity.epoch, 2);
+  assert.deepStrictEqual(second.identity.attemptId, "attempt-2");
 
-  const error = await assertRejects(
-    () => repository.transition(first.identity, { type: "launching" }),
-  ) as SupervisorError;
-  assertEquals(error.code, "stale_attempt");
-  assertEquals(await repository.assertCurrent(second.identity), second);
-  assertEquals((await repository.listAttempts("worker-1")).length, 2);
+  const error = (await assertRejects(() =>
+    repository.transition(first.identity, { type: "launching" }),
+  )) as SupervisorError;
+  assert.deepStrictEqual(error.code, "stale_attempt");
+  assert.deepStrictEqual(
+    await repository.assertCurrent(second.identity),
+    second,
+  );
+  assert.deepStrictEqual((await repository.listAttempts("worker-1")).length, 2);
 });
 
-Deno.test("repository keeps definitions and attempts semantically separate", async () => {
+test("repository keeps definitions and attempts semantically separate", async () => {
   const repository = await createRepository();
   const definition = await repository.getDefinition("worker-1");
   const attempt = (await repository.activate("worker-1")).attempt;
 
-  assertEquals(definition?.providerId, "local");
-  assertEquals(attempt.phase, "requested");
-  assertEquals("phase" in definition!, false);
+  assert.deepStrictEqual(definition?.providerId, "local");
+  assert.deepStrictEqual(attempt.phase, "requested");
+  assert.deepStrictEqual("phase" in definition!, false);
   await assertRejects(
     () => repository.define(definition!),
     Error,
@@ -98,7 +105,7 @@ Deno.test("repository keeps definitions and attempts semantically separate", asy
   );
 });
 
-Deno.test("repository normalizes definitions instead of trusting caller objects", async () => {
+test("repository normalizes definitions instead of trusting caller objects", async () => {
   const repository = createEphemeralWorkerStore();
   const callerOwned = {
     workerId: "worker-raw",
@@ -113,8 +120,8 @@ Deno.test("repository normalizes definitions instead of trusting caller objects"
   callerOwned.workloads[0] = "changed";
   callerOwned.providerConfig.command[0] = "changed";
 
-  assertEquals(stored.workloads, ["sandbox/command"]);
-  assertEquals(stored.providerConfig, { command: ["deno", "run"] });
-  assert(Object.isFrozen(stored));
-  assert(Object.isFrozen(stored.providerConfig));
+  assert.deepStrictEqual(stored.workloads, ["sandbox/command"]);
+  assert.deepStrictEqual(stored.providerConfig, { command: ["deno", "run"] });
+  assert.ok(Object.isFrozen(stored));
+  assert.ok(Object.isFrozen(stored.providerConfig));
 });

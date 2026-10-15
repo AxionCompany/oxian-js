@@ -38,7 +38,8 @@ export async function createConfiguredApplication(
       "configured application options require an AbortSignal",
     );
   }
-  const createRouter = options.createRouter ??
+  const createRouter =
+    options.createRouter ??
     ((input: CreateFileRouterOptions) => createFileRouter<unknown>(input));
   if (typeof createRouter !== "function") {
     throw new TypeError(
@@ -58,9 +59,7 @@ export async function createConfiguredApplication(
     if (options.config.factory === undefined) {
       application = await createApplication<unknown>({ router, basePath });
     } else {
-      const factory = await loadApplicationFactory(
-        options.config.factory,
-      );
+      const factory = await loadApplicationFactory(options.config.factory);
       options.signal.throwIfAborted();
       application = await factory({
         router,
@@ -71,11 +70,13 @@ export async function createConfiguredApplication(
     options.signal.throwIfAborted();
     return Object.freeze({ router, application });
   } catch (error) {
-    await application?.dispose(
-      options.signal.aborted
-        ? options.signal.reason
-        : "application_configuration_failed",
-    ).catch(() => undefined);
+    await application
+      ?.dispose(
+        options.signal.aborted
+          ? options.signal.reason
+          : "application_configuration_failed",
+      )
+      .catch(() => undefined);
     throw error;
   }
 }

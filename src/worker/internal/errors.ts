@@ -19,24 +19,25 @@ export function createWorkerError(
       value: true,
       writable: false,
     },
-    ...(cause === undefined ? {} : {
-      cause: {
-        configurable: false,
-        enumerable: false,
-        value: cause,
-        writable: false,
-      },
-    }),
+    ...(cause === undefined
+      ? {}
+      : {
+          cause: {
+            configurable: false,
+            enumerable: false,
+            value: cause,
+            writable: false,
+          },
+        }),
   });
   return error;
 }
 
-export function isWorkerError(
-  value: unknown,
-): value is WorkerError {
-  return value instanceof Error &&
-    (value as unknown as { workerError?: unknown })
-        .workerError === true;
+export function isWorkerError(value: unknown): value is WorkerError {
+  return (
+    value instanceof Error &&
+    (value as unknown as { workerError?: unknown }).workerError === true
+  );
 }
 
 export function createAbortError(message: string): DOMException {

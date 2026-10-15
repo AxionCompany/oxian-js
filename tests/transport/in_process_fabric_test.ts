@@ -1,4 +1,6 @@
-import { assertEquals, assertNotEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import {
   bindInProcessFabric,
   connectInProcessFabric,
@@ -17,7 +19,7 @@ async function waitFor(
   }
 }
 
-Deno.test("the local fabric addresses ordered frames to one logical connection", async () => {
+test("the local fabric addresses ordered frames to one logical connection", async () => {
   const topic = `fabric-addressing-${crypto.randomUUID()}`;
   const accepted: SocketConnection[] = [];
   const events: InProcessFabricEvent[] = [];
@@ -40,7 +42,7 @@ Deno.test("the local fabric addresses ordered frames to one logical connection",
   const receivedB: (string | Uint8Array)[] = [];
 
   try {
-    assertEquals(accepted.length, 2);
+    assert.deepStrictEqual(accepted.length, 2);
     const unsubscribeHostA = accepted[0].subscribe({
       message: (frame) => void hostA.push(frame as string | Uint8Array),
     });
@@ -63,18 +65,24 @@ Deno.test("the local fabric addresses ordered frames to one logical connection",
       "addressed fabric frames did not arrive",
     );
 
-    assertEquals(hostA, ["a-1", new Uint8Array([1, 2, 3])]);
-    assertEquals(hostB, ["b-1"]);
-    assertEquals(receivedA, ["host-a"]);
-    assertEquals(receivedB, []);
-    assertNotEquals(events[0].connectionId, events[2].connectionId);
-    assertEquals(events.map((event) => event.topic), Array(4).fill(topic));
-    assertEquals(events.map((event) => event.direction), [
-      "worker-to-hypervisor",
-      "worker-to-hypervisor",
-      "worker-to-hypervisor",
-      "hypervisor-to-worker",
-    ]);
+    assert.deepStrictEqual(hostA, ["a-1", new Uint8Array([1, 2, 3])]);
+    assert.deepStrictEqual(hostB, ["b-1"]);
+    assert.deepStrictEqual(receivedA, ["host-a"]);
+    assert.deepStrictEqual(receivedB, []);
+    assert.notDeepStrictEqual(events[0].connectionId, events[2].connectionId);
+    assert.deepStrictEqual(
+      events.map((event) => event.topic),
+      Array(4).fill(topic),
+    );
+    assert.deepStrictEqual(
+      events.map((event) => event.direction),
+      [
+        "worker-to-hypervisor",
+        "worker-to-hypervisor",
+        "worker-to-hypervisor",
+        "hypervisor-to-worker",
+      ],
+    );
 
     dropNext = true;
     workerA.send("dropped-by-test-fault");
@@ -83,7 +91,7 @@ Deno.test("the local fabric addresses ordered frames to one logical connection",
       () => hostA.length === 3,
       "post-fault frame did not preserve connection progress",
     );
-    assertEquals(hostA[2], "after-drop");
+    assert.deepStrictEqual(hostA[2], "after-drop");
 
     unsubscribeHostA();
     unsubscribeHostB();
@@ -93,11 +101,11 @@ Deno.test("the local fabric addresses ordered frames to one logical connection",
     binding.close("test_complete");
   }
 
-  assertEquals(workerA.state, "closed");
-  assertEquals(workerB.state, "closed");
+  assert.deepStrictEqual(workerA.state, "closed");
+  assert.deepStrictEqual(workerB.state, "closed");
 });
 
-Deno.test("the local fabric enforces its physical frame and byte bounds", () => {
+test("the local fabric enforces its physical frame and byte bounds", () => {
   const topic = `fabric-bounds-${crypto.randomUUID()}`;
   let accepted: SocketConnection | undefined;
   const binding = bindInProcessFabric({
@@ -112,7 +120,7 @@ Deno.test("the local fabric enforces its physical frame and byte bounds", () => 
 
   try {
     accepted!.send("1234");
-    assertEquals(accepted!.bufferedAmount, 4);
+    assert.deepStrictEqual(accepted!.bufferedAmount, 4);
     assertThrows(
       () => accepted!.send("x"),
       RangeError,
@@ -124,12 +132,12 @@ Deno.test("the local fabric enforces its physical frame and byte bounds", () => 
   }
 });
 
-Deno.test("closing a local binding releases its topic and every connection", () => {
+test("closing a local binding releases its topic and every connection", () => {
   const topic = `fabric-cleanup-${crypto.randomUUID()}`;
   const binding = bindInProcessFabric({ topic, accept() {} });
   const worker = connectInProcessFabric({ topic });
   binding.close("hot_reload");
-  assertEquals(worker.state, "closed");
+  assert.deepStrictEqual(worker.state, "closed");
 
   const replacement = bindInProcessFabric({ topic, accept() {} });
   replacement.close("test_complete");

@@ -15,11 +15,7 @@ import { HTTP_WORKLOAD } from "./types.ts";
 const WORKLOAD_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
 
 function validateWorkload(value: string): string {
-  if (
-    value.length < 1 ||
-    value.length > 128 ||
-    !WORKLOAD_PATTERN.test(value)
-  ) {
+  if (value.length < 1 || value.length > 128 || !WORKLOAD_PATTERN.test(value)) {
     throw new TypeError(
       "HTTP gateway workload must be a valid Oxian workload identifier",
     );
@@ -28,10 +24,7 @@ function validateWorkload(value: string): string {
 }
 
 function validateDeadline(value: number | undefined): number | undefined {
-  if (
-    value !== undefined &&
-    (!Number.isSafeInteger(value) || value < 0)
-  ) {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
     throw new TypeError(
       "HTTP gateway deadlineAtMs must return a non-negative safe integer",
     );
@@ -40,8 +33,9 @@ function validateDeadline(value: number | undefined): number | undefined {
 }
 
 function abortReason(signal: AbortSignal): unknown {
-  return signal.reason ??
-    new DOMException("HTTP request was aborted", "AbortError");
+  return (
+    signal.reason ?? new DOMException("HTTP request was aborted", "AbortError")
+  );
 }
 
 function cancellationMessage(error: unknown): string {
@@ -110,9 +104,7 @@ function verifyExpectedEmptyOutput(
   })();
 }
 
-export function createHttpGateway(
-  options: HttpGatewayOptions,
-): HttpGateway {
+export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
   if (typeof options?.dispatch !== "function") {
     throw new TypeError("HTTP gateway dispatch must be a function");
   }
@@ -128,11 +120,9 @@ export function createHttpGateway(
   ) {
     throw new TypeError("HTTP gateway deadlineAtMs must be a function");
   }
-  const workload = validateWorkload(
-    options.workload ?? HTTP_WORKLOAD,
-  );
-  const createRequestId = options.createRequestId ??
-    (() => crypto.randomUUID());
+  const workload = validateWorkload(options.workload ?? HTTP_WORKLOAD);
+  const createRequestId =
+    options.createRequestId ?? (() => crypto.randomUUID());
 
   const gateway: HttpGateway = async (request) => {
     if (!(request instanceof Request)) {
@@ -140,12 +130,9 @@ export function createHttpGateway(
     }
     request.signal.throwIfAborted();
     const metadata = encodeHttpRequestMetadata(request, createRequestId());
-    const deadlineAtMs = validateDeadline(
-      options.deadlineAtMs?.(request),
-    );
-    const body = request.body === null
-      ? undefined
-      : rechunkHttpBody(request.body);
+    const deadlineAtMs = validateDeadline(options.deadlineAtMs?.(request));
+    const body =
+      request.body === null ? undefined : rechunkHttpBody(request.body);
     let handle;
     try {
       handle = await options.dispatch({
@@ -170,9 +157,7 @@ export function createHttpGateway(
     );
     let responseMetadata: HttpResponseMetadata;
     try {
-      responseMetadata = decodeHttpResponseMetadata(
-        rawResponseMetadata,
-      );
+      responseMetadata = decodeHttpResponseMetadata(rawResponseMetadata);
     } catch (error) {
       cancel("invalid_http_response_metadata");
       throw error;

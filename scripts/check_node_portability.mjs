@@ -1,26 +1,22 @@
 import assert from "node:assert/strict";
 import * as oxian from "../src/mod.ts";
 
-for (
-  const name of [
-    "createApplication",
-    "createHttpWorkload",
-    "createHypervisor",
-    "createWorker",
-  ]
-) {
+for (const name of [
+  "createApplication",
+  "createHttpWorkload",
+  "createHypervisor",
+  "createWorker",
+]) {
   assert.equal(typeof oxian[name], "function", `${name} must be portable`);
 }
-for (
-  const name of [
-    "createDenoHypervisor",
-    "createWorkerHost",
-    "createWorkerClient",
-    "createFileRouter",
-    "createLocalProcessProvider",
-    "createLocalRuntime",
-  ]
-) {
+for (const name of [
+  "createDenoHypervisor",
+  "createWorkerHost",
+  "createWorkerClient",
+  "createFileRouter",
+  "createLocalProcessProvider",
+  "createLocalRuntime",
+]) {
   assert.equal(name in oxian, false, `${name} must not leak from the root`);
 }
 

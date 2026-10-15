@@ -1,68 +1,57 @@
-import {
-  assertEquals,
-  assertInstanceOf,
-  assertNotStrictEquals,
-  assertThrows,
-} from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import { DEFAULT_OXIAN_CONFIG, defineConfig } from "../../src/config/config.ts";
 import type { OxianConfig } from "../../src/config/types.ts";
 
 function assertDeepFrozen(value: unknown): void {
   if (value === null || typeof value !== "object") return;
-  assertEquals(Object.isFrozen(value), true);
+  assert.deepStrictEqual(Object.isFrozen(value), true);
   for (const child of Object.values(value)) assertDeepFrozen(child);
 }
 
-function assertTypeErrorMessage(
-  run: () => unknown,
-  message: string,
-): void {
+function assertTypeErrorMessage(run: () => unknown, message: string): void {
   try {
     run();
     throw new Error("expected callback to throw");
   } catch (error) {
-    assertInstanceOf(error, TypeError);
-    assertEquals(error.message, message);
+    assert.ok(error instanceof TypeError);
+    assert.deepStrictEqual(error.message, message);
   }
 }
 
-const defineUnknown = defineConfig as (
-  input: unknown,
-) => OxianConfig;
+const defineUnknown = defineConfig as (input: unknown) => OxianConfig;
 
-Deno.test("v0.20 config exposes immutable, implemented-only defaults", () => {
+test("v0.20 config exposes immutable, implemented-only defaults", () => {
   const config = defineConfig({});
 
-  assertEquals(config, DEFAULT_OXIAN_CONFIG);
-  assertEquals(config.application.routesRoot, "./routes");
-  assertEquals(config.application.basePath, "/");
-  assertEquals(config.application.factory, undefined);
-  assertEquals(config.gateway.listener, {
+  assert.deepStrictEqual(config, DEFAULT_OXIAN_CONFIG);
+  assert.deepStrictEqual(config.application.routesRoot, "./routes");
+  assert.deepStrictEqual(config.application.basePath, "/");
+  assert.deepStrictEqual(config.application.factory, undefined);
+  assert.deepStrictEqual(config.gateway.listener, {
     hostname: "127.0.0.1",
     port: 8_000,
   });
-  assertEquals(config.gateway.workerTransport, "in-process");
-  assertEquals(config.gateway.workerCapacity, 32);
-  assertEquals(config.gateway.edge, undefined);
+  assert.deepStrictEqual(config.gateway.workerTransport, "in-process");
+  assert.deepStrictEqual(config.gateway.workerCapacity, 32);
+  assert.deepStrictEqual(config.gateway.edge, undefined);
   assertDeepFrozen(config);
 
-  assertThrows(
-    () => {
-      (config.gateway.listener as { port: number }).port = 9_000;
-    },
-    TypeError,
-  );
+  assertThrows(() => {
+    (config.gateway.listener as { port: number }).port = 9_000;
+  }, TypeError);
 });
 
-Deno.test("v0.20 config permits listener port zero for ephemeral binding", () => {
+test("v0.20 config permits listener port zero for ephemeral binding", () => {
   const config = defineConfig({
     gateway: { listener: { port: 0 } },
   });
 
-  assertEquals(config.gateway.listener.port, 0);
+  assert.deepStrictEqual(config.gateway.listener.port, 0);
 });
 
-Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () => {
+test("v0.20 config normalizes data-only gateway and edge declarations", () => {
   const methods = ["get", "GET", "post"];
   const headers = ["X-Request-ID", "x-request-id"];
   const input = {
@@ -108,17 +97,17 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
 
   const config = defineConfig(input);
 
-  assertEquals(config.application.routesRoot, "./api");
-  assertEquals(config.application.basePath, "/api/v1");
-  assertEquals(config.application.factory, "./application.ts");
-  assertEquals(config.gateway.listener, {
+  assert.deepStrictEqual(config.application.routesRoot, "./api");
+  assert.deepStrictEqual(config.application.basePath, "/api/v1");
+  assert.deepStrictEqual(config.application.factory, "./application.ts");
+  assert.deepStrictEqual(config.gateway.listener, {
     hostname: "localhost",
     port: 9_090,
   });
-  assertEquals(config.gateway.workerTransport, "websocket");
-  assertEquals(config.gateway.workerCapacity, 80);
-  assertEquals(config.gateway.hypervisor.heartbeatIntervalMs, 2_000);
-  assertEquals(config.gateway.edge?.cors, {
+  assert.deepStrictEqual(config.gateway.workerTransport, "websocket");
+  assert.deepStrictEqual(config.gateway.workerCapacity, 80);
+  assert.deepStrictEqual(config.gateway.hypervisor.heartbeatIntervalMs, 2_000);
+  assert.deepStrictEqual(config.gateway.edge?.cors, {
     origins: ["https://example.com"],
     methods: ["GET", "POST"],
     headers: ["x-request-id"],
@@ -126,7 +115,7 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     credentials: true,
     maxAgeSeconds: 300,
   });
-  assertEquals(config.gateway.edge?.static, {
+  assert.deepStrictEqual(config.gateway.edge?.static, {
     root: "./public",
     prefix: "/assets",
     index: ["index.html", "home.html"],
@@ -134,20 +123,20 @@ Deno.test("v0.20 config normalizes data-only gateway and edge declarations", () 
     cacheControl: "public, max-age=60",
     fallthrough: false,
   });
-  assertEquals(config.gateway.edge?.devProxy, {
+  assert.deepStrictEqual(config.gateway.edge?.devProxy, {
     upstream: "http://127.0.0.1:5173/",
     prefix: "/vite",
     stripPrefix: true,
     forwardHost: true,
   });
-  assertNotStrictEquals(config.gateway.edge?.cors?.methods, methods);
-  assertNotStrictEquals(config.gateway.edge?.cors?.headers, headers);
-  assertEquals(methods, ["get", "GET", "post"]);
-  assertEquals(headers, ["X-Request-ID", "x-request-id"]);
+  assert.notStrictEqual(config.gateway.edge?.cors?.methods, methods);
+  assert.notStrictEqual(config.gateway.edge?.cors?.headers, headers);
+  assert.deepStrictEqual(methods, ["get", "GET", "post"]);
+  assert.deepStrictEqual(headers, ["X-Request-ID", "x-request-id"]);
   assertDeepFrozen(config);
 });
 
-Deno.test("v0.20 config rejects unknown keys at every owned boundary", () => {
+test("v0.20 config rejects unknown keys at every owned boundary", () => {
   assertTypeErrorMessage(
     () => defineUnknown({ server: {} }),
     'config contains unknown key "server"',
@@ -211,7 +200,7 @@ Deno.test("v0.20 config rejects unknown keys at every owned boundary", () => {
   );
 });
 
-Deno.test("v0.20 config rejects unknown local worker transports", () => {
+test("v0.20 config rejects unknown local worker transports", () => {
   assertTypeErrorMessage(
     () =>
       defineUnknown({
@@ -221,7 +210,7 @@ Deno.test("v0.20 config rejects unknown local worker transports", () => {
   );
 });
 
-Deno.test("v0.21 config validates local Worker capacity", () => {
+test("v0.21 config validates local Worker capacity", () => {
   assertTypeErrorMessage(
     () => defineUnknown({ gateway: { workerCapacity: 0 } }),
     "config.gateway.workerCapacity must be a positive safe integer",
@@ -240,7 +229,7 @@ Deno.test("v0.21 config validates local Worker capacity", () => {
       }),
     "config.gateway.workerCapacity must not exceed config.gateway.hypervisor.maxWorkerCapacity",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     defineConfig({
       gateway: { hypervisor: { maxWorkerCapacity: 2 } },
     }).gateway.workerCapacity,
@@ -248,7 +237,7 @@ Deno.test("v0.21 config validates local Worker capacity", () => {
   );
 });
 
-Deno.test("v0.20 config rejects functions, nulls, and non-plain data", () => {
+test("v0.20 config rejects functions, nulls, and non-plain data", () => {
   assertTypeErrorMessage(
     () => defineUnknown(() => ({})),
     "config must be a plain object; received function",
@@ -300,7 +289,7 @@ Deno.test("v0.20 config rejects functions, nulls, and non-plain data", () => {
   );
 });
 
-Deno.test("v0.20 config rejects invalid paths, ports, hosts, and URLs", () => {
+test("v0.20 config rejects invalid paths, ports, hosts, and URLs", () => {
   assertTypeErrorMessage(
     () =>
       defineUnknown({
@@ -308,18 +297,16 @@ Deno.test("v0.20 config rejects invalid paths, ports, hosts, and URLs", () => {
       }),
     "config.application.routesRoot must be a local filesystem path or file: URL without a query or fragment",
   );
-  for (
-    const basePath of [
-      "",
-      "api",
-      "/api/",
-      "//api",
-      "/api//v1",
-      "/api/../v1",
-      "/api%2Fv1",
-      "/café",
-    ]
-  ) {
+  for (const basePath of [
+    "",
+    "api",
+    "/api/",
+    "//api",
+    "/api//v1",
+    "/api/../v1",
+    "/api%2Fv1",
+    "/café",
+  ]) {
     assertTypeErrorMessage(
       () =>
         defineUnknown({
@@ -432,7 +419,7 @@ Deno.test("v0.20 config rejects invalid paths, ports, hosts, and URLs", () => {
   );
 });
 
-Deno.test("v0.21 config delegates Hypervisor bounds and relationships", () => {
+test("v0.21 config delegates Hypervisor bounds and relationships", () => {
   assertTypeErrorMessage(
     () =>
       defineUnknown({
@@ -456,17 +443,15 @@ Deno.test("v0.21 config delegates Hypervisor bounds and relationships", () => {
   );
 });
 
-Deno.test("v0.20 config keeps manifests, credentials, providers, and logging separate", () => {
-  for (
-    const key of [
-      "workers",
-      "bootstrap",
-      "credentials",
-      "providers",
-      "secrets",
-      "logging",
-    ]
-  ) {
+test("v0.20 config keeps manifests, credentials, providers, and logging separate", () => {
+  for (const key of [
+    "workers",
+    "bootstrap",
+    "credentials",
+    "providers",
+    "secrets",
+    "logging",
+  ]) {
     assertTypeErrorMessage(
       () => defineUnknown({ [key]: {} }),
       `config contains unknown key "${key}"`,

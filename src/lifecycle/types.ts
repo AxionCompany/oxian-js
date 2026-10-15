@@ -37,9 +37,8 @@ export type LifecycleContext = Readonly<{
   signal: AbortSignal;
 }>;
 
-export type WorkerActivationContext =
-  & LifecycleContext
-  & Readonly<{
+export type WorkerActivationContext = LifecycleContext &
+  Readonly<{
     stage: "activate";
     workerId: string;
     workloads: readonly string[];
@@ -57,9 +56,8 @@ export type WorkerActivate = (
   | WorkerIdentity
   | Promise<WorkerActivationResult | WorkerIdentity>;
 
-export type WorkerRegistrationContext =
-  & LifecycleContext
-  & Readonly<{
+export type WorkerRegistrationContext = LifecycleContext &
+  Readonly<{
     stage: "register";
     identity: WorkerIdentity;
   }>;
@@ -75,9 +73,8 @@ export type WorkerRegister = (
   context: WorkerRegistrationContext,
 ) => WorkerRegistration | Promise<WorkerRegistration>;
 
-export type WorkerHandshakeContext =
-  & LifecycleContext
-  & Readonly<{
+export type WorkerHandshakeContext = LifecycleContext &
+  Readonly<{
     stage: "handshake";
     identity: WorkerIdentity;
     connectionId: string;
@@ -90,9 +87,8 @@ export type WorkerHandshake = (
   context: WorkerHandshakeContext,
 ) => JsonObject | void | Promise<JsonObject | void>;
 
-export type HypervisorAdmitContext =
-  & LifecycleContext
-  & Readonly<{
+export type HypervisorAdmitContext = LifecycleContext &
+  Readonly<{
     stage: "admit";
     identity: WorkerIdentity;
     credential: WorkerCredential;
@@ -113,9 +109,8 @@ export type HypervisorAdmit = (
   context: HypervisorAdmitContext,
 ) => HypervisorAdmission | Promise<HypervisorAdmission>;
 
-export type HypervisorAssignContext =
-  & LifecycleContext
-  & Readonly<{
+export type HypervisorAssignContext = LifecycleContext &
+  Readonly<{
     stage: "assign";
     operationId: string;
     workload: string;
@@ -133,9 +128,8 @@ export type HypervisorAssign = (
   context: HypervisorAssignContext,
 ) => SessionFence | undefined | Promise<SessionFence | undefined>;
 
-export type WorkerWorkLifecycleContext =
-  & LifecycleContext
-  & Readonly<{
+export type WorkerWorkLifecycleContext = LifecycleContext &
+  Readonly<{
     identity: WorkerIdentity;
     connectionId: string;
     streamId: string;
@@ -143,15 +137,13 @@ export type WorkerWorkLifecycleContext =
     metadata: JsonObject;
   }>;
 
-export type HypervisorWorkLifecycleContext =
-  & WorkerWorkLifecycleContext
-  & Readonly<{
+export type HypervisorWorkLifecycleContext = WorkerWorkLifecycleContext &
+  Readonly<{
     operationId: string;
   }>;
 
-export type HypervisorWorkAssignedContext =
-  & LifecycleContext
-  & Readonly<{
+export type HypervisorWorkAssignedContext = LifecycleContext &
+  Readonly<{
     stage: "work_assigned";
     operationId: string;
     workload: string;
@@ -166,28 +158,24 @@ export type HypervisorWorkAssignedContext =
     assignedAtMs: number;
   }>;
 
-export type WorkerWorkAcceptedContext =
-  & WorkerWorkLifecycleContext
-  & Readonly<{ stage: "work_accepted" }>;
+export type WorkerWorkAcceptedContext = WorkerWorkLifecycleContext &
+  Readonly<{ stage: "work_accepted" }>;
 
-export type WorkerStartContext =
-  & WorkerWorkLifecycleContext
-  & Readonly<{
+export type WorkerStartContext = WorkerWorkLifecycleContext &
+  Readonly<{
     stage: "start";
     work: WorkerWorkContext;
   }>;
 
-export type WorkerCompleteContext =
-  & WorkerWorkLifecycleContext
-  & Readonly<{
+export type WorkerCompleteContext = WorkerWorkLifecycleContext &
+  Readonly<{
     stage: "complete";
     outcome: "completed" | "cancelled" | "failed";
     error?: unknown;
   }>;
 
-export type HypervisorWorkAcceptedContext =
-  & HypervisorWorkLifecycleContext
-  & Readonly<{
+export type HypervisorWorkAcceptedContext = HypervisorWorkLifecycleContext &
+  Readonly<{
     stage: "work_accepted";
     target?: Readonly<{ workerId: string }>;
     deadlineAtMs?: number;
@@ -200,16 +188,14 @@ export type HypervisorWorkAcceptedContext =
     fence: SessionFence;
   }>;
 
-export type HypervisorStartContext =
-  & HypervisorWorkLifecycleContext
-  & Readonly<{
+export type HypervisorStartContext = HypervisorWorkLifecycleContext &
+  Readonly<{
     stage: "start";
     fence: SessionFence;
   }>;
 
-export type HypervisorCompleteContext =
-  & HypervisorWorkLifecycleContext
-  & Readonly<{
+export type HypervisorCompleteContext = HypervisorWorkLifecycleContext &
+  Readonly<{
     stage: "complete";
     fence: SessionFence;
     outcome: "completed" | "cancelled" | "failed" | "indeterminate";
@@ -225,9 +211,8 @@ export type WorkerLifecycleCallbacks = Readonly<{
   ): void | Promise<void>;
   onHandshake?(context: WorkerHandshakeContext): void | Promise<void>;
   onReady?(
-    context:
-      & LifecycleContext
-      & Readonly<{
+    context: LifecycleContext &
+      Readonly<{
         stage: "ready";
         snapshot: WorkerSnapshot;
       }>,
@@ -242,9 +227,8 @@ export type WorkerLifecycleCallbacks = Readonly<{
    */
   onComplete?(context: WorkerCompleteContext): void | Promise<void>;
   onDisconnect?(
-    context:
-      & LifecycleContext
-      & Readonly<{
+    context: LifecycleContext &
+      Readonly<{
         stage: "disconnect";
         identity?: WorkerIdentity;
         reason: unknown;
@@ -254,9 +238,8 @@ export type WorkerLifecycleCallbacks = Readonly<{
 
 export type HypervisorLifecycleCallbacks = Readonly<{
   onConnect?(
-    context:
-      & LifecycleContext
-      & Readonly<{
+    context: LifecycleContext &
+      Readonly<{
         stage: "connect";
         connectionId: string;
       }>,
@@ -265,27 +248,24 @@ export type HypervisorLifecycleCallbacks = Readonly<{
     context: HypervisorAdmitContext & HypervisorAdmission,
   ): void | Promise<void>;
   onHandshake?(
-    context:
-      & LifecycleContext
-      & Readonly<{
+    context: LifecycleContext &
+      Readonly<{
         stage: "handshake";
         fence: SessionFence;
         definition: WorkerDefinition;
       }>,
   ): void | Promise<void>;
   onReady?(
-    context:
-      & HypervisorReadyContext
-      & LifecycleContext
-      & Readonly<{
+    context: HypervisorReadyContext &
+      LifecycleContext &
+      Readonly<{
         stage: "ready";
       }>,
   ): void | Promise<void>;
   onHeartbeat?(
-    context:
-      & HypervisorHeartbeatContext
-      & LifecycleContext
-      & Readonly<{
+    context: HypervisorHeartbeatContext &
+      LifecycleContext &
+      Readonly<{
         stage: "heartbeat";
       }>,
   ): void | Promise<void>;
@@ -294,10 +274,9 @@ export type HypervisorLifecycleCallbacks = Readonly<{
   onStart?(context: HypervisorStartContext): void | Promise<void>;
   onComplete?(context: HypervisorCompleteContext): void | Promise<void>;
   onDisconnect?(
-    event:
-      & HypervisorDisconnectEvent
-      & LifecycleContext
-      & Readonly<{
+    event: HypervisorDisconnectEvent &
+      LifecycleContext &
+      Readonly<{
         stage: "disconnect";
       }>,
   ): void | Promise<void>;

@@ -1,11 +1,13 @@
-import { assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects, assertThrows } from "../support/assert.ts";
 import {
   createExternallyAttachedProvider,
   createProviderResource,
   isProviderError,
   runProviderConformance,
-} from "../../src/providers/index.ts";
-import type { ProviderResource } from "../../src/providers/index.ts";
+} from "../../src/providers/core.ts";
+import type { ProviderResource } from "../../src/providers/core.ts";
 
 async function assertTamperedReferencesRejected(
   provider: {
@@ -36,22 +38,20 @@ async function assertTamperedReferencesRejected(
   ];
 
   for (const tampered of tamperedResources) {
-    for (
-      const operation of [
-        () => provider.inspect(tampered),
-        () => provider.terminate(tampered),
-      ]
-    ) {
+    for (const operation of [
+      () => provider.inspect(tampered),
+      () => provider.terminate(tampered),
+    ]) {
       const error = await assertRejects(operation, Error);
-      assertEquals(isProviderError(error), true);
+      assert.deepStrictEqual(isProviderError(error), true);
       if (isProviderError(error)) {
-        assertEquals(error.code, "invalid_resource");
+        assert.deepStrictEqual(error.code, "invalid_resource");
       }
     }
   }
 }
 
-Deno.test("externally attached provider passes generic conformance", async () => {
+test("externally attached provider passes generic conformance", async () => {
   let clock = 1_000;
   const provider = createExternallyAttachedProvider({
     now: () => clock++,
@@ -68,7 +68,7 @@ Deno.test("externally attached provider passes generic conformance", async () =>
     },
   });
 
-  assertEquals(report.checks, [
+  assert.deepStrictEqual(report.checks, [
     "pre-aborted provision",
     "provision",
     "resource identity",
@@ -80,16 +80,16 @@ Deno.test("externally attached provider passes generic conformance", async () =>
     "inspect absent",
     "idempotent terminate",
   ]);
-  assertEquals(report.resource.attributes, {
+  assert.deepStrictEqual(report.resource.attributes, {
     attachmentId: "compass-device-1",
     platform: "darwin",
   });
-  assertEquals(report.initialInspection.state, "present");
-  assertEquals(report.finalInspection.state, "absent");
+  assert.deepStrictEqual(report.initialInspection.state, "present");
+  assert.deepStrictEqual(report.finalInspection.state, "absent");
   await assertTamperedReferencesRejected(provider, report.resource);
 });
 
-Deno.test("externally attached presence does not imply a ready session", async () => {
+test("externally attached presence does not imply a ready session", async () => {
   const provider = createExternallyAttachedProvider({
     createResourceId: () => "detached-computer",
   });
@@ -105,16 +105,16 @@ Deno.test("externally attached presence does not imply a ready session", async (
   });
 
   try {
-    assertEquals((await provider.inspect(resource)).state, "present");
-    assertEquals("ready" in resource, false);
-    assertEquals("connectionId" in resource, false);
-    assertEquals("session" in resource, false);
+    assert.deepStrictEqual((await provider.inspect(resource)).state, "present");
+    assert.deepStrictEqual("ready" in resource, false);
+    assert.deepStrictEqual("connectionId" in resource, false);
+    assert.deepStrictEqual("session" in resource, false);
   } finally {
     await provider.terminate(resource);
   }
 });
 
-Deno.test("externally attached reservations rehydrate across process restarts", async () => {
+test("externally attached reservations rehydrate across process restarts", async () => {
   const first = createExternallyAttachedProvider({
     providerId: "external",
     now: () => 42,
@@ -145,27 +145,36 @@ Deno.test("externally attached reservations rehydrate across process restarts", 
   };
   const rehydrated = afterRestart.rehydrateResource(durableInput);
 
-  assertEquals(rehydrated, resource);
-  assertEquals(afterRestart.rehydrateResource(durableInput), resource);
-  assertEquals((await afterRestart.inspect(rehydrated)).state, "present");
-  assertEquals(
+  assert.deepStrictEqual(rehydrated, resource);
+  assert.deepStrictEqual(
+    afterRestart.rehydrateResource(durableInput),
+    resource,
+  );
+  assert.deepStrictEqual(
+    (await afterRestart.inspect(rehydrated)).state,
+    "present",
+  );
+  assert.deepStrictEqual(
     (await afterRestart.terminate(rehydrated)).outcome,
     "terminated",
   );
-  assertEquals((await afterRestart.inspect(rehydrated)).state, "absent");
-  assertEquals(
+  assert.deepStrictEqual(
+    (await afterRestart.inspect(rehydrated)).state,
+    "absent",
+  );
+  assert.deepStrictEqual(
     (await afterRestart.terminate(rehydrated)).outcome,
     "already_absent",
   );
 
   afterRestart.rehydrateResource(durableInput);
-  assertEquals(
+  assert.deepStrictEqual(
     (await afterRestart.inspect(rehydrated)).state,
     "absent",
   );
 });
 
-Deno.test("externally attached rehydration rejects conflicting durable references", () => {
+test("externally attached rehydration rejects conflicting durable references", () => {
   const provider = createExternallyAttachedProvider({
     providerId: "external",
   });
@@ -190,13 +199,13 @@ Deno.test("externally attached rehydration rejects conflicting durable reference
       }),
     Error,
   );
-  assertEquals(isProviderError(error), true);
+  assert.deepStrictEqual(isProviderError(error), true);
   if (isProviderError(error)) {
-    assertEquals(error.code, "invalid_resource");
+    assert.deepStrictEqual(error.code, "invalid_resource");
   }
 });
 
-Deno.test("providers reject resources owned by another provider", async () => {
+test("providers reject resources owned by another provider", async () => {
   const provider = createExternallyAttachedProvider({
     providerId: "external-a",
   });
@@ -215,14 +224,14 @@ Deno.test("providers reject resources owned by another provider", async () => {
     () => provider.inspect(foreignResource),
     Error,
   );
-  assertEquals(isProviderError(error), true);
+  assert.deepStrictEqual(isProviderError(error), true);
   if (isProviderError(error)) {
-    assertEquals(error.code, "invalid_resource");
-    assertEquals(error.providerId, "external-a");
+    assert.deepStrictEqual(error.code, "invalid_resource");
+    assert.deepStrictEqual(error.providerId, "external-a");
   }
 });
 
-Deno.test("unknown externally attached resources remain explicit", async () => {
+test("unknown externally attached resources remain explicit", async () => {
   const provider = createExternallyAttachedProvider({
     providerId: "external",
   });
@@ -237,6 +246,9 @@ Deno.test("unknown externally attached resources remain explicit", async () => {
     createdAtMs: 1,
   });
 
-  assertEquals((await provider.inspect(missing)).state, "unknown");
-  assertEquals((await provider.terminate(missing)).outcome, "unknown");
+  assert.deepStrictEqual((await provider.inspect(missing)).state, "unknown");
+  assert.deepStrictEqual(
+    (await provider.terminate(missing)).outcome,
+    "unknown",
+  );
 });

@@ -1,8 +1,8 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
 import { join } from "@std/path";
-import {
-  createAtomicResumeCredentialStore,
-} from "../../src/local/credential_store.ts";
+import { createAtomicResumeCredentialStore } from "../../src/local/credential_store.ts";
 import { loadWorkerManifest } from "../../src/local/worker_manifest.ts";
 
 const identity = Object.freeze({
@@ -11,7 +11,7 @@ const identity = Object.freeze({
   epoch: 1,
 });
 
-Deno.test("worker manifest is strict and rebases only local application/store paths", async () => {
+test("worker manifest is strict and rebases only local application/store paths", async () => {
   const root = await Deno.makeTempDir();
   try {
     const manifestPath = join(root, "worker.ts");
@@ -39,17 +39,15 @@ Deno.test("worker manifest is strict and rebases only local application/store pa
 `,
     );
     const manifest = await loadWorkerManifest(manifestPath);
-    assertEquals(
+    assert.deepStrictEqual(
       manifest.gatewayUrl,
       "ws://127.0.0.1:8080/_oxian/workers/connect",
     );
-    assertEquals(
+    assert.deepStrictEqual(
       manifest.applicationConfig,
-      new URL(
-        `file://${join(root, "application.ts")}`,
-      ).href,
+      new URL(`file://${join(root, "application.ts")}`).href,
     );
-    assertEquals(manifest.credentialStore, {
+    assert.deepStrictEqual(manifest.credentialStore, {
       mode: "durable",
       path: join(root, "state", "resume.json"),
     });
@@ -99,7 +97,7 @@ Deno.test("worker manifest is strict and rebases only local application/store pa
   }
 });
 
-Deno.test("resume credentials use locked atomic compare-and-set persistence", async () => {
+test("resume credentials use locked atomic compare-and-set persistence", async () => {
   const root = await Deno.makeTempDir();
   const path = join(root, "state", "resume.json");
   const initialHandshakeId = "handshake-initial";
@@ -109,7 +107,7 @@ Deno.test("resume credentials use locked atomic compare-and-set persistence", as
     initialHandshakeId,
   });
   try {
-    assertEquals(await store.load(), undefined);
+    assert.deepStrictEqual(await store.load(), undefined);
     const competing = createAtomicResumeCredentialStore({
       path,
       identity,
@@ -140,25 +138,28 @@ Deno.test("resume credentials use locked atomic compare-and-set persistence", as
     await store.persist(update, persistenceContext);
     await store.persist(update, persistenceContext);
     const serialized = JSON.parse(await Deno.readTextFile(path));
-    assertEquals(serialized.schema, "oxian.worker-resume.v1");
-    assertEquals(serialized.handshakeId, "handshake-next");
-    assertEquals(serialized.credential.kind, "resume");
+    assert.deepStrictEqual(serialized.schema, "oxian.worker-resume.v1");
+    assert.deepStrictEqual(serialized.handshakeId, "handshake-next");
+    assert.deepStrictEqual(serialized.credential.kind, "resume");
 
     const stat = await Deno.stat(path);
     if (stat.mode !== null) {
-      assertEquals(stat.mode & 0o777, 0o600);
+      assert.deepStrictEqual(stat.mode & 0o777, 0o600);
     }
     await assertRejects(
       async () => {
-        await store.persist({
-          credential: {
-            kind: "resume",
-            capability: "resume-secret-stale",
+        await store.persist(
+          {
+            credential: {
+              kind: "resume",
+              capability: "resume-secret-stale",
+            },
+            replacesHandshakeId: initialHandshakeId,
+            handshakeId: "handshake-stale",
+            resumeExpiresAtMs: 4_000_000_000_001,
           },
-          replacesHandshakeId: initialHandshakeId,
-          handshakeId: "handshake-stale",
-          resumeExpiresAtMs: 4_000_000_000_001,
-        }, persistenceContext);
+          persistenceContext,
+        );
       },
       Error,
       "predecessor does not match",
@@ -171,7 +172,10 @@ Deno.test("resume credentials use locked atomic compare-and-set persistence", as
       identity,
       initialHandshakeId,
     });
-    assertEquals((await reopened.load())?.handshakeId, "handshake-next");
+    assert.deepStrictEqual(
+      (await reopened.load())?.handshakeId,
+      "handshake-next",
+    );
     await reopened.close();
   } finally {
     await store.close().catch(() => undefined);

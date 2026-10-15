@@ -43,7 +43,7 @@ export function createExecutionLedger(capacity: number): ExecutionLedger {
   return Object.freeze({
     reserve,
     occupied: () => reservations.size,
-    subscribe: (listener: () => void): () => void => {
+    subscribe: (listener: () => void): (() => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },

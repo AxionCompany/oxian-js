@@ -16,14 +16,12 @@ import {
   type StaticRouteSegment,
 } from "./types.ts";
 
-const MODULE_EXTENSIONS = Object.freeze(
-  [
-    ".ts",
-    ".js",
-    ".mts",
-    ".mjs",
-  ] as const,
-);
+const MODULE_EXTENSIONS = Object.freeze([
+  ".ts",
+  ".js",
+  ".mts",
+  ".mjs",
+] as const);
 
 const HTTP_METHOD_SET = new Set<string>(HTTP_METHODS);
 const PARAMETER_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -155,10 +153,7 @@ async function discoverModules(
       if (basename.startsWith("_") && basename !== "_middleware") continue;
 
       const relativePath = [...directoryParts, entry.name].join("/");
-      const logicalRelativePath = [
-        ...directoryParts,
-        basename,
-      ].join("/");
+      const logicalRelativePath = [...directoryParts, basename].join("/");
       const kind = basename === "_middleware" ? "middleware" : "route";
       const module: DiscoveredModule = Object.freeze({
         absoluteUrl: entryUrl.href,
@@ -167,9 +162,10 @@ async function discoverModules(
         kind,
         logicalRelativePath,
         relativePath,
-        routeParts: kind === "route"
-          ? routePartsForFile(directoryParts, basename)
-          : undefined,
+        routeParts:
+          kind === "route"
+            ? routePartsForFile(directoryParts, basename)
+            : undefined,
       });
 
       const collision = logicalPaths.get(logicalRelativePath);
@@ -191,40 +187,32 @@ function parseRouteSegment(token: string, source: string): RouteSegment {
   const catchall = /^\[\.\.\.([^\[\]./]+)\]$/.exec(token);
   if (catchall) {
     validateParameterName(catchall[1], source);
-    return Object.freeze(
-      {
-        type: "catchall",
-        name: catchall[1],
-      } satisfies CatchallRouteSegment,
-    );
+    return Object.freeze({
+      type: "catchall",
+      name: catchall[1],
+    } satisfies CatchallRouteSegment);
   }
 
   const param = /^\[([^\[\]./]+)\]$/.exec(token);
   if (param) {
     validateParameterName(param[1], source);
-    return Object.freeze(
-      {
-        type: "param",
-        name: param[1],
-      } satisfies ParamRouteSegment,
-    );
+    return Object.freeze({
+      type: "param",
+      name: param[1],
+    } satisfies ParamRouteSegment);
   }
 
   if (token.includes("[") || token.includes("]")) {
-    throw new Error(
-      `Invalid route segment "${token}" in ${source}`,
-    );
+    throw new Error(`Invalid route segment "${token}" in ${source}`);
   }
   if (token.length === 0) {
     throw new Error(`Empty route segment in ${source}`);
   }
 
-  return Object.freeze(
-    {
-      type: "static",
-      value: token,
-    } satisfies StaticRouteSegment,
-  );
+  return Object.freeze({
+    type: "static",
+    value: token,
+  } satisfies StaticRouteSegment);
 }
 
 function validateParameterName(name: string, source: string): void {
@@ -263,28 +251,40 @@ function compileSegments(
 
 function patternFor(segments: readonly RouteSegment[]): string {
   if (segments.length === 0) return "/";
-  return "/" + segments.map((segment) => {
-    if (segment.type === "static") return segment.value;
-    if (segment.type === "param") return `:${segment.name}`;
-    return `*${segment.name}`;
-  }).join("/");
+  return (
+    "/" +
+    segments
+      .map((segment) => {
+        if (segment.type === "static") return segment.value;
+        if (segment.type === "param") return `:${segment.name}`;
+        return `*${segment.name}`;
+      })
+      .join("/")
+  );
 }
 
 function structureFor(segments: readonly RouteSegment[]): string {
   if (segments.length === 0) return "/";
-  return "/" + segments.map((segment) => {
-    if (segment.type === "static") return `s:${segment.value}`;
-    if (segment.type === "param") return "p:";
-    return "c:";
-  }).join("/");
+  return (
+    "/" +
+    segments
+      .map((segment) => {
+        if (segment.type === "static") return `s:${segment.value}`;
+        if (segment.type === "param") return "p:";
+        return "c:";
+      })
+      .join("/")
+  );
 }
 
 function canonicalKeyFor(segments: readonly RouteSegment[]): string {
-  return JSON.stringify(segments.map((segment) => {
-    if (segment.type === "static") return ["static", segment.value];
-    if (segment.type === "param") return ["param", segment.name];
-    return ["catchall", segment.name];
-  }));
+  return JSON.stringify(
+    segments.map((segment) => {
+      if (segment.type === "static") return ["static", segment.value];
+      if (segment.type === "param") return ["param", segment.name];
+      return ["catchall", segment.name];
+    }),
+  );
 }
 
 function isUnsupportedUppercaseExport(name: string): boolean {
@@ -392,12 +392,7 @@ function freezeTrie<State>(
   const staticChildren = [...mutable.staticChildren.entries()]
     .sort(([left], [right]) => compareStrings(left, right))
     .map(([segment, node]) =>
-      Object.freeze(
-        [
-          segment,
-          freezeTrie(node),
-        ] as const,
-      )
+      Object.freeze([segment, freezeTrie(node)] as const),
     );
 
   return Object.freeze({
@@ -444,12 +439,10 @@ function findMatch<State>(
   pathSegments: readonly string[],
   index: number,
   captures: readonly RouteParamValue[],
-):
-  | Readonly<{
-    captures: readonly RouteParamValue[];
-    entry: InternalRoute<State>;
-  }>
-  | null {
+): Readonly<{
+  captures: readonly RouteParamValue[];
+  entry: InternalRoute<State>;
+}> | null {
   if (index === pathSegments.length) {
     return node.entry ? { captures, entry: node.entry } : null;
   }
@@ -462,12 +455,10 @@ function findMatch<State>(
   }
 
   if (node.paramChild) {
-    const match = findMatch(
-      node.paramChild,
-      pathSegments,
-      index + 1,
-      [...captures, value],
-    );
+    const match = findMatch(node.paramChild, pathSegments, index + 1, [
+      ...captures,
+      value,
+    ]);
     if (match) return match;
   }
 
@@ -499,14 +490,11 @@ export async function createFileRouter<State = unknown>(
   for (const module of discovered) {
     namespaces.set(
       module.absoluteUrl,
-      await import(module.absoluteUrl) as ModuleNamespace,
+      (await import(module.absoluteUrl)) as ModuleNamespace,
     );
   }
 
-  const middlewareByDirectory = new Map<
-    string,
-    CompiledMiddleware<State>
-  >();
+  const middlewareByDirectory = new Map<string, CompiledMiddleware<State>>();
   for (const module of discovered) {
     if (module.kind !== "middleware") continue;
     middlewareByDirectory.set(
@@ -548,14 +536,12 @@ export async function createFileRouter<State = unknown>(
       namespaces.get(module.absoluteUrl)!,
       module.absoluteUrl,
     );
-    const route = Object.freeze(
-      {
-        pattern,
-        fileUrl: module.absoluteUrl,
-        segments,
-        methods,
-      } satisfies CompiledRoute<State>,
-    );
+    const route = Object.freeze({
+      pattern,
+      fileUrl: module.absoluteUrl,
+      segments,
+      methods,
+    } satisfies CompiledRoute<State>);
 
     const middlewares: CompiledMiddleware<State>[] = [];
     for (let depth = 0; depth <= module.directoryParts.length; depth++) {
@@ -565,10 +551,12 @@ export async function createFileRouter<State = unknown>(
       if (middleware) middlewares.push(middleware);
     }
 
-    routes.push(Object.freeze({
-      route,
-      middlewares: Object.freeze(middlewares),
-    }));
+    routes.push(
+      Object.freeze({
+        route,
+        middlewares: Object.freeze(middlewares),
+      }),
+    );
   }
 
   routes.sort((left, right) => {

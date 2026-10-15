@@ -44,12 +44,15 @@ export function createDrainController(
     ) {
       record.disconnectReason ??= "shutdown";
       try {
-        await record.transport.sendControl({
-          protocol: WORKER_PROTOCOL,
-          type: "shutdown",
-          connectionId: record.connectionId,
-          reason,
-        }, { signal: record.abort.signal });
+        await record.transport.sendControl(
+          {
+            protocol: WORKER_PROTOCOL,
+            type: "shutdown",
+            connectionId: record.connectionId,
+            reason,
+          },
+          { signal: record.abort.signal },
+        );
         terminalSent = true;
       } catch {
         // Failed terminal delivery falls through to authoritative cleanup.
@@ -112,14 +115,17 @@ export function createDrainController(
         // Terminal shutdown still emits its explicit protocol frame after the
         // worker misses Drain's deadline. Give that ordered send one bounded
         // grace window; closing aborts a backpressured Drain/Shutdown queue.
-        record.drainTimer = options.scheduler.schedule(() => {
-          void options.closeRecord(
-            record,
-            NORMAL_CLOSE_CODE,
-            "shutdown_timeout",
-            "shutdown_timeout",
-          );
-        }, Math.max(1, Math.min(1_000, timeoutMs)));
+        record.drainTimer = options.scheduler.schedule(
+          () => {
+            void options.closeRecord(
+              record,
+              NORMAL_CLOSE_CODE,
+              "shutdown_timeout",
+              "shutdown_timeout",
+            );
+          },
+          Math.max(1, Math.min(1_000, timeoutMs)),
+        );
         void finish(record, reason);
       } else {
         void options.closeRecord(

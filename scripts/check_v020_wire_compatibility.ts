@@ -52,20 +52,20 @@ async function roundTrip(
   }
   const completed = await handle.completed;
   if (completed.status !== "completed") {
-    throw new Error(
-      `wire compatibility work settled as ${completed.status}`,
-    );
+    throw new Error(`wire compatibility work settled as ${completed.status}`);
   }
 }
 
 async function currentWorkerToOldHypervisor(): Promise<void> {
   const repository = oldSupervisorApi.createInMemoryWorkerRepository();
-  await repository.define(oldSupervisorApi.createWorkerDefinition({
-    workerId: "compat-current-worker",
-    providerId: "compat",
-    workloads: ["compat.echo"],
-    capacity: 1,
-  }));
+  await repository.define(
+    oldSupervisorApi.createWorkerDefinition({
+      workerId: "compat-current-worker",
+      providerId: "compat",
+      workloads: ["compat.echo"],
+      capacity: 1,
+    }),
+  );
   const identity = (await repository.activate("compat-current-worker")).attempt
     .identity;
   const authority = oldSupervisorApi.createInMemoryRegistrationAuthority();
@@ -108,44 +108,49 @@ async function currentWorkerToOldHypervisor(): Promise<void> {
 
 async function oldWorkerToCurrentHypervisor(): Promise<void> {
   const repository = oldSupervisorApi.createInMemoryWorkerRepository();
-  await repository.define(oldSupervisorApi.createWorkerDefinition({
-    workerId: "compat-v020-worker",
-    providerId: "compat",
-    workloads: ["compat.echo"],
-    capacity: 1,
-  }));
+  await repository.define(
+    oldSupervisorApi.createWorkerDefinition({
+      workerId: "compat-v020-worker",
+      providerId: "compat",
+      workloads: ["compat.echo"],
+      capacity: 1,
+    }),
+  );
   const identity = (await repository.activate("compat-v020-worker")).attempt
     .identity;
   const authority = oldSupervisorApi.createInMemoryRegistrationAuthority();
   const registration = await authority.issueRegistration(identity);
   const path = "/_oxian/compat/v020";
-  const hypervisor = createCurrentHypervisor({
-    transports: [{ type: "websocket", config: { path } }],
-    admit: async (context) => {
-      await repository.assertCurrent(context.identity);
-      const definition = await repository.getDefinition(
-        context.identity.workerId,
-      );
-      if (definition === undefined) throw new Error("definition missing");
-      const exchange = await authority.exchange({
-        identity: context.identity,
-        credential: context.credential,
-        handshakeId: context.handshakeId,
-      });
-      return {
-        definition,
-        sessionGeneration: exchange.sessionGeneration,
-        authenticatedWith: exchange.authenticatedWith,
-        resume: {
-          credential: exchange.resume.credential,
-          expiresAtMs: exchange.resume.expiresAtMs,
-        },
-        bootstrap: {},
-      };
+  const hypervisor = createCurrentHypervisor(
+    {
+      transports: [{ type: "websocket", config: { path } }],
+      admit: async (context) => {
+        await repository.assertCurrent(context.identity);
+        const definition = await repository.getDefinition(
+          context.identity.workerId,
+        );
+        if (definition === undefined) throw new Error("definition missing");
+        const exchange = await authority.exchange({
+          identity: context.identity,
+          credential: context.credential,
+          handshakeId: context.handshakeId,
+        });
+        return {
+          definition,
+          sessionGeneration: exchange.sessionGeneration,
+          authenticatedWith: exchange.authenticatedWith,
+          resume: {
+            credential: exchange.resume.credential,
+            expiresAtMs: exchange.resume.expiresAtMs,
+          },
+          bootstrap: {},
+        };
+      },
     },
-  }, {
-    onWorkAccepted: () => Promise.resolve(),
-  });
+    {
+      onWorkAccepted: () => Promise.resolve(),
+    },
+  );
   const listener = serveCurrent({
     hypervisor,
     hostname: "127.0.0.1",

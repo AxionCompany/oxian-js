@@ -1,11 +1,10 @@
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
 import { join } from "@std/path";
 import { runCli } from "../../src/cli/index.ts";
 
-const APP_MODULE_URL = new URL(
-  "../../src/app/index.ts",
-  import.meta.url,
-).href;
+const APP_MODULE_URL = new URL("../../src/app/index.ts", import.meta.url).href;
 
 function captureIo(): Readonly<{
   stdout: string[];
@@ -27,11 +26,11 @@ function captureIo(): Readonly<{
   });
 }
 
-Deno.test("init writes the minimal v0.20 project and never overwrites implicitly", async () => {
+test("init writes the minimal v0.20 project and never overwrites implicitly", async () => {
   const root = await Deno.makeTempDir();
   try {
     const capture = captureIo();
-    assertEquals(
+    assert.deepStrictEqual(
       await runCli(["init", "--root", root], { io: capture.io }),
       0,
     );
@@ -39,38 +38,40 @@ Deno.test("init writes the minimal v0.20 project and never overwrites implicitly
     const routePath = join(root, "routes", "index.ts");
     const config = await Deno.readTextFile(configPath);
     const route = await Deno.readTextFile(routePath);
-    assert(config.includes('routesRoot: "./routes"'));
-    assert(config.includes('workerTransport: "in-process"'));
-    assert(config.includes("workerCapacity: 32"));
-    assert(config.includes('basePath: "/"'));
-    assert(config.includes("port: 8000"));
-    assert(route.includes("export function GET"));
+    assert.ok(config.includes('routesRoot: "./routes"'));
+    assert.ok(config.includes('workerTransport: "in-process"'));
+    assert.ok(config.includes("workerCapacity: 32"));
+    assert.ok(config.includes('basePath: "/"'));
+    assert.ok(config.includes("port: 8000"));
+    assert.ok(route.includes("export function GET"));
 
     await Deno.writeTextFile(routePath, "// user-owned route\n");
     capture.stderr.length = 0;
-    assertEquals(
+    assert.deepStrictEqual(
       await runCli(["init", "--root", root], { io: capture.io }),
       1,
     );
-    assert(capture.stderr[0].includes("refusing to overwrite"));
-    assertEquals(
+    assert.ok(capture.stderr[0].includes("refusing to overwrite"));
+    assert.deepStrictEqual(
       await Deno.readTextFile(routePath),
       "// user-owned route\n",
     );
 
-    assertEquals(
+    assert.deepStrictEqual(
       await runCli(["init", "--root", root, "--force"], {
         io: capture.io,
       }),
       0,
     );
-    assert((await Deno.readTextFile(routePath)).includes("Hello from Oxian"));
+    assert.ok(
+      (await Deno.readTextFile(routePath)).includes("Hello from Oxian"),
+    );
   } finally {
     await Deno.remove(root, { recursive: true });
   }
 });
 
-Deno.test("check validates the factory module without invoking it", async () => {
+test("check validates the factory module without invoking it", async () => {
   const root = await Deno.makeTempDir();
   const routesRoot = join(root, "routes");
   const setupMarker = join(root, "setup.txt");
@@ -111,13 +112,13 @@ export default defineApplicationFactory(({ router, basePath, signal }) =>
     );
 
     const capture = captureIo();
-    assertEquals(
+    assert.deepStrictEqual(
       await runCli(["check", "--config", configPath], {
         io: capture.io,
       }),
       0,
     );
-    assertEquals(capture.stdout, [
+    assert.deepStrictEqual(capture.stdout, [
       "configuration, application entry, and 1 route are valid",
     ]);
     await assertRejects(
@@ -139,17 +140,13 @@ export default defineApplicationFactory(({ router, basePath, signal }) =>
 };\n`,
     );
     const invalidCapture = captureIo();
-    assertEquals(
+    assert.deepStrictEqual(
       await runCli(["check", "--config", join(root, "invalid.config.ts")], {
         io: invalidCapture.io,
       }),
       1,
     );
-    assert(
-      invalidCapture.stderr[0].includes(
-        'found extra export "extra"',
-      ),
-    );
+    assert.ok(invalidCapture.stderr[0].includes('found extra export "extra"'));
 
     await Deno.writeTextFile(
       join(root, "non-function-application.ts"),
@@ -165,17 +162,16 @@ export default defineApplicationFactory(({ router, basePath, signal }) =>
 };\n`,
     );
     const nonFunctionCapture = captureIo();
-    assertEquals(
-      await runCli([
-        "check",
-        "--config",
-        join(root, "non-function.config.ts"),
-      ], {
-        io: nonFunctionCapture.io,
-      }),
+    assert.deepStrictEqual(
+      await runCli(
+        ["check", "--config", join(root, "non-function.config.ts")],
+        {
+          io: nonFunctionCapture.io,
+        },
+      ),
       1,
     );
-    assert(
+    assert.ok(
       nonFunctionCapture.stderr[0].includes(
         "application factory must be a function",
       ),
@@ -191,13 +187,13 @@ export default defineApplicationFactory(({ router, basePath, signal }) =>
 };\n`,
     );
     const missingCapture = captureIo();
-    assertEquals(
+    assert.deepStrictEqual(
       await runCli(["check", "--config", join(root, "missing.config.ts")], {
         io: missingCapture.io,
       }),
       1,
     );
-    assert(
+    assert.ok(
       missingCapture.stderr[0].toLowerCase().includes("module not found"),
     );
   } finally {
@@ -205,37 +201,36 @@ export default defineApplicationFactory(({ router, basePath, signal }) =>
   }
 });
 
-Deno.test("routes and check load strict config and compile the same frozen router", async () => {
+test("routes and check load strict config and compile the same frozen router", async () => {
   const root = await Deno.makeTempDir();
   try {
     const initCapture = captureIo();
-    assertEquals(
+    assert.deepStrictEqual(
       await runCli(["init", "--root", root], { io: initCapture.io }),
       0,
     );
     const configPath = join(root, "oxian.config.ts");
 
     const routesCapture = captureIo();
-    assertEquals(
+    assert.deepStrictEqual(
       await runCli(["routes", "--config", configPath], {
         io: routesCapture.io,
       }),
       0,
     );
-    assert(routesCapture.stdout[0].includes("GET"));
-    assert(routesCapture.stdout[0].includes("/"));
+    assert.ok(routesCapture.stdout[0].includes("GET"));
+    assert.ok(routesCapture.stdout[0].includes("/"));
 
     const checkCapture = captureIo();
-    assertEquals(
+    assert.deepStrictEqual(
       await runCli(["check", "--config", configPath], {
         io: checkCapture.io,
       }),
       0,
     );
-    assertEquals(
-      checkCapture.stdout,
-      ["configuration, application entry, and 1 route are valid"],
-    );
+    assert.deepStrictEqual(checkCapture.stdout, [
+      "configuration, application entry, and 1 route are valid",
+    ]);
 
     const invalidRoot = join(root, "invalid");
     await Deno.mkdir(invalidRoot);
@@ -245,13 +240,13 @@ Deno.test("routes and check load strict config and compile the same frozen route
       'export default { unknown: true, application: { routesRoot: "../routes" } };\n',
     );
     const invalidCapture = captureIo();
-    assertEquals(
+    assert.deepStrictEqual(
       await runCli(["check", "--config", invalidConfig], {
         io: invalidCapture.io,
       }),
       1,
     );
-    assert(invalidCapture.stderr[0].includes('unknown key "unknown"'));
+    assert.ok(invalidCapture.stderr[0].includes('unknown key "unknown"'));
   } finally {
     await Deno.remove(root, { recursive: true });
   }

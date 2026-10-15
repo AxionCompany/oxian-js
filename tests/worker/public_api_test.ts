@@ -1,4 +1,6 @@
-import { assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects, assertThrows } from "../support/assert.ts";
 import {
   createHypervisor,
   createWorker,
@@ -33,11 +35,11 @@ function deferred<T = void>(): Readonly<{
   return Object.freeze({ promise, resolve });
 }
 
-Deno.test("public capabilities expose promises and no run choreography", () => {
-  assertEquals(workerContract, [true, true, true, true, true]);
+test("public capabilities expose promises and no run choreography", () => {
+  assert.deepStrictEqual(workerContract, [true, true, true, true, true]);
 });
 
-Deno.test("one declaration changes only transport ownership", async () => {
+test("one declaration changes only transport ownership", async () => {
   const transport = {
     type: "in-process",
     config: { topic: `public-api-${crypto.randomUUID()}` },
@@ -82,22 +84,20 @@ Deno.test("one declaration changes only transport ownership", async () => {
     workload: "echo",
     body: new TextEncoder().encode("canonical"),
   });
-  assertEquals(await new Response(handle.output).text(), "canonical");
-  assertEquals((await handle.completed).status, "completed");
+  assert.deepStrictEqual(await new Response(handle.output).text(), "canonical");
+  assert.deepStrictEqual((await handle.completed).status, "completed");
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  for (
-    const [before, after] of [
-      ["worker.activate", "worker.register"],
-      ["worker.register", "host.connect"],
-      ["host.connect", "host.admit"],
-      ["host.admit", "host.handshake"],
-      ["host.handshake", "worker.handshake"],
-      ["worker.handshake", "host.ready"],
-      ["host.ready", "worker.ready"],
-    ] as const
-  ) {
-    assertEquals(
+  for (const [before, after] of [
+    ["worker.activate", "worker.register"],
+    ["worker.register", "host.connect"],
+    ["host.connect", "host.admit"],
+    ["host.admit", "host.handshake"],
+    ["host.handshake", "worker.handshake"],
+    ["worker.handshake", "host.ready"],
+    ["host.ready", "worker.ready"],
+  ] as const) {
+    assert.deepStrictEqual(
       order.indexOf(before) < order.indexOf(after),
       true,
       `${before} must precede ${after}`,
@@ -108,16 +108,16 @@ Deno.test("one declaration changes only transport ownership", async () => {
   const hostAccepted = order.indexOf("host.work_accepted");
   const hostStart = order.indexOf("host.start");
   const workerStart = order.indexOf("worker.start");
-  assertEquals(assigned < workerAccepted, true);
-  assertEquals(workerAccepted < hostAccepted, true);
-  assertEquals(hostAccepted < hostStart, true);
-  assertEquals(hostStart < workerStart, true);
+  assert.deepStrictEqual(assigned < workerAccepted, true);
+  assert.deepStrictEqual(workerAccepted < hostAccepted, true);
+  assert.deepStrictEqual(hostAccepted < hostStart, true);
+  assert.deepStrictEqual(hostStart < workerStart, true);
 
   await worker.stop();
   await hypervisor.shutdown();
 });
 
-Deno.test("Worker onReady gates public readiness and queued handler execution", async () => {
+test("Worker onReady gates public readiness and queued handler execution", async () => {
   const transport = {
     type: "in-process",
     config: { topic: `ready-gate-${crypto.randomUUID()}` },
@@ -126,33 +126,39 @@ Deno.test("Worker onReady gates public readiness and queued handler execution", 
   const release = deferred();
   let invoked = false;
   const hypervisor = createHypervisor({ transports: [transport] });
-  const worker = createWorker({
-    id: "ready-gated-worker",
-    transport,
-    workloads: {
-      task: () => {
-        invoked = true;
-        return new TextEncoder().encode("complete");
+  const worker = createWorker(
+    {
+      id: "ready-gated-worker",
+      transport,
+      workloads: {
+        task: () => {
+          invoked = true;
+          return new TextEncoder().encode("complete");
+        },
       },
     },
-  }, {
-    onReady() {
-      entered.resolve();
-      return release.promise;
+    {
+      onReady() {
+        entered.resolve();
+        return release.promise;
+      },
     },
-  });
+  );
 
   try {
     await entered.promise;
     const handle = await hypervisor.dispatch({ workload: "task" });
     await Promise.resolve();
-    assertEquals(invoked, false);
+    assert.deepStrictEqual(invoked, false);
 
     release.resolve();
     await worker.ready;
-    assertEquals(await new Response(handle.output).text(), "complete");
-    assertEquals((await handle.completed).status, "completed");
-    assertEquals(invoked, true);
+    assert.deepStrictEqual(
+      await new Response(handle.output).text(),
+      "complete",
+    );
+    assert.deepStrictEqual((await handle.completed).status, "completed");
+    assert.deepStrictEqual(invoked, true);
   } finally {
     release.resolve();
     await worker.stop();
@@ -160,16 +166,19 @@ Deno.test("Worker onReady gates public readiness and queued handler execution", 
   }
 });
 
-Deno.test("completion observer failure cannot rewrite work or close its session", async () => {
+test("completion observer failure cannot rewrite work or close its session", async () => {
   const transport = {
     type: "in-process",
     config: { topic: `complete-observer-${crypto.randomUUID()}` },
   } as const;
-  const hypervisor = createHypervisor({ transports: [transport] }, {
-    onComplete() {
-      throw new Error("observer unavailable");
+  const hypervisor = createHypervisor(
+    { transports: [transport] },
+    {
+      onComplete() {
+        throw new Error("observer unavailable");
+      },
     },
-  });
+  );
   const worker = createWorker({
     id: "complete-observer-worker",
     transport,
@@ -185,37 +194,43 @@ Deno.test("completion observer failure cannot rewrite work or close its session"
         workload: "echo",
         body: new TextEncoder().encode(value),
       });
-      assertEquals(await new Response(handle.output).text(), value);
-      assertEquals((await handle.completed).status, "completed");
+      assert.deepStrictEqual(await new Response(handle.output).text(), value);
+      assert.deepStrictEqual((await handle.completed).status, "completed");
     }
-    assertEquals(worker.snapshot().state, "ready");
+    assert.deepStrictEqual(worker.snapshot().state, "ready");
   } finally {
     await worker.stop();
     await hypervisor.shutdown();
   }
 });
 
-Deno.test("Hypervisor onWorkAssigned fails before Open and releases capacity", async () => {
+test("Hypervisor onWorkAssigned fails before Open and releases capacity", async () => {
   const transport = {
     type: "in-process",
     config: { topic: `assignment-gate-${crypto.randomUUID()}` },
   } as const;
   let accepted = false;
   let invoked = false;
-  const hypervisor = createHypervisor({ transports: [transport] }, {
-    onWorkAssigned() {
-      throw new Error("assignment store unavailable");
+  const hypervisor = createHypervisor(
+    { transports: [transport] },
+    {
+      onWorkAssigned() {
+        throw new Error("assignment store unavailable");
+      },
     },
-  });
-  const worker = createWorker({
-    id: "assignment-gated-worker",
-    transport,
-    workloads: {
-      task: () => void (invoked = true),
+  );
+  const worker = createWorker(
+    {
+      id: "assignment-gated-worker",
+      transport,
+      workloads: {
+        task: () => void (invoked = true),
+      },
     },
-  }, {
-    onWorkAccepted: () => void (accepted = true),
-  });
+    {
+      onWorkAccepted: () => void (accepted = true),
+    },
+  );
 
   try {
     await worker.ready;
@@ -224,9 +239,9 @@ Deno.test("Hypervisor onWorkAssigned fails before Open and releases capacity", a
       Error,
       "assignment store unavailable",
     );
-    assertEquals(accepted, false);
-    assertEquals(invoked, false);
-    assertEquals(
+    assert.deepStrictEqual(accepted, false);
+    assert.deepStrictEqual(invoked, false);
+    assert.deepStrictEqual(
       hypervisor.sessions.get("assignment-gated-worker")?.reserved,
       0,
     );
@@ -236,7 +251,7 @@ Deno.test("Hypervisor onWorkAssigned fails before Open and releases capacity", a
   }
 });
 
-Deno.test("an event-fabric topic has one active Hypervisor owner", async () => {
+test("an event-fabric topic has one active Hypervisor owner", async () => {
   const transport = {
     type: "in-process",
     config: { topic: `collision-${crypto.randomUUID()}` },
@@ -252,7 +267,7 @@ Deno.test("an event-fabric topic has one active Hypervisor owner", async () => {
   await replacement.shutdown();
 });
 
-Deno.test("a Worker cannot connect through an unbound ambient topic", async () => {
+test("a Worker cannot connect through an unbound ambient topic", async () => {
   const worker = createWorker({
     id: "unbound-worker",
     transport: {

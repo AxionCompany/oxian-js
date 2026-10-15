@@ -25,8 +25,9 @@ export function normalizeHandlerResult(
   };
   const keys = Reflect.ownKeys(record);
   if (
-    keys.some((key) =>
-      typeof key !== "string" || (key !== "metadata" && key !== "body")
+    keys.some(
+      (key) =>
+        typeof key !== "string" || (key !== "metadata" && key !== "body"),
     )
   ) {
     throw new TypeError("workload result contains an unsupported field");
@@ -49,9 +50,7 @@ export function normalizeHandlerResult(
   };
 }
 
-export function bodyAsStream(
-  body: WorkerBody,
-): ReadableStream<Uint8Array> {
+export function bodyAsStream(body: WorkerBody): ReadableStream<Uint8Array> {
   if (body instanceof ReadableStream) return body;
   return new ReadableStream<Uint8Array>({
     start(controller) {

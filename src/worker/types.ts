@@ -21,9 +21,9 @@ export type WorkerWorkResult =
   | void
   | WorkerBody
   | Readonly<{
-    metadata?: JsonObject;
-    body?: WorkerBody | null;
-  }>;
+      metadata?: JsonObject;
+      body?: WorkerBody | null;
+    }>;
 
 export type WorkerWorkContext = Readonly<{
   streamId: string;
@@ -123,16 +123,16 @@ export type WorkerSnapshot = Readonly<{
 
 export type WorkerResult =
   | Readonly<{
-    reason: "shutdown" | "stopped";
-  }>
+      reason: "shutdown" | "stopped";
+    }>
   | Readonly<{
-    reason: "reenrollment_required";
-    error: unknown;
-  }>
+      reason: "reenrollment_required";
+      error: unknown;
+    }>
   | Readonly<{
-    reason: "reconnect_exhausted";
-    error: unknown;
-  }>;
+      reason: "reconnect_exhausted";
+      error: unknown;
+    }>;
 
 export type WorkerWebSocketLimits = Readonly<{
   maxInboundMessages?: number;
@@ -161,9 +161,8 @@ type WorkerBaseOptions = Readonly<{
   signal?: AbortSignal;
 }>;
 
-export type WorkerOptions =
-  & WorkerBaseOptions
-  & Readonly<{
+export type WorkerOptions = WorkerBaseOptions &
+  Readonly<{
     id: string;
     transport: WorkerTransport;
     activate?: WorkerActivate;
@@ -218,9 +217,8 @@ export type WorkerErrorCode =
   | "reconnect_exhausted"
   | "worker_stopped";
 
-export type WorkerError =
-  & Error
-  & Readonly<{
+export type WorkerError = Error &
+  Readonly<{
     code: WorkerErrorCode;
     workerError: true;
     cause?: unknown;

@@ -1,4 +1,6 @@
-import { assertEquals, assertRejects, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects, assertThrows } from "../support/assert.ts";
 import {
   createProtocolErrorFrame,
   createReadyAckFrame,
@@ -40,7 +42,7 @@ const IDENTITY = Object.freeze({
   epoch: 1,
 });
 
-Deno.test("worker handshake persists, bootstraps, then advertises Ready metadata", async () => {
+test("worker handshake persists, bootstraps, then advertises Ready metadata", async () => {
   const peer = await startTestPeer();
   const persistGate = deferred();
   const prepareGate = deferred();
@@ -63,8 +65,8 @@ Deno.test("worker handshake persists, bootstraps, then advertises Ready metadata
     },
     beforeReady: async ({ bootstrap, reconnecting }) => {
       events.push("prepare");
-      assertEquals(bootstrap, { revision: "sandbox-r1" });
-      assertEquals(reconnecting, false);
+      assert.deepStrictEqual(bootstrap, { revision: "sandbox-r1" });
+      assert.deepStrictEqual(reconnecting, false);
       prepareEntered.resolve();
       await prepareGate.promise;
       return { initializedRevision: "sandbox-r1" };
@@ -76,7 +78,7 @@ Deno.test("worker handshake persists, bootstraps, then advertises Ready metadata
     const connection = await peer.nextConnection();
     const hello = (await nextControl(connection, "hello")).acceptance
       .frame as HelloFrame;
-    assertEquals(hello.handshakeId, "handshake-registration");
+    assert.deepStrictEqual(hello.handshakeId, "handshake-registration");
     const welcome = createWelcomeFrame({
       connectionId: "connection-1",
       heartbeatIntervalMs: 1_000,
@@ -88,37 +90,43 @@ Deno.test("worker handshake persists, bootstraps, then advertises Ready metadata
     await connection.transport.sendControl(welcome);
 
     await new Promise((resolve) => setTimeout(resolve, 25));
-    assertEquals(client.snapshot().state, "handshaking");
-    assertEquals(events, ["persist"]);
+    assert.deepStrictEqual(client.snapshot().state, "handshaking");
+    assert.deepStrictEqual(events, ["persist"]);
 
     persistGate.resolve();
     await withTimeout(prepareEntered.promise);
     await new Promise((resolve) => setTimeout(resolve, 25));
-    assertEquals(client.snapshot().state, "handshaking");
+    assert.deepStrictEqual(client.snapshot().state, "handshaking");
 
     prepareGate.resolve();
     const ready = (await nextControl(connection, "ready")).acceptance
       .frame as ReadyFrame;
-    assertEquals(ready.metadata, { initializedRevision: "sandbox-r1" });
-    assertEquals(events, ["persist", "prepare"]);
-    assertEquals(client.snapshot().state, "handshaking");
-    await connection.transport.sendControl(createReadyAckFrame({
-      connectionId: welcome.connectionId,
-    }));
-    assertEquals((await withTimeout(client.ready)).state, "ready");
+    assert.deepStrictEqual(ready.metadata, {
+      initializedRevision: "sandbox-r1",
+    });
+    assert.deepStrictEqual(events, ["persist", "prepare"]);
+    assert.deepStrictEqual(client.snapshot().state, "handshaking");
+    await connection.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: welcome.connectionId,
+      }),
+    );
+    assert.deepStrictEqual((await withTimeout(client.ready)).state, "ready");
 
-    await connection.transport.sendControl(createShutdownFrame({
-      connectionId: welcome.connectionId,
-      reason: "test_complete",
-    }));
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    await connection.transport.sendControl(
+      createShutdownFrame({
+        connectionId: welcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("worker delegates provider authentication to its socket factory", async () => {
+test("worker delegates provider authentication to its socket factory", async () => {
   const peer = await startTestPeer();
   let factoryCalls = 0;
   const client = createWorker({
@@ -128,9 +136,9 @@ Deno.test("worker delegates provider authentication to its socket factory", asyn
       allowInsecureLoopback: true,
       socket(context) {
         factoryCalls++;
-        assertEquals(context.url.href, peer.url);
-        assertEquals(context.protocol, WORKER_PROTOCOL);
-        assertEquals(context.signal.aborted, false);
+        assert.deepStrictEqual(context.url.href, peer.url);
+        assert.deepStrictEqual(context.protocol, WORKER_PROTOCOL);
+        assert.deepStrictEqual(context.signal.aborted, false);
         return new WebSocket(context.url, context.protocol);
       },
     },
@@ -154,22 +162,26 @@ Deno.test("worker delegates provider authentication to its socket factory", asyn
     });
     await connection.transport.sendControl(welcome);
     await nextControl(connection, "ready");
-    await connection.transport.sendControl(createReadyAckFrame({
-      connectionId: welcome.connectionId,
-    }));
-    assertEquals(factoryCalls, 1);
-    await connection.transport.sendControl(createShutdownFrame({
-      connectionId: welcome.connectionId,
-      reason: "test_complete",
-    }));
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    await connection.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: welcome.connectionId,
+      }),
+    );
+    assert.deepStrictEqual(factoryCalls, 1);
+    await connection.transport.sendControl(
+      createShutdownFrame({
+        connectionId: welcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("lost Ready acknowledgement reconnects without reporting a false ready state", async () => {
+test("lost Ready acknowledgement reconnects without reporting a false ready state", async () => {
   const peer = await startTestPeer();
   const client = createWorker({
     transport: {
@@ -189,15 +201,17 @@ Deno.test("lost Ready acknowledgement reconnects without reporting a false ready
   try {
     const first = await peer.nextConnection();
     await nextControl(first, "hello");
-    await first.transport.sendControl(createWelcomeFrame({
-      connectionId: "connection-ready-ack-lost",
-      heartbeatIntervalMs: 1_000,
-      leaseTimeoutMs: 5_000,
-      resumeCapability: "resume-ready-ack-lost",
-      resumeExpiresAtMs: Date.now() + 600_000,
-    }));
+    await first.transport.sendControl(
+      createWelcomeFrame({
+        connectionId: "connection-ready-ack-lost",
+        heartbeatIntervalMs: 1_000,
+        leaseTimeoutMs: 5_000,
+        resumeCapability: "resume-ready-ack-lost",
+        resumeExpiresAtMs: Date.now() + 600_000,
+      }),
+    );
     await nextControl(first, "ready");
-    assertEquals(client.snapshot().state, "handshaking");
+    assert.deepStrictEqual(client.snapshot().state, "handshaking");
     await withTimeout(
       first.transport.closed,
       1_000,
@@ -215,24 +229,28 @@ Deno.test("lost Ready acknowledgement reconnects without reporting a false ready
     });
     await second.transport.sendControl(welcome);
     await nextControl(second, "ready");
-    assertEquals(client.snapshot().state, "handshaking");
-    await second.transport.sendControl(createReadyAckFrame({
-      connectionId: welcome.connectionId,
-    }));
-    assertEquals((await withTimeout(client.ready)).state, "ready");
+    assert.deepStrictEqual(client.snapshot().state, "handshaking");
+    await second.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: welcome.connectionId,
+      }),
+    );
+    assert.deepStrictEqual((await withTimeout(client.ready)).state, "ready");
 
-    await second.transport.sendControl(createShutdownFrame({
-      connectionId: welcome.connectionId,
-      reason: "test_complete",
-    }));
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    await second.transport.sendControl(
+      createShutdownFrame({
+        connectionId: welcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("worker Ready initialization has an independent long-running timeout", async () => {
+test("worker Ready initialization has an independent long-running timeout", async () => {
   const peer = await startTestPeer();
   const client = createWorker({
     transport: {
@@ -267,23 +285,27 @@ Deno.test("worker Ready initialization has an independent long-running timeout",
     await connection.transport.sendControl(welcome);
     const ready = (await nextControl(connection, "ready")).acceptance
       .frame as ReadyFrame;
-    assertEquals(ready.metadata, { restored: true });
-    await connection.transport.sendControl(createReadyAckFrame({
-      connectionId: welcome.connectionId,
-    }));
+    assert.deepStrictEqual(ready.metadata, { restored: true });
+    await connection.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: welcome.connectionId,
+      }),
+    );
 
-    await connection.transport.sendControl(createShutdownFrame({
-      connectionId: welcome.connectionId,
-      reason: "test_complete",
-    }));
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    await connection.transport.sendControl(
+      createShutdownFrame({
+        connectionId: welcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("persistence failure retries the exact prior credential and handshake", async () => {
+test("persistence failure retries the exact prior credential and handshake", async () => {
   const peer = await startTestPeer();
   let persistenceAttempt = 0;
   let handshakeSequence = 0;
@@ -327,33 +349,37 @@ Deno.test("persistence failure retries the exact prior credential and handshake"
     const second = await peer.nextConnection();
     const hello2 = (await nextControl(second, "hello")).acceptance
       .frame as HelloFrame;
-    assertEquals(hello2.credential, hello1.credential);
-    assertEquals(hello2.handshakeId, hello1.handshakeId);
+    assert.deepStrictEqual(hello2.credential, hello1.credential);
+    assert.deepStrictEqual(hello2.handshakeId, hello1.handshakeId);
     await second.transport.sendControl({
       ...welcome,
       connectionId: "connection-2",
     });
     await nextControl(second, "ready");
-    await second.transport.sendControl(createReadyAckFrame({
-      connectionId: "connection-2",
-    }));
-    assertEquals(persistenceAttempt, 2);
-    assertEquals(handshakeSequence, 1);
-    assertEquals(updates[1], updates[0]);
-    assertEquals(updates[0]?.replacesHandshakeId, hello1.handshakeId);
+    await second.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: "connection-2",
+      }),
+    );
+    assert.deepStrictEqual(persistenceAttempt, 2);
+    assert.deepStrictEqual(handshakeSequence, 1);
+    assert.deepStrictEqual(updates[1], updates[0]);
+    assert.deepStrictEqual(updates[0]?.replacesHandshakeId, hello1.handshakeId);
 
-    await second.transport.sendControl(createShutdownFrame({
-      connectionId: "connection-2",
-      reason: "test_complete",
-    }));
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    await second.transport.sendControl(
+      createShutdownFrame({
+        connectionId: "connection-2",
+        reason: "test_complete",
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("revoked resume credential surfaces re-enrollment without reconnecting", async () => {
+test("revoked resume credential surfaces re-enrollment without reconnecting", async () => {
   const peer = await startTestPeer();
   const notifications: unknown[] = [];
   const client = createWorker({
@@ -380,13 +406,15 @@ Deno.test("revoked resume credential surfaces re-enrollment without reconnecting
   try {
     const connection = await peer.nextConnection();
     await nextControl(connection, "hello");
-    await connection.transport.sendControl(createProtocolErrorFrame({
-      code: "credential_invalid",
-      message: "Worker authentication failed",
-    }));
+    await connection.transport.sendControl(
+      createProtocolErrorFrame({
+        code: "credential_invalid",
+        message: "Worker authentication failed",
+      }),
+    );
     const result = await withTimeout(run);
-    assertEquals(result.reason, "reenrollment_required");
-    assertEquals(notifications.length, 1);
+    assert.deepStrictEqual(result.reason, "reenrollment_required");
+    assert.deepStrictEqual(notifications.length, 1);
     await assertRejects(() => peer.nextConnection(75));
   } finally {
     await client.stop();
@@ -394,7 +422,7 @@ Deno.test("revoked resume credential surfaces re-enrollment without reconnecting
   }
 });
 
-Deno.test("worker credentials are copied and stored resume expiry is mandatory", async () => {
+test("worker credentials are copied and stored resume expiry is mandatory", async () => {
   const peer = await startTestPeer();
   const mutableCredential = {
     kind: "registration" as const,
@@ -420,12 +448,18 @@ Deno.test("worker credentials are copied and stored resume expiry is mandatory",
     const connection = await peer.nextConnection();
     const hello = (await nextControl(connection, "hello")).acceptance
       .frame as HelloFrame;
-    assertEquals(hello.credential.capability, "original-registration");
+    assert.deepStrictEqual(
+      hello.credential.capability,
+      "original-registration",
+    );
     await connection.transport.close({
       code: 1000,
       reason: "test_complete",
     });
-    assertEquals((await withTimeout(run)).reason, "reconnect_exhausted");
+    assert.deepStrictEqual(
+      (await withTimeout(run)).reason,
+      "reconnect_exhausted",
+    );
   } finally {
     await client.stop();
     await peer.close();
@@ -519,7 +553,7 @@ Deno.test("worker credentials are copied and stored resume expiry is mandatory",
   );
 });
 
-Deno.test("an unsettled pre-ready hook blocks reconnect but not stop", async () => {
+test("an unsettled pre-ready hook blocks reconnect but not stop", async () => {
   const peer = await startTestPeer();
   const entered = deferred();
   const client = createWorker({
@@ -545,28 +579,30 @@ Deno.test("an unsettled pre-ready hook blocks reconnect but not stop", async () 
   try {
     const first = await peer.nextConnection();
     await nextControl(first, "hello");
-    await first.transport.sendControl(createWelcomeFrame({
-      connectionId: "connection-hanging",
-      heartbeatIntervalMs: 1_000,
-      leaseTimeoutMs: 5_000,
-      resumeCapability: "resume-after-hang",
-      resumeExpiresAtMs: Date.now() + 600_000,
-    }));
+    await first.transport.sendControl(
+      createWelcomeFrame({
+        connectionId: "connection-hanging",
+        heartbeatIntervalMs: 1_000,
+        leaseTimeoutMs: 5_000,
+        resumeCapability: "resume-after-hang",
+        resumeExpiresAtMs: Date.now() + 600_000,
+      }),
+    );
     await withTimeout(entered.promise);
     await nextControl(first, "protocol_error");
     await first.transport.closed;
 
     await new Promise((resolve) => setTimeout(resolve, 75));
-    assertEquals(peer.connectionCount(), 1);
+    assert.deepStrictEqual(peer.connectionCount(), 1);
     await withTimeout(client.stop("test_stop"));
-    assertEquals(await withTimeout(run), { reason: "stopped" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "stopped" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("an unsettled durable persister blocks reconnect but not stop", async () => {
+test("an unsettled durable persister blocks reconnect but not stop", async () => {
   const peer = await startTestPeer();
   const entered = deferred();
   let persistenceSignalAborted = false;
@@ -583,9 +619,13 @@ Deno.test("an unsettled durable persister blocks reconnect but not stop", async 
     reconnectDelay: () => 0,
     handshakeTimeoutMs: 50,
     persistResumeCredential: (_update, { signal }) => {
-      signal.addEventListener("abort", () => {
-        persistenceSignalAborted = true;
-      }, { once: true });
+      signal.addEventListener(
+        "abort",
+        () => {
+          persistenceSignalAborted = true;
+        },
+        { once: true },
+      );
       entered.resolve();
       return new Promise(() => undefined);
     },
@@ -595,28 +635,30 @@ Deno.test("an unsettled durable persister blocks reconnect but not stop", async 
   try {
     const first = await peer.nextConnection();
     await nextControl(first, "hello");
-    await first.transport.sendControl(createWelcomeFrame({
-      connectionId: "connection-persist-hanging",
-      heartbeatIntervalMs: 1_000,
-      leaseTimeoutMs: 5_000,
-      resumeCapability: "resume-not-persisted",
-      resumeExpiresAtMs: Date.now() + 600_000,
-    }));
+    await first.transport.sendControl(
+      createWelcomeFrame({
+        connectionId: "connection-persist-hanging",
+        heartbeatIntervalMs: 1_000,
+        leaseTimeoutMs: 5_000,
+        resumeCapability: "resume-not-persisted",
+        resumeExpiresAtMs: Date.now() + 600_000,
+      }),
+    );
     await withTimeout(entered.promise);
     await first.transport.closed;
-    assertEquals(persistenceSignalAborted, true);
+    assert.deepStrictEqual(persistenceSignalAborted, true);
 
     await new Promise((resolve) => setTimeout(resolve, 75));
-    assertEquals(peer.connectionCount(), 1);
+    assert.deepStrictEqual(peer.connectionCount(), 1);
     await withTimeout(client.stop("test_stop"));
-    assertEquals(await withTimeout(run), { reason: "stopped" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "stopped" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("late durable completion is adopted before reconnect without overlapping writes", async () => {
+test("late durable completion is adopted before reconnect without overlapping writes", async () => {
   const peer = await startTestPeer();
   const firstPersistence = deferred();
   const firstPersistenceEntered = deferred();
@@ -672,18 +714,21 @@ Deno.test("late durable completion is adopted before reconnect without overlappi
     await first.transport.closed;
 
     await new Promise((resolve) => setTimeout(resolve, 75));
-    assertEquals(peer.connectionCount(), 1);
-    assertEquals(updates.length, 1);
-    assertEquals(updates[0]?.replacesHandshakeId, firstHello.handshakeId);
+    assert.deepStrictEqual(peer.connectionCount(), 1);
+    assert.deepStrictEqual(updates.length, 1);
+    assert.deepStrictEqual(
+      updates[0]?.replacesHandshakeId,
+      firstHello.handshakeId,
+    );
 
     firstPersistence.resolve();
     const second = await peer.nextConnection();
     const secondHello = (await nextControl(second, "hello")).acceptance
       .frame as HelloFrame;
-    assertEquals(secondHello.credential, updates[0]?.credential);
-    assertEquals(secondHello.handshakeId, updates[0]?.handshakeId);
-    assertEquals(updates.length, 1);
-    assertEquals(handshakeSequence, 1);
+    assert.deepStrictEqual(secondHello.credential, updates[0]?.credential);
+    assert.deepStrictEqual(secondHello.handshakeId, updates[0]?.handshakeId);
+    assert.deepStrictEqual(updates.length, 1);
+    assert.deepStrictEqual(handshakeSequence, 1);
 
     const secondWelcome = createWelcomeFrame({
       connectionId: "connection-late-2",
@@ -694,29 +739,33 @@ Deno.test("late durable completion is adopted before reconnect without overlappi
     });
     await second.transport.sendControl(secondWelcome);
     await nextControl(second, "ready");
-    await second.transport.sendControl(createReadyAckFrame({
-      connectionId: secondWelcome.connectionId,
-    }));
-    assertEquals(updates.length, 2);
-    assertEquals(
+    await second.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: secondWelcome.connectionId,
+      }),
+    );
+    assert.deepStrictEqual(updates.length, 2);
+    assert.deepStrictEqual(
       updates[1]?.replacesHandshakeId,
       updates[0]?.handshakeId,
     );
-    assertEquals(handshakeSequence, 2);
-    assertEquals(maximumActivePersistence, 1);
+    assert.deepStrictEqual(handshakeSequence, 2);
+    assert.deepStrictEqual(maximumActivePersistence, 1);
 
-    await second.transport.sendControl(createShutdownFrame({
-      connectionId: secondWelcome.connectionId,
-      reason: "test_complete",
-    }));
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    await second.transport.sendControl(
+      createShutdownFrame({
+        connectionId: secondWelcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("late pre-ready completion serializes bootstrap across reconnects", async () => {
+test("late pre-ready completion serializes bootstrap across reconnects", async () => {
   const peer = await startTestPeer();
   const firstInitialization = deferred();
   const firstInitializationEntered = deferred();
@@ -760,20 +809,22 @@ Deno.test("late pre-ready completion serializes bootstrap across reconnects", as
   try {
     const first = await peer.nextConnection();
     await nextControl(first, "hello");
-    await first.transport.sendControl(createWelcomeFrame({
-      connectionId: "connection-initialization-1",
-      heartbeatIntervalMs: 1_000,
-      leaseTimeoutMs: 5_000,
-      resumeCapability: "resume-initialization-1",
-      resumeExpiresAtMs: Date.now() + 600_000,
-    }));
+    await first.transport.sendControl(
+      createWelcomeFrame({
+        connectionId: "connection-initialization-1",
+        heartbeatIntervalMs: 1_000,
+        leaseTimeoutMs: 5_000,
+        resumeCapability: "resume-initialization-1",
+        resumeExpiresAtMs: Date.now() + 600_000,
+      }),
+    );
     await withTimeout(firstInitializationEntered.promise);
     await nextControl(first, "protocol_error");
     await first.transport.closed;
 
     await new Promise((resolve) => setTimeout(resolve, 75));
-    assertEquals(peer.connectionCount(), 1);
-    assertEquals(initializationAttempt, 1);
+    assert.deepStrictEqual(peer.connectionCount(), 1);
+    assert.deepStrictEqual(initializationAttempt, 1);
 
     firstInitialization.resolve();
     const second = await peer.nextConnection();
@@ -788,24 +839,28 @@ Deno.test("late pre-ready completion serializes bootstrap across reconnects", as
     await second.transport.sendControl(secondWelcome);
     const ready = (await nextControl(second, "ready")).acceptance
       .frame as ReadyFrame;
-    assertEquals(ready.metadata, { initializationAttempt: 2 });
-    assertEquals(maximumActiveInitialization, 1);
-    await second.transport.sendControl(createReadyAckFrame({
-      connectionId: secondWelcome.connectionId,
-    }));
+    assert.deepStrictEqual(ready.metadata, { initializationAttempt: 2 });
+    assert.deepStrictEqual(maximumActiveInitialization, 1);
+    await second.transport.sendControl(
+      createReadyAckFrame({
+        connectionId: secondWelcome.connectionId,
+      }),
+    );
 
-    await second.transport.sendControl(createShutdownFrame({
-      connectionId: secondWelcome.connectionId,
-      reason: "test_complete",
-    }));
-    assertEquals(await withTimeout(run), { reason: "shutdown" });
+    await second.transport.sendControl(
+      createShutdownFrame({
+        connectionId: secondWelcome.connectionId,
+        reason: "test_complete",
+      }),
+    );
+    assert.deepStrictEqual(await withTimeout(run), { reason: "shutdown" });
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("state observers cannot throw, hang, or reentrantly stop the lifecycle", async () => {
+test("state observers cannot throw, hang, or reentrantly stop the lifecycle", async () => {
   const peer = await startTestPeer();
   const hungObserverEntered = deferred();
   let observerCalls = 0;
@@ -835,16 +890,16 @@ Deno.test("state observers cannot throw, hang, or reentrantly stop the lifecycle
 
   try {
     await withTimeout(hungObserverEntered.promise);
-    assertEquals(await withTimeout(run), { reason: "stopped" });
+    assert.deepStrictEqual(await withTimeout(run), { reason: "stopped" });
     await withTimeout(client.stop("test_complete"));
-    assertEquals(observerCalls, 2);
+    assert.deepStrictEqual(observerCalls, 2);
   } finally {
     await client.stop();
     await peer.close();
   }
 });
 
-Deno.test("hung re-enrollment notification fires once without gating stop", async () => {
+test("hung re-enrollment notification fires once without gating stop", async () => {
   const notificationEntered = deferred();
   let notifications = 0;
   const client = createWorker({
@@ -868,14 +923,14 @@ Deno.test("hung re-enrollment notification fires once without gating stop", asyn
   });
 
   const result = await withTimeout(client.closed);
-  assertEquals(result.reason, "reenrollment_required");
+  assert.deepStrictEqual(result.reason, "reenrollment_required");
   await withTimeout(notificationEntered.promise);
   await withTimeout(client.stop("test_complete"));
   await withTimeout(client.stop("test_complete_again"));
-  assertEquals(notifications, 1);
+  assert.deepStrictEqual(notifications, 1);
 });
 
-Deno.test("hung reconnect delay is single-flight and cannot gate stop", async () => {
+test("hung reconnect delay is single-flight and cannot gate stop", async () => {
   const peer = await startTestPeer();
   const delayEntered = deferred();
   let delayCalls = 0;
@@ -906,11 +961,11 @@ Deno.test("hung reconnect delay is single-flight and cannot gate stop", async ()
     });
     await withTimeout(delayEntered.promise);
     await new Promise((resolve) => setTimeout(resolve, 25));
-    assertEquals(delayCalls, 1);
-    assertEquals(peer.connectionCount(), 1);
+    assert.deepStrictEqual(delayCalls, 1);
+    assert.deepStrictEqual(peer.connectionCount(), 1);
     await withTimeout(client.stop("test_complete"));
-    assertEquals(await withTimeout(run), { reason: "stopped" });
-    assertEquals(delayCalls, 1);
+    assert.deepStrictEqual(await withTimeout(run), { reason: "stopped" });
+    assert.deepStrictEqual(delayCalls, 1);
   } finally {
     await client.stop();
     await peer.close();

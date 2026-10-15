@@ -19,10 +19,7 @@ export function createDeferred<T>(): Deferred<T> {
 }
 
 export function concat(chunks: readonly Uint8Array[]): Uint8Array {
-  const length = chunks.reduce(
-    (total, chunk) => total + chunk.byteLength,
-    0,
-  );
+  const length = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
   const output = new Uint8Array(length);
   let offset = 0;
   for (const chunk of chunks) {
@@ -59,16 +56,19 @@ export function streamOf(
   ...chunks: readonly Uint8Array[]
 ): ReadableStream<Uint8Array> {
   let index = 0;
-  return new ReadableStream<Uint8Array>({
-    pull(controller) {
-      const chunk = chunks[index++];
-      if (chunk === undefined) {
-        controller.close();
-      } else {
-        controller.enqueue(chunk);
-      }
+  return new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        const chunk = chunks[index++];
+        if (chunk === undefined) {
+          controller.close();
+        } else {
+          controller.enqueue(chunk);
+        }
+      },
     },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
 }
 
 export function createHandle(

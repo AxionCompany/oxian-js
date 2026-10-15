@@ -1,17 +1,13 @@
-import { assertEquals, assertRejects, assertStrictEquals } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
 import { join } from "@std/path";
 import { defineConfig } from "../../src/config/index.ts";
 import { createLocalRuntime } from "../../src/local/runtime.ts";
 
-const APP_MODULE_URL = new URL(
-  "../../src/app/index.ts",
-  import.meta.url,
-).href;
+const APP_MODULE_URL = new URL("../../src/app/index.ts", import.meta.url).href;
 
-function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new DOMException("test timed out", "TimeoutError")),
@@ -30,21 +26,13 @@ function withTimeout<T>(
   });
 }
 
-Deno.test({
-  name:
-    "start lifecycle serves real HTTP through an outbound loopback WebSocket worker",
-  permissions: {
-    net: ["127.0.0.1"],
-    read: true,
-    write: true,
-  },
-  async fn() {
-    const root = await Deno.makeTempDir();
-    const routesRoot = join(root, "routes");
-    await Deno.mkdir(routesRoot);
-    await Deno.writeTextFile(
-      join(routesRoot, "index.ts"),
-      `export function GET(request: Request): Response {
+test("start lifecycle serves real HTTP through an outbound loopback WebSocket worker", async () => {
+  const root = await Deno.makeTempDir();
+  const routesRoot = join(root, "routes");
+  await Deno.mkdir(routesRoot);
+  await Deno.writeTextFile(
+    join(routesRoot, "index.ts"),
+    `export function GET(request: Request): Response {
   const url = new URL(request.url);
   return Response.json({
     path: url.pathname,
@@ -52,144 +40,128 @@ Deno.test({
   });
 }
 `,
-    );
-    const config = defineConfig({
-      application: { routesRoot },
-      gateway: {
-        listener: { hostname: "127.0.0.1", port: 0 },
-        workerTransport: "websocket",
-        hypervisor: {
-          heartbeatIntervalMs: 20,
-          leaseTimeoutMs: 500,
-          leaseSweepIntervalMs: 10,
-          shutdownTimeoutMs: 500,
-          cancellationAckTimeoutMs: 250,
-          maxConnectionAgeMs: 60_000,
-          proactiveDrainMarginMs: 1_000,
-        },
-        edge: {
-          cors: { origins: "*" },
-        },
+  );
+  const config = defineConfig({
+    application: { routesRoot },
+    gateway: {
+      listener: { hostname: "127.0.0.1", port: 0 },
+      workerTransport: "websocket",
+      hypervisor: {
+        heartbeatIntervalMs: 20,
+        leaseTimeoutMs: 500,
+        leaseSweepIntervalMs: 10,
+        shutdownTimeoutMs: 500,
+        cancellationAckTimeoutMs: 250,
+        maxConnectionAgeMs: 60_000,
+        proactiveDrainMarginMs: 1_000,
       },
-    });
-    const lifecycle = createLocalRuntime({ config, mode: "start" });
+      edge: {
+        cors: { origins: "*" },
+      },
+    },
+  });
+  const lifecycle = createLocalRuntime({ config, mode: "start" });
 
-    try {
-      const firstStart = lifecycle.start();
-      assertStrictEquals(lifecycle.start(), firstStart);
-      const running = await firstStart;
-      assertEquals(running.workerTransport, "websocket");
-      if (running.workerTransport !== "websocket") {
-        throw new Error("expected the worker WebSocket topology");
-      }
-      if (running.workerUrl === undefined) {
-        throw new Error("expected the worker WebSocket URL");
-      }
-      assertEquals(running.workerUrl.protocol, "ws:");
-      assertEquals(running.workerUrl.hostname, "127.0.0.1");
-      assertEquals(running.application.basePath, "/");
-      assertEquals(running.application.state, undefined);
-      assertEquals(
-        running.hypervisor.sessions.get(running.identity.workerId)?.phase,
-        "ready",
-      );
-
-      const response = await fetch(
-        new URL("/", running.listenerUrl),
-        { headers: { origin: "https://client.example" } },
-      );
-      assertEquals(response.status, 200);
-      assertEquals(response.headers.get("access-control-allow-origin"), "*");
-      assertEquals(await response.json(), {
-        path: "/",
-        transport: "websocket",
-      });
-
-      await lifecycle.stop("test_complete");
-      await lifecycle.stop("test_complete_again");
-      await lifecycle.finished;
-      assertEquals(lifecycle.snapshot().state, "stopped");
-      await assertRejects(() => lifecycle.start());
-    } finally {
-      await lifecycle.stop("test_cleanup").catch(() => undefined);
-      await Deno.remove(root, { recursive: true });
+  try {
+    const firstStart = lifecycle.start();
+    assert.strictEqual(lifecycle.start(), firstStart);
+    const running = await firstStart;
+    assert.deepStrictEqual(running.workerTransport, "websocket");
+    if (running.workerTransport !== "websocket") {
+      throw new Error("expected the worker WebSocket topology");
     }
-  },
+    if (running.workerUrl === undefined) {
+      throw new Error("expected the worker WebSocket URL");
+    }
+    assert.deepStrictEqual(running.workerUrl.protocol, "ws:");
+    assert.deepStrictEqual(running.workerUrl.hostname, "127.0.0.1");
+    assert.deepStrictEqual(running.application.basePath, "/");
+    assert.deepStrictEqual(running.application.state, undefined);
+    assert.deepStrictEqual(
+      running.hypervisor.sessions.get(running.identity.workerId)?.phase,
+      "ready",
+    );
+
+    const response = await fetch(new URL("/", running.listenerUrl), {
+      headers: { origin: "https://client.example" },
+    });
+    assert.deepStrictEqual(response.status, 200);
+    assert.deepStrictEqual(
+      response.headers.get("access-control-allow-origin"),
+      "*",
+    );
+    assert.deepStrictEqual(await response.json(), {
+      path: "/",
+      transport: "websocket",
+    });
+
+    await lifecycle.stop("test_complete");
+    await lifecycle.stop("test_complete_again");
+    await lifecycle.finished;
+    assert.deepStrictEqual(lifecycle.snapshot().state, "stopped");
+    await assertRejects(() => lifecycle.start());
+  } finally {
+    await lifecycle.stop("test_cleanup").catch(() => undefined);
+    await Deno.remove(root, { recursive: true });
+  }
 });
 
-Deno.test({
-  name:
-    "local runtime binds its worker to the Hypervisor in process by default",
-  permissions: {
-    net: ["127.0.0.1"],
-    read: true,
-    write: true,
-  },
-  async fn() {
-    const root = await Deno.makeTempDir();
-    const routesRoot = join(root, "routes");
-    await Deno.mkdir(routesRoot);
-    await Deno.writeTextFile(
-      join(routesRoot, "index.ts"),
-      `export function GET(): Response {
+test("local runtime binds its worker to the Hypervisor in process by default", async () => {
+  const root = await Deno.makeTempDir();
+  const routesRoot = join(root, "routes");
+  await Deno.mkdir(routesRoot);
+  await Deno.writeTextFile(
+    join(routesRoot, "index.ts"),
+    `export function GET(): Response {
   return Response.json({ transport: "in-process" });
 }
 `,
-    );
-    const config = defineConfig({
-      application: { routesRoot },
-      gateway: {
-        listener: { hostname: "127.0.0.1", port: 0 },
-      },
-    });
-    const lifecycle = createLocalRuntime({ config });
+  );
+  const config = defineConfig({
+    application: { routesRoot },
+    gateway: {
+      listener: { hostname: "127.0.0.1", port: 0 },
+    },
+  });
+  const lifecycle = createLocalRuntime({ config });
 
-    try {
-      const running = await lifecycle.start();
-      assertEquals(running.workerTransport, "in-process");
-      if (running.workerTransport !== "in-process") {
-        throw new Error("expected the in-process worker topology");
-      }
-      assertEquals(running.workerUrl, undefined);
-      assertEquals(running.worker.snapshot().state, "ready");
-      assertEquals(
-        running.hypervisor.sessions.get(running.identity.workerId)?.phase,
-        "ready",
-      );
-      assertEquals(
-        running.hypervisor.sessions.get(running.identity.workerId)?.capacity,
-        config.gateway.workerCapacity,
-      );
-
-      const response = await fetch(new URL("/", running.listenerUrl));
-      assertEquals(response.status, 200);
-      assertEquals(await response.json(), { transport: "in-process" });
-      assertEquals(lifecycle.snapshot().workerTransport, "in-process");
-      assertEquals(lifecycle.snapshot().workerUrl, undefined);
-    } finally {
-      await lifecycle.stop("test_cleanup").catch(() => undefined);
-      await Deno.remove(root, { recursive: true });
+  try {
+    const running = await lifecycle.start();
+    assert.deepStrictEqual(running.workerTransport, "in-process");
+    if (running.workerTransport !== "in-process") {
+      throw new Error("expected the in-process worker topology");
     }
-  },
+    assert.deepStrictEqual(running.workerUrl, undefined);
+    assert.deepStrictEqual(running.worker.snapshot().state, "ready");
+    assert.deepStrictEqual(
+      running.hypervisor.sessions.get(running.identity.workerId)?.phase,
+      "ready",
+    );
+    assert.deepStrictEqual(
+      running.hypervisor.sessions.get(running.identity.workerId)?.capacity,
+      config.gateway.workerCapacity,
+    );
+
+    const response = await fetch(new URL("/", running.listenerUrl));
+    assert.deepStrictEqual(response.status, 200);
+    assert.deepStrictEqual(await response.json(), { transport: "in-process" });
+    assert.deepStrictEqual(lifecycle.snapshot().workerTransport, "in-process");
+    assert.deepStrictEqual(lifecycle.snapshot().workerUrl, undefined);
+  } finally {
+    await lifecycle.stop("test_cleanup").catch(() => undefined);
+    await Deno.remove(root, { recursive: true });
+  }
 });
 
 for (const workerTransport of ["in-process", "websocket"] as const) {
-  Deno.test({
-    name:
-      `local ${workerTransport} HTTP worker admits configured concurrency and returns 503 beyond it`,
-    permissions: {
-      net: ["127.0.0.1"],
-      read: true,
-      write: true,
-    },
-    async fn() {
-      const root = await Deno.makeTempDir();
-      const routesRoot = join(root, "routes");
-      const releaseKey = `__oxian_release_${crypto.randomUUID()}`;
-      await Deno.mkdir(routesRoot);
-      await Deno.writeTextFile(
-        join(routesRoot, "index.ts"),
-        `const held = new Set<ReadableStreamDefaultController<Uint8Array>>();
+  test(`local ${workerTransport} HTTP worker admits configured concurrency and returns 503 beyond it`, async () => {
+    const root = await Deno.makeTempDir();
+    const routesRoot = join(root, "routes");
+    const releaseKey = `__oxian_release_${crypto.randomUUID()}`;
+    await Deno.mkdir(routesRoot);
+    await Deno.writeTextFile(
+      join(routesRoot, "index.ts"),
+      `const held = new Set<ReadableStreamDefaultController<Uint8Array>>();
 Reflect.set(globalThis, ${JSON.stringify(releaseKey)}, () => {
   for (const controller of held) controller.close();
   held.clear();
@@ -207,116 +179,111 @@ export function GET(request: Request): Response {
   }));
 }
 `,
-      );
-      const config = defineConfig({
-        application: { routesRoot },
-        gateway: {
-          listener: { hostname: "127.0.0.1", port: 0 },
-          workerTransport,
-          workerCapacity: 2,
-          hypervisor: {
-            heartbeatIntervalMs: 20,
-            leaseTimeoutMs: 500,
-            leaseSweepIntervalMs: 10,
-            shutdownTimeoutMs: 500,
-            cancellationAckTimeoutMs: 250,
-            maxConnectionAgeMs: 60_000,
-            proactiveDrainMarginMs: 1_000,
-          },
+    );
+    const config = defineConfig({
+      application: { routesRoot },
+      gateway: {
+        listener: { hostname: "127.0.0.1", port: 0 },
+        workerTransport,
+        workerCapacity: 2,
+        hypervisor: {
+          heartbeatIntervalMs: 20,
+          leaseTimeoutMs: 500,
+          leaseSweepIntervalMs: 10,
+          shutdownTimeoutMs: 500,
+          cancellationAckTimeoutMs: 250,
+          maxConnectionAgeMs: 60_000,
+          proactiveDrainMarginMs: 1_000,
         },
-      });
-      const lifecycle = createLocalRuntime({ config });
+      },
+    });
+    const lifecycle = createLocalRuntime({ config });
 
-      try {
-        const running = await lifecycle.start();
-        assertEquals(
-          running.hypervisor.sessions.get(running.identity.workerId)?.capacity,
-          2,
-        );
-        const first = await withTimeout(
-          fetch(new URL("/?hold=first", running.listenerUrl)),
-          1_000,
-        );
-        const second = await withTimeout(
-          fetch(new URL("/?hold=second", running.listenerUrl)),
-          1_000,
-        );
-        assertEquals(first.status, 200);
-        assertEquals(second.status, 200);
-        assertEquals(
-          running.hypervisor.sessions.get(running.identity.workerId)?.reserved,
-          2,
-        );
+    try {
+      const running = await lifecycle.start();
+      assert.deepStrictEqual(
+        running.hypervisor.sessions.get(running.identity.workerId)?.capacity,
+        2,
+      );
+      const first = await withTimeout(
+        fetch(new URL("/?hold=first", running.listenerUrl)),
+        1_000,
+      );
+      const second = await withTimeout(
+        fetch(new URL("/?hold=second", running.listenerUrl)),
+        1_000,
+      );
+      assert.deepStrictEqual(first.status, 200);
+      assert.deepStrictEqual(second.status, 200);
+      assert.deepStrictEqual(
+        running.hypervisor.sessions.get(running.identity.workerId)?.reserved,
+        2,
+      );
 
-        const overloaded = await withTimeout(
-          fetch(new URL("/?hold=overloaded", running.listenerUrl)),
-          1_000,
-        );
-        assertEquals(overloaded.status, 503);
-        assertEquals(overloaded.headers.get("retry-after"), "1");
-        assertEquals(overloaded.headers.get("cache-control"), "no-store");
-        assertEquals(await overloaded.text(), "Service Unavailable");
+      const overloaded = await withTimeout(
+        fetch(new URL("/?hold=overloaded", running.listenerUrl)),
+        1_000,
+      );
+      assert.deepStrictEqual(overloaded.status, 503);
+      assert.deepStrictEqual(overloaded.headers.get("retry-after"), "1");
+      assert.deepStrictEqual(
+        overloaded.headers.get("cache-control"),
+        "no-store",
+      );
+      assert.deepStrictEqual(await overloaded.text(), "Service Unavailable");
 
-        const release = Reflect.get(globalThis, releaseKey);
-        if (typeof release !== "function") {
-          throw new Error("route did not publish its test release callback");
-        }
-        release();
-        assertEquals(await first.text(), "accepted");
-        assertEquals(await second.text(), "accepted");
-
-        let recovered: Response | undefined;
-        for (let attempt = 0; attempt < 50; attempt += 1) {
-          const candidate = await withTimeout(
-            fetch(new URL("/?request=recovered", running.listenerUrl)),
-            1_000,
-          );
-          if (candidate.status === 200) {
-            recovered = candidate;
-            break;
-          }
-          assertEquals(candidate.status, 503);
-          await candidate.body?.cancel("retry_capacity_probe");
-          await new Promise((resolve) => setTimeout(resolve, 5));
-        }
-        assertEquals(recovered?.status, 200);
-        assertEquals(await recovered?.text(), "completed");
-        for (let attempt = 0; attempt < 50; attempt += 1) {
-          if (
-            running.hypervisor.sessions.get(running.identity.workerId)
-              ?.reserved === 0
-          ) break;
-          await new Promise((resolve) => setTimeout(resolve, 5));
-        }
-        assertEquals(
-          running.hypervisor.sessions.get(running.identity.workerId)?.reserved,
-          0,
-        );
-      } finally {
-        Reflect.deleteProperty(globalThis, releaseKey);
-        await lifecycle.stop("test_cleanup").catch(() => undefined);
-        await Deno.remove(root, { recursive: true });
+      const release = Reflect.get(globalThis, releaseKey);
+      if (typeof release !== "function") {
+        throw new Error("route did not publish its test release callback");
       }
-    },
+      release();
+      assert.deepStrictEqual(await first.text(), "accepted");
+      assert.deepStrictEqual(await second.text(), "accepted");
+
+      let recovered: Response | undefined;
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        const candidate = await withTimeout(
+          fetch(new URL("/?request=recovered", running.listenerUrl)),
+          1_000,
+        );
+        if (candidate.status === 200) {
+          recovered = candidate;
+          break;
+        }
+        assert.deepStrictEqual(candidate.status, 503);
+        await candidate.body?.cancel("retry_capacity_probe");
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      assert.deepStrictEqual(recovered?.status, 200);
+      assert.deepStrictEqual(await recovered?.text(), "completed");
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        if (
+          running.hypervisor.sessions.get(running.identity.workerId)
+            ?.reserved === 0
+        )
+          break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      assert.deepStrictEqual(
+        running.hypervisor.sessions.get(running.identity.workerId)?.reserved,
+        0,
+      );
+    } finally {
+      Reflect.deleteProperty(globalThis, releaseKey);
+      await lifecycle.stop("test_cleanup").catch(() => undefined);
+      await Deno.remove(root, { recursive: true });
+    }
   });
 }
 
-Deno.test({
-  name:
-    "local runtime loads the explicit application factory and honors its mount",
-  permissions: {
-    net: ["127.0.0.1"],
-    read: true,
-    write: true,
-  },
-  async fn() {
-    const root = await Deno.makeTempDir();
-    const routesRoot = join(root, "routes");
-    const disposeMarker = join(root, "disposed.txt");
-    await Deno.mkdir(routesRoot);
-    await Deno.writeTextFile(
-      join(routesRoot, "index.ts"),
-      `export function GET(
+test("local runtime loads the explicit application factory and honors its mount", async () => {
+  const root = await Deno.makeTempDir();
+  const routesRoot = join(root, "routes");
+  const disposeMarker = join(root, "disposed.txt");
+  await Deno.mkdir(routesRoot);
+  await Deno.writeTextFile(
+    join(routesRoot, "index.ts"),
+    `export function GET(
   request: Request,
   context: { state: { source: string } },
 ): Response {
@@ -326,10 +293,10 @@ Deno.test({
   return new Response(context.state.source);
 }
 `,
-    );
-    await Deno.writeTextFile(
-      join(root, "application.ts"),
-      `import {
+  );
+  await Deno.writeTextFile(
+    join(root, "application.ts"),
+    `import {
   createApplication,
   defineApplicationFactory,
 } from ${JSON.stringify(APP_MODULE_URL)};
@@ -363,66 +330,67 @@ export default defineApplicationFactory((context) => {
   });
 });
 `,
-    );
-    const config = defineConfig({
-      application: {
-        routesRoot,
-        basePath: "/api",
-        factory: join(root, "application.ts"),
+  );
+  const config = defineConfig({
+    application: {
+      routesRoot,
+      basePath: "/api",
+      factory: join(root, "application.ts"),
+    },
+    gateway: {
+      listener: { hostname: "127.0.0.1", port: 0 },
+      hypervisor: {
+        heartbeatIntervalMs: 20,
+        leaseTimeoutMs: 500,
+        leaseSweepIntervalMs: 10,
+        shutdownTimeoutMs: 500,
+        cancellationAckTimeoutMs: 250,
+        maxConnectionAgeMs: 60_000,
+        proactiveDrainMarginMs: 1_000,
       },
-      gateway: {
-        listener: { hostname: "127.0.0.1", port: 0 },
-        hypervisor: {
-          heartbeatIntervalMs: 20,
-          leaseTimeoutMs: 500,
-          leaseSweepIntervalMs: 10,
-          shutdownTimeoutMs: 500,
-          cancellationAckTimeoutMs: 250,
-          maxConnectionAgeMs: 60_000,
-          proactiveDrainMarginMs: 1_000,
-        },
-      },
+    },
+  });
+  // This test exercises application-factory behavior across three requests.
+  // Fetch resolves at response headers, before the worker protocol terminal,
+  // so those requests can briefly overlap even though the calls look serial.
+  const lifecycle = createLocalRuntime({ config, capacity: 3 });
+
+  try {
+    const running = await lifecycle.start();
+    assert.deepStrictEqual(running.application.basePath, "/api");
+    assert.deepStrictEqual(running.application.state, {
+      source: "configured-factory",
     });
-    // This test exercises application-factory behavior across three requests.
-    // Fetch resolves at response headers, before the worker protocol terminal,
-    // so those requests can briefly overlap even though the calls look serial.
-    const lifecycle = createLocalRuntime({ config, capacity: 3 });
 
-    try {
-      const running = await lifecycle.start();
-      assertEquals(running.application.basePath, "/api");
-      assertEquals(running.application.state, {
-        source: "configured-factory",
-      });
+    const mounted = await fetch(new URL("/api", running.listenerUrl));
+    assert.deepStrictEqual(mounted.status, 200);
+    assert.deepStrictEqual(
+      await mounted.text(),
+      "configured-factory:middleware",
+    );
+    const outsideMount = await fetch(new URL("/apix", running.listenerUrl));
+    assert.deepStrictEqual(outsideMount.status, 404);
+    // Reading status alone leaves this request concurrent with the next one:
+    // Fetch resolves when headers arrive, while capacity is released only
+    // after the worker's response stream reaches its protocol terminal.
+    await outsideMount.arrayBuffer();
+    const failed = await fetch(new URL("/api?fail=1", running.listenerUrl));
+    assert.deepStrictEqual(failed.status, 598);
+    assert.deepStrictEqual(await failed.text(), "factory_route_failed");
 
-      const mounted = await fetch(new URL("/api", running.listenerUrl));
-      assertEquals(mounted.status, 200);
-      assertEquals(await mounted.text(), "configured-factory:middleware");
-      const outsideMount = await fetch(
-        new URL("/apix", running.listenerUrl),
-      );
-      assertEquals(outsideMount.status, 404);
-      // Reading status alone leaves this request concurrent with the next one:
-      // Fetch resolves when headers arrive, while capacity is released only
-      // after the worker's response stream reaches its protocol terminal.
-      await outsideMount.arrayBuffer();
-      const failed = await fetch(
-        new URL("/api?fail=1", running.listenerUrl),
-      );
-      assertEquals(failed.status, 598);
-      assertEquals(await failed.text(), "factory_route_failed");
-
-      await lifecycle.stop("test_complete");
-      await lifecycle.finished;
-      assertEquals(await Deno.readTextFile(disposeMarker), "factory-disposed");
-    } finally {
-      await lifecycle.stop("test_cleanup").catch(() => undefined);
-      await Deno.remove(root, { recursive: true });
-    }
-  },
+    await lifecycle.stop("test_complete");
+    await lifecycle.finished;
+    assert.deepStrictEqual(
+      await Deno.readTextFile(disposeMarker),
+      "factory-disposed",
+    );
+  } finally {
+    await lifecycle.stop("test_cleanup").catch(() => undefined);
+    await Deno.remove(root, { recursive: true });
+  }
 });
 
-Deno.test("local stop does not wait behind a route module still loading", async () => {
+test("local stop does not wait behind a route module still loading", async () => {
   const root = await Deno.makeTempDir();
   const routesRoot = join(root, "routes");
   await Deno.mkdir(routesRoot);
@@ -445,8 +413,8 @@ export function GET(): Response {
   try {
     await withTimeout(lifecycle.stop("cancel_startup"), 100);
     await lifecycle.finished;
-    assertEquals(lifecycle.snapshot().state, "stopped");
-    assertEquals(lifecycle.snapshot().listenerUrl, undefined);
+    assert.deepStrictEqual(lifecycle.snapshot().state, "stopped");
+    assert.deepStrictEqual(lifecycle.snapshot().listenerUrl, undefined);
     await assertRejects(() => withTimeout(starting, 1_000));
   } finally {
     await lifecycle.stop("test_cleanup").catch(() => undefined);
@@ -455,7 +423,7 @@ export function GET(): Response {
   }
 });
 
-Deno.test("local stop does not wait behind a factory module still loading", async () => {
+test("local stop does not wait behind a factory module still loading", async () => {
   const root = await Deno.makeTempDir();
   const routesRoot = join(root, "routes");
   const enteredPath = join(root, "factory-entered");
@@ -505,7 +473,7 @@ export default defineApplicationFactory(({ router, basePath }) =>
     }
     await withTimeout(lifecycle.stop("cancel_factory_startup"), 100);
     await lifecycle.finished;
-    assertEquals(lifecycle.snapshot().state, "stopped");
+    assert.deepStrictEqual(lifecycle.snapshot().state, "stopped");
     await assertRejects(() => withTimeout(starting, 1_000));
   } finally {
     await lifecycle.stop("test_cleanup").catch(() => undefined);
@@ -514,7 +482,7 @@ export default defineApplicationFactory(({ router, basePath }) =>
   }
 });
 
-Deno.test("local stop during the factory disposes its unclaimed application", async () => {
+test("local stop during the factory disposes its unclaimed application", async () => {
   const root = await Deno.makeTempDir();
   const routesRoot = join(root, "routes");
   const disposeMarker = join(root, "application-disposed");
@@ -580,8 +548,8 @@ export default defineApplicationFactory(({ router, basePath }) =>
       1_000,
     );
     await lifecycle.finished;
-    assertEquals(lifecycle.snapshot().state, "stopped");
-    assertEquals(await Deno.readTextFile(disposeMarker), "disposed");
+    assert.deepStrictEqual(lifecycle.snapshot().state, "stopped");
+    assert.deepStrictEqual(await Deno.readTextFile(disposeMarker), "disposed");
   } finally {
     Reflect.deleteProperty(globalThis, stopKey);
     await lifecycle.stop("test_cleanup").catch(() => undefined);

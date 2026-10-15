@@ -112,11 +112,13 @@ function assignmentMatches(
   fence: SessionFence,
   streamId: string,
 ): assignment is WorkAssignment {
-  return assignment !== undefined &&
+  return (
+    assignment !== undefined &&
     assignment.streamId === streamId &&
     assignment.fence.connectionId === fence.connectionId &&
     assignment.fence.sessionGeneration === fence.sessionGeneration &&
-    sameIdentity(assignment.fence.identity, fence.identity);
+    sameIdentity(assignment.fence.identity, fence.identity)
+  );
 }
 
 function withDispatch(
@@ -144,9 +146,7 @@ function withDispatch(
 export function createWorkDispatcher(
   options: Readonly<{
     sessions: SessionRegistry;
-    commitAcceptedWork(
-      commit: AcceptanceCommit,
-    ): Promise<void>;
+    commitAcceptedWork(commit: AcceptanceCommit): Promise<void>;
     clock?: () => number;
     createWorkStreamId?: () => string;
   }>,
@@ -202,16 +202,18 @@ export function createWorkDispatcher(
       streamId: expectStreamId(createWorkStreamId()),
     });
     heldReservations.add(dispatch.operationId);
-    return store(withDispatch(dispatch, {
-      status: "offered",
-      deliveryCount: dispatch.deliveryCount + 1,
-      assignment,
-      updatedAtMs: now(),
-      claimedAtMs: undefined,
-      committedAtMs: undefined,
-      cancellation: undefined,
-      terminal: undefined,
-    }));
+    return store(
+      withDispatch(dispatch, {
+        status: "offered",
+        deliveryCount: dispatch.deliveryCount + 1,
+        assignment,
+        updatedAtMs: now(),
+        claimedAtMs: undefined,
+        committedAtMs: undefined,
+        cancellation: undefined,
+        terminal: undefined,
+      }),
+    );
   };
 
   const releaseReservation = (
@@ -230,15 +232,13 @@ export function createWorkDispatcher(
       "operationId",
     );
     if (dispatches.has(operationId)) {
-      return fail(
-        "already_exists",
-        `operation ${operationId} already exists`,
-      );
+      return fail("already_exists", `operation ${operationId} already exists`);
     }
     const openedAtMs = now();
-    const deadlineAtMs = input.deadlineAtMs === undefined
-      ? undefined
-      : expectFiniteTimestamp(input.deadlineAtMs, "deadlineAtMs");
+    const deadlineAtMs =
+      input.deadlineAtMs === undefined
+        ? undefined
+        : expectFiniteTimestamp(input.deadlineAtMs, "deadlineAtMs");
     if (deadlineAtMs !== undefined && deadlineAtMs <= openedAtMs) {
       return fail("invalid_state", "work deadline has already elapsed");
     }
@@ -297,7 +297,8 @@ export function createWorkDispatcher(
     const dispatch = requireDispatch(operationId);
     const assignment = assertHeldAssignment(dispatch, fence, streamId);
     if (
-      commitTasks.has(dispatch.operationId) || dispatch.status !== "offered"
+      commitTasks.has(dispatch.operationId) ||
+      dispatch.status !== "offered"
     ) {
       return fail(
         "invalid_state",
@@ -306,14 +307,16 @@ export function createWorkDispatcher(
     }
     releaseReservation(operationId, assignment.fence);
     const reason = terminal === undefined ? undefined : freeze({ ...terminal });
-    return finish(withDispatch(dispatch, {
-      status: "cancelled",
-      assignment: undefined,
-      updatedAtMs: now(),
-      ...(reason === undefined
-        ? {}
-        : { cancellation: reason, terminal: reason }),
-    }));
+    return finish(
+      withDispatch(dispatch, {
+        status: "cancelled",
+        assignment: undefined,
+        updatedAtMs: now(),
+        ...(reason === undefined
+          ? {}
+          : { cancellation: reason, terminal: reason }),
+      }),
+    );
   };
 
   /**
@@ -363,11 +366,7 @@ export function createWorkDispatcher(
   ): Readonly<{ fence: SessionFence; streamId: string }> => {
     const fence = createSessionFence(fenceInput);
     options.sessions.assertCurrent(fence);
-    return assertHeldAssignment(
-      dispatch,
-      fence,
-      streamIdInput,
-    );
+    return assertHeldAssignment(dispatch, fence, streamIdInput);
   };
 
   const claim = (
@@ -381,10 +380,12 @@ export function createWorkDispatcher(
       dispatch.status === "cancelling" &&
       dispatch.claimedAtMs === undefined
     ) {
-      return store(withDispatch(dispatch, {
-        claimedAtMs: now(),
-        updatedAtMs: now(),
-      }));
+      return store(
+        withDispatch(dispatch, {
+          claimedAtMs: now(),
+          updatedAtMs: now(),
+        }),
+      );
     }
     if (dispatch.status !== "offered") {
       return fail(
@@ -392,11 +393,13 @@ export function createWorkDispatcher(
         `cannot claim an operation in state ${dispatch.status}`,
       );
     }
-    return store(withDispatch(dispatch, {
-      status: "claimed",
-      claimedAtMs: now(),
-      updatedAtMs: now(),
-    }));
+    return store(
+      withDispatch(dispatch, {
+        status: "claimed",
+        claimedAtMs: now(),
+        updatedAtMs: now(),
+      }),
+    );
   };
 
   const commitAcceptance = (
@@ -419,10 +422,12 @@ export function createWorkDispatcher(
       );
     }
 
-    const committing = store(withDispatch(dispatch, {
-      status: "committing",
-      updatedAtMs: now(),
-    }));
+    const committing = store(
+      withDispatch(dispatch, {
+        status: "committing",
+        updatedAtMs: now(),
+      }),
+    );
     const commit = freeze({
       operationId: committing.operationId,
       workload: committing.workload,
@@ -442,63 +447,66 @@ export function createWorkDispatcher(
           await options.commitAcceptedWork(commit);
         } catch {
           const current = requireDispatch(operationId);
-          if (
-            current.status === "cancelled" ||
-            current.status === "failed"
-          ) {
+          if (current.status === "cancelled" || current.status === "failed") {
             return current;
           }
-          return store(withDispatch(current, {
-            status: "indeterminate",
-            updatedAtMs: now(),
-            terminal: freeze({
-              code: "acceptance_persistence_unknown",
-              message:
-                "acceptance persistence did not confirm whether the no-replay boundary committed",
+          return store(
+            withDispatch(current, {
+              status: "indeterminate",
+              updatedAtMs: now(),
+              terminal: freeze({
+                code: "acceptance_persistence_unknown",
+                message:
+                  "acceptance persistence did not confirm whether the no-replay boundary committed",
+              }),
             }),
-          }));
+          );
         }
 
         const current = requireDispatch(operationId);
-        if (
-          current.status === "cancelled" ||
-          current.status === "failed"
-        ) {
+        if (current.status === "cancelled" || current.status === "failed") {
           return current;
         }
-        const connectionLost = lostWhileCommitting.has(operationId) ||
+        const connectionLost =
+          lostWhileCommitting.has(operationId) ||
           !options.sessions.isCurrent(fence);
         if (connectionLost) {
-          return finish(withDispatch(current, {
-            status: "indeterminate",
-            assignment: undefined,
-            updatedAtMs: now(),
-            terminal: freeze({
-              code: "connection_lost_before_start",
-              message:
-                "acceptance was persisted but the worker connection was lost before work.start delivery",
+          return finish(
+            withDispatch(current, {
+              status: "indeterminate",
+              assignment: undefined,
+              updatedAtMs: now(),
+              terminal: freeze({
+                code: "connection_lost_before_start",
+                message:
+                  "acceptance was persisted but the worker connection was lost before work.start delivery",
+              }),
             }),
-          }));
+          );
         }
         if (current.status === "cancelling") {
-          return store(withDispatch(current, {
-            committedAtMs: now(),
-            updatedAtMs: now(),
-          }));
+          return store(
+            withDispatch(current, {
+              committedAtMs: now(),
+              updatedAtMs: now(),
+            }),
+          );
         }
         if (
           current.status === "committing" &&
           current.terminal?.code === "worker_rejected_before_start"
         ) {
-          return finish(withDispatch(current, {
-            status: "indeterminate",
-            updatedAtMs: now(),
-            terminal: freeze({
-              code: "accepted_worker_rejection",
-              message:
-                "the worker rejected the stream while acceptance persistence was in flight",
+          return finish(
+            withDispatch(current, {
+              status: "indeterminate",
+              updatedAtMs: now(),
+              terminal: freeze({
+                code: "accepted_worker_rejection",
+                message:
+                  "the worker rejected the stream while acceptance persistence was in flight",
+              }),
             }),
-          }));
+          );
         }
         if (
           current.status !== "committing" ||
@@ -509,11 +517,13 @@ export function createWorkDispatcher(
             "operation changed while acceptance was being committed",
           );
         }
-        return store(withDispatch(current, {
-          status: "committed",
-          committedAtMs: now(),
-          updatedAtMs: now(),
-        }));
+        return store(
+          withDispatch(current, {
+            status: "committed",
+            committedAtMs: now(),
+            updatedAtMs: now(),
+          }),
+        );
       } finally {
         commitTasks.delete(operationId);
         lostWhileCommitting.delete(operationId);
@@ -540,28 +550,26 @@ export function createWorkDispatcher(
   ): WorkDispatch => {
     const dispatch = requireDispatch(operationId);
     assertAssignment(dispatch, fence, streamId);
-    if (
-      dispatch.status !== "committed" &&
-      dispatch.status !== "cancelling"
-    ) {
+    if (dispatch.status !== "committed" && dispatch.status !== "cancelling") {
       return fail(
         "invalid_state",
         `cannot settle an operation in state ${dispatch.status}`,
       );
     }
     releaseReservation(operationId, fence);
-    return finish(withDispatch(dispatch, {
-      status,
-      updatedAtMs: now(),
-      ...(terminal === undefined ? {} : { terminal: freeze({ ...terminal }) }),
-    }));
+    return finish(
+      withDispatch(dispatch, {
+        status,
+        updatedAtMs: now(),
+        ...(terminal === undefined
+          ? {}
+          : { terminal: freeze({ ...terminal }) }),
+      }),
+    );
   };
 
-  const complete: WorkDispatcher["complete"] = (
-    operationId,
-    fence,
-    streamId,
-  ) => settle(operationId, fence, streamId, "completed");
+  const complete: WorkDispatcher["complete"] = (operationId, fence, streamId) =>
+    settle(operationId, fence, streamId, "completed");
 
   const failWork: WorkDispatcher["fail"] = (
     operationId,
@@ -575,10 +583,7 @@ export function createWorkDispatcher(
     });
   };
 
-  const cancel: WorkDispatcher["cancel"] = (
-    operationId,
-    terminal,
-  ) => {
+  const cancel: WorkDispatcher["cancel"] = (operationId, terminal) => {
     const dispatch = requireDispatch(operationId);
     if (dispatch.status === "cancelling") return dispatch;
     if (
@@ -592,23 +597,26 @@ export function createWorkDispatcher(
         `cannot cancel an operation in state ${dispatch.status}`,
       );
     }
-    const cancellation = terminal === undefined
-      ? undefined
-      : freeze({ ...terminal });
+    const cancellation =
+      terminal === undefined ? undefined : freeze({ ...terminal });
     if (dispatch.assignment !== undefined) {
-      return store(withDispatch(dispatch, {
-        status: "cancelling",
-        updatedAtMs: now(),
-        ...(cancellation === undefined ? {} : { cancellation }),
-      }));
+      return store(
+        withDispatch(dispatch, {
+          status: "cancelling",
+          updatedAtMs: now(),
+          ...(cancellation === undefined ? {} : { cancellation }),
+        }),
+      );
     }
-    return finish(withDispatch(dispatch, {
-      status: "cancelled",
-      updatedAtMs: now(),
-      ...(cancellation === undefined
-        ? {}
-        : { cancellation, terminal: cancellation }),
-    }));
+    return finish(
+      withDispatch(dispatch, {
+        status: "cancelled",
+        updatedAtMs: now(),
+        ...(cancellation === undefined
+          ? {}
+          : { cancellation, terminal: cancellation }),
+      }),
+    );
   };
 
   const confirmCancellation: WorkDispatcher["confirmCancellation"] = (
@@ -626,14 +634,15 @@ export function createWorkDispatcher(
       );
     }
     releaseReservation(operationId, fence);
-    const confirmation = terminal === undefined
-      ? dispatch.cancellation
-      : freeze({ ...terminal });
-    return finish(withDispatch(dispatch, {
-      status: "cancelled",
-      updatedAtMs: now(),
-      ...(confirmation === undefined ? {} : { terminal: confirmation }),
-    }));
+    const confirmation =
+      terminal === undefined ? dispatch.cancellation : freeze({ ...terminal });
+    return finish(
+      withDispatch(dispatch, {
+        status: "cancelled",
+        updatedAtMs: now(),
+        ...(confirmation === undefined ? {} : { terminal: confirmation }),
+      }),
+    );
   };
 
   const settlePeerTerminal: WorkDispatcher["settlePeerTerminal"] = (
@@ -657,23 +666,26 @@ export function createWorkDispatcher(
     }
     if (dispatch.status === "offered" || dispatch.status === "claimed") {
       releaseReservation(operationId, fence);
-      return store(withDispatch(dispatch, {
-        status: "reschedulable",
-        assignment: undefined,
-        updatedAtMs: now(),
-      }));
+      return store(
+        withDispatch(dispatch, {
+          status: "reschedulable",
+          assignment: undefined,
+          updatedAtMs: now(),
+        }),
+      );
     }
     if (dispatch.status === "committing") {
       releaseReservation(operationId, fence);
-      return store(withDispatch(dispatch, {
-        updatedAtMs: now(),
-        terminal: freeze({
-          code: "worker_rejected_before_start",
-          message: terminal.type === "cancel"
-            ? terminal.reason
-            : terminal.message,
+      return store(
+        withDispatch(dispatch, {
+          updatedAtMs: now(),
+          terminal: freeze({
+            code: "worker_rejected_before_start",
+            message:
+              terminal.type === "cancel" ? terminal.reason : terminal.message,
+          }),
         }),
-      }));
+      );
     }
     releaseReservation(operationId, fence);
     if (dispatch.status === "indeterminate") {
@@ -681,26 +693,31 @@ export function createWorkDispatcher(
     }
     if (terminal.type === "cancel") {
       const result = freeze({
-        code: terminal.reason === "deadline_exceeded"
-          ? "deadline_exceeded"
-          : "worker_cancelled",
+        code:
+          terminal.reason === "deadline_exceeded"
+            ? "deadline_exceeded"
+            : "worker_cancelled",
         message: terminal.reason,
       });
-      return finish(withDispatch(dispatch, {
-        status: "cancelled",
-        cancellation: result,
-        terminal: result,
-        updatedAtMs: now(),
-      }));
+      return finish(
+        withDispatch(dispatch, {
+          status: "cancelled",
+          cancellation: result,
+          terminal: result,
+          updatedAtMs: now(),
+        }),
+      );
     }
-    return finish(withDispatch(dispatch, {
-      status: "failed",
-      terminal: freeze({
-        code: expectIdentifier(terminal.code, "terminal.code"),
-        message: terminal.message,
+    return finish(
+      withDispatch(dispatch, {
+        status: "failed",
+        terminal: freeze({
+          code: expectIdentifier(terminal.code, "terminal.code"),
+          message: terminal.message,
+        }),
+        updatedAtMs: now(),
       }),
-      updatedAtMs: now(),
-    }));
+    );
   };
 
   const connectionLost = (
@@ -737,39 +754,43 @@ export function createWorkDispatcher(
       }
 
       releaseReservation(dispatch.operationId, fence);
-      const cancelledBeforeCommit = dispatch.status === "cancelling" &&
+      const cancelledBeforeCommit =
+        dispatch.status === "cancelling" &&
         dispatch.committedAtMs === undefined;
-      const indeterminate = dispatch.status === "committed" ||
+      const indeterminate =
+        dispatch.status === "committed" ||
         (dispatch.status === "cancelling" && !cancelledBeforeCommit) ||
         dispatch.status === "indeterminate";
       const nextDispatch = withDispatch(dispatch, {
         status: indeterminate
           ? "indeterminate"
           : cancelledBeforeCommit
-          ? "cancelled"
-          : "reschedulable",
+            ? "cancelled"
+            : "reschedulable",
         assignment: undefined,
         updatedAtMs: now(),
         ...(indeterminate
           ? {
-            terminal: freeze({
-              code: dispatch.status === "cancelling"
-                ? "connection_lost_during_cancellation"
-                : dispatch.status === "indeterminate"
-                ? dispatch.terminal?.code ??
-                  "acceptance_persistence_unknown"
-                : "connection_lost_after_commit",
-              message: dispatch.status === "cancelling"
-                ? "worker connection was lost before cancellation acknowledgement"
-                : dispatch.status === "indeterminate"
-                ? dispatch.terminal?.message ??
-                  "acceptance persistence outcome is unknown"
-                : "worker connection was lost after the no-replay boundary",
-            }),
-          }
+              terminal: freeze({
+                code:
+                  dispatch.status === "cancelling"
+                    ? "connection_lost_during_cancellation"
+                    : dispatch.status === "indeterminate"
+                      ? (dispatch.terminal?.code ??
+                        "acceptance_persistence_unknown")
+                      : "connection_lost_after_commit",
+                message:
+                  dispatch.status === "cancelling"
+                    ? "worker connection was lost before cancellation acknowledgement"
+                    : dispatch.status === "indeterminate"
+                      ? (dispatch.terminal?.message ??
+                        "acceptance persistence outcome is unknown")
+                      : "worker connection was lost after the no-replay boundary",
+              }),
+            }
           : cancelledBeforeCommit && dispatch.cancellation !== undefined
-          ? { terminal: dispatch.cancellation }
-          : {}),
+            ? { terminal: dispatch.cancellation }
+            : {}),
       });
       const next = isTerminalStatus(nextDispatch)
         ? finish(nextDispatch)

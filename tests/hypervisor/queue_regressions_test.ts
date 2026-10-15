@@ -1,8 +1,10 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
 import { bounded, queueHarness } from "./queue_regression_helpers.ts";
 
 for (const transport of ["in-process", "websocket"] as const) {
-  Deno.test(`${transport}: saturated target does not block the same workload on an idle target`, async () => {
+  test(`${transport}: saturated target does not block the same workload on an idle target`, async () => {
     const release = Promise.withResolvers<void>();
     const running = Promise.withResolvers<void>();
     const h = await queueHarness(transport, async ({ metadata }) => {
@@ -25,8 +27,8 @@ for (const transport of ["in-process", "websocket"] as const) {
       const idle = h.run({ target: { workerId: "B" }, metadata: { id: "B1" } });
       tasks.push(idle);
       // A is held by a gate, so this asserts independence without timing the handler.
-      assertEquals(await bounded(idle, 500), "B1");
-      assertEquals(h.hypervisor.snapshot().queuedDispatches, 1);
+      assert.deepStrictEqual(await bounded(idle, 500), "B1");
+      assert.deepStrictEqual(h.hypervisor.snapshot().queuedDispatches, 1);
     } finally {
       release.resolve();
       await Promise.allSettled(tasks);
@@ -34,7 +36,7 @@ for (const transport of ["in-process", "websocket"] as const) {
     }
   });
 
-  Deno.test(`${transport}: queued dispatch waits for Worker completion hook and output EOF`, async () => {
+  test(`${transport}: queued dispatch waits for Worker completion hook and output EOF`, async () => {
     const releaseHook = Promise.withResolvers<void>();
     const hookEntered = Promise.withResolvers<void>();
     const outputEOF = Promise.withResolvers<void>();
@@ -89,19 +91,19 @@ for (const transport of ["in-process", "websocket"] as const) {
       tasks.push(second);
       // Attach rejection observers now, including on the old implementation.
       const all = Promise.allSettled(tasks);
-      assertEquals(assignments, ["first"]);
+      assert.deepStrictEqual(assignments, ["first"]);
       outputEOF.resolve();
       await bounded(hookEntered.promise);
       await new Promise((resolve) => setTimeout(resolve, 30));
-      assertEquals(assignments, ["first"]);
-      assertEquals(h.hypervisor.snapshot().queuedDispatches, 1);
+      assert.deepStrictEqual(assignments, ["first"]);
+      assert.deepStrictEqual(h.hypervisor.snapshot().queuedDispatches, 1);
       releaseHook.resolve();
-      assertEquals((await bounded(all)).map((result) => result.status), [
-        "fulfilled",
-        "fulfilled",
-      ]);
-      assertEquals(starts, ["first", "second"]);
-      assertEquals(occupiedAtSecondAssignment, 0);
+      assert.deepStrictEqual(
+        (await bounded(all)).map((result) => result.status),
+        ["fulfilled", "fulfilled"],
+      );
+      assert.deepStrictEqual(starts, ["first", "second"]);
+      assert.deepStrictEqual(occupiedAtSecondAssignment, 0);
     } finally {
       outputEOF.resolve();
       releaseHook.resolve();
@@ -110,7 +112,7 @@ for (const transport of ["in-process", "websocket"] as const) {
     }
   });
 
-  Deno.test(`${transport}: mixed lanes use idle capacity without waiting for a saturated target`, async () => {
+  test(`${transport}: mixed lanes use idle capacity without waiting for a saturated target`, async () => {
     const releaseA = Promise.withResolvers<void>();
     const releaseB = Promise.withResolvers<void>();
     const aStarted = Promise.withResolvers<void>();
@@ -142,12 +144,12 @@ for (const transport of ["in-process", "websocket"] as const) {
       });
       tasks.push(untargeted, targeted);
       releaseB.resolve();
-      assertEquals(await bounded(Promise.all([untargeted, targeted])), [
-        "U2",
-        "B1",
-      ]);
-      assertEquals(starts, ["A1", "U1", "U2", "B1"]);
-      assertEquals(h.hypervisor.snapshot().queuedDispatches, 1);
+      assert.deepStrictEqual(
+        await bounded(Promise.all([untargeted, targeted])),
+        ["U2", "B1"],
+      );
+      assert.deepStrictEqual(starts, ["A1", "U1", "U2", "B1"]);
+      assert.deepStrictEqual(h.hypervisor.snapshot().queuedDispatches, 1);
     } finally {
       releaseA.resolve();
       releaseB.resolve();
@@ -156,20 +158,24 @@ for (const transport of ["in-process", "websocket"] as const) {
     }
   });
 
-  Deno.test(`${transport}: handler failure releases execution capacity before notifying the Hypervisor`, async () => {
+  test(`${transport}: handler failure releases execution capacity before notifying the Hypervisor`, async () => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
-    const h = await queueHarness(transport, ({ metadata }) => {
-      if (metadata.fail) throw new Error("expected handler failure");
-      return new TextEncoder().encode("ok");
-    }, {
-      async onComplete({ metadata }) {
-        if (metadata.fail) {
-          entered.resolve();
-          await release.promise;
-        }
+    const h = await queueHarness(
+      transport,
+      ({ metadata }) => {
+        if (metadata.fail) throw new Error("expected handler failure");
+        return new TextEncoder().encode("ok");
       },
-    });
+      {
+        async onComplete({ metadata }) {
+          if (metadata.fail) {
+            entered.resolve();
+            await release.promise;
+          }
+        },
+      },
+    );
     const tasks: Promise<unknown>[] = [];
     try {
       tasks.push(
@@ -182,9 +188,9 @@ for (const transport of ["in-process", "websocket"] as const) {
       await bounded(entered.promise);
       const next = h.run({ target: { workerId: "A" } });
       tasks.push(next);
-      assertEquals(h.hypervisor.snapshot().queuedDispatches, 1);
+      assert.deepStrictEqual(h.hypervisor.snapshot().queuedDispatches, 1);
       release.resolve();
-      assertEquals(await bounded(next), "ok");
+      assert.deepStrictEqual(await bounded(next), "ok");
       await bounded(Promise.all(tasks));
     } finally {
       release.resolve();
@@ -193,7 +199,7 @@ for (const transport of ["in-process", "websocket"] as const) {
     }
   });
 
-  Deno.test(`${transport}: immediate redispatch after completion works with queueing disabled`, async () => {
+  test(`${transport}: immediate redispatch after completion works with queueing disabled`, async () => {
     const h = await queueHarness(
       transport,
       () => new TextEncoder().encode("ok"),
@@ -205,8 +211,11 @@ for (const transport of ["in-process", "websocket"] as const) {
     );
     try {
       for (let i = 0; i < 3; i++) {
-        assertEquals(await bounded(h.run({ target: { workerId: "A" } })), "ok");
-        assertEquals(h.workers[0].snapshot().occupiedExecutions, 0);
+        assert.deepStrictEqual(
+          await bounded(h.run({ target: { workerId: "A" } })),
+          "ok",
+        );
+        assert.deepStrictEqual(h.workers[0].snapshot().occupiedExecutions, 0);
       }
     } finally {
       await h.close();

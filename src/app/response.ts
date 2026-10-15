@@ -2,10 +2,7 @@ type Completion = Readonly<{
   finish(): void;
 }>;
 
-function copyResponse(
-  response: Response,
-  body: BodyInit | null,
-): Response {
+function copyResponse(response: Response, body: BodyInit | null): Response {
   return new Response(body, {
     status: response.status,
     statusText: response.statusText,
@@ -31,9 +28,7 @@ export function trackResponse(
   let finished = false;
   let finishRequested = false;
   let cancellation: Promise<void> | undefined;
-  let controller:
-    | ReadableStreamDefaultController<Uint8Array>
-    | undefined;
+  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
 
   const finishNow = (): void => {
     if (finished) return;
@@ -109,9 +104,9 @@ export function trackResponse(
 
 export async function withoutBody(response: Response): Promise<Response> {
   if (response.body !== null) {
-    await response.body.cancel("response_body_not_allowed").catch(() =>
-      undefined
-    );
+    await response.body
+      .cancel("response_body_not_allowed")
+      .catch(() => undefined);
   }
   return copyResponse(response, null);
 }

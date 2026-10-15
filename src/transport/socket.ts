@@ -20,9 +20,7 @@ function stateOf(socket: WebSocket): SocketConnectionState {
 }
 
 /** Adapts a standards-compatible WebSocket to Oxian's wire contract. */
-export function adaptWebSocket(
-  socket: WebSocket,
-): SocketConnection {
+export function adaptWebSocket(socket: WebSocket): SocketConnection {
   if (
     socket === null ||
     typeof socket !== "object" ||
@@ -52,7 +50,8 @@ export function adaptWebSocket(
       return socket.bufferedAmount;
     },
     send(data) {
-      socket.send(data);
+      // Frames are encoded into fresh ArrayBuffers, never shared memory.
+      socket.send(data as string | Uint8Array<ArrayBuffer>);
     },
     close(code, reason) {
       socket.close(code, reason);
@@ -65,11 +64,13 @@ export function adaptWebSocket(
       const message = (event: MessageEvent): void =>
         observer.message?.(event.data);
       const close = (event: CloseEvent): void =>
-        observer.close?.(Object.freeze({
-          code: event.code,
-          reason: event.reason,
-          wasClean: event.wasClean,
-        }));
+        observer.close?.(
+          Object.freeze({
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+          }),
+        );
       const error = (event: Event): void => observer.error?.(event);
       socket.addEventListener("open", open);
       socket.addEventListener("message", message);
@@ -89,12 +90,11 @@ export function adaptWebSocket(
   return Object.freeze(connection);
 }
 
-export function isSocketConnection(
-  value: unknown,
-): value is SocketConnection {
+export function isSocketConnection(value: unknown): value is SocketConnection {
   if (value === null || typeof value !== "object") return false;
   const candidate = value as Partial<SocketConnection>;
-  return typeof candidate.protocol === "string" &&
+  return (
+    typeof candidate.protocol === "string" &&
     (candidate.state === "connecting" ||
       candidate.state === "open" ||
       candidate.state === "closing" ||
@@ -102,12 +102,11 @@ export function isSocketConnection(
     typeof candidate.bufferedAmount === "number" &&
     typeof candidate.send === "function" &&
     typeof candidate.close === "function" &&
-    typeof candidate.subscribe === "function";
+    typeof candidate.subscribe === "function"
+  );
 }
 
-export function expectSocketConnection(
-  value: unknown,
-): SocketConnection {
+export function expectSocketConnection(value: unknown): SocketConnection {
   if (!isSocketConnection(value)) {
     throw new TypeError("connection must implement SocketConnection");
   }

@@ -46,9 +46,7 @@ function expectExactKeys(
       descriptor.set !== undefined ||
       descriptor.enumerable !== true
     ) {
-      throw new TypeError(
-        `${path}.${key} must be an enumerable data property`,
-      );
+      throw new TypeError(`${path}.${key} must be an enumerable data property`);
     }
   }
   for (const key of requiredKeys) {
@@ -116,11 +114,7 @@ function localPath(
     } catch {
       throw new TypeError(`${path} must be a local path`);
     }
-    if (
-      url.protocol !== "file:" ||
-      url.search !== "" ||
-      url.hash !== ""
-    ) {
+    if (url.protocol !== "file:" || url.search !== "" || url.hash !== "") {
       throw new TypeError(`${path} must be a local path or file: URL`);
     }
     return fromFileUrl(url);
@@ -159,10 +153,12 @@ function gatewayUrl(value: unknown): string {
 
 function isLoopbackHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
-  return normalized === "localhost" ||
+  return (
+    normalized === "localhost" ||
     normalized === "127.0.0.1" ||
     normalized === "::1" ||
-    normalized === "[::1]";
+    normalized === "[::1]"
+  );
 }
 
 function normalizeManifest(
@@ -306,9 +302,6 @@ export async function loadWorkerManifest(
   source: LoadWorkerManifestSource,
 ): Promise<WorkerManifest> {
   const url = localTypescriptUrl(source, "worker manifest source");
-  const module = await import(url.href) as Readonly<Record<string, unknown>>;
-  return normalizeManifest(
-    selectExport(module),
-    dirname(fromFileUrl(url)),
-  );
+  const module = (await import(url.href)) as Readonly<Record<string, unknown>>;
+  return normalizeManifest(selectExport(module), dirname(fromFileUrl(url)));
 }

@@ -13,26 +13,22 @@ export const HTTP_METHODS: readonly [
   "QUERY",
   "HEAD",
   "OPTIONS",
-] = Object.freeze(
-  [
-    "GET",
-    "POST",
-    "PUT",
-    "PATCH",
-    "DELETE",
-    "QUERY",
-    "HEAD",
-    "OPTIONS",
-  ] as const,
-);
+] = Object.freeze([
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "QUERY",
+  "HEAD",
+  "OPTIONS",
+] as const);
 
 export type HttpMethod = (typeof HTTP_METHODS)[number];
 
 export type RouteParamValue = string | readonly string[];
 
-export type RouteParams = Readonly<
-  Record<string, RouteParamValue>
->;
+export type RouteParams = Readonly<Record<string, RouteParamValue>>;
 
 export type StaticRouteSegment = Readonly<{
   type: "static";

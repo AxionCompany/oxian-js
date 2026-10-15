@@ -1,4 +1,5 @@
-import { assertEquals } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
 import * as denoAdapter from "@oxian/oxian-js/adapters/deno";
 import * as root from "@oxian/oxian-js";
 import * as app from "@oxian/oxian-js/app";
@@ -15,50 +16,51 @@ import * as router from "@oxian/oxian-js/router";
 import * as transport from "@oxian/oxian-js/transport";
 import * as worker from "@oxian/oxian-js/worker";
 
-Deno.test("package root is exactly the portable execution core", () => {
-  assertEquals(Object.keys(root), Object.keys(core));
-  assertEquals(root.createApplication, app.createApplication);
-  assertEquals(root.createHttpGateway, http.createHttpGateway);
-  assertEquals(root.createHypervisor, hypervisor.createHypervisor);
-  assertEquals(root.createWorker, worker.createWorker);
-  assertEquals(root.WORKER_PROTOCOL, protocol.WORKER_PROTOCOL);
-  assertEquals(
+test("package root is exactly the portable execution core", () => {
+  assert.deepStrictEqual(Object.keys(root), Object.keys(core));
+  assert.deepStrictEqual(root.createApplication, app.createApplication);
+  assert.deepStrictEqual(root.createHttpGateway, http.createHttpGateway);
+  assert.deepStrictEqual(root.createHypervisor, hypervisor.createHypervisor);
+  assert.deepStrictEqual(root.createWorker, worker.createWorker);
+  assert.deepStrictEqual(root.WORKER_PROTOCOL, protocol.WORKER_PROTOCOL);
+  assert.deepStrictEqual(
     root.createExternallyAttachedProvider,
     providers.createExternallyAttachedProvider,
   );
-  assertEquals(
+  assert.deepStrictEqual(
     root.createCloudRunJobsProvider,
     providers.createCloudRunJobsProvider,
   );
-  assertEquals("createEphemeralWorkerStore" in root, false);
-  assertEquals("createEphemeralCredentialLifecycle" in root, false);
-  assertEquals("connectWorkerWebSocket" in root, false);
-  assertEquals(typeof transport.connectWorkerWebSocket, "function");
+  assert.deepStrictEqual("createEphemeralWorkerStore" in root, false);
+  assert.deepStrictEqual("createEphemeralCredentialLifecycle" in root, false);
+  assert.deepStrictEqual("connectWorkerWebSocket" in root, false);
+  assert.deepStrictEqual(typeof transport.connectWorkerWebSocket, "function");
 
-  for (
-    const platformExport of [
-      "defineConfig",
-      "createCorsAdapter",
-      "createFileRouter",
-      "createLocalProcessProvider",
-      "createLocalRuntime",
-      "serve",
-    ]
-  ) {
-    assertEquals(platformExport in root, false);
+  for (const platformExport of [
+    "defineConfig",
+    "createCorsAdapter",
+    "createFileRouter",
+    "createLocalProcessProvider",
+    "createLocalRuntime",
+    "serve",
+  ]) {
+    assert.deepStrictEqual(platformExport in root, false);
   }
 
-  assertEquals(typeof config.defineConfig, "function");
-  assertEquals(typeof edge.createCorsAdapter, "function");
-  assertEquals(typeof local.createLocalRuntime, "function");
-  assertEquals(typeof providers.createLocalProcessProvider, "function");
-  assertEquals(typeof router.createFileRouter, "function");
-  assertEquals(typeof denoAdapter.handler, "function");
-  assertEquals(typeof denoAdapter.serve, "function");
+  assert.deepStrictEqual(typeof config.defineConfig, "function");
+  assert.deepStrictEqual(typeof edge.createCorsAdapter, "function");
+  assert.deepStrictEqual(typeof local.createLocalRuntime, "function");
+  assert.deepStrictEqual(
+    typeof providers.createLocalProcessProvider,
+    "function",
+  );
+  assert.deepStrictEqual(typeof router.createFileRouter, "function");
+  assert.deepStrictEqual(typeof denoAdapter.handler, "function");
+  assert.deepStrictEqual(typeof denoAdapter.serve, "function");
 });
 
-Deno.test("CLI is an explicit embeddable subpath", () => {
-  assertEquals(typeof cli.runCli, "function");
-  assertEquals(typeof cli.parseCliArgs, "function");
-  assertEquals("runCli" in root, false);
+test("CLI is an explicit embeddable subpath", () => {
+  assert.deepStrictEqual(typeof cli.runCli, "function");
+  assert.deepStrictEqual(typeof cli.parseCliArgs, "function");
+  assert.deepStrictEqual("runCli" in root, false);
 });

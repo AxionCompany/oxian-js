@@ -37,14 +37,14 @@ export function createEphemeralWorkerLifecycle(): EphemeralWorkerLifecycle {
     } else if (
       existing.capacity !== context.capacity ||
       existing.workloads.length !== context.workloads.length ||
-      existing.workloads.some((name, index) =>
-        name !== context.workloads[index]
+      existing.workloads.some(
+        (name, index) => name !== context.workloads[index],
       )
     ) {
       throw new TypeError(
-        `in-process Worker ${
-          JSON.stringify(context.workerId)
-        } was activated with a different declaration`,
+        `in-process Worker ${JSON.stringify(
+          context.workerId,
+        )} was activated with a different declaration`,
       );
     }
     const activation = await repository.activate(context.workerId);

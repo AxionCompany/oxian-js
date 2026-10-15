@@ -42,13 +42,12 @@ function expectExactKeys(
   }
 }
 
-function sameIdentity(
-  left: WorkerIdentity,
-  right: WorkerIdentity,
-): boolean {
-  return left.workerId === right.workerId &&
+function sameIdentity(left: WorkerIdentity, right: WorkerIdentity): boolean {
+  return (
+    left.workerId === right.workerId &&
     left.attemptId === right.attemptId &&
-    left.epoch === right.epoch;
+    left.epoch === right.epoch
+  );
 }
 
 function parseStoredState(
@@ -56,13 +55,11 @@ function parseStoredState(
   expectedIdentity: WorkerIdentity,
 ): WorkerResumeCredentialState {
   const record = expectRecord(value, "resume credential store");
-  expectExactKeys(record, [
-    "schema",
-    "identity",
-    "credential",
-    "handshakeId",
-    "resumeExpiresAtMs",
-  ], "resume credential store");
+  expectExactKeys(
+    record,
+    ["schema", "identity", "credential", "handshakeId", "resumeExpiresAtMs"],
+    "resume credential store",
+  );
   if (record.schema !== STORE_SCHEMA) {
     throw new TypeError(
       `resume credential store schema must be "${STORE_SCHEMA}"`,
@@ -124,16 +121,15 @@ function sameState(
   left: WorkerResumeCredentialState,
   right: WorkerResumeCredentialState,
 ): boolean {
-  return sameIdentity(left.identity, right.identity) &&
+  return (
+    sameIdentity(left.identity, right.identity) &&
     left.credential.capability === right.credential.capability &&
     left.handshakeId === right.handshakeId &&
-    left.resumeExpiresAtMs === right.resumeExpiresAtMs;
+    left.resumeExpiresAtMs === right.resumeExpiresAtMs
+  );
 }
 
-async function writeAll(
-  file: Deno.FsFile,
-  bytes: Uint8Array,
-): Promise<void> {
+async function writeAll(file: Deno.FsFile, bytes: Uint8Array): Promise<void> {
   let offset = 0;
   while (offset < bytes.byteLength) {
     const written = await file.write(bytes.subarray(offset));
@@ -307,13 +303,16 @@ export function createAtomicResumeCredentialStore(
     }
     const operation = serial.then(async () => {
       const current = await loadCurrent();
-      const candidate = parseStoredState({
-        schema: STORE_SCHEMA,
+      const candidate = parseStoredState(
+        {
+          schema: STORE_SCHEMA,
+          identity,
+          credential: update.credential,
+          handshakeId: update.handshakeId,
+          resumeExpiresAtMs: update.resumeExpiresAtMs,
+        },
         identity,
-        credential: update.credential,
-        handshakeId: update.handshakeId,
-        resumeExpiresAtMs: update.resumeExpiresAtMs,
-      }, identity);
+      );
 
       if (current !== undefined) {
         if (current.handshakeId === candidate.handshakeId) {

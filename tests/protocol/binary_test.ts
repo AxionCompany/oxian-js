@@ -1,9 +1,6 @@
-import {
-  assertEquals,
-  assertMatch,
-  assertNotStrictEquals,
-  assertThrows,
-} from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import {
   BINARY_PROTOCOL,
   createStreamId,
@@ -17,7 +14,7 @@ import {
 
 const STREAM_ID = "018f47a2-76b8-7d31-8c41-1d68b4f9f802";
 
-Deno.test("binary frames: work.data round-trips stream, sequence and bytes", () => {
+test("binary frames: work.data round-trips stream, sequence and bytes", () => {
   const payload = new Uint8Array([0, 1, 2, 127, 128, 255]);
   const frame = createWorkDataFrame({
     streamId: STREAM_ID,
@@ -27,21 +24,24 @@ Deno.test("binary frames: work.data round-trips stream, sequence and bytes", () 
   const encoded = encodeBinaryFrame(frame);
   const decoded = decodeBinaryFrame(encoded);
 
-  assertEquals(decoded, frame);
-  assertNotStrictEquals(
+  assert.deepStrictEqual(decoded, frame);
+  assert.notStrictEqual(
     decoded.payload,
     encoded.subarray(BINARY_PROTOCOL.headerBytes),
   );
-  assertEquals(
+  assert.deepStrictEqual(
     encoded.byteLength,
     BINARY_PROTOCOL.headerBytes + payload.length,
   );
-  assertEquals(Array.from(encoded.subarray(0, 4)), [0x4f, 0x58, 0x4e, 0x42]);
-  assertEquals(encoded[4], BINARY_PROTOCOL.version);
-  assertEquals(encoded[5], BINARY_PROTOCOL.workDataType);
+  assert.deepStrictEqual(
+    Array.from(encoded.subarray(0, 4)),
+    [0x4f, 0x58, 0x4e, 0x42],
+  );
+  assert.deepStrictEqual(encoded[4], BINARY_PROTOCOL.version);
+  assert.deepStrictEqual(encoded[5], BINARY_PROTOCOL.workDataType);
 });
 
-Deno.test("binary frames: decoder respects a Uint8Array view offset", () => {
+test("binary frames: decoder respects a Uint8Array view offset", () => {
   const encoded = encodeBinaryFrame(
     createWorkDataFrame({
       streamId: STREAM_ID,
@@ -52,7 +52,7 @@ Deno.test("binary frames: decoder respects a Uint8Array view offset", () => {
   const storage = new Uint8Array(encoded.length + 10);
   storage.set(encoded, 5);
 
-  assertEquals(
+  assert.deepStrictEqual(
     decodeBinaryFrame(storage.subarray(5, 5 + encoded.length)),
     {
       type: "work.data",
@@ -63,7 +63,7 @@ Deno.test("binary frames: decoder respects a Uint8Array view offset", () => {
   );
 });
 
-Deno.test("binary frames: frame factory owns a copy of caller payload", () => {
+test("binary frames: frame factory owns a copy of caller payload", () => {
   const payload = new Uint8Array([1, 2, 3]);
   const frame = createWorkDataFrame({
     streamId: STREAM_ID,
@@ -72,10 +72,10 @@ Deno.test("binary frames: frame factory owns a copy of caller payload", () => {
   });
 
   payload[0] = 99;
-  assertEquals(frame.payload, new Uint8Array([1, 2, 3]));
+  assert.deepStrictEqual(frame.payload, new Uint8Array([1, 2, 3]));
 });
 
-Deno.test("binary frames: decoder enforces header and receive limit", () => {
+test("binary frames: decoder enforces header and receive limit", () => {
   const encoded = encodeBinaryFrame(
     createWorkDataFrame({
       streamId: STREAM_ID,
@@ -128,7 +128,7 @@ Deno.test("binary frames: decoder enforces header and receive limit", () => {
   );
 });
 
-Deno.test("binary frames: factory rejects invalid stream and sequence", () => {
+test("binary frames: factory rejects invalid stream and sequence", () => {
   assertThrows(
     () =>
       createWorkDataFrame({
@@ -150,13 +150,13 @@ Deno.test("binary frames: factory rejects invalid stream and sequence", () => {
     "sequence must be",
   );
 
-  assertMatch(
+  assert.match(
     createStreamId(),
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
   );
 });
 
-Deno.test("binary frames: runtime validator rejects malformed and empty data", () => {
+test("binary frames: runtime validator rejects malformed and empty data", () => {
   const malformed = assertThrows(
     () =>
       validateWorkDataFrame({
@@ -168,7 +168,7 @@ Deno.test("binary frames: runtime validator rejects malformed and empty data", (
     TypeError,
     "unsupported frame type",
   );
-  assertEquals(
+  assert.deepStrictEqual(
     (malformed as ProtocolViolation).code,
     "unsupported_frame_type",
   );
@@ -198,8 +198,8 @@ Deno.test("binary frames: runtime validator rejects malformed and empty data", (
   );
 });
 
-Deno.test("binary frames: v1 hard payload limit cannot be raised", () => {
-  assertEquals(
+test("binary frames: v1 hard payload limit cannot be raised", () => {
+  assert.deepStrictEqual(
     BINARY_PROTOCOL.maxPayloadBytes,
     WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes,
   );

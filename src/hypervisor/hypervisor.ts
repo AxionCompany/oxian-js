@@ -36,8 +36,11 @@ function expectWebSocketPath(value: unknown): string {
     try {
       const base = new URL("https://oxian.invalid/");
       const parsed = new URL(value, base);
-      canonical = parsed.origin === base.origin && parsed.pathname === value &&
-        parsed.search === "" && parsed.hash === "";
+      canonical =
+        parsed.origin === base.origin &&
+        parsed.pathname === value &&
+        parsed.search === "" &&
+        parsed.hash === "";
     } catch {
       canonical = false;
     }
@@ -77,22 +80,21 @@ export function createHypervisor(
   if (callbacks === null || typeof callbacks !== "object") {
     throw new TypeError("Hypervisor lifecycle callbacks must be an object");
   }
-  for (
-    const name of [
-      "onConnect",
-      "onAdmit",
-      "onHandshake",
-      "onReady",
-      "onHeartbeat",
-      "onWorkAssigned",
-      "onWorkAccepted",
-      "onStart",
-      "onComplete",
-      "onDisconnect",
-    ] as const
-  ) {
+  for (const name of [
+    "onConnect",
+    "onAdmit",
+    "onHandshake",
+    "onReady",
+    "onHeartbeat",
+    "onWorkAssigned",
+    "onWorkAccepted",
+    "onStart",
+    "onComplete",
+    "onDisconnect",
+  ] as const) {
     if (
-      callbacks[name] !== undefined && typeof callbacks[name] !== "function"
+      callbacks[name] !== undefined &&
+      typeof callbacks[name] !== "function"
     ) {
       throw new TypeError(`${name} must be a function`);
     }
@@ -139,7 +141,8 @@ export function createHypervisor(
     throw new TypeError("assign must be a function");
   }
   if (
-    websocketPaths.size > 0 && options.admit === undefined &&
+    websocketPaths.size > 0 &&
+    options.admit === undefined &&
     localTopics.size === 0
   ) {
     throw new TypeError("WebSocket Hypervisors require an admit function");
@@ -147,29 +150,29 @@ export function createHypervisor(
   const config = createHypervisorConfig(options.config);
   const clock = options.clock ?? Date.now;
   const scheduler = options.scheduler ?? createDefaultScheduler();
-  const createConnectionId = options.createConnectionId ??
-    (() => crypto.randomUUID());
+  const createConnectionId =
+    options.createConnectionId ?? (() => crypto.randomUUID());
   const sessions = options.sessions ?? createSessionRegistry({ clock });
-  const ephemeral = localTopics.size > 0
-    ? createEphemeralWorkerLifecycle()
-    : undefined;
-  const effectiveAdmit = options.admit === undefined
-    ? ephemeral?.admit
-    : ephemeral === undefined
-    ? options.admit
-    : async (
-      context: Parameters<NonNullable<HypervisorOptions["admit"]>>[0],
-    ) => {
-      try {
-        return await options.admit!(context);
-      } catch (primaryError) {
-        try {
-          return await ephemeral.admit(context);
-        } catch {
-          throw primaryError;
-        }
-      }
-    };
+  const ephemeral =
+    localTopics.size > 0 ? createEphemeralWorkerLifecycle() : undefined;
+  const effectiveAdmit =
+    options.admit === undefined
+      ? ephemeral?.admit
+      : ephemeral === undefined
+        ? options.admit
+        : async (
+            context: Parameters<NonNullable<HypervisorOptions["admit"]>>[0],
+          ) => {
+            try {
+              return await options.admit!(context);
+            } catch (primaryError) {
+              try {
+                return await ephemeral.admit(context);
+              } catch {
+                throw primaryError;
+              }
+            }
+          };
   const effectiveOptions: HypervisorOptions = Object.freeze({
     ...options,
     ...(effectiveAdmit === undefined ? {} : { admit: effectiveAdmit }),
@@ -178,30 +181,31 @@ export function createHypervisor(
   const dispatcher: WorkDispatcher = createWorkDispatcher({
     sessions,
     commitAcceptedWork: async (commit) => {
-      await callbacks.onWorkAccepted?.(Object.freeze({
-        stage: "work_accepted" as const,
-        stageId:
-          `work_accepted:${commit.operationId}:${commit.assignment.streamId}`,
-        callbackAttempt: 1,
-        // The acceptance decision must settle even when its physical
-        // connection disappears. Only the Hypervisor lifecycle owns this
-        // signal; connection cleanup deliberately does not abort it.
-        signal: hostAbort.signal,
-        identity: commit.assignment.fence.identity,
-        connectionId: commit.assignment.fence.connectionId,
-        operationId: commit.operationId,
-        streamId: commit.assignment.streamId,
-        workload: commit.workload,
-        ...(commit.target === undefined ? {} : { target: commit.target }),
-        metadata: commit.metadata,
-        ...(commit.deadlineAtMs === undefined
-          ? {}
-          : { deadlineAtMs: commit.deadlineAtMs }),
-        deliveryCount: commit.deliveryCount,
-        assignment: commit.assignment,
-        acceptedAtMs: commit.claimedAtMs,
-        fence: commit.assignment.fence,
-      }));
+      await callbacks.onWorkAccepted?.(
+        Object.freeze({
+          stage: "work_accepted" as const,
+          stageId: `work_accepted:${commit.operationId}:${commit.assignment.streamId}`,
+          callbackAttempt: 1,
+          // The acceptance decision must settle even when its physical
+          // connection disappears. Only the Hypervisor lifecycle owns this
+          // signal; connection cleanup deliberately does not abort it.
+          signal: hostAbort.signal,
+          identity: commit.assignment.fence.identity,
+          connectionId: commit.assignment.fence.connectionId,
+          operationId: commit.operationId,
+          streamId: commit.assignment.streamId,
+          workload: commit.workload,
+          ...(commit.target === undefined ? {} : { target: commit.target }),
+          metadata: commit.metadata,
+          ...(commit.deadlineAtMs === undefined
+            ? {}
+            : { deadlineAtMs: commit.deadlineAtMs }),
+          deliveryCount: commit.deliveryCount,
+          assignment: commit.assignment,
+          acceptedAtMs: commit.claimedAtMs,
+          fence: commit.assignment.fence,
+        }),
+      );
     },
     clock,
   });
@@ -300,22 +304,22 @@ export function createHypervisor(
   try {
     for (const transport of options.transports) {
       if (transport.type !== "in-process") continue;
-      transportBindings.push(bindInProcessFabric({
-        topic: transport.config.topic,
-        accept(connection) {
-          prepareRegistered.accept(
-            connection,
-            WORKER_PROTOCOL,
-            "in-process",
-          );
-        },
-        ...(ephemeral === undefined ? {} : {
-          provisioning: Object.freeze({
-            activate: ephemeral.activate,
-            register: ephemeral.register,
-          }),
+      transportBindings.push(
+        bindInProcessFabric({
+          topic: transport.config.topic,
+          accept(connection) {
+            prepareRegistered.accept(connection, WORKER_PROTOCOL, "in-process");
+          },
+          ...(ephemeral === undefined
+            ? {}
+            : {
+                provisioning: Object.freeze({
+                  activate: ephemeral.activate,
+                  register: ephemeral.register,
+                }),
+              }),
         }),
-      }));
+      );
     }
   } catch (error) {
     for (const binding of transportBindings) {
@@ -370,7 +374,8 @@ export function createHypervisor(
     if (!websocketPaths.has(path)) {
       return Object.freeze({
         kind: "response" as const,
-        response: options.fallback?.(request) ??
+        response:
+          options.fallback?.(request) ??
           new Response("Not Found", { status: 404 }),
       });
     }
@@ -423,14 +428,13 @@ export function createHypervisor(
       record.fence.identity.epoch !== fence.identity.epoch ||
       record.fence.sessionGeneration !== fence.sessionGeneration ||
       record.fence.connectionId !== fence.connectionId
-    ) return;
+    )
+      return;
     dispatchController.drainWorker(fence.identity.workerId);
     await drainRecord(record, reason, "shutdown");
   };
 
-  const shutdown = (
-    reason = "hypervisor_shutdown",
-  ): Promise<void> => {
+  const shutdown = (reason = "hypervisor_shutdown"): Promise<void> => {
     if (shuttingDown !== undefined) return shuttingDown;
     acceptingConnections = false;
     if (!hostAbort.signal.aborted) hostAbort.abort(reason);
@@ -447,19 +451,16 @@ export function createHypervisor(
             record.connectionId !== undefined &&
             record.connection !== undefined
           ) {
-            await record.transport.sendControl({
-              protocol: WORKER_PROTOCOL,
-              type: "shutdown",
-              connectionId: record.connectionId,
-              reason,
-            }).catch(() => undefined);
+            await record.transport
+              .sendControl({
+                protocol: WORKER_PROTOCOL,
+                type: "shutdown",
+                connectionId: record.connectionId,
+                reason,
+              })
+              .catch(() => undefined);
           }
-          await closeRecord(
-            record,
-            NORMAL_CLOSE_CODE,
-            "shutdown",
-            "shutdown",
-          );
+          await closeRecord(record, NORMAL_CLOSE_CODE, "shutdown", "shutdown");
         }),
       );
       lifecycle.stopLeaseSweep();
@@ -502,15 +503,14 @@ export function createHypervisor(
       handshakeOperations: admissionSnapshot.handshakeOperations,
       readyOperations: admissionSnapshot.readyOperations,
       sessions: sessions.list().length,
-      inProcessWorkers: [...records].filter((record) =>
-        record.transportType === "in-process" && record.phase === "ready"
+      inProcessWorkers: [...records].filter(
+        (record) =>
+          record.transportType === "in-process" && record.phase === "ready",
       ).length,
       pendingAcceptanceCommits: acceptanceAdmission.pending,
       pendingAcceptanceCommitsByWorker: Object.freeze(
-        Array.from(
-          acceptanceAdmission.byWorker,
-          ([workerId, count]) =>
-            Object.freeze({ workerId, count }),
+        Array.from(acceptanceAdmission.byWorker, ([workerId, count]) =>
+          Object.freeze({ workerId, count }),
         ).sort((left, right) => left.workerId.localeCompare(right.workerId)),
       ),
       work: Object.freeze(work),

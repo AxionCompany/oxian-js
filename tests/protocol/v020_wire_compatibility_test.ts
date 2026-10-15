@@ -1,4 +1,5 @@
-import { assertEquals } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
 import {
   decodeBinaryFrame,
   encodeBinaryFrame,
@@ -22,21 +23,24 @@ function toHex(value: Uint8Array): string {
   );
 }
 
-Deno.test("v0.21 preserves every v0.20.0-rc.7 golden control-frame byte", () => {
-  assertEquals(golden.sourceVersion, "0.20.0-rc.7");
-  assertEquals(golden.protocol, WORKER_PROTOCOL);
+test("v0.21 preserves every v0.20.0-rc.7 golden control-frame byte", () => {
+  assert.deepStrictEqual(golden.sourceVersion, "0.20.0-rc.7");
+  assert.deepStrictEqual(golden.protocol, WORKER_PROTOCOL);
   for (const fixture of golden.control) {
     const decoded = parseControlFrame(fixture.encoded);
-    assertEquals(decoded.type, fixture.type);
-    assertEquals(encodeControlFrame(decoded), fixture.encoded);
+    assert.deepStrictEqual(decoded.type, fixture.type);
+    assert.deepStrictEqual(encodeControlFrame(decoded), fixture.encoded);
   }
 });
 
-Deno.test("v0.21 preserves the v0.20.0-rc.7 binary header and payload bytes", () => {
+test("v0.21 preserves the v0.20.0-rc.7 binary header and payload bytes", () => {
   const encoded = fromHex(golden.binary.encodedHex);
   const decoded = decodeBinaryFrame(encoded);
-  assertEquals(decoded.streamId, golden.binary.streamId);
-  assertEquals(decoded.sequence, golden.binary.sequence);
-  assertEquals(toHex(decoded.payload), golden.binary.payloadHex);
-  assertEquals(toHex(encodeBinaryFrame(decoded)), golden.binary.encodedHex);
+  assert.deepStrictEqual(decoded.streamId, golden.binary.streamId);
+  assert.deepStrictEqual(decoded.sequence, golden.binary.sequence);
+  assert.deepStrictEqual(toHex(decoded.payload), golden.binary.payloadHex);
+  assert.deepStrictEqual(
+    toHex(encodeBinaryFrame(decoded)),
+    golden.binary.encodedHex,
+  );
 });

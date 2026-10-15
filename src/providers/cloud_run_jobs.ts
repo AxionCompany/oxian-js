@@ -89,9 +89,8 @@ export type CloudRunJobsResourceInput = Readonly<{
   attributes?: JsonObject;
 }>;
 
-export type CloudRunJobsProvider =
-  & WorkerProvider<CloudRunJobsLaunchSpec>
-  & Readonly<{
+export type CloudRunJobsProvider = WorkerProvider<CloudRunJobsLaunchSpec> &
+  Readonly<{
     rehydrateResource(input: CloudRunJobsResourceInput): ProviderResource;
   }>;
 
@@ -116,16 +115,16 @@ type CloudRunResourceReference = Readonly<{
 
 type ApiCallResult =
   | Readonly<{
-    kind: "response";
-    status: number;
-    ok: boolean;
-    body?: Record<string, unknown>;
-    bodyFailure?: unknown;
-  }>
+      kind: "response";
+      status: number;
+      ok: boolean;
+      body?: Record<string, unknown>;
+      bodyFailure?: unknown;
+    }>
   | Readonly<{
-    kind: "transport_failure";
-    cause: unknown;
-  }>;
+      kind: "transport_failure";
+      cause: unknown;
+    }>;
 
 type ParsedOperation = Readonly<{
   name: string;
@@ -168,10 +167,7 @@ function readLaunchProperties(
   label: string,
 ): Record<string, unknown> {
   if (!isPlainObject(input)) {
-    return invalidLaunch(
-      providerId,
-      `${label} must be a plain object`,
-    );
+    return invalidLaunch(providerId, `${label} must be a plain object`);
   }
   const output: Record<string, unknown> = {};
   for (const key of Reflect.ownKeys(input)) {
@@ -198,10 +194,7 @@ function readLaunchProperties(
 }
 
 function validateProject(project: unknown): string {
-  if (
-    typeof project !== "string" ||
-    !SAFE_PROJECT_PATTERN.test(project)
-  ) {
+  if (typeof project !== "string" || !SAFE_PROJECT_PATTERN.test(project)) {
     throw new TypeError(
       "Cloud Run project must be a bounded project ID or number without path separators",
     );
@@ -221,10 +214,7 @@ function validateLocation(location: unknown): string {
   return location;
 }
 
-function validateJobId(
-  providerId: string,
-  job: unknown,
-): string {
+function validateJobId(providerId: string, job: unknown): string {
   if (typeof job !== "string" || !CLOUD_RUN_JOB_PATTERN.test(job)) {
     return invalidLaunch(
       providerId,
@@ -234,14 +224,8 @@ function validateJobId(
   return job;
 }
 
-function validateContainerName(
-  providerId: string,
-  name: unknown,
-): string {
-  if (
-    typeof name !== "string" ||
-    !CLOUD_RUN_CONTAINER_PATTERN.test(name)
-  ) {
+function validateContainerName(providerId: string, name: unknown): string {
+  if (typeof name !== "string" || !CLOUD_RUN_CONTAINER_PATTERN.test(name)) {
     return invalidLaunch(
       providerId,
       "Cloud Run container override name must be a DNS label",
@@ -250,10 +234,7 @@ function validateContainerName(
   return name;
 }
 
-function validateTimeoutSeconds(
-  providerId: string,
-  value: unknown,
-): number {
+function validateTimeoutSeconds(providerId: string, value: unknown): number {
   if (
     !Number.isSafeInteger(value) ||
     (value as number) < 1 ||
@@ -363,10 +344,7 @@ function normalizeContainerOverride(
 
     const environment: Readonly<{ name: string; value: string }>[] = [];
     for (const key of keys) {
-      if (
-        typeof key !== "string" ||
-        !ENVIRONMENT_NAME_PATTERN.test(key)
-      ) {
+      if (typeof key !== "string" || !ENVIRONMENT_NAME_PATTERN.test(key)) {
         return invalidLaunch(
           providerId,
           `Invalid Cloud Run environment variable name ${JSON.stringify(key)}`,
@@ -386,10 +364,12 @@ function normalizeContainerOverride(
           `Cloud Run environment variable ${key} must be an enumerable string of at most ${MAX_ENVIRONMENT_VALUE_LENGTH} characters without null characters`,
         );
       }
-      environment.push(Object.freeze({
-        name: key,
-        value: descriptor.value,
-      }));
+      environment.push(
+        Object.freeze({
+          name: key,
+          value: descriptor.value,
+        }),
+      );
     }
     normalized.env = Object.freeze(environment);
   }
@@ -420,12 +400,7 @@ function normalizeLaunchSpec(
   const properties = readLaunchProperties(
     providerId,
     input,
-    new Set([
-      "job",
-      "containerOverride",
-      "timeoutSeconds",
-      "attributes",
-    ]),
+    new Set(["job", "containerOverride", "timeoutSeconds", "attributes"]),
     "Cloud Run Jobs launch spec",
   );
   const job = validateJobId(providerId, properties.job);
@@ -632,14 +607,14 @@ async function readBoundedResponseText(response: Response): Promise<string> {
 function requestHeaders(token: string, includeBody: boolean): HeadersInit {
   return includeBody
     ? {
-      accept: "application/json",
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    }
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      }
     : {
-      accept: "application/json",
-      authorization: `Bearer ${token}`,
-    };
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+      };
 }
 
 function apiFailureMessage(
@@ -649,10 +624,13 @@ function apiFailureMessage(
   let detail: string | undefined;
   const nested = result.body?.error;
   if (isPlainObject(nested) && typeof nested.message === "string") {
-    detail = [...nested.message].map((character) => {
-      const code = character.charCodeAt(0);
-      return code <= 0x1f || code === 0x7f ? " " : character;
-    }).join("").slice(0, 512);
+    detail = [...nested.message]
+      .map((character) => {
+        const code = character.charCodeAt(0);
+        return code <= 0x1f || code === 0x7f ? " " : character;
+      })
+      .join("")
+      .slice(0, 512);
   }
   return detail
     ? `Cloud Run API ${operation} failed (${result.status}): ${detail}`
@@ -663,9 +641,7 @@ function isAmbiguousProvisionStatus(status: number): boolean {
   return status === 408 || status >= 500;
 }
 
-function throwIfReadAborted(
-  signal: AbortSignal | undefined,
-): void {
+function throwIfReadAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) signal.throwIfAborted();
 }
 
@@ -691,10 +667,7 @@ function validateOperationName(
   return value;
 }
 
-function validateExecutionName(
-  jobName: string,
-  value: unknown,
-): string {
+function validateExecutionName(jobName: string, value: unknown): string {
   const prefix = `${jobName}/executions/`;
   if (
     typeof value !== "string" ||
@@ -756,22 +729,14 @@ function parseOperation(
     );
   }
 
-  const metadataExecution = optionalExecutionName(
-    jobName,
-    body.metadata,
-  );
-  const responseExecution = optionalExecutionName(
-    jobName,
-    body.response,
-  );
+  const metadataExecution = optionalExecutionName(jobName, body.metadata);
+  const responseExecution = optionalExecutionName(jobName, body.response);
   if (
     metadataExecution !== undefined &&
     responseExecution !== undefined &&
     metadataExecution !== responseExecution
   ) {
-    throw new TypeError(
-      "Cloud Run operation named conflicting executions",
-    );
+    throw new TypeError("Cloud Run operation named conflicting executions");
   }
 
   return Object.freeze({
@@ -802,8 +767,9 @@ function optionalTimestamp(
   if (value === undefined) return undefined;
   if (
     typeof value !== "string" ||
-    !/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:(?:[0-5]\d|60)(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/
-      .test(value) ||
+    !/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:(?:[0-5]\d|60)(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(
+      value,
+    ) ||
     !Number.isFinite(Date.parse(value))
   ) {
     throw new TypeError(`Cloud Run execution ${field} is malformed`);
@@ -821,10 +787,13 @@ function optionalDiagnostic(
   if (typeof value !== "string") {
     throw new TypeError(`Cloud Run execution condition ${field} is malformed`);
   }
-  return [...value].map((character) => {
-    const code = character.charCodeAt(0);
-    return code <= 0x1f || code === 0x7f ? " " : character;
-  }).join("").slice(0, maxLength);
+  return [...value]
+    .map((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 0x1f || code === 0x7f ? " " : character;
+    })
+    .join("")
+    .slice(0, maxLength);
 }
 
 function parseExecution(
@@ -840,20 +809,11 @@ function parseExecution(
     throw new TypeError("Cloud Run returned a different execution");
   }
   const jobId = jobName.slice(jobName.lastIndexOf("/") + 1);
-  if (
-    body.job !== undefined &&
-    body.job !== jobName &&
-    body.job !== jobId
-  ) {
+  if (body.job !== undefined && body.job !== jobName && body.job !== jobId) {
     throw new TypeError("Cloud Run execution named a different Job");
   }
-  if (
-    body.reconciling !== undefined &&
-    typeof body.reconciling !== "boolean"
-  ) {
-    throw new TypeError(
-      "Cloud Run execution reconciling field is malformed",
-    );
+  if (body.reconciling !== undefined && typeof body.reconciling !== "boolean") {
+    throw new TypeError("Cloud Run execution reconciling field is malformed");
   }
 
   const taskCount = optionalNonNegativeInteger(body, "taskCount");
@@ -866,14 +826,12 @@ function parseExecution(
   const succeededCount = optionalNonNegativeInteger(body, "succeededCount");
   const failedCount = optionalNonNegativeInteger(body, "failedCount");
   const cancelledCount = optionalNonNegativeInteger(body, "cancelledCount");
-  for (
-    const [field, count] of [
-      ["runningCount", runningCount],
-      ["succeededCount", succeededCount],
-      ["failedCount", failedCount],
-      ["cancelledCount", cancelledCount],
-    ] as const
-  ) {
+  for (const [field, count] of [
+    ["runningCount", runningCount],
+    ["succeededCount", succeededCount],
+    ["failedCount", failedCount],
+    ["cancelledCount", cancelledCount],
+  ] as const) {
     if (count !== undefined && count > 1) {
       throw new TypeError(
         `Cloud Run execution ${field} exceeds forced taskCount 1`,
@@ -882,10 +840,10 @@ function parseExecution(
   }
   if (
     (runningCount ?? 0) +
-        (succeededCount ?? 0) +
-        (failedCount ?? 0) +
-        (cancelledCount ?? 0) >
-      1
+      (succeededCount ?? 0) +
+      (failedCount ?? 0) +
+      (cancelledCount ?? 0) >
+    1
   ) {
     throw new TypeError(
       "Cloud Run execution task phase counts are inconsistent",
@@ -906,21 +864,14 @@ function parseExecution(
       if (!isPlainObject(condition)) {
         throw new TypeError("Cloud Run execution condition is malformed");
       }
-      if (
-        condition.type !== undefined &&
-        typeof condition.type !== "string"
-      ) {
-        throw new TypeError(
-          "Cloud Run execution condition type is malformed",
-        );
+      if (condition.type !== undefined && typeof condition.type !== "string") {
+        throw new TypeError("Cloud Run execution condition type is malformed");
       }
       if (
         condition.state !== undefined &&
         typeof condition.state !== "string"
       ) {
-        throw new TypeError(
-          "Cloud Run execution condition state is malformed",
-        );
+        throw new TypeError("Cloud Run execution condition state is malformed");
       }
       const reason = optionalDiagnostic(
         condition,
@@ -950,18 +901,19 @@ function parseExecution(
 
   let state: ProviderResourceState = "present";
   let phase = "active";
-  if (
-    cancelledCount !== undefined && cancelledCount > 0
-  ) {
+  if (cancelledCount !== undefined && cancelledCount > 0) {
     state = "absent";
     phase = "cancelled";
-  } else if (failedCount !== undefined && failedCount > 0 || conditionFailed) {
+  } else if (
+    (failedCount !== undefined && failedCount > 0) ||
+    conditionFailed
+  ) {
     state = "failed";
     phase = "failed";
   } else if (
     deleteTime !== undefined ||
     completionTime !== undefined ||
-    succeededCount !== undefined && succeededCount >= 1 ||
+    (succeededCount !== undefined && succeededCount >= 1) ||
     conditionSucceeded
   ) {
     state = "absent";
@@ -1028,9 +980,7 @@ function parseResourceReference(
       location,
       resource.resourceId,
     );
-    if (
-      resource.attributes[CLOUD_RUN_OPERATION_ATTRIBUTE] !== operationName
-    ) {
+    if (resource.attributes[CLOUD_RUN_OPERATION_ATTRIBUTE] !== operationName) {
       return invalidResource(
         providerId,
         operationName,
@@ -1046,13 +996,10 @@ function parseResourceReference(
         "Cloud Run provider resource Job attribute is missing",
       );
     }
-    const configuredJobPrefix =
-      `projects/${project}/locations/${location}/jobs/`;
+    const configuredJobPrefix = `projects/${project}/locations/${location}/jobs/`;
     if (
       !jobName.startsWith(configuredJobPrefix) ||
-      !CLOUD_RUN_JOB_PATTERN.test(
-        jobName.slice(configuredJobPrefix.length),
-      )
+      !CLOUD_RUN_JOB_PATTERN.test(jobName.slice(configuredJobPrefix.length))
     ) {
       return invalidResource(
         providerId,
@@ -1063,9 +1010,10 @@ function parseResourceReference(
 
     const executionAttribute =
       resource.attributes[CLOUD_RUN_EXECUTION_ATTRIBUTE];
-    const executionName = executionAttribute === undefined
-      ? undefined
-      : validateExecutionName(jobName, executionAttribute);
+    const executionName =
+      executionAttribute === undefined
+        ? undefined
+        : validateExecutionName(jobName, executionAttribute);
 
     return Object.freeze({
       resource,
@@ -1106,9 +1054,10 @@ function rehydrateCloudRunJobsResource(
     "attributes",
   ]);
   for (const key of Reflect.ownKeys(input)) {
-    const descriptor = typeof key === "string"
-      ? Object.getOwnPropertyDescriptor(input, key)
-      : undefined;
+    const descriptor =
+      typeof key === "string"
+        ? Object.getOwnPropertyDescriptor(input, key)
+        : undefined;
     if (
       typeof key !== "string" ||
       !allowed.has(key) ||
@@ -1121,9 +1070,9 @@ function rehydrateCloudRunJobsResource(
         typeof input.operationName === "string"
           ? input.operationName
           : undefined,
-        `Cloud Run resource rehydration input contains unsupported field ${
-          String(key)
-        }`,
+        `Cloud Run resource rehydration input contains unsupported field ${String(
+          key,
+        )}`,
       );
     }
   }
@@ -1137,21 +1086,18 @@ function rehydrateCloudRunJobsResource(
         "Cloud Run Job must be a lowercase resource segment of at most 49 characters",
       );
     }
-    const jobName =
-      `projects/${project}/locations/${location}/jobs/${input.job}`;
+    const jobName = `projects/${project}/locations/${location}/jobs/${input.job}`;
     const operationName = validateOperationName(
       project,
       location,
       input.operationName,
     );
-    const executionName = input.executionName === undefined
-      ? undefined
-      : validateExecutionName(jobName, input.executionName);
+    const executionName =
+      input.executionName === undefined
+        ? undefined
+        : validateExecutionName(jobName, input.executionName);
     const callerAttributes = withoutProviderAttributes(
-      cloneProviderJsonObject(
-        input.attributes ?? {},
-        "$.resource.attributes",
-      ),
+      cloneProviderJsonObject(input.attributes ?? {}, "$.resource.attributes"),
     );
     return createProviderResource({
       providerId,
@@ -1351,11 +1297,12 @@ export function createCloudRunJobsProvider(
         );
       }
       if (!result.ok) {
-        const code: ProviderErrorCode = result.status === 409
-          ? "conflict"
-          : isAmbiguousProvisionStatus(result.status)
-          ? "provision_indeterminate"
-          : "provision_failed";
+        const code: ProviderErrorCode =
+          result.status === 409
+            ? "conflict"
+            : isAmbiguousProvisionStatus(result.status)
+              ? "provision_indeterminate"
+              : "provision_failed";
         return providerFailure(
           providerId,
           undefined,
@@ -1930,10 +1877,7 @@ export function createCloudRunJobsProvider(
           reference.jobName,
           cancellationResult.body,
         );
-        assertSameExecution(
-          executionName,
-          cancellation.executionName,
-        );
+        assertSameExecution(executionName, cancellation.executionName);
       } catch {
         return createProviderTermination({
           resource: reference.resource,

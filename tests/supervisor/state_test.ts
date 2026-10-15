@@ -1,9 +1,6 @@
-import {
-  assert,
-  assertEquals,
-  assertNotEquals,
-  assertThrows,
-} from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import {
   createWorkDispatchTarget,
   createWorkerAttempt,
@@ -19,14 +16,14 @@ const IDENTITY = {
   epoch: 1,
 } as const;
 
-Deno.test("work dispatch target factory validates, copies, and freezes input", () => {
+test("work dispatch target factory validates, copies, and freezes input", () => {
   const input = { workerId: "worker-1", ignored: "not-public" };
   const target = createWorkDispatchTarget(input);
 
   input.workerId = "worker-2";
-  assertEquals(target, { workerId: "worker-1" });
-  assert(Object.isFrozen(target));
-  assertEquals("ignored" in target, false);
+  assert.deepStrictEqual(target, { workerId: "worker-1" });
+  assert.ok(Object.isFrozen(target));
+  assert.deepStrictEqual("ignored" in target, false);
   assertThrows(
     () => createWorkDispatchTarget({ workerId: "contains spaces" }),
     TypeError,
@@ -39,7 +36,7 @@ Deno.test("work dispatch target factory validates, copies, and freezes input", (
   );
 });
 
-Deno.test("worker definition factory validates, copies, and freezes input", () => {
+test("worker definition factory validates, copies, and freezes input", () => {
   const providerConfig = { command: ["deno", "run"] };
   const definition = createWorkerDefinition({
     workerId: "worker-1",
@@ -52,12 +49,12 @@ Deno.test("worker definition factory validates, copies, and freezes input", () =
 
   providerConfig.command[0] = "changed";
 
-  assertEquals(definition.providerConfig, {
+  assert.deepStrictEqual(definition.providerConfig, {
     command: ["deno", "run"],
   });
-  assert(Object.isFrozen(definition));
-  assert(Object.isFrozen(definition.workloads));
-  assert(Object.isFrozen(definition.providerConfig));
+  assert.ok(Object.isFrozen(definition));
+  assert.ok(Object.isFrozen(definition.workloads));
+  assert.ok(Object.isFrozen(definition.providerConfig));
   assertThrows(
     () =>
       createWorkerDefinition({
@@ -71,7 +68,7 @@ Deno.test("worker definition factory validates, copies, and freezes input", () =
   );
 });
 
-Deno.test("worker definition JSON copying is prototype-safe and rejects non-JSON runtime values", () => {
+test("worker definition JSON copying is prototype-safe and rejects non-JSON runtime values", () => {
   const dangerous = JSON.parse(
     '{"__proto__":{"polluted":true},"constructor":"data"}',
   ) as JsonObject;
@@ -83,16 +80,18 @@ Deno.test("worker definition JSON copying is prototype-safe and rejects non-JSON
     providerConfig: dangerous,
   });
 
-  assertEquals(
+  assert.deepStrictEqual(
     Object.getPrototypeOf(definition.providerConfig),
     Object.prototype,
   );
-  assertEquals(
+  assert.deepStrictEqual(
     Object.hasOwn(definition.providerConfig, "__proto__"),
     true,
   );
-  assertEquals(definition.providerConfig.__proto__, { polluted: true });
-  assertEquals(({} as Record<string, unknown>).polluted, undefined);
+  assert.deepStrictEqual(definition.providerConfig.__proto__, {
+    polluted: true,
+  });
+  assert.deepStrictEqual(({} as Record<string, unknown>).polluted, undefined);
 
   assertThrows(
     () =>
@@ -110,55 +109,79 @@ Deno.test("worker definition JSON copying is prototype-safe and rejects non-JSON
   );
 });
 
-Deno.test("worker attempt factory exposes only valid immutable transitions", () => {
+test("worker attempt factory exposes only valid immutable transitions", () => {
   const requested = createWorkerAttempt({ identity: IDENTITY, nowMs: 10 });
-  const launching = transitionWorkerAttempt(requested, {
-    type: "launching",
-  }, 11);
-  const running = transitionWorkerAttempt(launching, {
-    type: "running",
-    providerInstanceId: "pid-42",
-  }, 12);
-  const terminating = transitionWorkerAttempt(running, {
-    type: "terminate",
-  }, 13);
-  const terminated = transitionWorkerAttempt(terminating, {
-    type: "terminated",
-  }, 14);
+  const launching = transitionWorkerAttempt(
+    requested,
+    {
+      type: "launching",
+    },
+    11,
+  );
+  const running = transitionWorkerAttempt(
+    launching,
+    {
+      type: "running",
+      providerInstanceId: "pid-42",
+    },
+    12,
+  );
+  const terminating = transitionWorkerAttempt(
+    running,
+    {
+      type: "terminate",
+    },
+    13,
+  );
+  const terminated = transitionWorkerAttempt(
+    terminating,
+    {
+      type: "terminated",
+    },
+    14,
+  );
 
-  assertEquals(terminated.phase, "terminated");
-  assertEquals(terminated.providerInstanceId, "pid-42");
-  assertEquals(terminated.createdAtMs, 10);
-  assertEquals(terminated.updatedAtMs, 14);
-  assert(isTerminalAttempt(terminated));
-  assertNotEquals(requested, launching);
-  assert(Object.isFrozen(terminated));
+  assert.deepStrictEqual(terminated.phase, "terminated");
+  assert.deepStrictEqual(terminated.providerInstanceId, "pid-42");
+  assert.deepStrictEqual(terminated.createdAtMs, 10);
+  assert.deepStrictEqual(terminated.updatedAtMs, 14);
+  assert.ok(isTerminalAttempt(terminated));
+  assert.notDeepStrictEqual(requested, launching);
+  assert.ok(Object.isFrozen(terminated));
 
   assertThrows(
     () =>
-      transitionWorkerAttempt(terminated, {
-        type: "running",
-        providerInstanceId: "pid-2",
-      }, 15),
+      transitionWorkerAttempt(
+        terminated,
+        {
+          type: "running",
+          providerInstanceId: "pid-2",
+        },
+        15,
+      ),
     Error,
     "cannot mark an attempt running",
   );
 });
 
-Deno.test("worker attempts may fail before termination but never leave a terminal phase", () => {
+test("worker attempts may fail before termination but never leave a terminal phase", () => {
   const requested = createWorkerAttempt({ identity: IDENTITY, nowMs: 10 });
-  const failed = transitionWorkerAttempt(requested, {
-    type: "failed",
-    code: "launch_failed",
-    message: "process exited",
-  }, 11);
+  const failed = transitionWorkerAttempt(
+    requested,
+    {
+      type: "failed",
+      code: "launch_failed",
+      message: "process exited",
+    },
+    11,
+  );
 
-  assertEquals(failed.phase, "failed");
-  assertEquals(failed.failure, {
+  assert.deepStrictEqual(failed.phase, "failed");
+  assert.deepStrictEqual(failed.failure, {
     code: "launch_failed",
     message: "process exited",
   });
-  assert(isTerminalAttempt(failed));
+  assert.ok(isTerminalAttempt(failed));
   assertThrows(
     () => transitionWorkerAttempt(failed, { type: "terminate" }, 12),
     Error,

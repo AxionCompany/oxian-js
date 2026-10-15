@@ -7,39 +7,38 @@ import {
 
 type FlagKind = "boolean" | "string";
 
-const FLAGS: Readonly<
-  Record<CliCommand, Readonly<Record<string, FlagKind>>>
-> = Object.freeze({
-  init: Object.freeze({
-    help: "boolean",
-    force: "boolean",
-    root: "string",
-  }),
-  dev: Object.freeze({
-    help: "boolean",
-    config: "string",
-    hostname: "string",
-    port: "string",
-  }),
-  start: Object.freeze({
-    help: "boolean",
-    config: "string",
-    hostname: "string",
-    port: "string",
-  }),
-  worker: Object.freeze({
-    help: "boolean",
-    manifest: "string",
-  }),
-  routes: Object.freeze({
-    help: "boolean",
-    config: "string",
-  }),
-  check: Object.freeze({
-    help: "boolean",
-    config: "string",
-  }),
-});
+const FLAGS: Readonly<Record<CliCommand, Readonly<Record<string, FlagKind>>>> =
+  Object.freeze({
+    init: Object.freeze({
+      help: "boolean",
+      force: "boolean",
+      root: "string",
+    }),
+    dev: Object.freeze({
+      help: "boolean",
+      config: "string",
+      hostname: "string",
+      port: "string",
+    }),
+    start: Object.freeze({
+      help: "boolean",
+      config: "string",
+      hostname: "string",
+      port: "string",
+    }),
+    worker: Object.freeze({
+      help: "boolean",
+      manifest: "string",
+    }),
+    routes: Object.freeze({
+      help: "boolean",
+      config: "string",
+    }),
+    check: Object.freeze({
+      help: "boolean",
+      config: "string",
+    }),
+  });
 
 function inputError(message: string): CliInputError {
   const error = new Error(message) as CliInputError;
@@ -50,11 +49,11 @@ function inputError(message: string): CliInputError {
   return error;
 }
 
-export function isCliInputError(
-  value: unknown,
-): value is CliInputError {
-  return value instanceof Error &&
-    (value as Partial<CliInputError>).cliInputError === true;
+export function isCliInputError(value: unknown): value is CliInputError {
+  return (
+    value instanceof Error &&
+    (value as Partial<CliInputError>).cliInputError === true
+  );
 }
 
 function isCommand(value: string): value is CliCommand {
@@ -129,10 +128,7 @@ function parseRoot(value: string): string {
   if (
     value.length === 0 ||
     value.includes("\0") ||
-    (
-      !/^[a-zA-Z]:[\\/]/.test(value) &&
-      /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(value)
-    )
+    (!/^[a-zA-Z]:[\\/]/.test(value) && /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(value))
   ) {
     throw inputError("--root must be a local directory path");
   }
@@ -158,9 +154,7 @@ export function parseCliArgs(args: readonly string[]): ParsedCli {
   }
   const commandToken = args[0];
   if (commandToken === undefined) {
-    throw inputError(
-      `missing command (expected ${CLI_COMMANDS.join(", ")})`,
-    );
+    throw inputError(`missing command (expected ${CLI_COMMANDS.join(", ")})`);
   }
   if (commandToken === "--help" || commandToken === "-h") {
     if (args.length !== 1) {

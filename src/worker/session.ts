@@ -137,9 +137,7 @@ type PendingHeartbeatMetadata = Readonly<{
  * Creates the canonical reconnecting protocol Worker over an injected physical
  * connection. Construction starts the lifecycle immediately.
  */
-export function createWorkerSession(
-  options: WorkerSessionOptions,
-): Worker {
+export function createWorkerSession(options: WorkerSessionOptions): Worker {
   if (
     options.transport?.type !== "websocket" &&
     options.transport?.type !== "in-process"
@@ -164,7 +162,7 @@ export function createWorkerSession(
   }
   const workloads = Object.freeze(
     Object.fromEntries(workloadEntries),
-  ) as Readonly<Record<string, typeof workloadEntries[number][1]>>;
+  ) as Readonly<Record<string, (typeof workloadEntries)[number][1]>>;
   const workloadNames = Object.freeze(workloadEntries.map(([name]) => name));
   const capacity = expectPositiveInteger(
     options.capacity,
@@ -199,8 +197,8 @@ export function createWorkerSession(
     DEFAULT_MAX_RECONNECT_DELAY_MS,
   );
   const now = options.now ?? Date.now;
-  const createHandshakeId = options.createHandshakeId ??
-    (() => crypto.randomUUID());
+  const createHandshakeId =
+    options.createHandshakeId ?? (() => crypto.randomUUID());
   const initialHandshakeId = options.handshakeId ?? createHandshakeId();
   // Strict validation is delegated to the Hello factory before any network IO.
   const initialHello = createHelloFrame({
@@ -232,9 +230,7 @@ export function createWorkerSession(
     credentialPersistence !== "durable" &&
     credentialPersistence !== "ephemeral"
   ) {
-    throw new TypeError(
-      "credentialPersistence must be durable or ephemeral",
-    );
+    throw new TypeError("credentialPersistence must be durable or ephemeral");
   }
   if (
     credentialPersistence === "durable" &&
@@ -293,12 +289,13 @@ export function createWorkerSession(
     ...(options.resumeExpiresAtMs === undefined
       ? {}
       : { initialResumeExpiresAtMs: options.resumeExpiresAtMs }),
-    persistence: credentialPersistence === "ephemeral"
-      ? Object.freeze({ credentialPersistence: "ephemeral" as const })
-      : Object.freeze({
-        credentialPersistence: "durable" as const,
-        persistResumeCredential: options.persistResumeCredential!,
-      }),
+    persistence:
+      credentialPersistence === "ephemeral"
+        ? Object.freeze({ credentialPersistence: "ephemeral" as const })
+        : Object.freeze({
+            credentialPersistence: "durable" as const,
+            persistResumeCredential: options.persistResumeCredential!,
+          }),
     identity,
     workloads: workloadNames,
     capacity,
@@ -311,15 +308,14 @@ export function createWorkerSession(
   readyDeferred.promise.catch(() => undefined);
   const runDone = createDeferred<void>();
   const sessionFence = createSessionFence();
-  const stateNotifications = createLatestAsyncObserver(
-    options.onStateChange,
-  );
+  const stateNotifications = createLatestAsyncObserver(options.onStateChange);
   const reenrollmentNotifications = createOneShotAsyncObserver(
     options.onReenrollmentRequired,
   );
-  const reconnectDelayInvoker = reconnectDelay === false
-    ? undefined
-    : createSingleFlightInvoker(reconnectDelay, stopController.signal);
+  const reconnectDelayInvoker =
+    reconnectDelay === false
+      ? undefined
+      : createSingleFlightInvoker(reconnectDelay, stopController.signal);
   let state: WorkerState = "idle";
   let connectionId: string | undefined;
   let activeStreams = 0;
@@ -355,10 +351,12 @@ export function createWorkerSession(
     const value = snapshot();
     stateNotifications.publish(value);
     if ((eventController?.desiredSize ?? 0) > 0) {
-      eventController?.enqueue(Object.freeze({
-        type: "state" as const,
-        snapshot: value,
-      }));
+      eventController?.enqueue(
+        Object.freeze({
+          type: "state" as const,
+          snapshot: value,
+        }),
+      );
     }
   };
 
@@ -366,10 +364,7 @@ export function createWorkerSession(
     const heartbeatMetadata = pendingHeartbeatMetadata;
     if (heartbeatMetadata !== undefined) {
       try {
-        await waitForTaskOrStop(
-          heartbeatMetadata.task,
-          stopController.signal,
-        );
+        await waitForTaskOrStop(heartbeatMetadata.task, stopController.signal);
       } catch (error) {
         if (stopController.signal.aborted) throw error;
         // The failed session already owns callback failure. A later
@@ -380,10 +375,7 @@ export function createWorkerSession(
     const initialization = pendingInitialization;
     if (initialization !== undefined) {
       try {
-        await waitForTaskOrStop(
-          initialization.task,
-          stopController.signal,
-        );
+        await waitForTaskOrStop(initialization.task, stopController.signal);
       } catch (error) {
         if (stopController.signal.aborted) throw error;
         // A failed bootstrap is retried only on a later connection and never
@@ -396,8 +388,7 @@ export function createWorkerSession(
 
   const stopFromExternalSignal = (): void => {
     stopReason = "external_abort";
-    const reason = options.signal?.reason ??
-      createAbortError("Worker stopped");
+    const reason = options.signal?.reason ?? createAbortError("Worker stopped");
     sessionFence.abortCurrent(reason);
     if (!stopController.signal.aborted) {
       stopController.abort(reason);
@@ -450,10 +441,12 @@ export function createWorkerSession(
       if (!isCurrentSession() || fatalError !== undefined) return;
       fatalError = error;
       abortSession(error);
-      void transport?.close({
-        code: 4000,
-        reason: "worker_session_failed",
-      }).catch(() => undefined);
+      void transport
+        ?.close({
+          code: 4000,
+          reason: "worker_session_failed",
+        })
+        .catch(() => undefined);
     };
 
     const wakeCreditWaiters = (stream: MutableStream): void => {
@@ -461,10 +454,7 @@ export function createWorkerSession(
       stream.creditWaiters.clear();
     };
 
-    const closeInput = (
-      stream: MutableStream,
-      error?: unknown,
-    ): void => {
+    const closeInput = (stream: MutableStream, error?: unknown): void => {
       if (stream.inputClosed) return;
       stream.inputClosed = true;
       try {
@@ -559,20 +549,14 @@ export function createWorkerSession(
       }
     };
 
-    const abortWork = (
-      stream: MutableStream,
-      reason: unknown,
-    ): void => {
+    const abortWork = (stream: MutableStream, reason: unknown): void => {
       if (!stream.abortController.signal.aborted) {
         stream.abortController.abort(reason);
       }
       closeInput(stream, reason);
       wakeCreditWaiters(stream);
       const cancellation = beginOutputCancellation(stream, reason);
-      if (
-        cancellation === undefined &&
-        stream.returnedOutput !== undefined
-      ) {
+      if (cancellation === undefined && stream.returnedOutput !== undefined) {
         try {
           void cancelReturnedOutput(stream, stream.returnedOutput, reason);
         } catch {
@@ -720,9 +704,7 @@ export function createWorkerSession(
       })();
     };
 
-    const waitForSendCredit = async (
-      stream: MutableStream,
-    ): Promise<void> => {
+    const waitForSendCredit = async (stream: MutableStream): Promise<void> => {
       while (stream.sendCredit < 1) {
         const signal = stream.abortController.signal;
         if (signal.aborted) {
@@ -782,8 +764,7 @@ export function createWorkerSession(
           }
           if (
             !callerOwnedBytes &&
-            result.value.byteLength >
-              WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes
+            result.value.byteLength > WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes
           ) {
             throw new RangeError(
               `workload output stream chunk exceeds the ${WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes} byte staging bound`,
@@ -840,15 +821,17 @@ export function createWorkerSession(
           ),
         );
       }
-      const operation = transport.sendControl(
-        createWorkMetadataFrame({
-          streamId: stream.open.streamId,
-          metadata,
-        }),
-        { signal: stream.abortController.signal },
-      ).then(() => {
-        stream.responseMetadataSent = true;
-      });
+      const operation = transport
+        .sendControl(
+          createWorkMetadataFrame({
+            streamId: stream.open.streamId,
+            metadata,
+          }),
+          { signal: stream.abortController.signal },
+        )
+        .then(() => {
+          stream.responseMetadataSent = true;
+        });
       stream.responseMetadataSending = operation.then(
         () => {
           stream.responseMetadataSending = undefined;
@@ -912,18 +895,20 @@ export function createWorkerSession(
           }
         };
         try {
-          await options.lifecycle?.onStart?.(Object.freeze({
-            stage: "start" as const,
-            stageId: `start:${stream.open.streamId}`,
-            callbackAttempt: 1,
-            signal: stream.abortController.signal,
-            identity,
-            connectionId: sessionConnectionId ?? "pending",
-            streamId: stream.open.streamId,
-            workload: stream.open.workload,
-            metadata: stream.open.metadata,
-            work: context,
-          }));
+          await options.lifecycle?.onStart?.(
+            Object.freeze({
+              stage: "start" as const,
+              stageId: `start:${stream.open.streamId}`,
+              callbackAttempt: 1,
+              signal: stream.abortController.signal,
+              identity,
+              connectionId: sessionConnectionId ?? "pending",
+              streamId: stream.open.streamId,
+              workload: stream.open.workload,
+              metadata: stream.open.metadata,
+              work: context,
+            }),
+          );
           const normalized = normalizeHandlerResult(await handler(context));
           returnedBody = normalized.body;
           if (returnedBody instanceof ReadableStream) {
@@ -983,22 +968,23 @@ export function createWorkerSession(
             await stream.outputCancellation;
           } finally {
             try {
-              await options.lifecycle?.onComplete?.(Object.freeze({
-                stage: "complete" as const,
-                stageId:
-                  `complete:${stream.open.streamId}:${completionOutcome}`,
-                callbackAttempt: 1,
-                signal: stream.abortController.signal,
-                identity,
-                connectionId: sessionConnectionId ?? "pending",
-                streamId: stream.open.streamId,
-                workload: stream.open.workload,
-                metadata: stream.open.metadata,
-                outcome: completionOutcome,
-                ...(completionError === undefined
-                  ? {}
-                  : { error: completionError }),
-              }));
+              await options.lifecycle?.onComplete?.(
+                Object.freeze({
+                  stage: "complete" as const,
+                  stageId: `complete:${stream.open.streamId}:${completionOutcome}`,
+                  callbackAttempt: 1,
+                  signal: stream.abortController.signal,
+                  identity,
+                  connectionId: sessionConnectionId ?? "pending",
+                  streamId: stream.open.streamId,
+                  workload: stream.open.workload,
+                  metadata: stream.open.metadata,
+                  outcome: completionOutcome,
+                  ...(completionError === undefined
+                    ? {}
+                    : { error: completionError }),
+                }),
+              );
             } catch {
               // Completion is an observer and never rewrites the work terminal.
             }
@@ -1053,21 +1039,24 @@ export function createWorkerSession(
       let inputController:
         | ReadableStreamDefaultController<Uint8Array>
         | undefined;
-      const input = new ReadableStream<Uint8Array>({
-        start(controller) {
-          inputController = controller;
+      const input = new ReadableStream<Uint8Array>(
+        {
+          start(controller) {
+            inputController = controller;
+          },
+          pull() {
+            if (stream !== undefined) scheduleInputCredit(stream);
+          },
+          cancel() {
+            if (stream === undefined) return;
+            // This closes only the local request-body consumer. It does not
+            // cancel the operation or its response half. Already-credited bytes
+            // are validated and discarded when they arrive.
+            stream.inputClosed = true;
+          },
         },
-        pull() {
-          if (stream !== undefined) scheduleInputCredit(stream);
-        },
-        cancel() {
-          if (stream === undefined) return;
-          // This closes only the local request-body consumer. It does not
-          // cancel the operation or its response half. Already-credited bytes
-          // are validated and discarded when they arrive.
-          stream.inputClosed = true;
-        },
-      }, new ByteLengthQueuingStrategy({ highWaterMark: inputBufferBytes }));
+        new ByteLengthQueuingStrategy({ highWaterMark: inputBufferBytes }),
+      );
       const created: MutableStream = {
         open,
         started: false,
@@ -1116,12 +1105,13 @@ export function createWorkerSession(
       // enqueue behind Drained and violate the terminal protocol phase.
       drainedFrameQueued = true;
       if (heartbeatTimer !== undefined) clearInterval(heartbeatTimer);
-      drainCompletion = drainTransport.sendControl(
-        createDrainedFrame({ connectionId: drainConnectionId }),
-      ).then(() => {
-        drained = true;
-        setSessionState("drained");
-      }).catch(failSession);
+      drainCompletion = drainTransport
+        .sendControl(createDrainedFrame({ connectionId: drainConnectionId }))
+        .then(() => {
+          drained = true;
+          setSessionState("drained");
+        })
+        .catch(failSession);
       return drainCompletion;
     }
 
@@ -1144,10 +1134,7 @@ export function createWorkerSession(
             cancelForDeadline(stream, "worker_draining");
             return;
           }
-          if (
-            frame.deadlineAtMs !== undefined &&
-            frame.deadlineAtMs <= now()
-          ) {
+          if (frame.deadlineAtMs !== undefined && frame.deadlineAtMs <= now()) {
             cancelForDeadline(stream);
             return;
           }
@@ -1165,17 +1152,19 @@ export function createWorkerSession(
           }
           stream.reservation = reservation;
           try {
-            await options.lifecycle?.onWorkAccepted?.(Object.freeze({
-              stage: "work_accepted" as const,
-              stageId: `work_accepted:${frame.streamId}`,
-              callbackAttempt: 1,
-              signal: stream.abortController.signal,
-              identity,
-              connectionId: sessionConnectionId ?? "pending",
-              streamId: frame.streamId,
-              workload: frame.workload,
-              metadata: frame.metadata,
-            }));
+            await options.lifecycle?.onWorkAccepted?.(
+              Object.freeze({
+                stage: "work_accepted" as const,
+                stageId: `work_accepted:${frame.streamId}`,
+                callbackAttempt: 1,
+                signal: stream.abortController.signal,
+                identity,
+                connectionId: sessionConnectionId ?? "pending",
+                streamId: frame.streamId,
+                workload: frame.workload,
+                metadata: frame.metadata,
+              }),
+            );
             await transport?.sendControl(
               createWorkAcceptedFrame({ streamId: frame.streamId }),
             );
@@ -1246,9 +1235,8 @@ export function createWorkerSession(
             }
             return;
           }
-          const remoteTerminal = frame.type === "work.cancel"
-            ? "cancel"
-            : "error";
+          const remoteTerminal =
+            frame.type === "work.cancel" ? "cancel" : "error";
           stream.remoteTerminal = remoteTerminal;
           if (disposition === "deliver") {
             if (frame.type === "work.cancel") {
@@ -1256,17 +1244,17 @@ export function createWorkerSession(
               // This keeps local and WebSocket sessions observationally equal.
               stream.cancelReason = frame.reason;
             }
-            const error = frame.type === "work.cancel"
-              ? createAbortError(frame.reason)
-              : new Error(frame.message);
+            const error =
+              frame.type === "work.cancel"
+                ? createAbortError(frame.reason)
+                : new Error(frame.message);
             abortWork(stream, error);
           }
           if (!terminalIsAbort(stream.localTerminal)) {
             void sendLocalTerminal(
               stream,
               remoteTerminal,
-              frame.type ===
-                  "work.error"
+              frame.type === "work.error"
                 ? new Error(frame.message)
                 : undefined,
             ).catch(failSession);
@@ -1289,10 +1277,12 @@ export function createWorkerSession(
               for (const stream of streams.values()) {
                 cancelForDeadline(stream, "drain_deadline");
               }
-              void transport?.close({
-                code: 1000,
-                reason: DRAIN_CLOSE_REASON,
-              }).catch(() => undefined);
+              void transport
+                ?.close({
+                  code: 1000,
+                  reason: DRAIN_CLOSE_REASON,
+                })
+                .catch(() => undefined);
             },
           );
           await completeDrainIfIdle();
@@ -1370,9 +1360,7 @@ export function createWorkerSession(
       scheduleInputCredit(stream);
     };
 
-    const heartbeat = async (
-      welcome: WelcomeFrame,
-    ): Promise<void> => {
+    const heartbeat = async (welcome: WelcomeFrame): Promise<void> => {
       if (
         heartbeatRunning ||
         drainedFrameQueued ||
@@ -1406,7 +1394,7 @@ export function createWorkerSession(
             signal: sessionAbortController.signal,
           });
           const task = Promise.resolve().then(() =>
-            options.createHeartbeatMetadata!(context)
+            options.createHeartbeatMetadata!(context),
           );
           const pending = Object.freeze({ task });
           pendingHeartbeatMetadata = pending;
@@ -1437,13 +1425,15 @@ export function createWorkerSession(
         ) {
           return;
         }
-        await transport.sendControl(createHeartbeatFrame({
-          connectionId: welcome.connectionId,
-          sequence: heartbeatSequence,
-          inflight: effectiveInflight,
-          availableCapacity,
-          metadata: metadata ?? {},
-        }));
+        await transport.sendControl(
+          createHeartbeatFrame({
+            connectionId: welcome.connectionId,
+            sequence: heartbeatSequence,
+            inflight: effectiveInflight,
+            availableCapacity,
+            metadata: metadata ?? {},
+          }),
+        );
         heartbeatSequence++;
       } catch (error) {
         if (
@@ -1482,13 +1472,15 @@ export function createWorkerSession(
       });
       setSessionState("handshaking");
       const iterator = transport.messages()[Symbol.asyncIterator]();
-      await transport.sendControl(createHelloFrame({
-        handshakeId: handshakeAtHello,
-        identity,
-        credential: credentialAtHello,
-        workloads: workloadNames,
-        capacity,
-      }));
+      await transport.sendControl(
+        createHelloFrame({
+          handshakeId: handshakeAtHello,
+          identity,
+          credential: credentialAtHello,
+          workloads: workloadNames,
+          capacity,
+        }),
+      );
 
       const first = await takeWithTimeout(
         iterator,
@@ -1547,12 +1539,14 @@ export function createWorkerSession(
         let metadata: JsonObject | void = undefined;
         if (options.beforeReady !== undefined) {
           const task = Promise.resolve().then(() =>
-            options.beforeReady!(Object.freeze({
-              bootstrap: welcome.bootstrap,
-              connectionId: welcome.connectionId,
-              signal: sessionAbortController.signal,
-              reconnecting: credentialAtHello.kind === "resume",
-            }))
+            options.beforeReady!(
+              Object.freeze({
+                bootstrap: welcome.bootstrap,
+                connectionId: welcome.connectionId,
+                signal: sessionAbortController.signal,
+                reconnecting: credentialAtHello.kind === "resume",
+              }),
+            ),
           );
           const initialization = Object.freeze({ task });
           pendingInitialization = initialization;
@@ -1582,11 +1576,13 @@ export function createWorkerSession(
         });
       } catch (error) {
         try {
-          await transport.sendControl(createProtocolErrorFrame({
-            connectionId: welcome.connectionId,
-            code: "initialization_failed",
-            message: "Worker initialization failed before ready",
-          }));
+          await transport.sendControl(
+            createProtocolErrorFrame({
+              connectionId: welcome.connectionId,
+              code: "initialization_failed",
+              message: "Worker initialization failed before ready",
+            }),
+          );
         } catch {
           // Connection failure still prevents Ready and triggers reconnect.
         }
@@ -1633,7 +1629,7 @@ export function createWorkerSession(
       }
       if (
         acknowledgement.value.acceptance.frame.connectionId !==
-          welcome.connectionId
+        welcome.connectionId
       ) {
         throw createWorkerError(
           "handshake_failed",
@@ -1643,13 +1639,15 @@ export function createWorkerSession(
       setSessionState("ready");
       reconnectAttempt = 0;
       const readySnapshot = snapshot();
-      await options.lifecycle?.onReady?.(Object.freeze({
-        stage: "ready" as const,
-        stageId: `ready:${welcome.connectionId}`,
-        callbackAttempt: 1,
-        signal: sessionAbortController.signal,
-        snapshot: readySnapshot,
-      }));
+      await options.lifecycle?.onReady?.(
+        Object.freeze({
+          stage: "ready" as const,
+          stageId: `ready:${welcome.connectionId}`,
+          callbackAttempt: 1,
+          signal: sessionAbortController.signal,
+          snapshot: readySnapshot,
+        }),
+      );
       if (!everReady) {
         everReady = true;
         readyDeferred.resolve(readySnapshot);
@@ -1670,10 +1668,12 @@ export function createWorkerSession(
             welcome.resumeExpiresAtMs,
             now,
             () => {
-              void transport?.close({
-                code: 1000,
-                reason: "resume_expired",
-              }).catch(() => undefined);
+              void transport
+                ?.close({
+                  code: 1000,
+                  reason: "resume_expired",
+                })
+                .catch(() => undefined);
             },
           );
           void completeDrainIfIdle();
@@ -1712,11 +1712,13 @@ export function createWorkerSession(
       if (stopController.signal.aborted) throw error;
       return {
         reason: "connection_lost",
-        error: isWorkerError(error) ? error : createWorkerError(
-          welcomed ? "connection_lost" : "handshake_failed",
-          welcomed ? "Worker connection failed" : "Worker handshake failed",
-          error,
-        ),
+        error: isWorkerError(error)
+          ? error
+          : createWorkerError(
+              welcomed ? "connection_lost" : "handshake_failed",
+              welcomed ? "Worker connection failed" : "Worker handshake failed",
+              error,
+            ),
       };
     } finally {
       if (heartbeatTimer !== undefined) clearInterval(heartbeatTimer);
@@ -1737,10 +1739,7 @@ export function createWorkerSession(
       streams.clear();
       syncActiveStreams();
       abortSession(
-        createWorkerError(
-          "connection_lost",
-          "Worker session ended",
-        ),
+        createWorkerError("connection_lost", "Worker session ended"),
       );
       unsubscribeExecutionLedger();
       if (isCurrentSession()) {
@@ -1749,14 +1748,14 @@ export function createWorkerSession(
       }
       sessionLease.release();
       if (transport !== undefined) {
-        await transport.close({
-          code: 1000,
-          reason: "worker_session_ended",
-          timeoutMs: 1_000,
-        }).catch(() => undefined);
-      } else if (
-        frameConnection !== undefined
-      ) {
+        await transport
+          .close({
+            code: 1000,
+            reason: "worker_session_ended",
+            timeoutMs: 1_000,
+          })
+          .catch(() => undefined);
+      } else if (frameConnection !== undefined) {
         try {
           frameConnection.close("worker_session_ended", 1000);
         } catch {
@@ -1774,9 +1773,7 @@ export function createWorkerSession(
     context: Parameters<WorkerReconnectDelay>[0],
   ): Promise<number | null> => {
     if (reconnectDelayInvoker === undefined) {
-      return Promise.reject(
-        new TypeError("reconnect delay is disabled"),
-      );
+      return Promise.reject(new TypeError("reconnect delay is disabled"));
     }
     return reconnectDelayInvoker.run(context);
   };
@@ -1813,12 +1810,13 @@ export function createWorkerSession(
         if (result.reason === "drained") {
           continue;
         }
-        lastError = result.reason === "connection_lost"
-          ? result.error
-          : createWorkerError(
-            "connection_lost",
-            "Rotating worker resume credential",
-          );
+        lastError =
+          result.reason === "connection_lost"
+            ? result.error
+            : createWorkerError(
+                "connection_lost",
+                "Rotating worker resume credential",
+              );
 
         if (
           isWorkerError(lastError) &&
@@ -1837,9 +1835,11 @@ export function createWorkerSession(
           attempt: reconnectAttempt,
           error: lastError,
           credentialKind: reconnectCredentialState.credential.kind,
-          ...(reconnectCredentialState.resumeExpiresAtMs === undefined ? {} : {
-            resumeExpiresAtMs: reconnectCredentialState.resumeExpiresAtMs,
-          }),
+          ...(reconnectCredentialState.resumeExpiresAtMs === undefined
+            ? {}
+            : {
+                resumeExpiresAtMs: reconnectCredentialState.resumeExpiresAtMs,
+              }),
         });
         if (delay === null) {
           return { reason: "reconnect_exhausted", error: lastError };
@@ -1855,12 +1855,13 @@ export function createWorkerSession(
         }
 
         const delayCredentialState = credentials.current();
-        const safeDelay = delayCredentialState.resumeExpiresAtMs === undefined
-          ? delay
-          : Math.min(
-            delay,
-            Math.max(0, delayCredentialState.resumeExpiresAtMs - now()),
-          );
+        const safeDelay =
+          delayCredentialState.resumeExpiresAtMs === undefined
+            ? delay
+            : Math.min(
+                delay,
+                Math.max(0, delayCredentialState.resumeExpiresAtMs - now()),
+              );
         await waitForDelay(safeDelay, stopController.signal);
       }
       return { reason: "stopped" };
@@ -1874,11 +1875,13 @@ export function createWorkerSession(
       options.signal?.removeEventListener("abort", stopFromExternalSignal);
       if (!everReady) {
         readyDeferred.reject(
-          isWorkerError(lastError) ? lastError : createWorkerError(
-            "worker_stopped",
-            "Worker stopped before becoming ready",
-            lastError,
-          ),
+          isWorkerError(lastError)
+            ? lastError
+            : createWorkerError(
+                "worker_stopped",
+                "Worker stopped before becoming ready",
+                lastError,
+              ),
         );
       }
       runDone.resolve();
@@ -1911,37 +1914,44 @@ export function createWorkerSession(
 
   let eventController:
     | ReadableStreamDefaultController<
-      import("../lifecycle/types.ts").WorkerLifecycleEvent
-    >
+        import("../lifecycle/types.ts").WorkerLifecycleEvent
+      >
     | undefined;
   const events = new ReadableStream<
     import("../lifecycle/types.ts").WorkerLifecycleEvent
-  >({
-    start(controller) {
-      eventController = controller;
+  >(
+    {
+      start(controller) {
+        eventController = controller;
+      },
+      cancel() {
+        eventController = undefined;
+      },
     },
-    cancel() {
-      eventController = undefined;
-    },
-  }, new CountQueuingStrategy({ highWaterMark: 64 }));
+    new CountQueuingStrategy({ highWaterMark: 64 }),
+  );
   const closed = run();
   closed.then(
     (result) => {
       if ((eventController?.desiredSize ?? 0) > 0) {
-        eventController?.enqueue(Object.freeze({
-          type: "closed" as const,
-          reason: result.reason,
-        }));
+        eventController?.enqueue(
+          Object.freeze({
+            type: "closed" as const,
+            reason: result.reason,
+          }),
+        );
       }
       eventController?.close();
       eventController = undefined;
     },
     (error) => {
       if ((eventController?.desiredSize ?? 0) > 0) {
-        eventController?.enqueue(Object.freeze({
-          type: "closed" as const,
-          reason: error,
-        }));
+        eventController?.enqueue(
+          Object.freeze({
+            type: "closed" as const,
+            reason: error,
+          }),
+        );
       }
       eventController?.close();
       eventController = undefined;

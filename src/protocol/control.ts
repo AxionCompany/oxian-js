@@ -148,9 +148,8 @@ function expectInteger(
     value < options.min ||
     (options.max !== undefined && value > options.max)
   ) {
-    const maximum = options.max === undefined
-      ? ""
-      : ` and at most ${options.max}`;
+    const maximum =
+      options.max === undefined ? "" : ` and at most ${options.max}`;
     return fail(
       path,
       `expected an integer of at least ${options.min}${maximum}`,
@@ -225,7 +224,7 @@ function cloneJsonValue(
   try {
     if (Array.isArray(value)) {
       return value.map((entry, index) =>
-        cloneJsonValue(entry, `${path}[${index}]`, depth + 1, seen)
+        cloneJsonValue(entry, `${path}[${index}]`, depth + 1, seen),
       );
     }
 
@@ -292,7 +291,7 @@ function decodeWorkloads(value: unknown, path: string): readonly string[] {
   }
 
   const workloads = value.map((entry, index) =>
-    expectWorkload(entry, `${path}[${index}]`)
+    expectWorkload(entry, `${path}[${index}]`),
   );
   if (new Set(workloads).size !== workloads.length) {
     return fail(path, "workloads must be unique");
@@ -310,11 +309,7 @@ function expectFrame(
   expectExactKeys(record, "$", ["protocol", "type", ...required], optional);
 
   if (record.protocol !== WORKER_PROTOCOL) {
-    fail(
-      "$.protocol",
-      `expected ${WORKER_PROTOCOL}`,
-      "unsupported_protocol",
-    );
+    fail("$.protocol", `expected ${WORKER_PROTOCOL}`, "unsupported_protocol");
   }
   if (record.type !== type) {
     fail("$.type", `expected ${type}`);
@@ -545,11 +540,9 @@ function decodeWorkOpen(value: unknown): WorkOpenFrame {
   };
 
   if (Object.hasOwn(record, "deadlineAtMs")) {
-    frame.deadlineAtMs = expectInteger(
-      record.deadlineAtMs,
-      "$.deadlineAtMs",
-      { min: 0 },
-    );
+    frame.deadlineAtMs = expectInteger(record.deadlineAtMs, "$.deadlineAtMs", {
+      min: 0,
+    });
   }
   return frame;
 }
@@ -573,10 +566,7 @@ function decodeWorkStart(value: unknown): WorkStartFrame {
 }
 
 function decodeWorkMetadata(value: unknown): WorkMetadataFrame {
-  const record = expectFrame(value, "work.metadata", [
-    "streamId",
-    "metadata",
-  ]);
+  const record = expectFrame(value, "work.metadata", ["streamId", "metadata"]);
   return {
     protocol: WORKER_PROTOCOL,
     type: "work.metadata",
@@ -744,9 +734,7 @@ export function encodeControlFrame(
   return encoded;
 }
 
-export function createWorkerIdentity(
-  input: WorkerIdentity,
-): WorkerIdentity {
+export function createWorkerIdentity(input: WorkerIdentity): WorkerIdentity {
   return decodeIdentity(input, "$.identity");
 }
 
@@ -759,9 +747,8 @@ export function createHelloFrame(input: FrameInput<HelloFrame>): HelloFrame {
 }
 
 export function createWelcomeFrame(
-  input:
-    & Omit<FrameInput<WelcomeFrame>, "bootstrap">
-    & Readonly<{ bootstrap?: JsonObject }>,
+  input: Omit<FrameInput<WelcomeFrame>, "bootstrap"> &
+    Readonly<{ bootstrap?: JsonObject }>,
 ): WelcomeFrame {
   return decodeWelcome({
     protocol: WORKER_PROTOCOL,
@@ -772,9 +759,8 @@ export function createWelcomeFrame(
 }
 
 export function createReadyFrame(
-  input:
-    & Omit<FrameInput<ReadyFrame>, "metadata">
-    & Readonly<{ metadata?: JsonObject }>,
+  input: Omit<FrameInput<ReadyFrame>, "metadata"> &
+    Readonly<{ metadata?: JsonObject }>,
 ): ReadyFrame {
   return decodeReady({
     protocol: WORKER_PROTOCOL,
@@ -795,9 +781,8 @@ export function createReadyAckFrame(
 }
 
 export function createHeartbeatFrame(
-  input:
-    & Omit<FrameInput<HeartbeatFrame>, "metadata">
-    & Readonly<{ metadata?: JsonObject }>,
+  input: Omit<FrameInput<HeartbeatFrame>, "metadata"> &
+    Readonly<{ metadata?: JsonObject }>,
 ): HeartbeatFrame {
   return decodeHeartbeat({
     protocol: WORKER_PROTOCOL,

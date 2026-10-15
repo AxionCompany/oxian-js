@@ -1,10 +1,12 @@
-import { assert, assertEquals, assertThrows } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertThrows } from "../support/assert.ts";
 import type { JsonObject, JsonValue } from "../../src/protocol/types.ts";
 import {
   createProviderInspection,
   createProviderResource,
   createProviderTermination,
-} from "../../src/providers/index.ts";
+} from "../../src/providers/core.ts";
 
 function createResource(attributes?: JsonObject) {
   return createProviderResource({
@@ -20,7 +22,7 @@ function createResource(attributes?: JsonObject) {
   });
 }
 
-Deno.test("provider JSON is validated, deeply cloned, frozen, and __proto__ safe", () => {
+test("provider JSON is validated, deeply cloned, frozen, and __proto__ safe", () => {
   const source = JSON.parse(
     '{"__proto__":{"polluted":true},"nested":{"items":[1,{"value":"original"}]}}',
   ) as JsonObject;
@@ -31,22 +33,22 @@ Deno.test("provider JSON is validated, deeply cloned, frozen, and __proto__ safe
   };
   (sourceNested.items[1] as { value: string }).value = "mutated";
 
-  assert(Object.isFrozen(resource.attributes));
-  assert(Object.isFrozen(resource.attributes.__proto__));
-  assert(Object.isFrozen(resource.attributes.nested));
+  assert.ok(Object.isFrozen(resource.attributes));
+  assert.ok(Object.isFrozen(resource.attributes.__proto__));
+  assert.ok(Object.isFrozen(resource.attributes.nested));
   const nested = resource.attributes.nested as JsonObject;
-  assert(Object.isFrozen(nested.items));
-  assert(Object.isFrozen((nested.items as readonly JsonValue[])[1]));
-  assertEquals(
+  assert.ok(Object.isFrozen(nested.items));
+  assert.ok(Object.isFrozen((nested.items as readonly JsonValue[])[1]));
+  assert.deepStrictEqual(
     ((nested.items as readonly JsonValue[])[1] as JsonObject).value,
     "original",
   );
-  assert(Object.hasOwn(resource.attributes, "__proto__"));
-  assertEquals(Object.getPrototypeOf(resource.attributes), Object.prototype);
-  assertEquals(
-    ({} as Record<string, unknown>).polluted,
-    undefined,
+  assert.ok(Object.hasOwn(resource.attributes, "__proto__"));
+  assert.deepStrictEqual(
+    Object.getPrototypeOf(resource.attributes),
+    Object.prototype,
   );
+  assert.deepStrictEqual(({} as Record<string, unknown>).polluted, undefined);
 
   const details = JSON.parse(
     '{"__proto__":{"inspection":true},"nested":{"ok":true}}',
@@ -65,35 +67,27 @@ Deno.test("provider JSON is validated, deeply cloned, frozen, and __proto__ safe
   });
   (details.nested as Record<string, JsonValue>).ok = false;
 
-  assert(Object.isFrozen(inspection.details));
-  assert(Object.isFrozen(inspection.details.nested));
-  assert(Object.hasOwn(inspection.details, "__proto__"));
-  assertEquals(
-    (inspection.details.nested as JsonObject).ok,
-    true,
-  );
-  assert(Object.isFrozen(termination.details));
-  assert(Object.isFrozen(termination.details.nested));
-  assertEquals(
-    (termination.details.nested as JsonObject).ok,
-    true,
-  );
+  assert.ok(Object.isFrozen(inspection.details));
+  assert.ok(Object.isFrozen(inspection.details.nested));
+  assert.ok(Object.hasOwn(inspection.details, "__proto__"));
+  assert.deepStrictEqual((inspection.details.nested as JsonObject).ok, true);
+  assert.ok(Object.isFrozen(termination.details));
+  assert.ok(Object.isFrozen(termination.details.nested));
+  assert.deepStrictEqual((termination.details.nested as JsonObject).ok, true);
 });
 
-Deno.test("provider JSON rejects non-JSON and unsafe object shapes", () => {
+test("provider JSON rejects non-JSON and unsafe object shapes", () => {
   const circular: Record<string, unknown> = {};
   circular.self = circular;
 
-  for (
-    const attributes of [
-      { invalid: undefined },
-      { invalid: Number.NaN },
-      { invalid: Number.POSITIVE_INFINITY },
-      { invalid: 1n },
-      circular,
-      new Date(),
-    ]
-  ) {
+  for (const attributes of [
+    { invalid: undefined },
+    { invalid: Number.NaN },
+    { invalid: Number.POSITIVE_INFINITY },
+    { invalid: 1n },
+    circular,
+    new Date(),
+  ]) {
     assertThrows(
       () => createResource(attributes as unknown as JsonObject),
       TypeError,
@@ -137,7 +131,7 @@ Deno.test("provider JSON rejects non-JSON and unsafe object shapes", () => {
   );
 });
 
-Deno.test("inspection states and termination outcomes are runtime validated", () => {
+test("inspection states and termination outcomes are runtime validated", () => {
   const resource = createResource();
   assertThrows(
     () =>
@@ -161,7 +155,7 @@ Deno.test("inspection states and termination outcomes are runtime validated", ()
   );
 });
 
-Deno.test("inspection and termination factories revalidate embedded resources", () => {
+test("inspection and termination factories revalidate embedded resources", () => {
   const canonical = createResource();
   const mutableAttributes = {
     nested: {
@@ -184,14 +178,14 @@ Deno.test("inspection and termination factories revalidate embedded resources", 
   });
   mutableAttributes.nested.value = "mutated";
 
-  assert(Object.isFrozen(inspection.resource.attributes));
-  assert(Object.isFrozen(inspection.resource.attributes.nested));
-  assertEquals(
+  assert.ok(Object.isFrozen(inspection.resource.attributes));
+  assert.ok(Object.isFrozen(inspection.resource.attributes.nested));
+  assert.deepStrictEqual(
     (inspection.resource.attributes.nested as JsonObject).value,
     "original",
   );
-  assert(Object.isFrozen(termination.resource.attributes));
-  assertEquals(
+  assert.ok(Object.isFrozen(termination.resource.attributes));
+  assert.deepStrictEqual(
     (termination.resource.attributes.nested as JsonObject).value,
     "original",
   );

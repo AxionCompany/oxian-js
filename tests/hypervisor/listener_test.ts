@@ -1,7 +1,8 @@
-import { assertEquals } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
 import { observeListenerSettlement } from "../../src/hypervisor/internal/listener.ts";
 
-Deno.test("listener settlement consumes rejection and removes its abort observer", async () => {
+test("listener settlement consumes rejection and removes its abort observer", async () => {
   for (const outcome of ["resolve", "reject"] as const) {
     const controller = new AbortController();
     const finished = Promise.withResolvers<void>();
@@ -24,14 +25,14 @@ Deno.test("listener settlement consumes rejection and removes its abort observer
     else finished.reject(new Error("listener failed"));
     await Promise.resolve();
 
-    assertEquals(cleanupCalls, 1);
+    assert.deepStrictEqual(cleanupCalls, 1);
     controller.abort("late abort");
     await Promise.resolve();
-    assertEquals(closeCalls, 0);
+    assert.deepStrictEqual(closeCalls, 0);
   }
 });
 
-Deno.test("listener abort closes once before later settlement cleanup", async () => {
+test("listener abort closes once before later settlement cleanup", async () => {
   const controller = new AbortController();
   const finished = Promise.withResolvers<void>();
   let closeCalls = 0;
@@ -51,11 +52,11 @@ Deno.test("listener abort closes once before later settlement cleanup", async ()
 
   controller.abort("test abort");
   await Promise.resolve();
-  assertEquals(closeCalls, 1);
-  assertEquals(cleanupCalls, 0);
+  assert.deepStrictEqual(closeCalls, 1);
+  assert.deepStrictEqual(cleanupCalls, 0);
 
   finished.resolve();
   await Promise.resolve();
-  assertEquals(closeCalls, 1);
-  assertEquals(cleanupCalls, 1);
+  assert.deepStrictEqual(closeCalls, 1);
+  assert.deepStrictEqual(cleanupCalls, 1);
 });

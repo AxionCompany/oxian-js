@@ -1,4 +1,6 @@
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { assertRejects } from "../support/assert.ts";
 import { createHypervisorConfig } from "../../src/hypervisor/config.ts";
 import { createDispatch } from "../../src/hypervisor/internal/dispatch.ts";
 import type { HypervisorAssign } from "../../src/lifecycle/index.ts";
@@ -12,7 +14,7 @@ import type { WorkHandle } from "../../src/work/types.ts";
 
 async function code(promise: Promise<unknown>, expected: string) {
   const error = await assertRejects(() => promise);
-  assertEquals((error as Error & { code: string }).code, expected);
+  assert.deepStrictEqual((error as Error & { code: string }).code, expected);
   return error as Error;
 }
 
@@ -66,11 +68,13 @@ function harness(
           },
         }),
         cancel: () =>
-          Promise.resolve(dispatcher.withdrawOffer(
-            work.operationId,
-            work.assignment!.fence,
-            work.assignment!.streamId,
-          )),
+          Promise.resolve(
+            dispatcher.withdrawOffer(
+              work.operationId,
+              work.assignment!.fence,
+              work.assignment!.streamId,
+            ),
+          ),
       };
     },
   });
@@ -116,7 +120,7 @@ function harness(
   };
 }
 
-Deno.test("dispatch queue: arrival order among runnable heads and FIFO across workloads on a target", async () => {
+test("dispatch queue: arrival order among runnable heads and FIFO across workloads on a target", async () => {
   const h = harness();
   h.attach("one", ["job", "other"]);
   const first = await h.dispatch({
@@ -135,7 +139,7 @@ Deno.test("dispatch queue: arrival order among runnable heads and FIFO across wo
     target: { workerId: "one" },
     metadata: { order: 4 },
   });
-  assertEquals(h.snapshot(), {
+  assert.deepStrictEqual(h.snapshot(), {
     queuedDispatches: 3,
     queuedDispatchesByLane: [
       { workload: "job", count: 1 },
@@ -143,18 +147,18 @@ Deno.test("dispatch queue: arrival order among runnable heads and FIFO across wo
       { workload: "other", workerId: "one", count: 1 },
     ],
   });
-  assertEquals(h.dispatcher.list().length, 1);
+  assert.deepStrictEqual(h.dispatcher.list().length, 1);
   h.release(first);
   h.release(await second);
   h.release(await third);
   h.release(await fourth);
-  assertEquals(h.opened, ["1", "2", "3", "4"]);
-  assertEquals(h.snapshot().queuedDispatches, 0);
-  assertEquals(h.timers.size, 0);
+  assert.deepStrictEqual(h.opened, ["1", "2", "3", "4"]);
+  assert.deepStrictEqual(h.snapshot().queuedDispatches, 0);
+  assert.deepStrictEqual(h.timers.size, 0);
   h.host.abort();
 });
 
-Deno.test("dispatch queue: independent lanes proceed, absent target retains exact routing", async () => {
+test("dispatch queue: independent lanes proceed, absent target retains exact routing", async () => {
   const h = harness();
   h.attach("other", ["job", "independent"]);
   const waiting = h.dispatch({
@@ -165,10 +169,10 @@ Deno.test("dispatch queue: independent lanes proceed, absent target retains exac
     workload: "independent",
     target: { workerId: "other" },
   });
-  assertEquals(h.snapshot().queuedDispatches, 1);
+  assert.deepStrictEqual(h.snapshot().queuedDispatches, 1);
   h.attach("missing");
   const result = await waiting;
-  assertEquals(
+  assert.deepStrictEqual(
     h.dispatcher.get(result.operationId)?.assignment?.fence.identity.workerId,
     "missing",
   );
@@ -177,14 +181,17 @@ Deno.test("dispatch queue: independent lanes proceed, absent target retains exac
   h.host.abort();
 });
 
-Deno.test("dispatch queue: deadline, default timeout, abort cause, full queue, and untouched body", async () => {
+test("dispatch queue: deadline, default timeout, abort cause, full queue, and untouched body", async () => {
   const h = harness(undefined, 2);
   let pulled = false;
-  const body = new ReadableStream<Uint8Array>({
-    pull() {
-      pulled = true;
+  const body = new ReadableStream<Uint8Array>(
+    {
+      pull() {
+        pulled = true;
+      },
     },
-  }, { highWaterMark: 0 });
+    { highWaterMark: 0 },
+  );
   const abort = new AbortController();
   const first = code(
     h.dispatch({ workload: "job", deadlineAtMs: 1_010, body }),
@@ -196,11 +203,11 @@ Deno.test("dispatch queue: deadline, default timeout, abort cause, full queue, a
   );
   await code(h.dispatch({ workload: "job" }), "dispatch_queue_full");
   abort.abort("caller left");
-  assertEquals((await second).cause, "caller left");
+  assert.deepStrictEqual((await second).cause, "caller left");
   await h.tick(10);
   await first;
-  assertEquals(pulled, false);
-  assertEquals(body.locked, false);
+  assert.deepStrictEqual(pulled, false);
+  assert.deepStrictEqual(body.locked, false);
   const fallback = code(
     h.dispatch({ workload: "job", deadlineAtMs: 100_000 }),
     "deadline_exceeded",
@@ -215,12 +222,12 @@ Deno.test("dispatch queue: deadline, default timeout, abort cause, full queue, a
     h.dispatch({ workload: "job", signal: AbortSignal.abort("already") }),
     "dispatch_aborted",
   );
-  assertEquals(h.dispatcher.list(), []);
-  assertEquals(h.timers.size, 0);
+  assert.deepStrictEqual(h.dispatcher.list(), []);
+  assert.deepStrictEqual(h.timers.size, 0);
   h.host.abort();
 });
 
-Deno.test("dispatch queue: drain rejects target, untargeted survives; shutdown rejects all and future dispatch", async () => {
+test("dispatch queue: drain rejects target, untargeted survives; shutdown rejects all and future dispatch", async () => {
   const h = harness();
   const fence = h.attach();
   const active = await h.dispatch({ workload: "job" });
@@ -235,15 +242,15 @@ Deno.test("dispatch queue: drain rejects target, untargeted survives; shutdown r
     h.dispatch({ workload: "job", target: { workerId: "one" } }),
     "worker_draining",
   );
-  assertEquals(h.snapshot().queuedDispatches, 1);
+  assert.deepStrictEqual(h.snapshot().queuedDispatches, 1);
   h.host.abort();
   await untargeted;
   await code(h.dispatch({ workload: "job" }), "shutting_down");
   h.release(active);
-  assertEquals(h.timers.size, 0);
+  assert.deepStrictEqual(h.timers.size, 0);
 });
 
-Deno.test("dispatch queue: cancelled asynchronous assignment cannot offer late", async () => {
+test("dispatch queue: cancelled asynchronous assignment cannot offer late", async () => {
   for (const terminal of ["abort", "deadline", "shutdown", "drain"] as const) {
     const selection = Promise.withResolvers<SessionFence | undefined>();
     let observedSignal: AbortSignal | undefined;
@@ -272,18 +279,18 @@ Deno.test("dispatch queue: cancelled asynchronous assignment cannot offer late",
     if (terminal === "shutdown") h.host.abort();
     if (terminal === "drain") h.sessions.startDrain(fence);
     await waiting;
-    assert(observedSignal?.aborted);
+    assert.ok(observedSignal?.aborted);
     selection.resolve(fence);
     await h.tick();
-    assertEquals(h.opened, []);
-    assertEquals(h.dispatcher.list(), []);
-    assertEquals(h.sessions.get("one")?.reserved, 0);
+    assert.deepStrictEqual(h.opened, []);
+    assert.deepStrictEqual(h.dispatcher.list(), []);
+    assert.deepStrictEqual(h.sessions.get("one")?.reserved, 0);
     h.host.abort();
-    assertEquals(h.timers.size, 0);
+    assert.deepStrictEqual(h.timers.size, 0);
   }
 });
 
-Deno.test("dispatch queue: stale async selection retries with stable operation and incrementing callbackAttempt", async () => {
+test("dispatch queue: stale async selection retries with stable operation and incrementing callbackAttempt", async () => {
   const selection = Promise.withResolvers<SessionFence | undefined>();
   const attempts: { stageId: string; callbackAttempt: number }[] = [];
   const h = harness((context) => {
@@ -295,9 +302,12 @@ Deno.test("dispatch queue: stale async selection retries with stable operation a
   const replacement = h.attach("one", ["job"], 2);
   selection.resolve(old);
   const result = await waiting;
-  assertEquals(attempts.map((x) => x.callbackAttempt), [1, 2]);
-  assertEquals(attempts[0].stageId, attempts[1].stageId);
-  assertEquals(
+  assert.deepStrictEqual(
+    attempts.map((x) => x.callbackAttempt),
+    [1, 2],
+  );
+  assert.deepStrictEqual(attempts[0].stageId, attempts[1].stageId);
+  assert.deepStrictEqual(
     h.dispatcher.get(result.operationId)?.assignment?.fence,
     replacement,
   );
@@ -305,7 +315,7 @@ Deno.test("dispatch queue: stale async selection retries with stable operation a
   h.host.abort();
 });
 
-Deno.test("dispatch queue: invalid input and policy errors fail without waiting or leaked reservations", async () => {
+test("dispatch queue: invalid input and policy errors fail without waiting or leaked reservations", async () => {
   const h = harness(() => {
     throw new Error("policy failed");
   });
@@ -320,57 +330,57 @@ Deno.test("dispatch queue: invalid input and policy errors fail without waiting 
     Error,
     "policy failed",
   );
-  assertEquals(h.snapshot().queuedDispatches, 0);
-  assertEquals(h.dispatcher.list(), []);
+  assert.deepStrictEqual(h.snapshot().queuedDispatches, 0);
+  assert.deepStrictEqual(h.dispatcher.list(), []);
   h.host.abort();
 });
 
-Deno.test("dispatch queue: custom registry without subscription polls only while queued", async () => {
+test("dispatch queue: custom registry without subscription polls only while queued", async () => {
   const h = harness(undefined, 8, true);
   const waiting = h.dispatch({ workload: "job" });
   h.attach();
   await h.tick(25);
   h.release(await waiting);
-  assertEquals(h.timers.size, 0);
+  assert.deepStrictEqual(h.timers.size, 0);
   h.host.abort();
 });
 
-Deno.test("dispatch queue: default capacity rejection remains compatible", async () => {
+test("dispatch queue: default capacity rejection remains compatible", async () => {
   const h = harness(undefined, 0);
   await code(h.dispatch({ workload: "job" }), "worker_unavailable");
   h.attach();
   const active = await h.dispatch({ workload: "job" });
   await code(h.dispatch({ workload: "job" }), "worker_unavailable");
-  assertEquals(h.snapshot().queuedDispatches, 0);
+  assert.deepStrictEqual(h.snapshot().queuedDispatches, 0);
   h.release(active);
   h.host.abort();
 });
 
-Deno.test("dispatch queue: capacity stolen during assign waits for release before retry", async () => {
+test("dispatch queue: capacity stolen during assign waits for release before retry", async () => {
   const selection = Promise.withResolvers<SessionFence | undefined>();
   let calls = 0;
   const h = harness((context) =>
-    ++calls === 1 ? selection.promise : context.available[0]
+    ++calls === 1 ? selection.promise : context.available[0],
   );
   const fence = h.attach();
   const waiting = h.dispatch({ workload: "job" });
   const competing = h.dispatcher.offer({ workload: "job" });
   selection.resolve(fence);
   await h.tick();
-  assertEquals(h.snapshot().queuedDispatches, 1);
-  assertEquals(calls, 1);
+  assert.deepStrictEqual(h.snapshot().queuedDispatches, 1);
+  assert.deepStrictEqual(calls, 1);
   h.dispatcher.withdrawOffer(
     competing.operationId,
     fence,
     competing.assignment!.streamId,
   );
   const result = await waiting;
-  assertEquals(calls, 2);
+  assert.deepStrictEqual(calls, 2);
   h.release(result);
   h.host.abort();
 });
 
-Deno.test("dispatch queue: registry observer failure cannot strand a reservation", async () => {
+test("dispatch queue: registry observer failure cannot strand a reservation", async () => {
   const h = harness();
   const unsubscribe = h.sessions.subscribe!(() => {
     throw new Error("observer failed");
@@ -380,8 +390,8 @@ Deno.test("dispatch queue: registry observer failure cannot strand a reservation
   const waiting = h.dispatch({ workload: "job" });
   h.release(active);
   h.release(await waiting);
-  assertEquals(h.sessions.get("one")?.reserved, 0);
-  assertEquals(h.dispatcher.list(), []);
+  assert.deepStrictEqual(h.sessions.get("one")?.reserved, 0);
+  assert.deepStrictEqual(h.dispatcher.list(), []);
   unsubscribe();
   h.host.abort();
 });

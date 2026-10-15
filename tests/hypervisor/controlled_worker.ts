@@ -62,9 +62,7 @@ export async function nextControlledMessage(
   return next.value;
 }
 
-export async function nextControlledControl<
-  T extends ControlFrame["type"],
->(
+export async function nextControlledControl<T extends ControlFrame["type"]>(
   worker: Pick<ControlledWorker, "iterator">,
   type: T,
   timeoutMs = 2_000,
@@ -126,9 +124,7 @@ export async function connectControlledWorker(
     allowInsecureLoopback: true,
     timeoutMs,
   });
-  const connection = await createFrameConnection(
-    adaptSocketConnection(socket),
-  );
+  const connection = await createFrameConnection(adaptSocketConnection(socket));
   const transport = await createProtocolTransport({
     connection,
     role: "worker",
@@ -137,34 +133,36 @@ export async function connectControlledWorker(
   const partial = { iterator };
 
   try {
-    await transport.sendControl(createHelloFrame({
-      handshakeId: input.handshakeId,
-      identity: input.identity,
-      credential: input.credential,
-      workloads: input.workloads,
-      capacity: input.capacity,
-    }));
-    const welcome = await nextControlledControl(
-      partial,
-      "welcome",
-      timeoutMs,
+    await transport.sendControl(
+      createHelloFrame({
+        handshakeId: input.handshakeId,
+        identity: input.identity,
+        credential: input.credential,
+        workloads: input.workloads,
+        capacity: input.capacity,
+      }),
     );
-    await transport.sendControl(createReadyFrame({
-      connectionId: welcome.connectionId,
-      capacity: input.capacity,
-      metadata: input.readyMetadata ?? {},
-    }));
+    const welcome = await nextControlledControl(partial, "welcome", timeoutMs);
+    await transport.sendControl(
+      createReadyFrame({
+        connectionId: welcome.connectionId,
+        capacity: input.capacity,
+        metadata: input.readyMetadata ?? {},
+      }),
+    );
     await nextControlledControl(partial, "ready_ack", timeoutMs);
 
     let closed = false;
     const close = async (reason = "controlled_worker_closed") => {
       if (closed) return;
       closed = true;
-      await transport.close({
-        code: 4100,
-        reason,
-        timeoutMs: 250,
-      }).catch(() => undefined);
+      await transport
+        .close({
+          code: 4100,
+          reason,
+          timeoutMs: 250,
+        })
+        .catch(() => undefined);
     };
     return Object.freeze({
       socket,
@@ -174,11 +172,13 @@ export async function connectControlledWorker(
       close,
     });
   } catch (error) {
-    await transport.close({
-      code: 4100,
-      reason: "controlled_worker_setup_failed",
-      timeoutMs: 250,
-    }).catch(() => undefined);
+    await transport
+      .close({
+        code: 4100,
+        reason: "controlled_worker_setup_failed",
+        timeoutMs: 250,
+      })
+      .catch(() => undefined);
     throw error;
   }
 }
