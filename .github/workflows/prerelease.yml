@@ -30,7 +30,5 @@ jobs:
       - name: Publish to npm next
         working-directory: build/npm
         run: npm publish --provenance --access public --tag next
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Mirror the same version to JSR
         run: node scripts/stamp_deno_version.mjs build/npm/package.json && deno publish --allow-dirty

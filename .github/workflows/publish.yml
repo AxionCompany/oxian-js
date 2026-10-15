@@ -53,7 +53,5 @@ jobs:
       - name: Publish package
         working-directory: build/npm
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Mirror the same version to JSR
         run: deno publish
