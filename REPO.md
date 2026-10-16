@@ -21,7 +21,7 @@ status: active
 
 ## Purpose
 
-Oxian 0.21 provides a file router, a Fetch-native application runtime, an HTTP
+Oxian 0.22 provides a file router, a Fetch-native application runtime, an HTTP
 workload, a Hypervisor host, and Workers placed through declarative in-process
 or WebSocket transports. It is a library; application policy, durable worker
 state, provider implementation, and secrets remain at their owning boundaries.
@@ -48,13 +48,24 @@ state, provider implementation, and secrets remain at their owning boundaries.
 - `src/worker/`, `src/transport/`, `src/protocol/`: one Worker lifecycle,
   low-level WebSocket transport, and versioned wire contract.
 - `src/local/`, `src/edge/`: local composition and HTTP edge adapters.
-- `docs/`: public 0.21 documentation. Historical implementation plans are
+- `docs/`: public 0.22 prerelease documentation. Historical implementation plans are
   internal ledgers and are not published.
 
 Oxian deliberately owns only the sessions connected to one Hypervisor process.
 Durable cross-replica routing is application infrastructure; Sandbox keeps its
 PostgreSQL relay at that downstream boundary instead of exposing an unused
 generic ownership abstraction from this package.
+
+## Durable owner retirement
+
+The former `src/owner`, `src/host` and Postgres-owner adapter are removed.
+Copilotz owns its concrete durable runtime; Oxian retains transport, dispatch,
+session lifecycle and generic admission hooks. Node connection limiting is an
+independent adapter concern. The approved worker-to-owner protocol extension
+is still future work, not a capability supplied by deleting the owner API.
+
+See `docs/owner-retirement.md` for the behavioral migration inventory. Existing
+Git history preserves the former implementation without a second active runtime.
 
 ## Verify
 

@@ -9,22 +9,6 @@ on:
 jobs:
   deno:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: oxian
-          POSTGRES_PASSWORD: oxian
-          POSTGRES_DB: oxian
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U oxian -d oxian"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DATABASE_URL: postgres://oxian:oxian@localhost:5432/oxian
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -37,22 +21,6 @@ jobs:
 
   node:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: oxian
-          POSTGRES_PASSWORD: oxian
-          POSTGRES_DB: oxian
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U oxian -d oxian"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DATABASE_URL: postgres://oxian:oxian@localhost:5432/oxian
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -62,3 +30,5 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - name: Prove the installed npm package
+        run: npm run prove:npm

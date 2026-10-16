@@ -1,4 +1,4 @@
-# Oxian 0.21 documentation
+# Oxian 0.22 prerelease documentation
 
 Oxian serves Fetch-native HTTP applications through one Worker lifecycle over an
 addressed in-process event fabric or outbound WebSocket. The local runtime
@@ -38,3 +38,9 @@ maintainers can continue without changing the application built there.
   machine and frame contract.
 
 Use `deno task verify` before publishing or releasing a package change.
+
+## 0.22 prerelease
+
+See [migration and compatibility](migration-0.22.md) before upgrading from 0.21.
+This source base publishes to npm `next` after main verification, with the same
+prerelease version mirrored to JSR. It does not replace npm `latest`.

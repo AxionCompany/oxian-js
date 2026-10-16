@@ -1,6 +1,6 @@
 # API reference
 
-This reference covers the public API of `@oxian/oxian-js` version `0.21.3`.
+This reference covers the public API of `@oxian/oxian-js` version `0.22.0`.
 Start with the [getting-started guide](getting-started.md) when learning Oxian;
 use these pages when composing a runtime, implementing a platform boundary, or
 checking an exact contract.
@@ -14,17 +14,17 @@ import {
   createApplication,
   createHypervisor,
   createWorker,
-} from "jsr:@oxian/oxian-js@0.21.3";
+} from "jsr:@oxian/oxian-js@0.22.0";
 ```
 
 Explicit subpaths make ownership clearer and keep the executable boundary out of
 application code:
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.21.3/app";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.21.3/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.21.3/adapters/deno";
-import { createWorker } from "jsr:@oxian/oxian-js@0.21.3/worker";
+import { createApplication } from "jsr:@oxian/oxian-js@0.22.0/app";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.22.0/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.22.0/adapters/deno";
+import { createWorker } from "jsr:@oxian/oxian-js@0.22.0/worker";
 ```
 
 The root excludes filesystem discovery, static files, local processes, local
@@ -57,11 +57,8 @@ subpaths only when the target runtime provides the required capability.
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`/adapters/deno`](api/adapters/deno.md) | Add Deno WebSocket upgrade and optional `Deno.serve` listener ownership around the portable Hypervisor core.                                              |
 | [`/adapters/node`](api/adapters/node.md) | Add a Node `node:http` listener with WebSocket upgrades around the portable Hypervisor core.                                                              |
-| [`/adapters/postgres`](api/adapters/postgres.md) | Store one owner's epoch and receipts in Postgres. The owner id is opaque.                                                                                 |
 | [`/providers`](api/providers.md)         | Provision, inspect, and terminate compute without coupling compute presence to transport readiness.                                                       |
 | [`/local`](api/local.md)                 | Compose the development runtime, run manifest-defined workers, and store local credentials.                                                               |
-| [`/host`](api/host.md)                   | Run the owners assigned to this process. Another shard cannot take them, and the connection budget is 1,000.                                             |
-| [`/owner`](api/owner.md)                 | Run one owner's commands: serialized queue, group commit, receipts, alarms, and an in-memory store.                                                        |
 | [`/cli`](api/cli.md)                     | Parse or execute the six Oxian commands without terminating the host process. The same page documents the [`/bin`](api/cli.md#executable-bin) entrypoint. |
 
 ## Dispatch capacity

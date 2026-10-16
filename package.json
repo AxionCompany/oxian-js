@@ -5,7 +5,7 @@
   "engines": {
     "node": ">=24"
   },
-  "version": "0.21.3",
+  "version": "0.22.0",
   "scripts": {
     "check": "npm run check:types && npm run check:biome && npm run check:node",
     "check:types": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
@@ -13,17 +13,16 @@
     "check:node": "node scripts/check_node_portability.mjs",
     "test": "node scripts/test-node.mjs",
     "build:npm": "node scripts/build_npm.mjs",
+    "prove:npm": "node scripts/prove_prerelease.mjs",
     "version:sync": "node scripts/sync_deno_version.mjs"
   },
   "dependencies": {
-    "pg": "8.23.1",
     "ws": "8.22.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@changesets/cli": "3.0.3",
     "@types/node": "24.19.2",
-    "@types/pg": "8.23.1",
     "@types/ws": "8.18.2",
     "typescript": "7.0.2"
   }

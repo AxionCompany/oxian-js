@@ -8,8 +8,10 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { WebSocketServer } from "ws";
-import { createOwnerHost, createShardMap } from "../../host/host.ts";
-import type { OwnerConnection, OwnerHost } from "../../host/types.ts";
+import {
+  createConnectionBudget,
+  type ConnectionLease,
+} from "./connection-budget.ts";
 import { observeListenerSettlement } from "../../hypervisor/internal/listener.ts";
 import {
   createHypervisorError,
@@ -25,8 +27,7 @@ export async function serve(
   options: NodeServeOptions,
 ): Promise<HypervisorListener> {
   const { hypervisor, hostname = "127.0.0.1", port = 0, signal } = options;
-  const budget: OwnerHost =
-    options.budget ?? createOwnerHost({ map: createShardMap("listener", {}) });
+  const budget = options.budget ?? createConnectionBudget();
   if (!hypervisor.snapshot().acceptingConnections) {
     throw createHypervisorError(
       "shutting_down",
@@ -176,7 +177,7 @@ function takeConnection(
   socket: Duplex,
 ): "refused" | undefined {
   if (budget === undefined) return undefined;
-  let held: OwnerConnection;
+  let held: ConnectionLease;
   try {
     held = budget.connect();
   } catch {

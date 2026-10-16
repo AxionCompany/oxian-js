@@ -1,21 +1,18 @@
 {
   "name": "@oxian/oxian-js",
-  "version": "0.21.3",
+  "version": "0.22.0",
   "exports": {
     ".": "./src/mod.ts",
     "./adapters/deno": "./src/adapters/deno/index.ts",
     "./adapters/node": "./src/adapters/node/index.ts",
-    "./adapters/postgres": "./src/adapters/postgres/index.ts",
     "./app": "./src/app/index.ts",
     "./bin": "./cli.ts",
     "./cli": "./src/cli/index.ts",
     "./config": "./src/config/index.ts",
     "./edge": "./src/edge/index.ts",
     "./http": "./src/http/index.ts",
-    "./host": "./src/host/index.ts",
     "./hypervisor": "./src/hypervisor/index.ts",
     "./local": "./src/local/index.ts",
-    "./owner": "./src/owner/index.ts",
     "./protocol": "./src/protocol/index.ts",
     "./providers": "./src/providers/index.ts",
     "./router": "./src/router/index.ts",
@@ -43,17 +40,20 @@
       "docs/api/**",
       "docs/migration-0.20.md",
       "docs/migration-0.21.md",
+      "docs/owner-retirement.md",
       "docs/worker-protocol-v1.md",
-      "LICENSE*"
+      "LICENSE*",
+      "CHANGELOG.md",
+      "docs/migration-0.22.md"
     ],
     "exclude": [
+      "src/**/*.test.ts",
       "docs/v0.20-implementation-plan.md",
       "docs/v0.21-implementation-plan.md"
     ]
   },
   "imports": {
     "@std/path": "jsr:@std/path@1.1.1",
-    "pg": "npm:pg@8.23.1",
     "ws": "npm:ws@8.22.0"
   },
   "tasks": {

@@ -18,7 +18,8 @@ await Promise.all(
 const sourceFiles: string[] = [];
 await collectTypeScript(SOURCE_ROOT, sourceFiles);
 const unreachable = sourceFiles.filter(
-  (file) => !visited.has(new URL(file, SOURCE_ROOT).href),
+  (file) =>
+    !file.endsWith(".test.ts") && !visited.has(new URL(file, SOURCE_ROOT).href),
 );
 
 const testAndToolImports = new Set<string>();

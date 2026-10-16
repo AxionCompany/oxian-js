@@ -1,11 +1,21 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "types": [],
+    "types": ["node"],
     "noEmit": false,
     "declaration": true,
     "outDir": "build/npm",
     "rootDir": "."
   },
-  "files": ["src/host/index.ts", "src/owner/index.ts"]
+  "files": [
+    "src/mod.ts",
+    "src/adapters/node/index.ts",
+    "src/http/index.ts",
+    "src/hypervisor/index.ts",
+    "src/protocol/index.ts",
+    "src/providers/core.ts",
+    "src/transport/index.ts",
+    "src/work/index.ts",
+    "src/worker/index.ts"
+  ]
 }

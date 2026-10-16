@@ -13,12 +13,17 @@ import {
   createLocalProcessProvider,
   runProviderConformance,
   type WorkerProvider,
-} from "jsr:@oxian/oxian-js@0.21.3/providers";
+} from "jsr:@oxian/oxian-js@0.22.0/providers";
 ```
 
 A provider creates, observes, and terminates compute. It never authenticates
 worker WebSockets, decides readiness, dispatches work, or owns a session.
 `state: "present"` therefore means only that provider compute is observable.
+
+The npm `oxianjs/providers` subpath exports the portable provider contract,
+conformance helpers, externally attached provider and Cloud Run Jobs provider.
+It does not include `createLocalProcessProvider` or its local-process types;
+that implementation remains Deno-bound in the JSR surface shown above.
 
 ## Exports
 

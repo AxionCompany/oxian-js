@@ -27,7 +27,11 @@ const DENO_ONLY = new Set([
   "tests/router/file_router_validation_test.ts",
 ]);
 
-const files = globSync("tests/**/*_test.ts")
+const files = globSync([
+  "tests/**/*_test.ts",
+  "src/**/*.test.ts",
+  "scripts/*.test.ts",
+])
   .map((file) => file.replaceAll("\\", "/"))
   .filter((file) => !DENO_ONLY.has(file))
   .sort();
