@@ -10,6 +10,42 @@ import type { WorkHandle, WorkInput } from "../work/types.ts";
 import type { HypervisorAdmit, HypervisorAssign } from "../lifecycle/types.ts";
 import type { HypervisorTransport } from "../transport/declarations.ts";
 import type { HypervisorConfig } from "./config.ts";
+import type {
+  HostCallExecution,
+  HostCallHandler,
+} from "../work/host-call-channel.ts";
+
+export type WorkerCallContext = Readonly<{
+  /** Authenticated by host admission, never populated from the call payload. */
+  fence: SessionFence;
+  definition: WorkerDefinition;
+  workload: string;
+  metadata: JsonObject;
+  signal: AbortSignal;
+  /** The host's current started assignment. Absent for separately admitted calls. */
+  parent?: Readonly<{
+    operationId: string;
+    streamId: string;
+    workload: string;
+    metadata: JsonObject;
+  }>;
+}>;
+
+export type WorkerCallHandler = (
+  context: HostCallExecution,
+) => ReturnType<HostCallHandler>;
+export type WorkerCallAdmission = (
+  context: WorkerCallContext,
+) => WorkerCallHandler | undefined | Promise<WorkerCallHandler | undefined>;
+export type WorkerCallOptions = Readonly<{
+  /** Authorize current assigned calls; no effects before returning the handler. */
+  admit: WorkerCallAdmission;
+  /** Separate, default-denied routes such as authenticated application receipt reads. */
+  admitUnassigned?: WorkerCallAdmission;
+  maxConcurrent?: number;
+  maxPerConnection?: number;
+  timeoutMs?: number;
+}>;
 
 export type HypervisorScheduler = Readonly<{
   schedule(callback: () => void, delayMs: number): unknown;
@@ -88,6 +124,7 @@ export type HypervisorOptions = Readonly<{
   transports: readonly HypervisorTransport[];
   admit?: HypervisorAdmit;
   assign?: HypervisorAssign;
+  workerCalls?: WorkerCallOptions;
   signal?: AbortSignal;
   config?: Partial<HypervisorConfig>;
   sessions?: SessionRegistry;

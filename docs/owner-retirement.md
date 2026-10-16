@@ -9,21 +9,23 @@ claim that Copilotz owner conformance passes.
 This change prepares the 0.22.0 base for `0.22.0-next.<mergeSHA>` prereleases.
 The successful main verification workflow publishes npm `next` and the matching
 JSR version. It leaves npm `latest` at 0.21.3. No stable tag is part of this
-release. See [the migration notes](migration-0.22.md) for the removed entrypoints
-and retained transport boundary.
+release. See [the migration notes](migration-0.22.md) for the removed
+entrypoints and retained transport boundary.
 
 ## Boundary
 
 Oxian keeps its portable application/worker/Hypervisor, transports, dispatch,
 session fencing, admission hooks and protocol. The unused generic owner,
 owner-host and Postgres-owner API is removed. Durable command handling and
-application storage belong in the concrete Copilotz runtime. The approved
-worker-originated owner-call extension is still to be specified and built.
-There is no retained test-only owner runtime or placeholder owner API.
+application storage belong in the concrete Copilotz runtime. The optional
+[worker-to-host extension](worker-host-calls.md) now supplies generic reverse
+transport and admission. It does not implement the concrete owner or certify the
+replacement guarantees below. There is no retained test-only owner runtime or
+placeholder owner API.
 
-The Node listener's connection limiter remains, independently of ownership.
-It can be shared across listeners, refuses overload, and releases leases on
-socket closure. Its active tests live beside the adapter.
+The Node listener's connection limiter remains, independently of ownership. It
+can be shared across listeners, refuses overload, and releases leases on socket
+closure. Its active tests live beside the adapter.
 
 ## Immutable recovery points
 

@@ -57,6 +57,7 @@ const PUBLIC_DOCUMENTS = Object.freeze([
   "../../docs/migration-0.22.md",
   "../../docs/owner-retirement.md",
   "../../docs/worker-protocol-v1.md",
+  "../../docs/worker-host-calls.md",
 ]);
 
 async function readPublicDocuments(): Promise<

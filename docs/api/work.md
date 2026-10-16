@@ -77,3 +77,54 @@ export function createEmbeddedFeature(dispatcher: Dispatcher) {
 
 This is a structural capability: a Hypervisor satisfies it directly, and tests
 can supply one function without constructing transport infrastructure.
+
+## Host calls
+
+The same subpath exports `HostCaller`, `HostCallInput`, `HostCallHandle`,
+`HostCallError`, `HostCallErrorCode`, `createHostCallError`, and
+`isHostCallError` for optional calls in the reverse direction. Unlike
+`Dispatcher`, `HostCaller` targets the authenticated connection's host, not a
+selected Worker:
+
+```ts
+type HostCallInput = Readonly<{
+  workload: string;
+  metadata?: JsonObject;
+  body?: WorkBody;
+  deadlineAtMs?: number;
+  signal?: AbortSignal;
+}>;
+
+type HostCaller = (input: HostCallInput) => Promise<HostCallHandle>;
+
+type HostCallHandle = Readonly<{
+  streamId: string;
+  metadata: Promise<JsonObject>;
+  output: ReadableStream<Uint8Array>;
+  started: Promise<void>;
+  completed: Promise<void>;
+  cancel(reason?: string): Promise<void>;
+}>;
+```
+
+There is no caller-supplied target, parent ID, or host-authentication claim.
+`WorkerWorkContext.callHost` is assignment-bound; `Worker.callHost` is
+parentless and needs separate host admission. Both require negotiated support.
+
+`started` means the worker sent Start; `completed` means normal stream
+completion. Neither promise proves durable application commit. A `HostCallError`
+carries `execution: "not_started" | "indeterminate"`; once Start can have been
+sent, failures are indeterminate, even if sending rejects. `HostCallErrorCode`
+is `unsupported`, `unavailable`, `capacity`, `refused`, `cancelled`,
+`deadline_exceeded`, `connection_lost`, or `handler_failed`.
+`createHostCallError(code, execution, message?)` creates a marked `Error` with
+those immutable fields; `isHostCallError(value)` is its type guard.
+`HostCallError` is a type, not a custom class constructor.
+
+Inspect `execution` independently of the error code. No call is automatically
+replayed; the application owns idempotency and receipt recovery.
+
+Request streams transfer to the channel when a handle is returned. Streamed
+chunks are bounded to 1 MiB; larger direct byte arrays are split into frames.
+See [worker-to-host calls](../worker-host-calls.md) for admission, cancellation,
+source ownership, drain, and reconnect guarantees.

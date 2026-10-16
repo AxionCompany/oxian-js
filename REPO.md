@@ -61,8 +61,11 @@ generic ownership abstraction from this package.
 The former `src/owner`, `src/host` and Postgres-owner adapter are removed.
 Copilotz owns its concrete durable runtime; Oxian retains transport, dispatch,
 session lifecycle and generic admission hooks. Node connection limiting is an
-independent adapter concern. The approved worker-to-owner protocol extension
-is still future work, not a capability supplied by deleting the owner API.
+independent adapter concern. Optional worker-to-host calls reuse the existing connection with explicit host
+admission and independent bounded capacity. Copilotz still owns its concrete
+transaction, grants, owner routing and receipt-recovery integration; the transport
+extension does not implement those application guarantees. See
+`docs/worker-host-calls.md`.
 
 See `docs/owner-retirement.md` for the behavioral migration inventory. Existing
 Git history preserves the former implementation without a second active runtime.

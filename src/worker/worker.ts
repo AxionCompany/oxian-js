@@ -16,6 +16,7 @@ import {
   connectWorkerWebSocket,
   createFrameConnection,
 } from "../transport/index.ts";
+import { createHostCallError } from "../work/host-call.ts";
 import { expectPositiveInteger } from "./internal/validation.ts";
 import { createAbortError } from "./internal/errors.ts";
 import { createWorkerSession } from "./session.ts";
@@ -393,6 +394,7 @@ export function createWorker(
           : { resumeExpiresAtMs: registration.resumeExpiresAtMs }),
         workloads,
         capacity,
+        hostCalls: options.hostCalls,
         signal: lifecycle.signal,
         credentialPersistence: "durable",
         persistResumeCredential: async (rotation, context) => {
@@ -502,5 +504,15 @@ export function createWorker(
     return stopping;
   };
 
-  return Object.freeze({ ready, closed, events, stop, snapshot });
+  return Object.freeze({
+    ready,
+    closed,
+    events,
+    stop,
+    snapshot,
+    callHost: async (input) => {
+      if (!current) throw createHostCallError("unavailable", "not_started");
+      return await current.callHost(input);
+    },
+  });
 }

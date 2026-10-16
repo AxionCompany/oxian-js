@@ -1,5 +1,5 @@
 import { validateWorkDataFrame } from "./binary.ts";
-import { decodeControlFrame } from "./control.ts";
+import { decodeControlFrame, readHostCallCapacity } from "./control.ts";
 import { createCreditWindow, type CreditWindow } from "./flow_control.ts";
 import { WORKER_PROTOCOL_LIMITS } from "./limits.ts";
 import type { ControlFrame, WorkDataFrame, WorkerIdentity } from "./types.ts";
@@ -52,6 +52,8 @@ export type ProtocolStateSnapshot = Readonly<{
   workloads?: readonly string[];
   connectionId?: string;
   capacity?: number;
+  /** Effective reverse-call capacity, activated only by ReadyAck. */
+  hostCallCapacity?: number;
   nextHeartbeatSequence: number;
   activeStreamCount: number;
   usedStreamCount: number;
@@ -90,6 +92,7 @@ export type ProtocolOrderValidatorOptions = Readonly<{
 
 type MutableWorkStream = {
   streamId: string;
+  initiator: ProtocolRole;
   accepted: boolean;
   started: boolean;
   sentTerminal: WorkStreamTerminal | undefined;
@@ -217,9 +220,10 @@ function createAcceptance<T>(
 /**
  * Creates a connection-local protocol order validator.
  *
- * `work.accepted` only reserves a stream. The Hypervisor must establish the
- * no-replay boundary before sending `work.start`; the worker must not invoke
- * workload code before receiving start.
+ * `work.accepted` only reserves a stream. The initiator must establish the
+ * no-replay boundary before sending `work.start`; the responder must not invoke
+ * workload code before receiving start. Ordinary work is Hypervisor-initiated;
+ * negotiated worker-to-host calls reverse those roles.
  */
 export function createProtocolOrderValidator(
   options: ProtocolOrderValidatorOptions,
@@ -257,6 +261,9 @@ export function createProtocolOrderValidator(
   let workloadSet: ReadonlySet<string> | undefined;
   let connectionId: string | undefined;
   let capacity: number | undefined;
+  let offeredHostCallCapacity: number | undefined;
+  let pendingHostCallCapacity: number | undefined;
+  let hostCallCapacity: number | undefined;
   let nextHeartbeatSequence = 0;
   const streams = new Map<string, MutableWorkStream>();
   // Normal End/End streams retain only bounded wire-order state. They no
@@ -274,10 +281,20 @@ export function createProtocolOrderValidator(
     }
 
     const sender = senderFor(role, direction);
-    if (WORKER_ONLY.has(frame.type) && sender !== "worker") {
+    const negotiatedWorkFrame =
+      hostCallCapacity !== undefined && frame.type.startsWith("work.");
+    if (
+      !negotiatedWorkFrame &&
+      WORKER_ONLY.has(frame.type) &&
+      sender !== "worker"
+    ) {
       fail(`${frame.type} can only be sent by a worker`, "invalid_direction");
     }
-    if (HYPERVISOR_ONLY.has(frame.type) && sender !== "hypervisor") {
+    if (
+      !negotiatedWorkFrame &&
+      HYPERVISOR_ONLY.has(frame.type) &&
+      sender !== "hypervisor"
+    ) {
       fail(
         `${frame.type} can only be sent by a hypervisor`,
         "invalid_direction",
@@ -370,6 +387,20 @@ export function createProtocolOrderValidator(
     }
   };
 
+  const ensureStreamDirection = (
+    stream: MutableWorkStream,
+    direction: ProtocolDirection,
+    frameType: string,
+    fromInitiator: boolean,
+  ): void => {
+    if ((senderFor(role, direction) === stream.initiator) !== fromInitiator) {
+      fail(
+        `${frameType} can only be sent by the stream ${fromInitiator ? "initiator" : "responder"}`,
+        "invalid_direction",
+      );
+    }
+  };
+
   const finalizeIfClosed = (stream: MutableWorkStream): void => {
     const sent = stream.sentTerminal;
     const received = stream.receivedTerminal;
@@ -436,6 +467,7 @@ export function createProtocolOrderValidator(
 
       case "welcome": {
         if (phase !== "hello") fail(`welcome is not allowed after ${phase}`);
+        offeredHostCallCapacity = readHostCallCapacity(frame.bootstrap);
         connectionId = frame.connectionId;
         phase = "welcomed";
         break;
@@ -450,6 +482,21 @@ export function createProtocolOrderValidator(
             "capacity_exceeded",
           );
         }
+        const acknowledgedCapacity = readHostCallCapacity(frame.metadata);
+        if (acknowledgedCapacity !== undefined) {
+          if (offeredHostCallCapacity === undefined) {
+            fail(
+              "ready acknowledges worker-to-host calls without a welcome offer",
+            );
+          }
+          if (acknowledgedCapacity > offeredHostCallCapacity) {
+            fail(
+              "ready worker-to-host capacity exceeds the welcome offer",
+              "capacity_exceeded",
+            );
+          }
+        }
+        pendingHostCallCapacity = acknowledgedCapacity;
         phase = "readied";
         break;
       }
@@ -459,6 +506,7 @@ export function createProtocolOrderValidator(
           fail(`ready_ack is not allowed after ${phase}`);
         }
         ensureConnection(frame.connectionId, frame.type);
+        hostCallCapacity = pendingHostCallCapacity;
         phase = "ready";
         break;
       }
@@ -531,7 +579,22 @@ export function createProtocolOrderValidator(
       }
 
       case "work.open": {
-        if (phase !== "ready") {
+        const initiator = senderFor(role, direction);
+        const reverse = initiator === "worker";
+        if (!reverse && frame.parentStreamId !== undefined) {
+          fail(
+            "parentStreamId is only valid for worker-to-host calls",
+            "invalid_direction",
+          );
+        }
+        if (
+          phase !== "ready" &&
+          !(
+            phase === "draining" &&
+            reverse &&
+            frame.parentStreamId !== undefined
+          )
+        ) {
           fail(`work.open is not allowed while connection is ${phase}`);
         }
         if (usedStreamIds.has(frame.streamId)) {
@@ -546,15 +609,23 @@ export function createProtocolOrderValidator(
             "stream_limit_exceeded",
           );
         }
-        if (workloadSet === undefined || !workloadSet.has(frame.workload)) {
+        if (
+          !reverse &&
+          (workloadSet === undefined || !workloadSet.has(frame.workload))
+        ) {
           fail(
             `worker did not declare workload ${frame.workload}`,
             "unsupported_workload",
           );
         }
-        if (capacity === undefined || streams.size >= capacity) {
+        const streamCapacity = reverse ? hostCallCapacity : capacity;
+        let activeCount = 0;
+        for (const stream of streams.values()) {
+          if (stream.initiator === initiator) activeCount++;
+        }
+        if (streamCapacity === undefined || activeCount >= streamCapacity) {
           fail(
-            "worker connection has no available stream capacity",
+            `${reverse ? "host call" : "worker connection"} has no available stream capacity`,
             "capacity_exceeded",
           );
         }
@@ -562,6 +633,7 @@ export function createProtocolOrderValidator(
         usedStreamIds.add(frame.streamId);
         streams.set(frame.streamId, {
           streamId: frame.streamId,
+          initiator,
           accepted: false,
           started: false,
           sentTerminal: undefined,
@@ -583,14 +655,15 @@ export function createProtocolOrderValidator(
       case "work.accepted": {
         requireWorkingPhase(frame.type);
         const stream = ensureStream(frame.streamId, frame.type);
+        ensureStreamDirection(stream, direction, frame.type, false);
         ensureSenderMayContinue(stream, direction, frame.type);
         if (stream.accepted) {
           fail(`stream ${frame.streamId} was already accepted`);
         }
         stream.accepted = true;
-        // A crossed claim must still reach the Hypervisor. The durable
-        // acceptance commit above this protocol layer establishes the
-        // no-replay boundary before work.start is sent.
+        // A crossed claim must still reach the initiator. The acceptance
+        // boundary above this protocol layer establishes the no-replay
+        // boundary before work.start is sent.
         disposition = "deliver";
         break;
       }
@@ -598,6 +671,7 @@ export function createProtocolOrderValidator(
       case "work.start": {
         requireWorkingPhase(frame.type);
         const stream = ensureStream(frame.streamId, frame.type);
+        ensureStreamDirection(stream, direction, frame.type, true);
         ensureSenderMayContinue(stream, direction, frame.type);
         if (!stream.accepted) {
           fail(`work.start precedes acceptance for stream ${frame.streamId}`);
@@ -613,6 +687,7 @@ export function createProtocolOrderValidator(
       case "work.metadata": {
         requireWorkingPhase(frame.type);
         const stream = ensureStream(frame.streamId, frame.type);
+        ensureStreamDirection(stream, direction, frame.type, false);
         requireStarted(stream, frame.type);
         ensureSenderMayContinue(stream, direction, frame.type);
         const alreadySent =
@@ -685,13 +760,13 @@ export function createProtocolOrderValidator(
         requireStarted(stream, frame.type);
         ensureSenderMayContinue(stream, direction, frame.type);
         if (
-          senderFor(role, direction) === "worker" &&
+          senderFor(role, direction) !== stream.initiator &&
           !(direction === "sent"
             ? stream.sentMetadata
             : stream.receivedMetadata)
         ) {
           fail(
-            `worker ${frame.type} precedes work.metadata for stream ${frame.streamId}`,
+            `responder ${frame.type} precedes work.metadata for stream ${frame.streamId}`,
           );
         }
         disposition = inboundDisposition(stream, direction);
@@ -771,11 +846,11 @@ export function createProtocolOrderValidator(
     requireStarted(stream, frame.type);
     ensureSenderMayContinue(stream, direction, frame.type);
     if (
-      senderFor(role, direction) === "worker" &&
+      senderFor(role, direction) !== stream.initiator &&
       !(direction === "sent" ? stream.sentMetadata : stream.receivedMetadata)
     ) {
       return fail(
-        `worker ${frame.type} precedes work.metadata for stream ${frame.streamId}`,
+        `responder ${frame.type} precedes work.metadata for stream ${frame.streamId}`,
       );
     }
 
@@ -840,6 +915,7 @@ export function createProtocolOrderValidator(
       ...(workloads === undefined ? {} : { workloads: [...workloads] }),
       ...(connectionId === undefined ? {} : { connectionId }),
       ...(capacity === undefined ? {} : { capacity }),
+      ...(hostCallCapacity === undefined ? {} : { hostCallCapacity }),
       nextHeartbeatSequence,
       activeStreamCount: streams.size,
       usedStreamCount: usedStreamIds.size,
