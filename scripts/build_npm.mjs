@@ -12,6 +12,7 @@ const NPM_NAME = "oxianjs";
 
 const sha = process.argv[2];
 const source = JSON.parse(readFileSync("deno.json", "utf8"));
+const tooling = JSON.parse(readFileSync("package.json", "utf8"));
 if (typeof source.name !== "string" || typeof source.version !== "string") {
   throw new Error("deno.json must contain a name and version");
 }
@@ -28,13 +29,32 @@ execFileSync(
   { stdio: "inherit" },
 );
 cpSync("LICENSE", "build/npm/LICENSE");
+mkdirSync("build/npm/docs", { recursive: true });
+cpSync("docs/owner-retirement.md", "build/npm/docs/owner-retirement.md");
+cpSync("docs/migration-0.22.md", "build/npm/docs/migration-0.22.md");
+cpSync("CHANGELOG.md", "build/npm/CHANGELOG.md");
+writeFileSync(
+  "build/npm/README.md",
+  `# Oxian for Node\n\nFetch-native applications and streaming work over in-process or WebSocket transports.\n\nRequires Node 24 or newer. This package exports the portable root, http, hypervisor,\nprotocol, providers, transport, work, worker, and adapters/node. The providers\nsubpath contains only portable providers; it does not include local processes.\n\nThe filesystem app factories, config loader, file router, local composition, edge,\nDeno adapter, and CLI remain available only in the Deno/JSR package during the\nNode migration. The retired owner, host, and PostgreSQL-owner APIs are not included;\nsee the [retirement and migration notes](docs/owner-retirement.md).\n\nSee https://github.com/AxionCompany/oxian-js for documentation.\n`,
+);
+const entrypoints = {
+  ".": "src/mod",
+  "./adapters/node": "src/adapters/node/index",
+  "./http": "src/http/index",
+  "./hypervisor": "src/hypervisor/index",
+  "./protocol": "src/protocol/index",
+  "./providers": "src/providers/core",
+  "./transport": "src/transport/index",
+  "./work": "src/work/index",
+  "./worker": "src/worker/index",
+};
 writeFileSync(
   "build/npm/package.json",
   `${JSON.stringify(
     {
       name: NPM_NAME,
       version,
-      description: "Oxian owners and the in-process host",
+      description: "Fetch-native applications and streaming worker dispatch",
       type: "module",
       license: "MIT",
       repository: {
@@ -42,17 +62,24 @@ writeFileSync(
         url: "git+https://github.com/AxionCompany/oxian-js.git",
       },
       engines: { node: ">=24" },
-      exports: {
-        "./host": {
-          types: "./src/host/index.d.ts",
-          default: "./src/host/index.js",
-        },
-        "./owner": {
-          types: "./src/owner/index.d.ts",
-          default: "./src/owner/index.js",
-        },
-      },
-      files: ["src", "LICENSE"],
+      exports: Object.fromEntries(
+        Object.entries(entrypoints).map(([subpath, entrypoint]) => [
+          subpath,
+          {
+            types: `./${entrypoint}.d.ts`,
+            default: `./${entrypoint}.js`,
+          },
+        ]),
+      ),
+      dependencies: { ws: tooling.dependencies.ws },
+      files: [
+        "src",
+        "docs/owner-retirement.md",
+        "docs/migration-0.22.md",
+        "CHANGELOG.md",
+        "LICENSE",
+        "README.md",
+      ],
     },
     null,
     2,

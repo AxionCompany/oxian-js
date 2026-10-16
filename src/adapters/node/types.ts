@@ -1,4 +1,4 @@
-import type { OwnerHost } from "../../host/types.ts";
+import type { ConnectionBudget } from "./connection-budget.ts";
 import type {
   Hypervisor,
   HypervisorListenOptions,
@@ -6,7 +6,7 @@ import type {
 
 export type NodeServeOptions = Readonly<{
   hypervisor: Hypervisor;
-  /** Each accepted upgrade takes one connection from this host. */
-  budget?: OwnerHost;
+  /** Each accepted upgrade takes one connection from this shared budget. */
+  budget?: ConnectionBudget;
 }> &
   HypervisorListenOptions;

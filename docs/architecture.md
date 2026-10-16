@@ -20,7 +20,7 @@ between local and remote deployments.
 Transport topology is plain data:
 
 ```ts
-import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.21.3";
+import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.22.0";
 
 const local = {
   type: "in-process",
