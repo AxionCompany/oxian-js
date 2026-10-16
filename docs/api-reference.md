@@ -71,6 +71,15 @@ deadline/abort handling, queue-full backpressure, and queue counts in
 See the [Hypervisor API](api/hypervisor.md#dispatch-waiting) and
 [operations guide](operations.md#bounded-dispatch-waiting).
 
+## Optional worker-to-host calls
+
+Enable `HypervisorOptions.workerCalls` and `WorkerOptions.hostCalls` for
+assignment-bound `WorkerWorkContext.callHost`. Parentless `Worker.callHost`
+requires separate default-denied admission. The `/work` subpath provides
+`HostCaller`, streaming handles, and errors with not-started/indeterminate
+execution classification. See the [call guide](worker-host-calls.md) for
+host-derived authority evidence and application-owned receipt recovery.
+
 ## Shared conventions
 
 ### Fetch-native boundaries

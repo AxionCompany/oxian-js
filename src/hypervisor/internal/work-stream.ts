@@ -1,6 +1,7 @@
 import {
   type ControlFrame,
   type JsonObject,
+  type WorkDataFrame,
   WORKER_PROTOCOL,
 } from "../../protocol/index.ts";
 import type {
@@ -47,7 +48,7 @@ export type WorkStreamController = Readonly<{
   ): Promise<boolean>;
   handleData(
     record: ConnectionRecord,
-    frame: Readonly<{ streamId: string; payload: Uint8Array }>,
+    frame: WorkDataFrame,
     disposition: "deliver" | "discard",
   ): Promise<void>;
   open(

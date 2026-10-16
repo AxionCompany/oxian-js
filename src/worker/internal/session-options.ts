@@ -30,6 +30,7 @@ export type WorkerCredentialPersistence =
 export type WorkerSessionOptions = Readonly<{
   workloads: Readonly<Record<string, WorkerWorkHandler>>;
   capacity?: number;
+  hostCalls?: Readonly<{ maxConcurrent?: number; timeoutMs?: number }>;
   signal?: AbortSignal;
   transport: Readonly<{
     type: WorkerTransport["type"];

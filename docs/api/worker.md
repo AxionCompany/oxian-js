@@ -57,13 +57,13 @@ functional activation/registration/handshake operations, heartbeat metadata,
 reconnect policy, and bounded timing/stream options.
 
 The returned `Worker` exposes `ready`, `closed`, lifecycle `events`, `stop()`,
-and `snapshot()`—no separate start choreography.
+`snapshot()`, and optional-use `callHost()`; no separate start choreography.
 
 ## Workloads
 
 A `WorkerWorkHandler` receives `WorkerWorkContext` with stream/workload IDs,
-immutable metadata, credited `input`, cancellation `signal`, and
-`sendMetadata()`.
+immutable metadata, credited `input`, cancellation `signal`, `sendMetadata()`,
+and assignment-bound `callHost()`.
 
 Worker lifecycle contexts expose the protocol `streamId`. The application-level
 Hypervisor `operationId` is intentionally absent because worker protocol v1 does
@@ -120,3 +120,24 @@ Observer failure does not rewrite the outcome. Early cancellation
 acknowledgement can precede settlement; an uncooperative execution still
 occupies capacity. See
 [capacity and reconnect](../workers.md#capacity-and-reconnect).
+
+## Host calls
+
+Enable `WorkerOptions.hostCalls` with `{ maxConcurrent?, timeoutMs? }` to
+acknowledge host support. Defaults are 16 reverse calls and 30,000 ms; forward
+`capacity` remains independent. The host must also enable `workerCalls`.
+
+`WorkerWorkContext.callHost(input)` is bound to its exact started assignment;
+the runtime supplies its parent stream ID. `Worker.callHost(input)` is
+parentless and requires the host's separately configured `admitUnassigned`. Both
+use the `HostCaller` contract exported from `/work` and reject if no usable
+negotiated connection exists. Await `worker.ready` before initiating calls.
+
+Calls are never replayed after reconnect. Outgoing source cleanup retains
+process-lifetime reverse reservations, so a replacement connection cannot reuse
+capacity before cleanup settles. Graceful drain can continue assigned calls
+needed by active work, but refuses parentless calls and waits for pending
+reverse streams/source cleanup within its shutdown bound.
+
+See [call types](work.md#host-calls) and the
+[worker-to-host call guide](../worker-host-calls.md).

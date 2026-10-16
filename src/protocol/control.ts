@@ -35,7 +35,11 @@ const MAX_REASON_LENGTH = 2_048;
 const MAX_ERROR_MESSAGE_LENGTH = 16_384;
 const MAX_JSON_DEPTH = 32;
 const UINT32_MAX = 0xffff_ffff;
+const MAX_HOST_CALL_CAPACITY = 1_024;
 const textEncoder = new TextEncoder();
+
+/** Reserved transport metadata, offered in Welcome and acknowledged in Ready. */
+export const HOST_CALL_CAPABILITY_KEY = "__oxian_worker_calls_v1" as const;
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const WORKLOAD_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
@@ -256,6 +260,53 @@ function cloneJsonValue(
 function expectJsonObject(value: unknown, path: string): JsonObject {
   const record = expectRecord(value, path);
   return cloneJsonValue(record, path, 0, new WeakSet()) as JsonObject;
+}
+
+/** Returns undefined for legacy peers; malformed extension metadata fails closed. */
+export function readHostCallCapacity(metadata: JsonObject): number | undefined {
+  const record = expectRecord(metadata, "$metadata");
+  if (!Object.hasOwn(record, HOST_CALL_CAPABILITY_KEY)) return undefined;
+  const path = `$metadata.${HOST_CALL_CAPABILITY_KEY}`;
+  const capability = expectRecord(record[HOST_CALL_CAPABILITY_KEY], path);
+  expectExactKeys(capability, path, ["version", "capacity"]);
+  if (capability.version !== 1) {
+    fail(`${path}.version`, "expected 1");
+  }
+  return expectInteger(capability.capacity, `${path}.capacity`, {
+    min: 1,
+    max: MAX_HOST_CALL_CAPACITY,
+  });
+}
+
+/** Adds transport-owned metadata without overwriting application data. */
+export function withHostCallCapacity(
+  metadata: JsonObject,
+  capacity: number,
+): JsonObject {
+  const record = expectJsonObject(metadata, "$metadata");
+  if (Object.hasOwn(record, HOST_CALL_CAPABILITY_KEY)) {
+    fail(
+      `$metadata.${HOST_CALL_CAPABILITY_KEY}`,
+      "reserved transport key already exists",
+    );
+  }
+  return {
+    ...record,
+    [HOST_CALL_CAPABILITY_KEY]: {
+      version: 1,
+      capacity: expectInteger(capacity, "$capacity", {
+        min: 1,
+        max: MAX_HOST_CALL_CAPACITY,
+      }),
+    },
+  };
+}
+
+/** Removes only transport-owned extension data before application delivery. */
+export function withoutHostCallCapacity(metadata: JsonObject): JsonObject {
+  const { [HOST_CALL_CAPABILITY_KEY]: _capability, ...applicationMetadata } =
+    expectJsonObject(metadata, "$metadata");
+  return applicationMetadata;
 }
 
 function decodeIdentity(value: unknown, path: string): WorkerIdentity {
@@ -521,7 +572,7 @@ function decodeWorkOpen(value: unknown): WorkOpenFrame {
     value,
     "work.open",
     ["streamId", "workload", "metadata"],
-    ["deadlineAtMs"],
+    ["deadlineAtMs", "parentStreamId"],
   );
 
   const frame: {
@@ -531,6 +582,7 @@ function decodeWorkOpen(value: unknown): WorkOpenFrame {
     workload: string;
     metadata: JsonObject;
     deadlineAtMs?: number;
+    parentStreamId?: string;
   } = {
     protocol: WORKER_PROTOCOL,
     type: "work.open",
@@ -543,6 +595,12 @@ function decodeWorkOpen(value: unknown): WorkOpenFrame {
     frame.deadlineAtMs = expectInteger(record.deadlineAtMs, "$.deadlineAtMs", {
       min: 0,
     });
+  }
+  if (Object.hasOwn(record, "parentStreamId")) {
+    frame.parentStreamId = expectStreamId(
+      record.parentStreamId,
+      "$.parentStreamId",
+    );
   }
   return frame;
 }
