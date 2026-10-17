@@ -170,6 +170,8 @@ export type HypervisorSnapshot = Readonly<{
     workerId?: string;
     count: number;
   }>[];
+  /** Unsettled assign/work_assigned hooks, including cancelled callers. */
+  pendingDispatchHooks: number;
   pendingAcceptanceCommits: number;
   pendingAcceptanceCommitsByWorker: readonly Readonly<{
     workerId: string;
@@ -202,7 +204,7 @@ export type Hypervisor = Readonly<{
    * admission. A server adapter owns the native handshake and listener.
    */
   prepare(request: Request): HypervisorRequestDecision;
-  /** Optionally waits for capacity under config.maxQueuedDispatches and dispatchQueueTimeoutMs. */
+  /** Bounded entry-to-open lifecycle; optionally queues for capacity. */
   dispatch(input: WorkInput): Promise<WorkHandle>;
   /**
    * Gracefully drains one ready Worker connection, then lets the Worker
@@ -245,6 +247,7 @@ export type HypervisorErrorCode =
   | "invalid_state"
   | "worker_unavailable"
   | "dispatch_queue_full"
+  | "dispatch_hook_capacity"
   | "deadline_exceeded"
   | "dispatch_aborted"
   | "worker_draining"
