@@ -1,5 +1,13 @@
 # `jsr:@oxian/oxian-js@0.22.0/app`
 
+The Node 24+ npm package exposes this complete API at `oxianjs/app`, including
+factory loading and configured-application composition. Its host path operations
+use an internal Node adapter that also works in Deno. Factory modules must still
+be local `.ts` files with one default export; on Node, use erasable TypeScript and
+ESM imports outside `node_modules`, with `"type": "module"` in the containing
+`package.json`. The portable `oxianjs` root continues to expose the application
+core without importing the filesystem-backed factories.
+
 [Back to the API reference](../api-reference.md)
 
 The `/app` subpath creates Fetch-native applications, composes their middleware

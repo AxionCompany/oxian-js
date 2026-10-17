@@ -10,10 +10,13 @@
   "files": [
     "src/mod.ts",
     "src/adapters/node/index.ts",
+    "src/app/index.ts",
+    "src/config/index.ts",
     "src/http/index.ts",
     "src/hypervisor/index.ts",
     "src/protocol/index.ts",
     "src/providers/core.ts",
+    "src/router/index.ts",
     "src/transport/index.ts",
     "src/work/index.ts",
     "src/worker/index.ts"

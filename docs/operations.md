@@ -156,8 +156,10 @@ wait for ready capacity. A missing target may reconnect within the wait bound;
 Oxian never substitutes a different logical Worker for an explicit target.
 Waiting ends at the earlier of the supplied deadline and arrival plus
 `dispatchQueueTimeoutMs` (default 30 seconds). The configured timeout applies
-only before offering; an explicit deadline also bounds the subsequent work.
-Setting `maxQueuedDispatches: 0` restores immediate `worker_unavailable`.
+through Open, including `assign` and `onWorkAssigned`, with one shared deadline
+in both modes. An explicit deadline also bounds subsequent work. Setting
+`maxQueuedDispatches: 0` restores immediate `worker_unavailable` for absent
+capacity; it does not remove the timeout on asynchronous dispatch policy.
 
 Explicitly targeted requests are FIFO per target; untargeted requests are FIFO
 per workload in separate lanes. A busy or absent computer cannot block work for
@@ -171,10 +173,11 @@ operation/stage IDs and increasing `callbackAttempt`. In queue mode they run
 only when candidates exist. Honor the callback signal and keep assignment policy
 idempotent.
 
-| Pre-offer error code  | Meaning                                                          |
+| Pre-Open error code  | Meaning                                                          |
 | --------------------- | ---------------------------------------------------------------- |
-| `dispatch_queue_full` | Global request-count limit reached; apply upstream backpressure. |
-| `deadline_exceeded`   | Explicit deadline or configured queue timeout elapsed.           |
+| `dispatch_queue_full` | Global queued request-count limit reached; apply upstream backpressure. |
+| `dispatch_hook_capacity` | Unsettled dispatch hook limit reached. |
+| `deadline_exceeded`   | Explicit deadline or configured entry-to-Open timeout elapsed.    |
 | `dispatch_aborted`    | Caller cancelled; `cause` retains the signal reason.             |
 | `shutting_down`       | Hypervisor shutdown rejected queued or new dispatch.             |
 | `worker_draining`     | An explicit target was drained or shut down.                     |
@@ -183,6 +186,16 @@ Drain rejects currently queued requests naming that Worker, even if it is
 absent. Requests targeting an attached draining session also reject. Once it is
 detached, new requests can wait for its replacement. Untargeted requests remain
 eligible for other Workers. Stale `shutdownSession` calls remain no-ops.
+
+`maxPendingDispatchHooks` (default 1,024) separately caps unsettled `assign` and
+`onWorkAssigned` callbacks. Monitor `snapshot().pendingDispatchHooks`. Timeout,
+cancellation, drain or replacement promptly refuses a pre-Open caller, but does
+not reclaim a hook's capacity until its promise settles. `onWorkAssigned` keeps
+its offered worker slot while unsettled, unless that session is lost. The host
+never opens a late assignment. Honour cancellation in callbacks; timeouts cannot
+stop arbitrary application JavaScript. A full hook budget refuses rather than
+adding another hidden queue. This budget is independent of reverse-call and
+execution capacity, and remains charged across reconnects.
 
 The queue owns no reservation, dispatcher record, or wire stream. Rejection
 before offering is safe to retry under application policy. Once offered, the
@@ -277,3 +290,72 @@ Test crash points before dispatch, after acceptance ACK, during the durable
 acceptance callback, after Start, and after idempotent output but before
 external settlement. Run the same behavioral suite through in-process and WSS
 transports.
+
+## Local sibling development with the npm artifact
+
+From an Oxian checkout with its development dependencies installed, use Node 24
+and npm to package unpublished changes:
+
+```sh
+node scripts/pack-sibling.mjs
+# Or get the tarball path, version, Git revision and npm integrity as JSON:
+node scripts/pack-sibling.mjs --json
+```
+
+The script can also be called by absolute or sibling path from another directory.
+It uses the existing npm builder and public export map, then runs `npm pack` with
+lifecycle scripts disabled. It only rebuilds Oxian's ignored `build/npm` and
+writes a tarball under ignored `build/siblings`. It never installs into a
+consumer, edits dependency pins or lockfiles, creates global npm links, runs a
+consumer's scripts, or publishes. Build progress goes to stderr; stdout is the
+absolute tarball path (or JSON). The filename includes a content digest, so two
+uncommitted builds at the same Git revision cannot reuse a stale tarball path.
+Rebuild after changing Oxian; existing tarballs are snapshots, not live links.
+
+### Explicit, temporary install in a standalone npm consumer
+
+Use a disposable consumer checkout with a valid, unchanged `package-lock.json`.
+The following commands are run in that consumer, with Oxian at `../oxian-js`:
+
+```sh
+set -e
+# This step builds Oxian only and prints the artifact path.
+tarball="$(node ../oxian-js/scripts/pack-sibling.mjs)"
+# This separate opt-in step changes the consumer's node_modules only.
+npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund "$tarball"
+# Run the consumer's chosen tests explicitly, then restore the locked packages:
+npm ci --ignore-scripts --no-audit --no-fund
+# Neither operation should have changed these tracked files:
+git diff --exit-code -- package.json package-lock.json
+```
+
+Install may download the artifact's declared dependencies. Both install and
+restore suppress lifecycle scripts; if the consumer requires a build step, run
+only the specific step you intend. `npm ci` replaces `node_modules` and removes
+other local links or unsaved installs too, which is why a disposable checkout is
+recommended. If a test fails, run the restore command separately before returning
+to normal development. A later ordinary npm install can also replace the local
+artifact. Never commit tarballs, local file paths or temporary dependency links.
+CI continues to resolve the committed published dependency pins.
+
+This supported flow currently covers standalone npm consumers. Do not assume
+that adding `--workspace` replaces the package selected by a nested workspace:
+that behavior did not hold in the workspace fixture. The full cross-repository
+npm workspace/path-override rollout remains separate work. A Copilotz checkout
+that has no npm manifest must continue to use its documented source-test launcher;
+those source tests do not prove installed-package compatibility. This helper does
+not create or migrate a Copilotz manifest.
+
+### Verify the local package flow
+
+```sh
+node --test scripts/pack-sibling.test.ts
+npm run prove:npm
+```
+
+The script tests cover cwd independence, paths with spaces, disabled lifecycle
+scripts, unchanged consumer manifests/lockfiles, content-addressed dirty builds,
+and restoration to locked packages. `prove:npm` uses the same pack helper, installs
+into an isolated temporary consumer, checks public JS and declaration exports,
+and exercises in-process and Node WebSocket worker-to-host calls. It makes no
+registry write and removes the temporary consumer afterward.

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assertThrows } from "../support/assert.ts";
+import { assertThrows } from "../../tests/support/assert.ts";
 import {
   type ControlFrame,
   createDrainedFrame,
@@ -27,7 +27,7 @@ import {
   type ProtocolViolation,
   WORKER_PROTOCOL,
   WORKER_PROTOCOL_LIMITS,
-} from "../../src/protocol/index.ts";
+} from "./index.ts";
 
 const STREAM_ID = "018f47a2-76b8-7d31-8c41-1d68b4f9f802";
 

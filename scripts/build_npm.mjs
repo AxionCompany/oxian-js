@@ -1,11 +1,13 @@
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
+  globSync,
   mkdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { dirname } from "node:path";
 import { nextVersion, stableVersion } from "./next_version.mjs";
 
 const NPM_NAME = "oxianjs";
@@ -30,20 +32,31 @@ execFileSync(
 );
 cpSync("LICENSE", "build/npm/LICENSE");
 mkdirSync("build/npm/docs", { recursive: true });
-cpSync("docs/owner-retirement.md", "build/npm/docs/owner-retirement.md");
-cpSync("docs/migration-0.22.md", "build/npm/docs/migration-0.22.md");
+// Ship the same public documentation allowlist as JSR, including guide links.
+// Historical internal plans remain outside that allowlist.
+for (const path of globSync(
+  source.publish.include.filter((path) => path.startsWith("docs/")),
+  { exclude: source.publish.exclude },
+)) {
+  const target = `build/npm/${path}`;
+  mkdirSync(dirname(target), { recursive: true });
+  cpSync(path, target, { recursive: true });
+}
 cpSync("CHANGELOG.md", "build/npm/CHANGELOG.md");
 writeFileSync(
   "build/npm/README.md",
-  `# Oxian for Node\n\nFetch-native applications and streaming work over in-process or WebSocket transports.\n\nRequires Node 24 or newer. This package exports the portable root, http, hypervisor,\nprotocol, providers, transport, work, worker, and adapters/node. The providers\nsubpath contains only portable providers; it does not include local processes.\n\nThe filesystem app factories, config loader, file router, local composition, edge,\nDeno adapter, and CLI remain available only in the Deno/JSR package during the\nNode migration. The retired owner, host, and PostgreSQL-owner APIs are not included;\nsee the [retirement and migration notes](docs/owner-retirement.md).\n\nSee https://github.com/AxionCompany/oxian-js for documentation.\n`,
+  `# Oxian for Node\n\nFetch-native applications and streaming work over in-process or WebSocket transports.\n\nRequires Node 24 or newer. This package exports the portable root, app, config, http,\nhypervisor, protocol, providers, router, transport, work, worker, and adapters/node. The providers\nsubpath contains only portable providers; it does not include local processes.\n\nThe file router uses Node filesystem APIs and remains available in Deno/JSR.\nImport it from oxianjs/router; it is not part of the portable root.\n\nThe config loader and application factories are available at oxianjs/config and\noxianjs/app. They load local .ts modules using Node type stripping; place those\nmodules outside node_modules and use erasable TypeScript syntax.\n\nLocal composition, edge, the Deno adapter, and CLI remain available only in the\nDeno/JSR package during the Node migration. The retired owner, host, and PostgreSQL-owner APIs are not included;\nsee the [retirement and migration notes](docs/owner-retirement.md).\n\nOptional [worker-to-host calls](docs/worker-host-calls.md) reuse the authenticated\nconnection and require explicit host admission.\n\nSee https://github.com/AxionCompany/oxian-js for documentation.\n`,
 );
 const entrypoints = {
   ".": "src/mod",
   "./adapters/node": "src/adapters/node/index",
+  "./app": "src/app/index",
+  "./config": "src/config/index",
   "./http": "src/http/index",
   "./hypervisor": "src/hypervisor/index",
   "./protocol": "src/protocol/index",
   "./providers": "src/providers/core",
+  "./router": "src/router/index",
   "./transport": "src/transport/index",
   "./work": "src/work/index",
   "./worker": "src/worker/index",
@@ -72,14 +85,7 @@ writeFileSync(
         ]),
       ),
       dependencies: { ws: tooling.dependencies.ws },
-      files: [
-        "src",
-        "docs/owner-retirement.md",
-        "docs/migration-0.22.md",
-        "CHANGELOG.md",
-        "LICENSE",
-        "README.md",
-      ],
+      files: ["src", "docs", "CHANGELOG.md", "LICENSE", "README.md"],
     },
     null,
     2,

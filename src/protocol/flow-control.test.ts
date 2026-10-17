@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assertThrows } from "../support/assert.ts";
-import { createCreditWindow } from "../../src/protocol/index.ts";
+import { assertThrows } from "../../tests/support/assert.ts";
+import { createCreditWindow } from "./index.ts";
 
 test("credit window: grants and consumes bounded byte credit", () => {
   const window = createCreditWindow({

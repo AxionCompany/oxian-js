@@ -17,25 +17,26 @@ import {
 } from "jsr:@oxian/oxian-js@0.22.0/protocol";
 ```
 
-The package version and protocol version evolve independently. Oxian 0.21 speaks
-`oxian.worker.v1`; a later 0.20 patch can remain wire-compatible without
-changing that identifier.
+The package version and protocol version evolve independently. The 0.22
+prerelease retains `oxian.worker.v1`; optional reverse calls require explicit
+capability negotiation without changing that identifier.
 
 ## Export summary
 
 ### Values
 
-| Area                | Exports                                                                                                                                                                                                  |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Constants           | `WORKER_PROTOCOL`, `WORKER_PROTOCOL_LIMITS`, `BINARY_PROTOCOL`                                                                                                                                           |
-| Control codecs      | `decodeControlFrame`, `parseControlFrame`, `encodeControlFrame`                                                                                                                                          |
-| Identity            | `createWorkerIdentity`                                                                                                                                                                                   |
-| Handshake factories | `createHelloFrame`, `createWelcomeFrame`, `createReadyFrame`, `createReadyAckFrame`, `createHeartbeatFrame`, `createDrainFrame`, `createShutdownFrame`, `createDrainedFrame`, `createProtocolErrorFrame` |
-| Work factories      | `createWorkOpenFrame`, `createWorkAcceptedFrame`, `createWorkStartFrame`, `createWorkMetadataFrame`, `createWorkEndFrame`, `createWorkCancelFrame`, `createWorkErrorFrame`, `createWorkCreditFrame`      |
-| Binary data         | `createStreamId`, `validateWorkDataFrame`, `createWorkDataFrame`, `encodeBinaryFrame`, `decodeBinaryFrame`                                                                                               |
-| Credit              | `createCreditWindow`                                                                                                                                                                                     |
-| Ordering            | `createProtocolOrderValidator`                                                                                                                                                                           |
-| Violations          | `createProtocolViolation`, `isProtocolViolation`, `throwProtocolViolation`                                                                                                                               |
+| Area                 | Exports                                                                                                                                                                                                  |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Constants            | `WORKER_PROTOCOL`, `WORKER_PROTOCOL_LIMITS`, `BINARY_PROTOCOL`                                                                                                                                           |
+| Host-call capability | `HOST_CALL_CAPABILITY_KEY`, `readHostCallCapacity`, `withHostCallCapacity`, `withoutHostCallCapacity`                                                                                                    |
+| Control codecs       | `decodeControlFrame`, `parseControlFrame`, `encodeControlFrame`                                                                                                                                          |
+| Identity             | `createWorkerIdentity`                                                                                                                                                                                   |
+| Handshake factories  | `createHelloFrame`, `createWelcomeFrame`, `createReadyFrame`, `createReadyAckFrame`, `createHeartbeatFrame`, `createDrainFrame`, `createShutdownFrame`, `createDrainedFrame`, `createProtocolErrorFrame` |
+| Work factories       | `createWorkOpenFrame`, `createWorkAcceptedFrame`, `createWorkStartFrame`, `createWorkMetadataFrame`, `createWorkEndFrame`, `createWorkCancelFrame`, `createWorkErrorFrame`, `createWorkCreditFrame`      |
+| Binary data          | `createStreamId`, `validateWorkDataFrame`, `createWorkDataFrame`, `encodeBinaryFrame`, `decodeBinaryFrame`                                                                                               |
+| Credit               | `createCreditWindow`                                                                                                                                                                                     |
+| Ordering             | `createProtocolOrderValidator`                                                                                                                                                                           |
+| Violations           | `createProtocolViolation`, `isProtocolViolation`, `throwProtocolViolation`                                                                                                                               |
 
 ### Types
 
@@ -237,6 +238,7 @@ type WorkOpenFrame = Readonly<{
   workload: string;
   metadata: JsonObject;
   deadlineAtMs?: number;
+  parentStreamId?: string;
 }>;
 
 type WorkAcceptedFrame = Readonly<{
@@ -293,9 +295,14 @@ greater than 16 MiB per grant. Optional deadlines are non-negative safe
 integers. Work error fields use the same code and message rules as protocol
 errors.
 
-`work.open.metadata` is request metadata. After Start, the worker sends exactly
-one `work.metadata` response before its first data frame or normal End. Repeated
-progress belongs in the credited byte stream, not uncredited metadata frames.
+`parentStreamId` is an optional lowercase UUID, valid only for negotiated
+worker-originated opens. The application host authenticates the actual current
+parent; the wire parser only validates its shape.
+
+`work.open.metadata` is request metadata. After Start, the responder sends
+exactly one `work.metadata` response before its first data frame or normal End.
+Repeated progress belongs in the credited byte stream, not uncredited metadata
+frames.
 
 ### Frame unions and direction
 
@@ -327,6 +334,8 @@ type WorkerToHypervisorControlFrame =
   | HeartbeatFrame
   | DrainedFrame
   | ProtocolErrorFrame
+  | WorkOpenFrame
+  | WorkStartFrame
   | WorkAcceptedFrame
   | WorkMetadataFrame
   | WorkEndFrame
@@ -340,6 +349,8 @@ type HypervisorToWorkerControlFrame =
   | DrainFrame
   | ShutdownFrame
   | ProtocolErrorFrame
+  | WorkAcceptedFrame
+  | WorkMetadataFrame
   | WorkOpenFrame
   | WorkStartFrame
   | WorkEndFrame
@@ -348,9 +359,11 @@ type HypervisorToWorkerControlFrame =
   | WorkCreditFrame;
 ```
 
-The two directional unions overlap for frames either peer may send:
-`protocol_error`, `work.credit`, `work.end`, `work.cancel`, and `work.error`.
-Binary `work.data` is also bidirectional.
+The unions include optional reverse-call frames. Actual permission remains
+connection- and stream-specific: Open/Start belong to the initiator and
+Accepted/Metadata to the responder. Without negotiation they retain the legacy
+forward-only directions. `protocol_error`, `work.credit`, `work.end`,
+`work.cancel`, `work.error`, and binary `work.data` remain bidirectional.
 
 ## Control codecs
 
@@ -425,6 +438,37 @@ function createWorkErrorFrame(
   input: Omit<WorkErrorFrame, "protocol" | "type">,
 ): WorkErrorFrame;
 ```
+
+## Host-call capability helpers
+
+```ts
+const HOST_CALL_CAPABILITY_KEY = "__oxian_worker_calls_v1";
+function readHostCallCapacity(metadata: JsonObject): number | undefined;
+function withHostCallCapacity(
+  metadata: JsonObject,
+  capacity: number,
+): JsonObject;
+function withoutHostCallCapacity(metadata: JsonObject): JsonObject;
+```
+
+`readHostCallCapacity` returns `undefined` for an absent reserved key and throws
+for a malformed capability. Its value must have exactly `version: 1` and a
+positive safe-integer `capacity` no greater than 1,024. `withHostCallCapacity`
+clones metadata and adds the capability, rejecting an existing reserved key.
+`withoutHostCallCapacity` clones application metadata and strips only that key.
+
+The host offers in Welcome bootstrap; the worker optionally acknowledges an
+equal or lower capacity in Ready metadata. An unsolicited or oversized
+acknowledgement fails closed. Missing acknowledgement disables reverse calls,
+and activation waits for ReadyAck. Legacy frame directions remain strict on an
+unnegotiated connection. With negotiation, Open/Start are initiator frames and
+Accepted/Metadata are responder frames, checked against each stream's origin.
+
+Forward and reverse streams have separate capacity limits but one stream-ID
+namespace and total lifetime bound. During drain, only parent-bound reverse
+opens may be added; application host authentication of that parent is separate
+from wire validation. See the
+[wire contract](../worker-protocol-v1.md#optional-worker-to-host-invocation).
 
 ## Binary work data
 
@@ -647,10 +691,12 @@ new --hello--> hello --welcome--> welcomed --ready--> readied
 authenticated phase. `protocol_error` is terminal from any phase except an
 already terminal shutdown/error phase.
 
-Only a worker may send `hello`, `ready`, `heartbeat`, `drained`,
-`work.accepted`, and `work.metadata`. Only a Hypervisor may send `welcome`,
-`ready_ack`, `drain`, `shutdown`, `work.open`, and `work.start`. The terminal,
-credit, error, and binary data frames are bidirectional.
+Only a worker may send `hello`, `ready`, `heartbeat`, and `drained`; only a
+Hypervisor may send `welcome`, `ready_ack`, `drain`, and `shutdown`. Without
+reverse negotiation, Accepted/Metadata are Worker frames and Open/Start are
+Hypervisor frames. With negotiation they follow the stream's responder and
+initiator, respectively. Terminal, credit, error, and data frames remain
+bidirectional.
 
 Heartbeats begin at sequence zero and remain contiguous. Their inflight plus
 available capacity cannot exceed the declared worker capacity. Connection IDs
@@ -658,16 +704,21 @@ must match the current Welcome.
 
 ### Work order and no replay
 
-`work.open` is legal only in Ready, for a declared workload, within active
-capacity, with a never-used stream ID. `work.accepted` reserves but does not
-authorize execution. The Hypervisor must durably commit acceptance before
-sending `work.start`; the worker must not invoke workload code before delivered
-Start.
+Forward `work.open` is legal only in Ready, for a declared workload, within
+forward capacity, with a never-used stream ID. Negotiated reverse opens use
+their separate capacity and may name host workloads absent from Hello. During
+drain only parent-bound reverse opens remain legal.
+
+`work.accepted` reserves but does not authorize execution. For forward work, the
+Hypervisor must durably commit acceptance before sending `work.start`. For
+reverse calls, the worker marks execution indeterminate before attempting Start.
+Neither responder invokes handler code before delivered Start. The reverse
+extension supplies no durable acceptance transaction or receipt store.
 
 Metadata, credit, data, and normal End require Start. Binary sequences begin at
 zero independently in each direction and consume credit granted by the opposite
-peer. The worker must send its single response metadata before worker data or
-normal End.
+peer. The responder must send its single response metadata before response data
+or normal End.
 
 End is a directional half-close. Cancel and Error request whole-stream abort. A
 side that already sent End may upgrade that half exactly once to Cancel or Error
@@ -703,6 +754,7 @@ type ProtocolStateSnapshot = Readonly<{
   workloads?: readonly string[];
   connectionId?: string;
   capacity?: number;
+  hostCallCapacity?: number;
   nextHeartbeatSequence: number;
   activeStreamCount: number;
   usedStreamCount: number;
@@ -710,6 +762,10 @@ type ProtocolStateSnapshot = Readonly<{
   streams: readonly WorkStreamSnapshot[];
 }>;
 ```
+
+`hostCallCapacity` is absent until a valid offer/acknowledgement becomes active
+at ReadyAck. It remains absent for ordinary-only connections. Forward capacity
+remains in `capacity`; active/used stream counts include both directions.
 
 Snapshots are synchronous point-in-time copies. `activeStreamCount` excludes
 normal terminal tombstones; `usedStreamCount` includes every stream ID ever

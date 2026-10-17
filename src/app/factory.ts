@@ -1,4 +1,4 @@
-import { resolve, toFileUrl } from "@std/path";
+import { resolve, toFileUrl } from "../adapters/node/config-path.ts";
 import { normalizeApplicationBasePath } from "./base_path.ts";
 import type {
   Application,

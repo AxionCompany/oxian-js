@@ -1,6 +1,10 @@
 import {
   type ControlFrame,
   createReadyAckFrame,
+  readHostCallCapacity,
+  HOST_CALL_CAPABILITY_KEY,
+  withHostCallCapacity,
+  withoutHostCallCapacity,
   type HelloFrame,
   type ReadyFrame,
   WORKER_PROTOCOL,
@@ -19,6 +23,7 @@ import type {
 import type { AdmissionController } from "./admission.ts";
 import type { ConnectionDirectory } from "./directory.ts";
 import type { CloseRecord, ConnectionRecord, DrainRecord } from "./model.ts";
+import type { createWorkerCallAdmission } from "./worker-calls.ts";
 import {
   assertCurrentFrame,
   cancelConnectionTimer,
@@ -58,6 +63,7 @@ export function createSessionProtocolController(
     closeRecord: CloseRecord;
     drainRecord: DrainRecord;
     finishDrain(record: ConnectionRecord, reason: string): Promise<void>;
+    workerCalls: ReturnType<typeof createWorkerCallAdmission>;
     handleWorkControl(
       record: ConnectionRecord,
       frame: ControlFrame,
@@ -194,7 +200,16 @@ export function createSessionProtocolController(
       ),
     );
     ensureOpen(record);
-    const bootstrap = copyBootstrap(admitted.bootstrap ?? {});
+    const applicationBootstrap = copyBootstrap(admitted.bootstrap ?? {});
+    if (Object.hasOwn(applicationBootstrap, HOST_CALL_CAPABILITY_KEY))
+      throw new TypeError("application bootstrap uses reserved transport key");
+    const bootstrap =
+      options.workerCalls.capacity === undefined
+        ? applicationBootstrap
+        : withHostCallCapacity(
+            applicationBootstrap,
+            options.workerCalls.capacity,
+          );
     ensureOpen(record);
     await record.transport!.sendControl({
       protocol: WORKER_PROTOCOL,
@@ -268,7 +283,7 @@ export function createSessionProtocolController(
               callbackAttempt: 1,
               fence: record.fence!,
               definition: record.definition!,
-              metadata: frame.metadata,
+              metadata: withoutHostCallCapacity(frame.metadata),
               signal: record.abort.signal,
             }),
           ),
@@ -289,6 +304,9 @@ export function createSessionProtocolController(
       // new work is admitted, so every WorkOpen is ordered after it on wire.
       record.acceptingWork = true;
       await readyAcknowledgement;
+      const hostCallCapacity = readHostCallCapacity(frame.metadata);
+      if (hostCallCapacity !== undefined)
+        options.workerCalls.attach(record, hostCallCapacity);
       ensureOpen(record);
       options.sessions.assertCurrent(record.fence);
       cancelConnectionTimer(options.scheduler, record, "readyTimer");

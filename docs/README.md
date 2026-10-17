@@ -20,6 +20,8 @@ maintainers can continue without changing the application built there.
   edges.
 - [Workers](workers.md): embedded hosts, remote clients, manifests, lifecycle,
   and protocol rules.
+- [Worker-to-host calls](worker-host-calls.md): optional assignment-bound calls,
+  host admission, independent capacity, and application-owned receipt recovery.
 - [Architecture](architecture.md): component responsibilities, boundaries, and
   request path.
 - [Operations](operations.md): launch, drain, observe, and release safely.

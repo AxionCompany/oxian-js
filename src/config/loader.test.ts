@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { join, resolve, toFileUrl } from "@std/path";
-import { loadConfig } from "../../src/config/config.ts";
+import { join, resolve } from "node:path";
+import { pathToFileURL as toFileUrl } from "node:url";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { loadConfig } from "./config.ts";
 
-const CONFIG_MODULE_URL = new URL("../../src/config/config.ts", import.meta.url)
-  .href;
+const CONFIG_MODULE_URL = new URL("./config.ts", import.meta.url).href;
 
 async function withConfigModule(
   source: string,
@@ -13,11 +15,9 @@ async function withConfigModule(
   ) => void | Promise<void>,
   filename = "oxian.config.ts",
 ): Promise<void> {
-  const directory = await Deno.makeTempDir({
-    prefix: "oxian_config_",
-  });
+  const directory = await mkdtemp(join(tmpdir(), "oxian_config_"));
   const path = join(directory, filename);
-  await Deno.writeTextFile(path, source);
+  await writeFile(path, source);
   try {
     await run({
       directory,
@@ -25,7 +25,7 @@ async function withConfigModule(
       url: toFileUrl(path),
     });
   } finally {
-    await Deno.remove(directory, { recursive: true });
+    await rm(directory, { recursive: true });
   }
 }
 

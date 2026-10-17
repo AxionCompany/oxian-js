@@ -2,10 +2,11 @@ import {
   createServer,
   type IncomingMessage,
   type ServerResponse,
+  validateHeaderValue,
 } from "node:http";
 import type { Duplex } from "node:stream";
 import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
+import { finished, pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { WebSocketServer } from "ws";
 import {
@@ -49,6 +50,10 @@ export async function serve(
     },
   });
 
+  // Node does not include upgraded sockets in closeAllConnections(), even
+  // before ws accepts them or while an application rejection is still pending.
+  const upgraded = new Set<Duplex>();
+  let stopping = false;
   let origin = listenerUrl(hostname, port);
   const server = createServer((request, response) => {
     void respond(request, response);
@@ -58,8 +63,11 @@ export async function serve(
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> {
+    const lifetime = requestLifetime(request, response);
     try {
-      const decision = hypervisor.prepare(toRequest(request, origin, true));
+      const decision = hypervisor.prepare(
+        toRequest(request, origin, true, lifetime.signal),
+      );
       if (decision.kind === "upgrade") {
         decision.cancel("upgrade_event_required");
         await send(
@@ -68,14 +76,29 @@ export async function serve(
         );
         return;
       }
-      await send(response, await decision.response);
+      const result = await decision.response;
+      if (lifetime.signal.aborted) {
+        await result.body?.cancel(lifetime.signal.reason);
+        return;
+      }
+      await send(response, result);
     } catch {
-      if (!response.headersSent) response.writeHead(500);
-      response.end();
+      if (!response.destroyed) {
+        if (!response.headersSent) response.writeHead(500);
+        response.end();
+      }
+    } finally {
+      lifetime.dispose();
     }
   }
 
   server.on("upgrade", (request: IncomingMessage, socket: Duplex, head) => {
+    if (stopping) {
+      socket.destroy();
+      return;
+    }
+    upgraded.add(socket);
+    socket.once("close", () => upgraded.delete(socket));
     void upgrade(request, socket, head);
   });
 
@@ -84,6 +107,7 @@ export async function serve(
     socket: Duplex,
     head: Buffer,
   ): Promise<void> {
+    if (socket.destroyed) return;
     if (takeConnection(budget, socket) === "refused") {
       await reject(
         socket,
@@ -91,12 +115,17 @@ export async function serve(
       );
       return;
     }
+    const abort = new AbortController();
+    const disconnected = (): void => abort.abort(disconnectedError());
+    socket.once("close", disconnected);
     let cancel: ((reason?: string) => void) | undefined;
     const failed = (): void => cancel?.("upgrade_closed");
     socket.on("error", failed);
     socket.once("close", failed);
     try {
-      const decision = hypervisor.prepare(toRequest(request, origin, false));
+      const decision = hypervisor.prepare(
+        toRequest(request, origin, false, abort.signal),
+      );
       if (decision.kind === "response") {
         await reject(socket, await decision.response);
         return;
@@ -120,6 +149,8 @@ export async function serve(
     } catch {
       cancel?.("invalid_upgrade");
       socket.destroy();
+    } finally {
+      socket.removeListener("close", disconnected);
     }
   }
 
@@ -149,11 +180,20 @@ export async function serve(
   let closed: Promise<void> | undefined;
   const shutdown = (): Promise<void> => {
     if (closed !== undefined) return closed;
+    stopping = true;
+    const upgradeClosures = [...upgraded].map(
+      (socket) =>
+        new Promise<void>((resolve) => socket.once("close", () => resolve())),
+    );
     for (const client of sockets.clients) client.terminate();
     sockets.close();
     server.close();
     server.closeAllConnections();
-    closed = finished.promise.catch(() => undefined);
+    for (const socket of upgraded) socket.destroy();
+    closed = Promise.all([
+      finished.promise.catch(() => undefined),
+      ...upgradeClosures,
+    ]).then(() => undefined);
     return closed;
   };
   const listener: HypervisorListener = Object.freeze({
@@ -188,10 +228,52 @@ function takeConnection(
   return undefined;
 }
 
+function disconnectedError(): DOMException {
+  return new DOMException("HTTP client disconnected", "AbortError");
+}
+
+/** An ordinary HTTP request ends with its response, not with body EOF. */
+function requestLifetime(
+  request: IncomingMessage,
+  response: ServerResponse,
+): Readonly<{
+  signal: AbortSignal;
+  dispose(): void;
+}> {
+  const controller = new AbortController();
+  const dispose = (): void => {
+    request.removeListener("close", requestClosed);
+    request.removeListener("error", abort);
+    response.removeListener("close", responseClosed);
+    response.removeListener("error", abort);
+    response.removeListener("finish", dispose);
+  };
+  const abort = (): void => {
+    dispose();
+    controller.abort(disconnectedError());
+  };
+  const requestClosed = (): void => {
+    // IncomingMessage close also fires after a normally consumed request body.
+    if (!request.complete) abort();
+  };
+  const responseClosed = (): void => {
+    if (!response.writableFinished) abort();
+    else dispose();
+  };
+  request.once("close", requestClosed);
+  request.once("error", abort);
+  response.once("close", responseClosed);
+  response.once("error", abort);
+  response.once("finish", dispose);
+  if ((request.destroyed && !request.complete) || response.destroyed) abort();
+  return { signal: controller.signal, dispose };
+}
+
 function toRequest(
   request: IncomingMessage,
   origin: URL,
   withBody: boolean,
+  signal: AbortSignal,
 ): Request {
   const headers = new Headers();
   for (let index = 0; index < request.rawHeaders.length; index += 2) {
@@ -202,6 +284,7 @@ function toRequest(
   return new Request(new URL(request.url ?? "/", origin), {
     method: request.method,
     headers,
+    signal,
     ...(hasBody
       ? {
           body: Readable.toWeb(request) as ReadableStream<Uint8Array>,
@@ -212,9 +295,15 @@ function toRequest(
 }
 
 async function send(target: ServerResponse, response: Response): Promise<void> {
-  target.writeHead(response.status, [...response.headers.entries()].flat());
+  target.writeHead(
+    response.status,
+    response.statusText || undefined,
+    [...response.headers.entries()].flat(),
+  );
   if (response.body === null) {
+    const completion = finished(target, { cleanup: true });
     target.end();
+    await completion;
     return;
   }
   await pipeline(
@@ -224,10 +313,34 @@ async function send(target: ServerResponse, response: Response): Promise<void> {
 }
 
 async function reject(socket: Duplex, response: Response): Promise<void> {
+  if (socket.destroyed) {
+    await response.body?.cancel("connection closed");
+    return;
+  }
   const body = Buffer.from(await response.arrayBuffer());
+  if (socket.destroyed) return;
+  const headers = new Headers(response.headers);
+  // This path closes the socket after one buffered response. Application
+  // headers must not override its framing or advertise unsupported trailers.
+  headers.set("connection", "close");
+  headers.set("content-length", String(body.length));
+  headers.delete("keep-alive");
+  headers.delete("transfer-encoding");
+  headers.delete("trailer");
+  const lines: string[] = [];
+  for (const [name, value] of headers) {
+    if (name === "set-cookie") continue;
+    validateHeaderValue(name, value);
+    lines.push(`${name}: ${value}\r\n`);
+  }
+  for (const cookie of headers.getSetCookie()) {
+    validateHeaderValue("set-cookie", cookie);
+    lines.push(`set-cookie: ${cookie}\r\n`);
+  }
   socket.write(
     `HTTP/1.1 ${response.status} ${response.statusText || "Rejected"}\r\n` +
-      `Connection: close\r\nContent-Length: ${body.length}\r\n\r\n`,
+      `${lines.join("")}\r\n`,
+    "latin1",
   );
   socket.end(body);
 }

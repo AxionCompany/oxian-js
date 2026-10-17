@@ -68,8 +68,24 @@ Hypervisor dispatch supports opt-in bounded waiting via
 covers full capacity and absent/reconnecting targets, with FIFO scheduling,
 deadline/abort handling, queue-full backpressure, and queue counts in
 `HypervisorSnapshot`. The default queue limit is zero for 0.21 compatibility.
+The configured timeout covers entry-to-Open and both dispatch hooks in either
+mode. `maxPendingDispatchHooks` separately bounds unsettled callbacks; their
+occupancy remains visible after a caller timeout until actual settlement.
+An `assign` callback selects an exact current session fence. If that session is
+replaced before the callback resolves, immediate dispatch refuses with
+`worker_unavailable`; queued dispatch may select afresh. An explicit
+`target.workerId` without a callback selection still names the logical worker.
 See the [Hypervisor API](api/hypervisor.md#dispatch-waiting) and
 [operations guide](operations.md#bounded-dispatch-waiting).
+
+## Optional worker-to-host calls
+
+Enable `HypervisorOptions.workerCalls` and `WorkerOptions.hostCalls` for
+assignment-bound `WorkerWorkContext.callHost`. Parentless `Worker.callHost`
+requires separate default-denied admission. The `/work` subpath provides
+`HostCaller`, streaming handles, and errors with not-started/indeterminate
+execution classification. See the [call guide](worker-host-calls.md) for
+host-derived authority evidence and application-owned receipt recovery.
 
 ## Shared conventions
 

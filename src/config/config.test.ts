@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assertThrows } from "../support/assert.ts";
-import { DEFAULT_OXIAN_CONFIG, defineConfig } from "../../src/config/config.ts";
-import type { OxianConfig } from "../../src/config/types.ts";
+import { assertThrows } from "../../tests/support/assert.ts";
+import { DEFAULT_OXIAN_CONFIG, defineConfig } from "./config.ts";
+import type { OxianConfig } from "./types.ts";
 
 function assertDeepFrozen(value: unknown): void {
   if (value === null || typeof value !== "object") return;

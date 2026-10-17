@@ -1,5 +1,20 @@
 # oxianjs
 
+## Unreleased
+
+### Added
+
+- Opt-in worker-to-host calls over existing in-process and WebSocket
+  connections, with v1 capability negotiation, assignment-bound host admission,
+  separately default-denied parentless routes, and streaming call handles.
+- Independent reverse-call capacity, deadline and session/parent checks, drain
+  support, and source-cleanup reservations across reconnect. Calls are never
+  automatically replayed; ambiguous outcomes require application receipt
+  recovery. See [worker-to-host calls](docs/worker-host-calls.md).
+
+This addition supplies generic transport and admission, not the concrete
+Copilotz durable owner runtime. No version or release is created by this entry.
+
 ## 0.22.0
 
 ### Minor Changes

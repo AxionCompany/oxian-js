@@ -28,6 +28,8 @@ function context(
     input,
     signal,
     sendMetadata: () => Promise.resolve(),
+    callHost: () =>
+      Promise.reject(new Error("host calls not configured in this fixture")),
   });
 }
 

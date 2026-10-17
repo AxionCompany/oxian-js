@@ -128,6 +128,8 @@ export type WorkOpenFrame = Readonly<{
   workload: string;
   metadata: JsonObject;
   deadlineAtMs?: number;
+  /** Parent execution to authenticate for a negotiated worker-to-host call. */
+  parentStreamId?: string;
 }>;
 
 export type WorkAcceptedFrame = Readonly<{
@@ -137,9 +139,9 @@ export type WorkAcceptedFrame = Readonly<{
 }>;
 
 /**
- * Authorizes a worker that has reserved a stream with `work.accepted` to invoke
- * the workload. The Hypervisor must mark the operation non-replayable before
- * sending this frame.
+ * Authorizes the responder that reserved a stream with `work.accepted` to invoke
+ * the workload. The initiator must mark the operation non-replayable before
+ * sending this frame. For ordinary work, the Hypervisor is the initiator.
  */
 export type WorkStartFrame = Readonly<{
   protocol: WorkerProtocol;
@@ -210,6 +212,8 @@ export type WorkerToHypervisorControlFrame =
   | HeartbeatFrame
   | DrainedFrame
   | ProtocolErrorFrame
+  | WorkOpenFrame
+  | WorkStartFrame
   | WorkAcceptedFrame
   | WorkMetadataFrame
   | WorkEndFrame
@@ -223,6 +227,8 @@ export type HypervisorToWorkerControlFrame =
   | DrainFrame
   | ShutdownFrame
   | ProtocolErrorFrame
+  | WorkAcceptedFrame
+  | WorkMetadataFrame
   | WorkOpenFrame
   | WorkStartFrame
   | WorkEndFrame

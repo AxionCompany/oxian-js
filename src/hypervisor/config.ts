@@ -10,8 +10,10 @@ const MAX_BUFFERED_AMOUNT_BYTES = 64 * 1_024 * 1_024;
 export type HypervisorConfig = Readonly<{
   /** Zero preserves immediate rejection; positive values enable bounded waiting. */
   maxQueuedDispatches: number;
-  /** Maximum pre-offer wait, also used when WorkInput has no deadline. */
+  /** Maximum entry-to-open wait, including queue and hooks in both modes. */
   dispatchQueueTimeoutMs: number;
+  /** Hooks remain charged until actual settlement, even after caller refusal. */
+  maxPendingDispatchHooks: number;
   handshakeTimeoutMs: number;
   readyTimeoutMs: number;
   heartbeatIntervalMs: number;
@@ -38,6 +40,7 @@ export type HypervisorConfig = Readonly<{
 export const DEFAULT_HYPERVISOR_CONFIG: HypervisorConfig = Object.freeze({
   maxQueuedDispatches: 0,
   dispatchQueueTimeoutMs: 30_000,
+  maxPendingDispatchHooks: 1_024,
   handshakeTimeoutMs: 10_000,
   readyTimeoutMs: 5 * 60_000,
   heartbeatIntervalMs: 10_000,
@@ -127,6 +130,11 @@ export function createHypervisorConfig(
     dispatchQueueTimeoutMs: expectTimer(
       input.dispatchQueueTimeoutMs ?? defaults.dispatchQueueTimeoutMs,
       "dispatchQueueTimeoutMs",
+    ),
+    maxPendingDispatchHooks: expectLimit(
+      input.maxPendingDispatchHooks ?? defaults.maxPendingDispatchHooks,
+      "maxPendingDispatchHooks",
+      MAX_CONNECTIONS,
     ),
     handshakeTimeoutMs: expectTimer(
       input.handshakeTimeoutMs ?? defaults.handshakeTimeoutMs,
