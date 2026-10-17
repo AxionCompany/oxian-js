@@ -68,6 +68,10 @@ Hypervisor dispatch supports opt-in bounded waiting via
 covers full capacity and absent/reconnecting targets, with FIFO scheduling,
 deadline/abort handling, queue-full backpressure, and queue counts in
 `HypervisorSnapshot`. The default queue limit is zero for 0.21 compatibility.
+An `assign` callback selects an exact current session fence. If that session is
+replaced before the callback resolves, immediate dispatch refuses with
+`worker_unavailable`; queued dispatch may select afresh. An explicit
+`target.workerId` without a callback selection still names the logical worker.
 See the [Hypervisor API](api/hypervisor.md#dispatch-waiting) and
 [operations guide](operations.md#bounded-dispatch-waiting).
 

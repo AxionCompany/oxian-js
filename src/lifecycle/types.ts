@@ -122,6 +122,8 @@ export type HypervisorAssignContext = LifecycleContext &
 /**
  * Selects a current candidate. With dispatch waiting enabled this may be retried
  * after a capacity/fence race, using the same stageId and a higher callbackAttempt.
+ * Without waiting, a stale selection refuses rather than routing to its logical
+ * worker's replacement. An explicit target.workerId alone remains a logical target.
  * Queue expiry, caller abort, drain, and shutdown abort the advisory signal.
  */
 export type HypervisorAssign = (
