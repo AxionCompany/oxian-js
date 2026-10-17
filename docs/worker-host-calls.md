@@ -139,6 +139,11 @@ policy. Oxian provides no built-in receipt schema, lookup, or replay decision.
 - `cancel()` requests cancellation; its return does not certify that an
   uncooperative handler or asynchronous source cleanup has stopped
 
+After both stream halves finish successfully, `cancel()` and cancellation of
+unread output are harmless to the transport and its other calls. A one-sided
+half-close is still cancellable. Application-level refusal carried in a normal
+response does not change this transport completion boundary.
+
 `HostCallError`, `createHostCallError`, and `isHostCallError` are exported from
 `oxianjs/work` and the package root. Use the guard to identify these errors;
 `HostCallError` is a type rather than a class constructor. Its `execution` is

@@ -223,6 +223,16 @@ export function createHostCallChannel(
     code: HostCallErrorCode,
     notify = true,
   ): void => {
+    // A fully completed handle no longer owns a protocol stream. Cancelling it
+    // cannot upgrade its tombstone or poison other work on the connection.
+    // A one-sided End still upgrades normally, and aborted late handler bodies
+    // still take the cleanup path below while their reservations are held.
+    if (
+      !streams.has(stream.open.streamId) &&
+      stream.local === "end" &&
+      stream.remote === "end"
+    )
+      return;
     const error = errorFor(stream, code);
     stream.abort.abort(error);
     settle(stream, error);

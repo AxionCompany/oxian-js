@@ -126,6 +126,52 @@ async function invoke(h: Hypervisor, metadata = {}) {
 }
 
 for (const kind of ["in-process", "websocket"] as const) {
+  for (const cancel of ["handle", "output"] as const) {
+    test(`${kind}: completed reverse ${cancel} cancellation preserves its parent and connection`, {
+      timeout: 10_000,
+    }, async () => {
+      const f = await fixture(
+        kind,
+        {
+          admit: () => () => bytes("application-refused"),
+        },
+        async ({ callHost }) => {
+          const signal = new AbortController();
+          const call = await callHost({
+            workload: "owner",
+            signal: signal.signal,
+          });
+          await call.completed;
+          if (cancel === "handle") {
+            await call.cancel();
+            await call.cancel();
+            assert.equal(
+              await new Response(call.output).text(),
+              "application-refused",
+            );
+          } else await call.output.cancel();
+          signal.abort();
+          await call.completed;
+          // Keep the parent occupied through another call, so a poisoned socket
+          // cannot be hidden by a parent that happened to finish first.
+          assert.equal(
+            await text(await callHost({ workload: "owner" })),
+            "application-refused",
+          );
+          return bytes("handled");
+        },
+      );
+      try {
+        const before = f.h.sessions.get("trusted-worker")!.connectionId;
+        assert.equal(await invoke(f.h), "handled");
+        assert.equal(await invoke(f.h), "handled");
+        assert.equal(f.h.sessions.get("trusted-worker")!.connectionId, before);
+      } finally {
+        await f.close();
+      }
+    });
+  }
+
   test(`${kind}: reverse streams preserve host assignment authority and bounded byte flow`, {
     timeout: 10_000,
   }, async () => {

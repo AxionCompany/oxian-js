@@ -121,6 +121,9 @@ is `unsupported`, `unavailable`, `capacity`, `refused`, `cancelled`,
 those immutable fields; `isHostCallError(value)` is its type guard.
 `HostCallError` is a type, not a custom class constructor.
 
+Cancelling a fully completed handle is idempotent and cannot close the shared
+connection. Cancelling after only one stream half ends still propagates normally.
+
 Inspect `execution` independently of the error code. No call is automatically
 replayed; the application owns idempotency and receipt recovery.
 
