@@ -1,7 +1,9 @@
 import { test } from "node:test";
-import { assertRejects } from "../support/assert.ts";
-import { join } from "@std/path";
-import { createFileRouter } from "../../src/router/file_router.ts";
+import { assertRejects } from "../../tests/support/assert.ts";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { createFileRouter } from "./file-router.ts";
 
 type FixtureFiles = Readonly<Record<string, string>>;
 
@@ -9,19 +11,16 @@ async function withFixture(
   files: FixtureFiles,
   run: (root: string) => void | Promise<void>,
 ): Promise<void> {
-  const root = await Deno.makeTempDir({
-    prefix: "oxian_router_validation_",
-  });
+  const root = await mkdtemp(join(tmpdir(), "oxian-router-validation-"));
   try {
     for (const [relativePath, source] of Object.entries(files)) {
       const absolutePath = join(root, relativePath);
-      const separator = absolutePath.lastIndexOf("/");
-      await Deno.mkdir(absolutePath.slice(0, separator), { recursive: true });
-      await Deno.writeTextFile(absolutePath, source);
+      await mkdir(dirname(absolutePath), { recursive: true });
+      await writeFile(absolutePath, source);
     }
     await run(root);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await rm(root, { recursive: true });
   }
 }
 
@@ -70,7 +69,7 @@ test("v0.20 file router rejects non-final catchalls", async () => {
 test("v0.20 file router rejects route extension collisions before import", async () => {
   await rejectsFixture(
     {
-      "health.js": GET_ROUTE,
+      "health.js": `throw new Error("must not import collision");`,
       "health.ts": GET_ROUTE,
     },
     "extension collision",

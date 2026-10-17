@@ -1,8 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assertThrows } from "../support/assert.ts";
-import { join } from "@std/path";
-import { createFileRouter } from "../../src/router/file_router.ts";
+import { assertThrows } from "../../tests/support/assert.ts";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, relative } from "node:path";
+import { pathToFileURL } from "node:url";
+import { createFileRouter } from "./file-router.ts";
 
 type FixtureFiles = Readonly<Record<string, string>>;
 
@@ -10,17 +13,16 @@ async function withFixture(
   files: FixtureFiles,
   run: (root: string) => void | Promise<void>,
 ): Promise<void> {
-  const root = await Deno.makeTempDir({ prefix: "oxian_router_" });
+  const root = await mkdtemp(join(tmpdir(), "oxian router #%-é-"));
   try {
     for (const [relativePath, source] of Object.entries(files)) {
       const absolutePath = join(root, relativePath);
-      const separator = absolutePath.lastIndexOf("/");
-      await Deno.mkdir(absolutePath.slice(0, separator), { recursive: true });
-      await Deno.writeTextFile(absolutePath, source);
+      await mkdir(dirname(absolutePath), { recursive: true });
+      await writeFile(absolutePath, source);
     }
     await run(root);
   } finally {
-    await Deno.remove(root, { recursive: true });
+    await rm(root, { recursive: true });
   }
 }
 
@@ -205,11 +207,8 @@ test("v0.20 file router is a startup snapshot and performs no request-time loadi
         assert.deepStrictEqual(state[counterKey], 1);
         assert.deepStrictEqual(router.routes.length, 1);
 
-        await Deno.writeTextFile(
-          join(root, "stable.ts"),
-          counterSource("replacement"),
-        );
-        await Deno.writeTextFile(join(root, "later.ts"), GET_ROUTE);
+        await writeFile(join(root, "stable.ts"), counterSource("replacement"));
+        await writeFile(join(root, "later.ts"), GET_ROUTE);
 
         for (let attempt = 0; attempt < 10; attempt++) {
           const match = router.match("/stable");
@@ -222,11 +221,120 @@ test("v0.20 file router is a startup snapshot and performs no request-time loadi
         assert.deepStrictEqual(router.match("/later"), null);
         assert.match(router.root, /^file:.*\/$/);
 
-        await Deno.remove(join(root, "stable.ts"));
+        await rm(join(root, "stable.ts"));
         assert.ok(router.match("/stable"));
       } finally {
         delete state[counterKey];
       }
     },
   );
+});
+
+test("file router accepts filesystem paths and file URLs with encoded characters", async () => {
+  await withFixture({ "space # % é.mjs": GET_ROUTE }, async (root) => {
+    const expectedRoot = `${pathToFileURL(root).href}/`;
+    const url = pathToFileURL(root);
+    for (const input of [root, relative(process.cwd(), root), url, url.href]) {
+      const router = await createFileRouter({ root: input });
+      assert.equal(router.root, expectedRoot);
+      const match = router.match("/space%20%23%20%25%20%C3%A9");
+      assert.ok(match);
+      assert.equal(match.route.pattern, "/space # % é");
+      assert.equal(
+        match.route.fileUrl,
+        pathToFileURL(join(root, "space # % é.mjs")).href,
+      );
+    }
+    assert.equal(
+      url.href,
+      pathToFileURL(root).href,
+      "the supplied URL is not mutated",
+    );
+  });
+});
+
+test("file router imports supported modules in deterministic depth-first name order", async () => {
+  const key = `__oxian_router_order_${crypto.randomUUID()}`;
+  const state = globalThis as unknown as Record<string, string[]>;
+  const record = (name: string, source: string) =>
+    `globalThis[${JSON.stringify(key)}].push(${JSON.stringify(name)}); ${source}`;
+  state[key] = [];
+  try {
+    await withFixture(
+      {
+        "z.js": record("z.js", GET_ROUTE),
+        "é.ts": record("é.ts", GET_ROUTE),
+        "a/leaf.mjs": record("a/leaf.mjs", GET_ROUTE),
+        "a/_middleware.ts": record("a/_middleware.ts", MIDDLEWARE),
+        "_middleware.mjs": record("_middleware.mjs", MIDDLEWARE),
+        "A.mts": record("A.mts", GET_ROUTE),
+      },
+      async (root) => {
+        const router = await createFileRouter({ root });
+        assert.deepEqual(state[key], [
+          "A.mts",
+          "_middleware.mjs",
+          "a/_middleware.ts",
+          "a/leaf.mjs",
+          "z.js",
+          "é.ts",
+        ]);
+        assert.deepEqual(
+          router.routes.map(({ pattern }) => pattern),
+          ["/A", "/a/leaf", "/z", "/é"],
+        );
+        assert.equal(router.match("/a/leaf")?.middlewares.length, 2);
+      },
+    );
+  } finally {
+    delete state[key];
+  }
+});
+
+test("file router skips symlink files, symlink directories, private files and unsupported extensions", async () => {
+  await withFixture(
+    {
+      "visible.mjs": GET_ROUTE,
+      "nested/index.mjs": GET_ROUTE,
+      "_private.mjs": `throw new Error("private file must not load");`,
+      "ignored.cjs": `throw new Error("unsupported extension must not load");`,
+      "ignored.txt": "not a module",
+    },
+    async (root) => {
+      await symlink(
+        join(root, "visible.mjs"),
+        join(root, "linked.mjs"),
+        "file",
+      );
+      await symlink(join(root, "nested"), join(root, "linked"), "dir");
+      await symlink(join(root, "missing"), join(root, "dangling.mjs"), "file");
+      const router = await createFileRouter({ root });
+      assert.deepEqual(
+        router.routes.map(({ pattern }) => pattern),
+        ["/nested", "/visible"],
+      );
+      assert.equal(router.match("/linked"), null);
+      assert.equal(router.match("/_private"), null);
+    },
+  );
+});
+
+test("file router preserves pathname decoding, encoded delimiters and empty-segment semantics", async () => {
+  await withFixture({ "value/[id].mjs": GET_ROUTE }, async (root) => {
+    const router = await createFileRouter({ root });
+    assert.deepEqual(router.match("//value//a%2Fb/?ignored#fragment")?.params, {
+      id: "a/b",
+    });
+    assert.deepEqual(router.match("/value/%252F")?.params, { id: "%2F" });
+    assert.deepEqual(router.match("/value/%23%3F")?.params, { id: "#?" });
+    assert.deepEqual(router.match("/value/%C3%A9")?.params, { id: "é" });
+    assert.equal(router.match("/value/a/b"), null);
+  });
+});
+
+test("file router rejects missing and non-directory roots", async () => {
+  await withFixture({ "index.mjs": GET_ROUTE }, async (root) => {
+    await assert.rejects(createFileRouter({ root: join(root, "missing") }));
+    await assert.rejects(createFileRouter({ root: join(root, "index.mjs") }));
+  });
 });

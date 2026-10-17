@@ -6,6 +6,21 @@ The `/router` subpath compiles a filesystem route tree once and exposes pure,
 synchronous request-path matching. Route handlers use native `Request`,
 `Response`, `AbortSignal`, and promises.
 
+The Node 24+ npm build exposes the same API at `oxianjs/router`. Filesystem
+access uses an internal Node adapter that also works through Deno
+compatibility. The runtime-neutral root does not import or export the file
+router; compose it explicitly with `createApplication` from `oxianjs`.
+
+```ts
+import { createApplication } from "oxianjs";
+import { createFileRouter } from "oxianjs/router";
+
+const router = await createFileRouter({
+  root: new URL("./routes/", import.meta.url),
+});
+const app = await createApplication({ router });
+```
+
 ```ts
 import {
   createFileRouter,
@@ -68,7 +83,10 @@ module exports.
 ## Route filesystem contract
 
 Oxian recognizes regular files ending in `.ts`, `.js`, `.mts`, or `.mjs`. Files
-are mapped as follows:
+are loaded by the current runtime's native module loader, with no additional
+transpiler or import-map support supplied by the router. On Node, TypeScript
+route modules must use syntax supported by native type stripping. Files are
+mapped as follows:
 
 | Filesystem module      | URL pattern               |
 | ---------------------- | ------------------------- |
@@ -170,7 +188,9 @@ const router = await createFileRouter<AppState>({
 
 Before resolving, the function recursively walks the root, imports every
 recognized route and middleware module, validates the complete tree, orders the
-routes, builds its matcher, and freezes the public snapshot. Filesystem,
+routes, builds its matcher, and freezes the public snapshot. Discovery and
+imports use depth-first traversal with directory entries sorted by name using
+code-unit order. Filesystem,
 permission, import, or module-evaluation failures reject the promise.
 
 Startup validation also rejects:

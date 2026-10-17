@@ -18,6 +18,7 @@ const ENTRYPOINTS = [
   "./hypervisor",
   "./protocol",
   "./providers",
+  "./router",
   "./transport",
   "./work",
   "./worker",
@@ -25,7 +26,12 @@ const ENTRYPOINTS = [
 
 const PROOF = `
 import assert from "node:assert/strict";
-import { createHypervisor } from "oxianjs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { createApplication, createHypervisor } from "oxianjs";
+import { createFileRouter } from "oxianjs/router";
 import { createWorker } from "oxianjs/worker";
 import { createConnectionBudget, serve } from "oxianjs/adapters/node";
 
@@ -33,12 +39,35 @@ for (const subpath of ${JSON.stringify(ENTRYPOINTS)}) {
   await import(subpath === "." ? "oxianjs" : "oxianjs" + subpath.slice(1));
 }
 for (const subpath of ["host", "owner", "adapters/postgres", "adapters/deno",
-  "app", "config", "local", "router", "edge", "cli", "bin"]) {
+  "app", "config", "local", "edge", "cli", "bin"]) {
   await assert.rejects(import("oxianjs/" + subpath), {
     code: "ERR_PACKAGE_PATH_NOT_EXPORTED",
   });
 }
 assert.equal("createLocalProcessProvider" in await import("oxianjs/providers"), false);
+
+// Import the real installed router, discover external route modules and execute
+// them through the portable application core; no source-checkout imports.
+const routeRoot = await mkdtemp(join(tmpdir(), "oxian npm routes #% é-"));
+let application;
+try {
+  await mkdir(join(routeRoot, "users"));
+  await writeFile(join(routeRoot, "users/[id].mts"),
+    'export const GET = (_request: Request, context: { params: { id: string } }) => new Response(context.params.id);');
+  await writeFile(join(routeRoot, "_middleware.mjs"),
+    'export const middleware = async (_request, _context, next) => { const response = await next(); response.headers.set("x-router", "installed"); return response; };');
+  const router = await createFileRouter({ root: pathToFileURL(routeRoot) });
+  assert.equal(router.routes.length, 1);
+  assert.deepEqual(router.match("/users/alice%20smith")?.params, { id: "alice smith" });
+  application = await createApplication({ router });
+  await rm(routeRoot, { recursive: true, force: true });
+  const response = await application.fetch(new Request("https://example.test/users/alice%20smith"));
+  assert.equal(await response.text(), "alice smith");
+  assert.equal(response.headers.get("x-router"), "installed");
+} finally {
+  await application?.dispose("npm_router_proof_complete");
+  await rm(routeRoot, { recursive: true, force: true });
+}
 
 const workerCalls = { admit: context => {
   assert.equal(context.parent.workload, "echo");
@@ -145,7 +174,7 @@ try {
   await listener?.shutdown();
   budget.close();
 }
-console.log("Installed npm imports and worker-to-host round trips over in-process and Node WebSocket passed");
+console.log("Installed npm router, imports and worker-to-host round trips over in-process and Node WebSocket passed");
 `;
 
 const sha = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -199,6 +228,7 @@ try {
     "docs/api/work.md",
     "docs/api/worker.md",
     "docs/api/hypervisor.md",
+    "docs/api/router.md",
   ]) {
     assert.ok(existsSync(join(packageDirectory, path)), path);
   }
@@ -226,10 +256,11 @@ try {
     existsSync(join(packageDirectory, "src/providers/local_process.js")),
     false,
   );
-  // The app core references portable router types, but not the file router.
-  for (const path of ["src/router/index.js", "src/app/index.js"]) {
-    assert.equal(existsSync(join(packageDirectory, path)), false, path);
-  }
+  // Filesystem app factories remain excluded; router discovery is now included.
+  assert.equal(existsSync(join(packageDirectory, "src/app/index.js")), false);
+  assert.ok(
+    existsSync(join(packageDirectory, "src/adapters/node/file-router.js")),
+  );
 
   writeFileSync(
     join(directory, "consumer.mts"),
@@ -237,6 +268,9 @@ try {
       const name = subpath === "." ? "oxianjs" : `oxianjs${subpath.slice(1)}`;
       return `import type * as Entry${index} from ${JSON.stringify(name)};`;
     }).join("\n")}\nimport type { Dispatcher, WorkInput } from "oxianjs/work";
+import { createFileRouter, type FileRouter } from "oxianjs/router";
+const router: Promise<FileRouter<{ name: string }>> = createFileRouter<{ name: string }>({ root: new URL("./routes/", import.meta.url) });
+void router;
 import { createHypervisor } from "oxianjs/hypervisor";
 import { createWorker } from "oxianjs/worker";
 import { createConnectionBudget, serve } from "oxianjs/adapters/node";
