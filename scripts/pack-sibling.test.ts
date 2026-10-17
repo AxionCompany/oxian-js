@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 const script = new URL("./pack-sibling.mjs", import.meta.url);
+// This fixture proves the declared Node/npm consumer, even under Deno tests.
 
 function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "oxian sibling test "));
@@ -57,7 +58,7 @@ console.log("fixture build progress");
     root,
     run(args: string[] = [], cwd = directory) {
       return spawnSync(
-        process.execPath,
+        "node",
         [join(root, "scripts/pack-sibling.mjs"), ...args],
         { cwd, encoding: "utf8" },
       );
@@ -208,7 +209,7 @@ test("opt-in tarball override leaves pins and lock unchanged and npm ci restores
     );
     const marker = () =>
       execFileSync(
-        process.execPath,
+        "node",
         [
           "--input-type=module",
           "-e",
