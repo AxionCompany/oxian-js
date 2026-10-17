@@ -156,8 +156,10 @@ wait for ready capacity. A missing target may reconnect within the wait bound;
 Oxian never substitutes a different logical Worker for an explicit target.
 Waiting ends at the earlier of the supplied deadline and arrival plus
 `dispatchQueueTimeoutMs` (default 30 seconds). The configured timeout applies
-only before offering; an explicit deadline also bounds the subsequent work.
-Setting `maxQueuedDispatches: 0` restores immediate `worker_unavailable`.
+through Open, including `assign` and `onWorkAssigned`, with one shared deadline
+in both modes. An explicit deadline also bounds subsequent work. Setting
+`maxQueuedDispatches: 0` restores immediate `worker_unavailable` for absent
+capacity; it does not remove the timeout on asynchronous dispatch policy.
 
 Explicitly targeted requests are FIFO per target; untargeted requests are FIFO
 per workload in separate lanes. A busy or absent computer cannot block work for
@@ -171,10 +173,11 @@ operation/stage IDs and increasing `callbackAttempt`. In queue mode they run
 only when candidates exist. Honor the callback signal and keep assignment policy
 idempotent.
 
-| Pre-offer error code  | Meaning                                                          |
+| Pre-Open error code  | Meaning                                                          |
 | --------------------- | ---------------------------------------------------------------- |
-| `dispatch_queue_full` | Global request-count limit reached; apply upstream backpressure. |
-| `deadline_exceeded`   | Explicit deadline or configured queue timeout elapsed.           |
+| `dispatch_queue_full` | Global queued request-count limit reached; apply upstream backpressure. |
+| `dispatch_hook_capacity` | Unsettled dispatch hook limit reached. |
+| `deadline_exceeded`   | Explicit deadline or configured entry-to-Open timeout elapsed.    |
 | `dispatch_aborted`    | Caller cancelled; `cause` retains the signal reason.             |
 | `shutting_down`       | Hypervisor shutdown rejected queued or new dispatch.             |
 | `worker_draining`     | An explicit target was drained or shut down.                     |
@@ -183,6 +186,16 @@ Drain rejects currently queued requests naming that Worker, even if it is
 absent. Requests targeting an attached draining session also reject. Once it is
 detached, new requests can wait for its replacement. Untargeted requests remain
 eligible for other Workers. Stale `shutdownSession` calls remain no-ops.
+
+`maxPendingDispatchHooks` (default 1,024) separately caps unsettled `assign` and
+`onWorkAssigned` callbacks. Monitor `snapshot().pendingDispatchHooks`. Timeout,
+cancellation, drain or replacement promptly refuses a pre-Open caller, but does
+not reclaim a hook's capacity until its promise settles. `onWorkAssigned` keeps
+its offered worker slot while unsettled, unless that session is lost. The host
+never opens a late assignment. Honour cancellation in callbacks; timeouts cannot
+stop arbitrary application JavaScript. A full hook budget refuses rather than
+adding another hidden queue. This budget is independent of reverse-call and
+execution capacity, and remains charged across reconnects.
 
 The queue owns no reservation, dispatcher record, or wire stream. Rejection
 before offering is safe to retry under application policy. Once offered, the

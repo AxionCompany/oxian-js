@@ -140,6 +140,7 @@ test("dispatch queue: arrival order among runnable heads and FIFO across workloa
     metadata: { order: 4 },
   });
   assert.deepStrictEqual(h.snapshot(), {
+    pendingDispatchHooks: 0,
     queuedDispatches: 3,
     queuedDispatchesByLane: [
       { workload: "job", count: 1 },
