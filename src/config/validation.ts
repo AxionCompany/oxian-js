@@ -1,4 +1,8 @@
-import { isAbsolute, normalize, resolve } from "@std/path";
+import {
+  isAbsolute,
+  normalize,
+  resolve,
+} from "../adapters/node/config-path.ts";
 import {
   createHypervisorConfig,
   DEFAULT_HYPERVISOR_CONFIG,

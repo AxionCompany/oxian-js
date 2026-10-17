@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assertRejects, assertThrows } from "../support/assert.ts";
-import { join, toFileUrl } from "@std/path";
-import { createApplication } from "../../src/app/application.ts";
-import {
-  defineApplicationFactory,
-  loadApplicationFactory,
-} from "../../src/app/factory.ts";
-import type { FileRouter } from "../../src/router/types.ts";
+import { assertRejects, assertThrows } from "../../tests/support/assert.ts";
+import { join } from "node:path";
+import { pathToFileURL as toFileUrl } from "node:url";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { createApplication } from "./application.ts";
+import { defineApplicationFactory, loadApplicationFactory } from "./factory.ts";
+import type { FileRouter } from "../router/types.ts";
 
 function createRouter(root: string): FileRouter<unknown> {
   return Object.freeze({
@@ -21,13 +21,13 @@ async function withModule(
   source: string,
   run: (path: string) => void | Promise<void>,
 ): Promise<void> {
-  const directory = await Deno.makeTempDir({ prefix: "oxian_app_factory_" });
+  const directory = await mkdtemp(join(tmpdir(), "oxian_app_factory_"));
   const path = join(directory, "application.ts");
-  await Deno.writeTextFile(path, source);
+  await writeFile(path, source);
   try {
     await run(path);
   } finally {
-    await Deno.remove(directory, { recursive: true });
+    await rm(directory, { recursive: true });
   }
 }
 
