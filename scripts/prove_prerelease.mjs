@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { nextVersion } from "./next_version.mjs";
+import { packSibling } from "./pack-sibling.mjs";
 
 const ENTRYPOINTS = [
   ".",
@@ -148,23 +149,8 @@ try {
 console.log("Installed npm imports and worker-to-host round trips over in-process and Node WebSocket passed");
 `;
 
-const sha = execFileSync("git", ["rev-parse", "HEAD"], {
-  encoding: "utf8",
-}).trim();
-execFileSync(process.execPath, ["scripts/build_npm.mjs", sha], {
-  stdio: "inherit",
-});
-const packed = JSON.parse(
-  execFileSync("npm", ["pack", "--json"], {
-    cwd: "build/npm",
-    encoding: "utf8",
-  }),
-);
-const filename = packed[0]?.filename;
-if (typeof filename !== "string") {
-  throw new Error("npm pack returned no tarball");
-}
-for (const { path } of packed[0].files) {
+const { tarball, packed, sha } = packSibling();
+for (const { path } of packed.files) {
   assert.doesNotMatch(path, /(?:^|\/)tests?\//);
   assert.doesNotMatch(path, /(?:\.test|_test)\.(?:js|d\.ts)$/);
   assert.ok(!path.endsWith(".ts") || path.endsWith(".d.ts"), path);
@@ -173,13 +159,7 @@ const directory = mkdtempSync(join(tmpdir(), "oxian-next-"));
 try {
   execFileSync(
     "npm",
-    [
-      "install",
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      join(process.cwd(), "build/npm", filename),
-    ],
+    ["install", "--ignore-scripts", "--no-audit", "--no-fund", tarball],
     { cwd: directory, stdio: "inherit" },
   );
   const packageDirectory = join(directory, "node_modules/oxianjs");
