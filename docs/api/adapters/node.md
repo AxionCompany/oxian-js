@@ -38,4 +38,11 @@ limit; `close()` refuses new leases without closing existing sockets. A listener
 never closes an injected budget. This limiter has no owner, storage or shard
 responsibilities. An optional signal closes only this listener.
 
+`shutdown()` closes accepted WebSockets and pending Upgrade sockets, including
+those waiting on an application fallback or response body, and waits for their
+connection leases to be released. A late fallback response cannot write to the
+closed socket. This closes transport resources; it cannot force an arbitrary
+application promise or an already-running response-body producer to settle.
+Applications still own cancellation and bounds for that work.
+
 Call `hypervisor.shutdown()` separately in the application layer that owns it.
