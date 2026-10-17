@@ -145,8 +145,13 @@ export function createDispatch(
                   "assign must return one of the available current session fences",
                 );
               }
-              if (waiting && !options.sessions.isCurrent(candidate)) {
-                return undefined;
+              if (!options.sessions.isCurrent(candidate)) {
+                if (waiting) return undefined;
+                throw createHypervisorError(
+                  "worker_unavailable",
+                  "the selected Worker session is no longer current",
+                  { identity: candidate.identity },
+                );
               }
               target = Object.freeze({ workerId: candidate.identity.workerId });
             }
