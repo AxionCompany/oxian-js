@@ -45,4 +45,12 @@ closed socket. This closes transport resources; it cannot force an arbitrary
 application promise or an already-running response-body producer to settle.
 Applications still own cancellation and bounds for that work.
 
+Ordinary fallback requests receive a `Request.signal` that aborts on an
+incomplete incoming body, a premature response close, or listener shutdown.
+Normal request-body completion does not abort an ongoing response. Each
+keep-alive request has its own lifetime; a later disconnect cannot cancel an
+already-finished request. Pending Upgrade fallbacks instead follow their Upgrade
+socket lifetime. The existing HTTP gateway forwards this cancellation to work;
+applications must still observe the signal and bound noncooperative work.
+
 Call `hypervisor.shutdown()` separately in the application layer that owns it.
