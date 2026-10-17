@@ -2,6 +2,7 @@ import {
   createServer,
   type IncomingMessage,
   type ServerResponse,
+  validateHeaderValue,
 } from "node:http";
 import type { Duplex } from "node:stream";
 import { Readable } from "node:stream";
@@ -212,7 +213,11 @@ function toRequest(
 }
 
 async function send(target: ServerResponse, response: Response): Promise<void> {
-  target.writeHead(response.status, [...response.headers.entries()].flat());
+  target.writeHead(
+    response.status,
+    response.statusText || undefined,
+    [...response.headers.entries()].flat(),
+  );
   if (response.body === null) {
     target.end();
     return;
@@ -225,9 +230,28 @@ async function send(target: ServerResponse, response: Response): Promise<void> {
 
 async function reject(socket: Duplex, response: Response): Promise<void> {
   const body = Buffer.from(await response.arrayBuffer());
+  const headers = new Headers(response.headers);
+  // This path closes the socket after one buffered response. Application
+  // headers must not override its framing or advertise unsupported trailers.
+  headers.set("connection", "close");
+  headers.set("content-length", String(body.length));
+  headers.delete("keep-alive");
+  headers.delete("transfer-encoding");
+  headers.delete("trailer");
+  const lines: string[] = [];
+  for (const [name, value] of headers) {
+    if (name === "set-cookie") continue;
+    validateHeaderValue(name, value);
+    lines.push(`${name}: ${value}\r\n`);
+  }
+  for (const cookie of headers.getSetCookie()) {
+    validateHeaderValue("set-cookie", cookie);
+    lines.push(`set-cookie: ${cookie}\r\n`);
+  }
   socket.write(
     `HTTP/1.1 ${response.status} ${response.statusText || "Rejected"}\r\n` +
-      `Connection: close\r\nContent-Length: ${body.length}\r\n\r\n`,
+      `${lines.join("")}\r\n`,
+    "latin1",
   );
   socket.end(body);
 }
