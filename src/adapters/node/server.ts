@@ -50,6 +50,10 @@ export async function serve(
     },
   });
 
+  // Node does not include upgraded sockets in closeAllConnections(), even
+  // before ws accepts them or while an application rejection is still pending.
+  const upgraded = new Set<Duplex>();
+  let stopping = false;
   let origin = listenerUrl(hostname, port);
   const server = createServer((request, response) => {
     void respond(request, response);
@@ -77,6 +81,12 @@ export async function serve(
   }
 
   server.on("upgrade", (request: IncomingMessage, socket: Duplex, head) => {
+    if (stopping) {
+      socket.destroy();
+      return;
+    }
+    upgraded.add(socket);
+    socket.once("close", () => upgraded.delete(socket));
     void upgrade(request, socket, head);
   });
 
@@ -150,11 +160,20 @@ export async function serve(
   let closed: Promise<void> | undefined;
   const shutdown = (): Promise<void> => {
     if (closed !== undefined) return closed;
+    stopping = true;
+    const upgradeClosures = [...upgraded].map(
+      (socket) =>
+        new Promise<void>((resolve) => socket.once("close", () => resolve())),
+    );
     for (const client of sockets.clients) client.terminate();
     sockets.close();
     server.close();
     server.closeAllConnections();
-    closed = finished.promise.catch(() => undefined);
+    for (const socket of upgraded) socket.destroy();
+    closed = Promise.all([
+      finished.promise.catch(() => undefined),
+      ...upgradeClosures,
+    ]).then(() => undefined);
     return closed;
   };
   const listener: HypervisorListener = Object.freeze({
@@ -229,7 +248,12 @@ async function send(target: ServerResponse, response: Response): Promise<void> {
 }
 
 async function reject(socket: Duplex, response: Response): Promise<void> {
+  if (socket.destroyed) {
+    await response.body?.cancel("connection closed");
+    return;
+  }
   const body = Buffer.from(await response.arrayBuffer());
+  if (socket.destroyed) return;
   const headers = new Headers(response.headers);
   // This path closes the socket after one buffered response. Application
   // headers must not override its framing or advertise unsupported trailers.

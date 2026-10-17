@@ -3,6 +3,8 @@ import { connect as connectTcp } from "node:net";
 import { test } from "node:test";
 import { createHypervisor } from "../../hypervisor/hypervisor.ts";
 import { serve } from "./server.ts";
+import { createConnectionBudget } from "./connection-budget.ts";
+import { WORKER_PROTOCOL } from "../../protocol/index.ts";
 
 test("Node upgrade rejections preserve response status, headers, and body", async () => {
   const body = JSON.stringify({ error: "permission required", detail: "café" });
@@ -133,6 +135,130 @@ test("Node upgrade rejections validate all headers before writing", async () => 
   } finally {
     await listener.shutdown();
     await hypervisor.shutdown("node_rejection_headers_test");
+  }
+});
+
+for (const pending of ["fallback", "body"] as const) {
+  test(`Node shutdown closes an upgrade waiting on ${pending}`, {
+    timeout: 5_000,
+  }, async () => {
+    const entered = Promise.withResolvers<void>();
+    const response = Promise.withResolvers<Response>();
+    let body: ReadableStreamDefaultController<Uint8Array> | undefined;
+    let cancelled = 0;
+    const budget = createConnectionBudget(1);
+    const hypervisor = createHypervisor({
+      transports: [
+        { type: "in-process", config: { topic: crypto.randomUUID() } },
+      ],
+      fallback: () => {
+        entered.resolve();
+        return response.promise;
+      },
+    });
+    const listener = await serve({ hypervisor, budget });
+    const socket = connectTcp(listener.port, "127.0.0.1");
+    const chunks: Buffer[] = [];
+    const peerClosed = Promise.withResolvers<void>();
+    socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+    socket.on("error", () => undefined);
+    socket.once("close", () => peerClosed.resolve());
+    socket.once("connect", () =>
+      socket.write(
+        "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n",
+      ),
+    );
+    const delayed = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          body = controller;
+        },
+        cancel() {
+          cancelled++;
+        },
+      }),
+      { status: 404 },
+    );
+    let closing: Promise<void> | undefined;
+    try {
+      await entered.promise;
+      if (pending === "body") {
+        response.resolve(delayed);
+        while (!delayed.body!.locked)
+          await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+      assert.equal(budget.snapshot().connections, 1);
+      closing = listener.shutdown();
+      const done = await Promise.race([
+        closing.then(() => true),
+        new Promise<boolean>((resolve) =>
+          setTimeout(() => resolve(false), 500),
+        ),
+      ]);
+      assert.equal(
+        done,
+        true,
+        "shutdown must not await an upgraded fallback socket",
+      );
+      await peerClosed.promise;
+      assert.equal(budget.snapshot().connections, 0);
+      if (pending === "fallback") response.resolve(delayed);
+      else body!.close();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      assert.equal(
+        Buffer.concat(chunks).length,
+        0,
+        "late response must not write",
+      );
+      assert.equal(cancelled, pending === "fallback" ? 1 : 0);
+      await listener.shutdown();
+      assert.equal(budget.snapshot().connections, 0);
+    } finally {
+      socket.destroy();
+      if (pending === "fallback") response.resolve(delayed);
+      try {
+        body?.close();
+      } catch {
+        /* Already closed or cancelled. */
+      }
+      await (closing ?? listener.shutdown());
+      await hypervisor.shutdown();
+    }
+  });
+}
+
+test("Node shutdown releases an accepted WebSocket budget once", async () => {
+  const budget = createConnectionBudget(1);
+  const hypervisor = createHypervisor({
+    transports: [{ type: "websocket", config: { path: "/workers" } }],
+    admit: () => {
+      throw new Error("no Hello expected");
+    },
+  });
+  const listener = await serve({ hypervisor, budget });
+  const url = new URL("/workers", listener.url);
+  url.protocol = "ws:";
+  const socket = new WebSocket(url, WORKER_PROTOCOL);
+  const peerClosed = new Promise<void>((resolve) =>
+    socket.addEventListener("close", () => resolve(), { once: true }),
+  );
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true });
+      socket.addEventListener("error", reject, { once: true });
+    });
+    assert.equal(budget.snapshot().connections, 1);
+    await listener.shutdown();
+    await peerClosed;
+    assert.equal(budget.snapshot().connections, 0);
+    await listener.shutdown();
+    const lease = budget.connect();
+    lease.release();
+    assert.equal(budget.snapshot().connections, 0);
+  } finally {
+    socket.close();
+    await listener.shutdown();
+    await hypervisor.shutdown();
   }
 });
 
