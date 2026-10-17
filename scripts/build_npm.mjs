@@ -45,7 +45,7 @@ for (const path of globSync(
 cpSync("CHANGELOG.md", "build/npm/CHANGELOG.md");
 writeFileSync(
   "build/npm/README.md",
-  `# Oxian for Node\n\nFetch-native applications and streaming work over in-process or WebSocket transports.\n\nRequires Node 24 or newer. This package exports the portable root, http, hypervisor,\nprotocol, providers, transport, work, worker, and adapters/node. The providers\nsubpath contains only portable providers; it does not include local processes.\n\nThe filesystem app factories, config loader, file router, local composition, edge,\nDeno adapter, and CLI remain available only in the Deno/JSR package during the\nNode migration. The retired owner, host, and PostgreSQL-owner APIs are not included;\nsee the [retirement and migration notes](docs/owner-retirement.md).\n\nOptional [worker-to-host calls](docs/worker-host-calls.md) reuse the authenticated\nconnection and require explicit host admission.\n\nSee https://github.com/AxionCompany/oxian-js for documentation.\n`,
+  `# Oxian for Node\n\nFetch-native applications and streaming work over in-process or WebSocket transports.\n\nRequires Node 24 or newer. This package exports the portable root, http, hypervisor,\nprotocol, providers, router, transport, work, worker, and adapters/node. The providers\nsubpath contains only portable providers; it does not include local processes.\n\nThe file router uses Node filesystem APIs and remains available in Deno/JSR.\nImport it from oxianjs/router; it is not part of the portable root.\n\nThe filesystem app factories, config loader, local composition, edge,\nDeno adapter, and CLI remain available only in the Deno/JSR package during the\nNode migration. The retired owner, host, and PostgreSQL-owner APIs are not included;\nsee the [retirement and migration notes](docs/owner-retirement.md).\n\nOptional [worker-to-host calls](docs/worker-host-calls.md) reuse the authenticated\nconnection and require explicit host admission.\n\nSee https://github.com/AxionCompany/oxian-js for documentation.\n`,
 );
 const entrypoints = {
   ".": "src/mod",
@@ -54,6 +54,7 @@ const entrypoints = {
   "./hypervisor": "src/hypervisor/index",
   "./protocol": "src/protocol/index",
   "./providers": "src/providers/core",
+  "./router": "src/router/index",
   "./transport": "src/transport/index",
   "./work": "src/work/index",
   "./worker": "src/worker/index",

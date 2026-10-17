@@ -6,6 +6,7 @@
   "include": [
     "src/adapters/node/**/*.ts",
     "src/protocol/*.test.ts",
+    "src/router/**/*.ts",
     "tests/**/*.ts",
     "scripts/*.test.ts"
   ],
@@ -21,7 +22,6 @@
     "tests/local/**",
     "tests/providers/fixtures/**",
     "tests/providers/local_process_test.ts",
-    "tests/release/**",
-    "tests/router/**"
+    "tests/release/**"
   ]
 }

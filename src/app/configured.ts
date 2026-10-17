@@ -1,5 +1,5 @@
 import type { ApplicationConfig } from "../config/types.ts";
-import { createFileRouter } from "../router/file_router.ts";
+import { createFileRouter } from "../router/file-router.ts";
 import type { CreateFileRouterOptions, FileRouter } from "../router/types.ts";
 import { createApplication } from "./application.ts";
 import { loadApplicationFactory } from "./factory.ts";

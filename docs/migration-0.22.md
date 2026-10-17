@@ -54,6 +54,7 @@ The npm build now exposes:
 - `oxianjs`: the portable application, HTTP, Hypervisor, worker and work core
 - `/adapters/node`: the Node HTTP/WebSocket listener and connection budget
 - `/http`, `/hypervisor`, `/protocol`, `/transport`, `/work`, `/worker`
+- `/router`: existing file-router discovery, validation and pathname matching
 - `/providers`: the portable provider contract, externally attached provider,
   Cloud Run Jobs provider and conformance helpers
 
@@ -62,7 +63,7 @@ Postgres and its type dependency have been removed. Importing the portable root
 still does not create listeners, spawn processes or require a database.
 
 The npm `/providers` subpath excludes the Deno local-process provider. The
-Deno-bound `/app`, `/config`, `/local`, `/router`, `/edge`, `/cli`, `/bin`, and
+Deno-bound `/app`, `/config`, `/local`, `/edge`, `/cli`, `/bin`, and
 `/adapters/deno` remain available only in the retained JSR surface during the
 Node migration. The npm build is deliberately not advertised as full JSR parity.
 
@@ -81,7 +82,7 @@ budget or the application-owned Hypervisor.
 The release retains Oxian's protocol, supervisor, transport, worker and
 Hypervisor suites. CI checks Node and Deno plus an installed npm tarball: public
 exports, missing retired subpaths, declaration consumption, absence of tests/raw
-TypeScript in the npm payload, and real in-process and Node WebSocket work
-dispatch. Historical owner tests remain migration evidence, not executable
+TypeScript in the npm payload, real file-route and middleware execution, and
+real in-process and Node WebSocket work dispatch. Historical owner tests remain migration evidence, not executable
 replacement coverage. Stable publication still requires its separate exact-tag
 workflow and is outside this prerelease.

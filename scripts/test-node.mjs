@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { globSync } from "node:fs";
 
-// Tests of the Deno-bound layers (file router, config loader, local runtime,
+// Tests of the Deno-bound layers (config loader, local runtime,
 // CLI, edge, local process provider, Deno publishing).
 // They run only in the Deno CI until each layer moves to Node (F1 §8).
 const DENO_ONLY = new Set([
@@ -23,8 +23,6 @@ const DENO_ONLY = new Set([
   "tests/local/edge_test.ts",
   "tests/providers/local_process_test.ts",
   "tests/release/publish_contract_test.ts",
-  "tests/router/file_router_test.ts",
-  "tests/router/file_router_validation_test.ts",
 ]);
 
 const files = globSync([

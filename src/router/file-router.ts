@@ -1,4 +1,7 @@
-import { resolve, toFileUrl } from "@std/path";
+import {
+  readRouterDirectory,
+  resolveRouterPath,
+} from "../adapters/node/file-router.ts";
 import {
   type CatchallRouteSegment,
   type CompiledMiddleware,
@@ -87,7 +90,7 @@ function resolveRoot(root: string | URL): URL {
   ) {
     url = new URL(root);
   } else {
-    url = toFileUrl(resolve(root));
+    url = resolveRouterPath(root);
   }
 
   if (url.protocol !== "file:") {
@@ -129,8 +132,7 @@ async function discoverModules(
     directoryUrl: URL,
     directoryParts: string[],
   ): Promise<void> {
-    const entries: Deno.DirEntry[] = [];
-    for await (const entry of Deno.readDir(directoryUrl)) entries.push(entry);
+    const entries = await readRouterDirectory(directoryUrl);
     entries.sort((left, right) => compareStrings(left.name, right.name));
 
     for (const entry of entries) {

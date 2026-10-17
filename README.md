@@ -75,11 +75,14 @@ The executable is `jsr:@oxian/oxian-js@0.22.0/bin`; the embeddable CLI API is
 
 The npm build exposes the portable execution core as `oxianjs`, plus
 `oxianjs/adapters/node`, `/http`, `/hypervisor`, `/protocol`, `/providers`,
-`/transport`, `/work`, and `/worker`. Node 24 or newer is required. The Node
+`/router`, `/transport`, `/work`, and `/worker`. Node 24 or newer is required. The Node
 listener uses the package's `ws` dependency; no database client is required. The
 npm `/providers` export contains the portable providers only, without the Deno
-local-process provider. File discovery, the local CLI and the other Deno-bound
-subpaths above have not been ported into this npm build.
+local-process provider. The existing `createFileRouter` API is available from
+`oxianjs/router`, with Node filesystem discovery and unchanged startup validation
+and pathname matching. It also remains available in Deno/JSR. Filesystem app
+factories, config loading, the local CLI and the other Deno-bound subpaths above
+have not been ported into this npm build.
 
 The unused generic `/owner`, `/host`, and `/adapters/postgres` APIs have been
 removed from this source revision. Application-specific durable ownership

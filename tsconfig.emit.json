@@ -14,6 +14,7 @@
     "src/hypervisor/index.ts",
     "src/protocol/index.ts",
     "src/providers/core.ts",
+    "src/router/index.ts",
     "src/transport/index.ts",
     "src/work/index.ts",
     "src/worker/index.ts"
