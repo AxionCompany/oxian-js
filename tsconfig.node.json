@@ -5,6 +5,7 @@
   },
   "include": [
     "src/adapters/node/**/*.ts",
+    "src/protocol/*.test.ts",
     "tests/**/*.ts",
     "scripts/*.test.ts"
   ],

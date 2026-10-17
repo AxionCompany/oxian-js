@@ -114,11 +114,13 @@ host-specific work; deleting the old library does not implement either.
 ## Evidence that remains active in Oxian
 
 All protocol, supervisor, transport, worker and Hypervisor suites remain.
-In particular, `tests/protocol/*` and `tests/supervisor/*` retain their 95 declared
-cases for byte/sequence credit, capacity reservation, cancellation, drain,
-half-close, session generations, credential resume, durable acceptance and
+In particular, `src/protocol/*.test.ts` and `tests/supervisor/*` retain the original
+95 declared cases for byte/sequence credit, capacity reservation, cancellation,
+drain, half-close, session generations, credential resume, durable acceptance and
 committed-versus-indeterminate dispatch. The installed npm-package proof now
-uses retained worker dispatch instead of the deleted owner/host API.
+uses retained worker dispatch instead of the deleted owner/host API. The protocol
+suites live beside their implementation with kebab-case names;
+`src/protocol/host-calls.test.ts` adds 16 reverse-call cases.
 
 No generic substring deletion of “owner” is appropriate: existing transport
 resource ownership and admission responsibilities still have their own meaning.
