@@ -55,6 +55,8 @@ The npm build now exposes:
 - `/adapters/node`: the Node HTTP/WebSocket listener and connection budget
 - `/http`, `/hypervisor`, `/protocol`, `/transport`, `/work`, `/worker`
 - `/router`: existing file-router discovery, validation and pathname matching
+- `/config`: existing configuration validation and local TypeScript module loading
+- `/app`: existing application, factory loading and configured-application composition
 - `/providers`: the portable provider contract, externally attached provider,
   Cloud Run Jobs provider and conformance helpers
 
@@ -63,9 +65,42 @@ Postgres and its type dependency have been removed. Importing the portable root
 still does not create listeners, spawn processes or require a database.
 
 The npm `/providers` subpath excludes the Deno local-process provider. The
-Deno-bound `/app`, `/config`, `/local`, `/edge`, `/cli`, `/bin`, and
+Deno-bound `/local`, `/edge`, `/cli`, `/bin`, and
 `/adapters/deno` remain available only in the retained JSR surface during the
 Node migration. The npm build is deliberately not advertised as full JSR parity.
+
+## Configuration and application factories
+
+The existing `defineConfig`, `loadConfig`, `defineApplicationFactory`,
+`loadApplicationFactory` and `createConfiguredApplication` signatures and
+validation remain the same. Their filesystem paths use an internal Node adapter
+that also works in Deno. Config-relative route, static-root and factory paths
+still resolve against the config module directory, without changing the
+process working directory.
+
+Loaders still accept only local `.ts` modules. Config modules must export exactly
+one data value (`default` or `config`); factory modules must export exactly one
+default function. Use erasable TypeScript syntax and keep application-authored
+modules outside `node_modules` for Node's built-in type stripping. Use ESM
+imports and a containing `package.json` with `"type": "module"`. No transpiler,
+import map or implicit environment expansion is installed by these loaders.
+
+```ts
+import { loadConfig } from "oxianjs/config";
+import { createConfiguredApplication } from "oxianjs/app";
+
+const config = await loadConfig("./oxian.config.ts");
+const { application } = await createConfiguredApplication({
+  config: config.application,
+  signal: new AbortController().signal,
+});
+const response = await application.fetch(new Request("https://example.test/"));
+await response.text();
+await application.dispose();
+```
+
+These host-backed subpaths are explicit imports. They do not add filesystem
+loading to the portable root or start a local runtime/listener.
 
 ## Node listener migration
 
@@ -82,7 +117,16 @@ budget or the application-owned Hypervisor.
 The release retains Oxian's protocol, supervisor, transport, worker and
 Hypervisor suites. CI checks Node and Deno plus an installed npm tarball: public
 exports, missing retired subpaths, declaration consumption, absence of tests/raw
-TypeScript in the npm payload, real file-route and middleware execution, and
-real in-process and Node WebSocket work dispatch. Historical owner tests remain migration evidence, not executable
+TypeScript in the npm payload, real file-route and middleware execution,
+config/factory imports and default/configured application execution, and real in-process and Node WebSocket work dispatch. Historical owner tests remain migration evidence, not executable
 replacement coverage. Stable publication still requires its separate exact-tag
 workflow and is outside this prerelease.
+
+
+The config/application parity slice retains all 33 existing cases, colocated as
+`src/config/config.test.ts` (10), `src/config/loader.test.ts` (7),
+`src/app/factory.test.ts` (3) and `src/app/application.test.ts` (13). Four added
+Node adapter regressions cover path/URL loading, default composition and router
+cancellation, rejected module sources, and cleanup when a factory loses a
+cancellation race. All 37 run in Node and Deno; they replace no historical
+behavioral cases.

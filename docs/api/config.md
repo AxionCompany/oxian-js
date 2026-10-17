@@ -1,5 +1,12 @@
 # `jsr:@oxian/oxian-js@0.22.0/config`
 
+The Node 24+ npm package exposes the same API at `oxianjs/config`. Local path
+operations use an internal Node adapter that also works in Deno. `loadConfig`
+still accepts only `.ts` modules: use erasable TypeScript and ESM imports, keep
+these modules outside `node_modules`, and set `"type": "module"` in the containing
+`package.json`. Config validation and module-relative path resolution are
+unchanged. Config loading is not exported from the portable root.
+
 [Back to the API reference](../api-reference.md)
 
 The `/config` subpath defines Oxian's code-first application and gateway

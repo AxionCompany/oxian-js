@@ -15,6 +15,8 @@ import { packSibling } from "./pack-sibling.mjs";
 const ENTRYPOINTS = [
   ".",
   "./adapters/node",
+  "./app",
+  "./config",
   "./http",
   "./hypervisor",
   "./protocol",
@@ -33,6 +35,8 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createApplication, createHypervisor } from "oxianjs";
 import { createFileRouter } from "oxianjs/router";
+import { defineConfig, loadConfig } from "oxianjs/config";
+import { createConfiguredApplication, loadApplicationFactory } from "oxianjs/app";
 import { createWorker } from "oxianjs/worker";
 import { createConnectionBudget, serve } from "oxianjs/adapters/node";
 
@@ -40,7 +44,7 @@ for (const subpath of ${JSON.stringify(ENTRYPOINTS)}) {
   await import(subpath === "." ? "oxianjs" : "oxianjs" + subpath.slice(1));
 }
 for (const subpath of ["host", "owner", "adapters/postgres", "adapters/deno",
-  "app", "config", "local", "edge", "cli", "bin"]) {
+  "local", "edge", "cli", "bin"]) {
   await assert.rejects(import("oxianjs/" + subpath), {
     code: "ERR_PACKAGE_PATH_NOT_EXPORTED",
   });
@@ -68,6 +72,42 @@ try {
 } finally {
   await application?.dispose("npm_router_proof_complete");
   await rm(routeRoot, { recursive: true, force: true });
+}
+
+// Load application-authored TypeScript outside node_modules from the installed
+// package, including package imports inside the configuration and factory.
+const configRoot = await mkdtemp(join(process.cwd(), "oxian npm config #% é-"));
+let configured;
+try {
+  await writeFile(join(configRoot, "package.json"), '{"type":"module"}');
+  await mkdir(join(configRoot, "routes"));
+  await writeFile(join(configRoot, "routes/index.ts"),
+    'export const GET = (_request: Request, context: { state?: { marker: string } }) => new Response(context.state?.marker ?? "default");');
+  await writeFile(join(configRoot, "oxian.config.ts"),
+    'import { defineConfig, type OxianConfigInput } from "oxianjs/config"; const input: OxianConfigInput = { application: { routesRoot: "./routes", basePath: "/api", factory: "./application.ts" } }; export const config = defineConfig(input);');
+  await writeFile(join(configRoot, "application.ts"),
+    'import { createApplication, defineApplicationFactory } from "oxianjs/app"; export default defineApplicationFactory((context) => { if (!Object.isFrozen(context)) throw new Error("mutable_context"); return createApplication({ router: context.router, basePath: context.basePath, state: { marker: "installed-factory" } }); });');
+  const config = await loadConfig(pathToFileURL(join(configRoot, "oxian.config.ts")));
+  assert.equal(config.application.routesRoot, join(configRoot, "routes"));
+  assert.equal(config.application.factory, join(configRoot, "application.ts"));
+  assert.equal(Object.isFrozen(config), true);
+  assert.equal(typeof await loadApplicationFactory(config.application.factory), "function");
+  configured = await createConfiguredApplication({ config: config.application, signal: new AbortController().signal });
+  assert.equal(configured.application.router, configured.router);
+  assert.equal(await (await configured.application.fetch(new Request("https://example.test/api"))).text(), "installed-factory");
+  await configured.application.dispose();
+  configured = await createConfiguredApplication({
+    config: defineConfig({ application: { routesRoot: config.application.routesRoot, basePath: "/default" } }).application,
+    signal: new AbortController().signal,
+  });
+  assert.equal(await (await configured.application.fetch(new Request("https://example.test/default"))).text(), "default");
+  for (const load of [loadConfig, loadApplicationFactory]) {
+    await assert.rejects(load(join(configRoot, "application.js")), TypeError);
+    await assert.rejects(load("https://example.test/application.ts"), TypeError);
+  }
+} finally {
+  await configured?.application.dispose("npm_config_proof_complete");
+  await rm(configRoot, { recursive: true, force: true });
 }
 
 const workerCalls = { admit: context => {
@@ -175,7 +215,7 @@ try {
   await listener?.shutdown();
   budget.close();
 }
-console.log("Installed npm router, imports and worker-to-host round trips over in-process and Node WebSocket passed");
+console.log("Installed npm config, application factories, router, imports and worker-to-host round trips over in-process and Node WebSocket passed");
 `;
 
 const { tarball, packed, sha } = packSibling();
@@ -209,6 +249,8 @@ try {
     "docs/api/worker.md",
     "docs/api/hypervisor.md",
     "docs/api/router.md",
+    "docs/api/config.md",
+    "docs/api/app.md",
   ]) {
     assert.ok(existsSync(join(packageDirectory, path)), path);
   }
@@ -225,7 +267,6 @@ try {
     "host",
     "adapters/postgres",
     "adapters/deno",
-    "config",
     "local",
     "cli",
     "edge",
@@ -236,8 +277,17 @@ try {
     existsSync(join(packageDirectory, "src/providers/local_process.js")),
     false,
   );
-  // Filesystem app factories remain excluded; router discovery is now included.
-  assert.equal(existsSync(join(packageDirectory, "src/app/index.js")), false);
+  for (const path of [
+    "app/index",
+    "app/factory",
+    "app/configured",
+    "config/index",
+    "config/config",
+    "adapters/node/config-path",
+  ]) {
+    assert.ok(existsSync(join(packageDirectory, "src", `${path}.js`)));
+    assert.ok(existsSync(join(packageDirectory, "src", `${path}.d.ts`)));
+  }
   assert.ok(
     existsSync(join(packageDirectory, "src/adapters/node/file-router.js")),
   );
@@ -251,6 +301,14 @@ try {
 import { createFileRouter, type FileRouter } from "oxianjs/router";
 const router: Promise<FileRouter<{ name: string }>> = createFileRouter<{ name: string }>({ root: new URL("./routes/", import.meta.url) });
 void router;
+import { defineConfig, loadConfig, type OxianConfig } from "oxianjs/config";
+import { createApplication, createConfiguredApplication, defineApplicationFactory, loadApplicationFactory, type ApplicationFactory, type ConfiguredApplication } from "oxianjs/app";
+const config: OxianConfig = defineConfig({ application: { routesRoot: "./routes", factory: "./application.ts" } });
+const loaded: Promise<OxianConfig> = loadConfig(new URL("./oxian.config.ts", import.meta.url));
+const factory: ApplicationFactory<{ name: string }> = defineApplicationFactory(({ router, basePath }) => createApplication({ router, basePath, state: { name: "typed" } }));
+const loadedFactory: Promise<ApplicationFactory<{ name: string }>> = loadApplicationFactory<{ name: string }>("./application.ts");
+const configured: Promise<ConfiguredApplication> = createConfiguredApplication({ config: config.application, signal: new AbortController().signal });
+void [loaded, factory, loadedFactory, configured];
 import { createHypervisor } from "oxianjs/hypervisor";
 import { createWorker } from "oxianjs/worker";
 import { createConnectionBudget, serve } from "oxianjs/adapters/node";

@@ -5,16 +5,15 @@
   },
   "include": [
     "src/adapters/node/**/*.ts",
+    "src/app/**/*.ts",
+    "src/config/**/*.ts",
     "src/protocol/*.test.ts",
     "src/router/**/*.ts",
     "tests/**/*.ts",
     "scripts/*.test.ts"
   ],
   "exclude": [
-    "tests/app/application_test.ts",
-    "tests/app/factory_test.ts",
     "tests/cli/**",
-    "tests/config/**",
     "tests/docs/**",
     "tests/edge/**",
     "tests/exports/**",
