@@ -6,8 +6,8 @@ import {
   encodeControlFrame,
   parseControlFrame,
   WORKER_PROTOCOL,
-} from "../../src/protocol/index.ts";
-import golden from "../fixtures/protocol/v0.20.0-rc.7.json" with {
+} from "./index.ts";
+import golden from "../../tests/fixtures/protocol/v0.20.0-rc.7.json" with {
   type: "json",
 };
 

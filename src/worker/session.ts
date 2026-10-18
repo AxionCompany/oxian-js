@@ -4,6 +4,11 @@ import {
   createHelloFrame,
   createProtocolErrorFrame,
   createReadyFrame,
+  readHostCallCapacity,
+  readHostCallLifetime,
+  HOST_CALL_CAPABILITY_KEY,
+  withHostCallCapacity,
+  withoutHostCallCapacity,
   createWorkAcceptedFrame,
   createWorkCancelFrame,
   createWorkCreditFrame,
@@ -25,6 +30,11 @@ import {
   type ProtocolTransport,
   type ProtocolTransportMessage,
 } from "../transport/index.ts";
+import { createHostCallError, type HostCaller } from "../work/host-call.ts";
+import {
+  createHostCallChannel,
+  type HostCallChannel,
+} from "../work/host-call-channel.ts";
 import { createBoundedExponentialBackoff } from "./backoff.ts";
 import {
   createAbsoluteTimer,
@@ -197,6 +207,20 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
     DEFAULT_MAX_RECONNECT_DELAY_MS,
   );
   const now = options.now ?? Date.now;
+  const hostCallCapacity = expectPositiveInteger(
+    options.hostCalls?.maxConcurrent,
+    "hostCalls.maxConcurrent",
+    16,
+    1024,
+  );
+  const hostCallTimeout = expectPositiveInteger(
+    options.hostCalls?.timeoutMs,
+    "hostCalls.timeoutMs",
+    30_000,
+    0x7fff_ffff,
+  );
+  let currentHostCaller: HostCaller | undefined;
+  const hostCallLedger = createExecutionLedger(hostCallCapacity);
   const createHandshakeId =
     options.createHandshakeId ?? (() => crypto.randomUUID());
   const initialHandshakeId = options.handshakeId ?? createHandshakeId();
@@ -407,6 +431,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
     const credentialAtHello = credentialAtConnect.credential;
     const handshakeAtHello = credentialAtConnect.handshakeId;
     let transport: ProtocolTransport | undefined;
+    let hostCalls: HostCallChannel | undefined;
     let frameConnection: FrameConnection | undefined;
     let sessionConnectionId: string | undefined;
     let welcomed = false;
@@ -487,6 +512,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
       wakeCreditWaiters(stream);
       closeInput(stream);
       releasePreStartReservation(stream);
+      hostCalls?.cancelParent(stream.open.streamId);
       streams.delete(stream.open.streamId);
       syncActiveStreams();
       if (draining) void completeDrainIfIdle();
@@ -550,6 +576,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
     };
 
     const abortWork = (stream: MutableStream, reason: unknown): void => {
+      hostCalls?.cancelParent(stream.open.streamId);
       if (!stream.abortController.signal.aborted) {
         stream.abortController.abort(reason);
       }
@@ -572,6 +599,9 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
       }
       for (const stream of streams.values()) abortWork(stream, reason);
     };
+    const unsubscribeHostCallLedger = hostCallLedger.subscribe(() => {
+      if (isCurrentSession() && draining) void completeDrainIfIdle();
+    });
     const unsubscribeExecutionLedger = executionLedger.subscribe(() => {
       if (isCurrentSession() && draining) void completeDrainIfIdle();
     });
@@ -860,6 +890,26 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
       stream.executionStarted = true;
       stream.executionSettlement = executionSettlement;
       const context: WorkerWorkContext = Object.freeze({
+        callHost: async (input) => {
+          if (!hostCalls)
+            throw createHostCallError("unsupported", "not_started");
+          if (
+            !isCurrentSession() ||
+            !streams.has(stream.open.streamId) ||
+            stream.abortController.signal.aborted
+          )
+            throw createHostCallError("unavailable", "not_started");
+          return await hostCalls.call(
+            {
+              ...input,
+              signal: AbortSignal.any([
+                stream.abortController.signal,
+                ...(input.signal ? [input.signal] : []),
+              ]),
+            },
+            stream.open.streamId,
+          );
+        },
         streamId: stream.open.streamId,
         workload: stream.open.workload,
         metadata: stream.open.metadata,
@@ -1082,6 +1132,8 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
         !isCurrentSession() ||
         !draining ||
         streams.size > 0 ||
+        (hostCalls?.active() ?? 0) > 0 ||
+        hostCallLedger.occupied() > 0 ||
         executionLedger.occupied() > 0 ||
         sessionConnectionId === undefined ||
         transport === undefined
@@ -1125,6 +1177,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
         return;
       }
       const { frame, disposition } = message.acceptance;
+      if (hostCalls?.control(frame, disposition)) return;
       switch (frame.type) {
         case "work.open": {
           const stream = createStream(frame);
@@ -1381,7 +1434,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
         const availableCapacity = draining
           ? 0
           : Math.max(0, capacity - effectiveInflight);
-        let metadata: JsonObject | void = undefined;
+        let metadata: JsonObject | void = {};
         if (options.createHeartbeatMetadata !== undefined) {
           const context: WorkerHeartbeatContext = Object.freeze({
             identity,
@@ -1514,7 +1567,16 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
           "Hypervisor did not send Welcome as its first frame",
         );
       }
-      const welcome = first.value.acceptance.frame;
+      const wireWelcome = first.value.acceptance.frame;
+      const offeredHostCalls = readHostCallCapacity(wireWelcome.bootstrap);
+      const negotiatedHostCalls =
+        offeredHostCalls !== undefined
+          ? Math.min(hostCallCapacity, offeredHostCalls)
+          : undefined;
+      const welcome = {
+        ...wireWelcome,
+        bootstrap: withoutHostCallCapacity(wireWelcome.bootstrap),
+      };
       welcomed = true;
       if (welcome.resumeExpiresAtMs <= now()) {
         throw createWorkerError(
@@ -1536,7 +1598,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
 
       let readyFrame: ReturnType<typeof createReadyFrame>;
       try {
-        let metadata: JsonObject | void = undefined;
+        let metadata: JsonObject | void = {};
         if (options.beforeReady !== undefined) {
           const task = Promise.resolve().then(() =>
             options.beforeReady!(
@@ -1569,10 +1631,24 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
             () => task,
           );
         }
+        if (Object.hasOwn(metadata ?? {}, HOST_CALL_CAPABILITY_KEY))
+          throw new TypeError(
+            "application Ready metadata uses reserved transport key",
+          );
         readyFrame = createReadyFrame({
           connectionId: welcome.connectionId,
           capacity,
-          metadata: metadata ?? {},
+          metadata:
+            negotiatedHostCalls === undefined
+              ? (metadata ?? {})
+              : withHostCallCapacity(
+                  metadata ?? {},
+                  negotiatedHostCalls,
+                  Math.min(
+                    readHostCallLifetime(wireWelcome.bootstrap)!,
+                    transport.snapshot().maxLifetimeStreams,
+                  ),
+                ),
         });
       } catch (error) {
         try {
@@ -1636,6 +1712,31 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
           "Hypervisor acknowledged a stale worker connection",
         );
       }
+      if (negotiatedHostCalls !== undefined) {
+        hostCalls = createHostCallChannel({
+          role: "worker",
+          transport,
+          signal: sessionAbortController.signal,
+          capacity: negotiatedHostCalls,
+          reserveOutgoing: () => hostCallLedger.reserve(),
+          timeoutMs: hostCallTimeout,
+          windowBytes: Math.min(
+            inputBufferBytes,
+            connection.limits?.protocol?.maxReceiveCreditBytes ??
+              WORKER_PROTOCOL_LIMITS.maxOutstandingStreamCreditBytes,
+          ),
+          maxDataPayloadBytes: connection.limits?.protocol?.maxDataPayloadBytes,
+          now,
+          onIdle: () => {
+            if (draining) void completeDrainIfIdle();
+          },
+        });
+        currentHostCaller = async (input) => {
+          if (!isCurrentSession() || draining || shutdown)
+            throw createHostCallError("unavailable", "not_started");
+          return await hostCalls!.call(input);
+        };
+      }
       setSessionState("ready");
       reconnectAttempt = 0;
       const readySnapshot = snapshot();
@@ -1692,7 +1793,13 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
         if (next.value.kind === "control") {
           await handleControl(next.value);
         } else {
-          handleData(next.value);
+          if (
+            !hostCalls?.data(
+              next.value.acceptance.frame,
+              next.value.acceptance.disposition,
+            )
+          )
+            handleData(next.value);
         }
       }
 
@@ -1742,9 +1849,11 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
         createWorkerError("connection_lost", "Worker session ended"),
       );
       unsubscribeExecutionLedger();
+      unsubscribeHostCallLedger();
       if (isCurrentSession()) {
         activeStreams = 0;
         connectionId = undefined;
+        currentHostCaller = undefined;
       }
       sessionLease.release();
       if (transport !== undefined) {
@@ -1964,5 +2073,13 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
     events,
     stop,
     snapshot,
+    callHost: async (input) => {
+      if (!currentHostCaller)
+        throw createHostCallError(
+          state === "ready" ? "unsupported" : "unavailable",
+          "not_started",
+        );
+      return await currentHostCaller(input);
+    },
   });
 }

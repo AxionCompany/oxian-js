@@ -5,6 +5,7 @@ import {
   encodeBinaryFrame,
   encodeControlFrame,
   isProtocolViolation,
+  createProtocolViolation,
   parseControlFrame,
   WORKER_PROTOCOL,
 } from "../protocol/index.ts";
@@ -531,6 +532,7 @@ export function createProtocolTransport(
     };
   };
 
+  let pendingOpens = 0;
   const sendControl: ProtocolTransport["sendControl"] = (
     frame,
     sendOptions: TransportSendOptions = {},
@@ -541,10 +543,32 @@ export function createProtocolTransport(
     let encoded: string;
     let validatedFrame: typeof frame;
     let release: () => void;
+    let pendingOpen = false;
+    const releaseOpen = (): void => {
+      if (!pendingOpen) return;
+      pendingOpen = false;
+      pendingOpens--;
+    };
     try {
       encoded = encodeControlFrame(frame);
       validatedFrame = parseControlFrame(encoded);
-      release = reserveSend(textEncoder.encode(encoded).byteLength);
+      if (
+        frame.type === "work.open" &&
+        validator.snapshot().remainingLocalStreams <= pendingOpens
+      )
+        throw createProtocolViolation(
+          "stream_limit_exceeded",
+          "connection lifetime admission exhausted",
+        );
+      const releaseSend = reserveSend(textEncoder.encode(encoded).byteLength);
+      if (frame.type === "work.open") {
+        pendingOpen = true;
+        pendingOpens++;
+      }
+      release = () => {
+        releaseOpen();
+        releaseSend();
+      };
     } catch (error) {
       return Promise.reject(error);
     }
@@ -555,6 +579,7 @@ export function createProtocolTransport(
           signal: sendOptions.signal,
           beforeSend() {
             acceptance = validator.acceptControl("sent", validatedFrame);
+            releaseOpen();
           },
         });
       } catch (error) {
@@ -658,7 +683,16 @@ export function createProtocolTransport(
     sendControl,
     sendData,
     messages,
-    snapshot: validator.snapshot,
+    snapshot: () => {
+      const snapshot = validator.snapshot();
+      return {
+        ...snapshot,
+        remainingLocalStreams: Math.max(
+          0,
+          snapshot.remainingLocalStreams - pendingOpens,
+        ),
+      };
+    },
     close,
     closed,
   });

@@ -10,7 +10,9 @@ Exports: `createHypervisor`, `createHypervisorConfig`,
 `HypervisorDisconnectReason`, `HypervisorError`, `HypervisorErrorCode`,
 `HypervisorHeartbeatContext`, `HypervisorListenOptions`, `HypervisorListener`,
 `HypervisorOptions`, `HypervisorPeerClose`, `HypervisorReadyContext`,
-`HypervisorRequestDecision`, `HypervisorScheduler`, and `HypervisorSnapshot`.
+`HypervisorRequestDecision`, `HypervisorScheduler`, `HypervisorSnapshot`,
+`WorkerCallAdmission`, `WorkerCallContext`, `WorkerCallHandler`, and
+`WorkerCallOptions`.
 
 Root lifecycle contracts used here are `HypervisorAdmit`,
 `HypervisorAdmitContext`, `HypervisorAdmission`, `HypervisorAssign`,
@@ -168,3 +170,48 @@ state, unavailable Worker, reschedulable work, shutdown, or work failure.
 
 See [workers](../workers.md), [operations](../operations.md), and the
 [protocol](../worker-protocol-v1.md).
+
+## Worker-to-host admission
+
+`HypervisorOptions.workerCalls` opts into host workloads. The exported
+`WorkerCallOptions`, `WorkerCallAdmission`, `WorkerCallHandler`, and
+`WorkerCallContext` describe this boundary:
+
+```ts
+type WorkerCallOptions = Readonly<{
+  admit: WorkerCallAdmission;
+  admitUnassigned?: WorkerCallAdmission;
+  maxConcurrent?: number;
+  maxPerConnection?: number;
+  maxRequestBytes?: number;
+  maxResponseBytes?: number;
+  timeoutMs?: number;
+}>;
+```
+
+`admit(context)` authorizes a current assigned call and returns a handler or
+`undefined`; it may return a promise. Admission must perform no invocation
+effects. The handler runs only after Start and receives credited `input` and an
+abort `signal`. It returns `WorkerWorkResult`.
+
+`WorkerCallContext` contains host-authenticated `fence` and `definition`, the
+requested `workload`, untrusted call `metadata`, and a bound `signal`. For an
+assigned call, `parent` contains the host's current assignment `operationId`,
+`streamId`, `workload`, and `metadata`. Session and parent validity are checked
+again before handler entry. Application grants, forwarded-client authority,
+owner epochs, transaction fences, and receipts remain application policy.
+
+Parentless calls require the separate `admitUnassigned` callback and are denied
+by default. They are available only on ready connections. Assigned calls can
+continue during drain while their authenticated parent remains active.
+
+Host limits default to 32 concurrent calls, min(16, maxConcurrent) per
+connection, a 30-second timeout, and 16 MiB each for aggregate request and
+response body bytes. The negotiated per-connection capacity is enforced even
+when it is smaller than the host offer. Payload excess aborts that call with
+`payload_too_large`; decoded data and retained application resources need their
+own bounds. Limits include unresolved admission and
+handler/source cleanup across connection loss. Excess calls refuse rather than
+joining the forward dispatch queue. See the
+[complete call guide](../worker-host-calls.md) for limits and ambiguity
+recovery.

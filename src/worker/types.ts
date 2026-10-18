@@ -5,6 +5,7 @@ import type {
   WorkerIdentity,
 } from "../protocol/index.ts";
 import type { WorkerTransport } from "../transport/declarations.ts";
+import type { HostCaller } from "../work/host-call.ts";
 import type {
   WorkerActivate,
   WorkerHandshake,
@@ -32,6 +33,8 @@ export type WorkerWorkContext = Readonly<{
   input: ReadableStream<Uint8Array>;
   signal: AbortSignal;
   sendMetadata(metadata: JsonObject): Promise<void>;
+  /** Bound to this exact assignment; the host still authorizes every call. */
+  callHost: HostCaller;
 }>;
 
 export type WorkerWorkHandler = (
@@ -164,6 +167,8 @@ type WorkerBaseOptions = Readonly<{
 export type WorkerOptions = WorkerBaseOptions &
   Readonly<{
     id: string;
+    /** Limits for automatically negotiated reverse calls; independent of execution capacity. */
+    hostCalls?: Readonly<{ maxConcurrent?: number; timeoutMs?: number }>;
     transport: WorkerTransport;
     activate?: WorkerActivate;
     register?: WorkerRegister;
@@ -204,6 +209,8 @@ export type Worker = Readonly<{
   >;
   stop(reason?: string): Promise<void>;
   snapshot(): WorkerSnapshot;
+  /** Parentless, default-denied host route, e.g. authenticated receipt recovery. */
+  callHost: HostCaller;
 }>;
 
 export type WorkerErrorCode =

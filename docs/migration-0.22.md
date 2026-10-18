@@ -25,10 +25,27 @@ The full Git history and the behavioral migration inventory remain available;
 see [retirement evidence](owner-retirement.md). No database data is deleted or
 migrated by upgrading the package.
 
-Copilotz will own its durable command and storage runtime. That replacement,
-authenticated reverse calls, real-table group commits, recovery and deployment
-integration are not implemented by this release. Removing the library does not
-certify those guarantees or add worker-to-owner invocation to the protocol.
+Copilotz owns its durable command and storage runtime. The optional
+[worker-to-host extension](worker-host-calls.md) now supplies generic
+authenticated reverse streams and admission on the existing connection. It does
+not implement or certify concrete owner transactions, real-table group commits,
+receipts, recovery, or deployment integration.
+
+## Optional host calls
+
+Existing Workers remain ordinary-only unless both peers opt in. Configure
+`HypervisorOptions.workerCalls` and `WorkerOptions.hostCalls` to enable
+`WorkerWorkContext.callHost`. Parentless `Worker.callHost` requires the separate
+`admitUnassigned` policy and is denied by default. Applications implementing
+`WorkerWorkContext` or `Worker` test doubles must now provide `callHost`; it may
+reject with `createHostCallError("unsupported", "not_started")` when
+unavailable.
+
+Do not place `__oxian_worker_calls_v1` in application bootstrap or Ready
+metadata; it is reserved for negotiation. The wire protocol stays
+`oxian.worker.v1`, and an old peer without acknowledgement retains ordinary work
+behavior. There is no automatic replay after a host call becomes indeterminate;
+recovery belongs to the application.
 
 ## Retained Node surface
 
@@ -62,9 +79,9 @@ budget or the application-owned Hypervisor.
 ## Verification
 
 The release retains Oxian's protocol, supervisor, transport, worker and
-Hypervisor suites. CI checks Node and Deno plus an installed npm tarball:
-public exports, missing retired subpaths, declaration consumption, absence of
-tests/raw TypeScript in the npm payload, and real in-process and Node WebSocket
-work dispatch. Historical owner tests remain migration evidence, not executable
+Hypervisor suites. CI checks Node and Deno plus an installed npm tarball: public
+exports, missing retired subpaths, declaration consumption, absence of tests/raw
+TypeScript in the npm payload, and real in-process and Node WebSocket work
+dispatch. Historical owner tests remain migration evidence, not executable
 replacement coverage. Stable publication still requires its separate exact-tag
 workflow and is outside this prerelease.

@@ -1,6 +1,7 @@
 import {
   type ControlFrame,
   type JsonObject,
+  type WorkDataFrame,
   WORKER_PROTOCOL,
 } from "../../protocol/index.ts";
 import type {
@@ -47,7 +48,7 @@ export type WorkStreamController = Readonly<{
   ): Promise<boolean>;
   handleData(
     record: ConnectionRecord,
-    frame: Readonly<{ streamId: string; payload: Uint8Array }>,
+    frame: WorkDataFrame,
     disposition: "deliver" | "discard",
   ): Promise<void>;
   open(
@@ -862,7 +863,7 @@ export function createWorkStreamController(
         { identity: record.fence.identity, operationId },
       );
     }
-    if (record.openedStreams >= config.maxLifetimeStreams) {
+    if (record.transport.snapshot().remainingLocalStreams <= 0) {
       record.acceptingWork = false;
       void drainRecord(record, "stream_lifetime", "rotate");
       throw createHypervisorError(
@@ -871,9 +872,8 @@ export function createWorkStreamController(
         { identity: record.fence.identity, operationId },
       );
     }
-    record.openedStreams++;
     const reachedStreamLifetime =
-      record.openedStreams >= config.maxLifetimeStreams;
+      record.transport.snapshot().remainingLocalStreams <= 1;
     if (reachedStreamLifetime) record.acceptingWork = false;
     const started = createDeferred<void>();
     const metadata = createDeferred<JsonObject>();

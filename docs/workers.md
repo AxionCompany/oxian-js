@@ -11,6 +11,7 @@ type Worker = Readonly<{
   events: ReadableStream<WorkerLifecycleEvent>;
   stop(reason?: string): Promise<void>;
   snapshot(): WorkerSnapshot;
+  callHost: HostCaller; // Parentless; requires separate host admission.
 }>;
 ```
 
@@ -158,6 +159,7 @@ type WorkerWorkContext = Readonly<{
   input: ReadableStream<Uint8Array>;
   signal: AbortSignal;
   sendMetadata(metadata: JsonObject): Promise<void>;
+  callHost: HostCaller; // Bound to this exact started assignment.
 }>;
 ```
 
@@ -178,6 +180,17 @@ hook must not await remote completion of that same operation.
 Early cancellation acknowledgements can precede local execution settlement. They
 do not promise that an uncooperative handler or output source has stopped, and
 the execution ledger continues to reserve its slot until it settles.
+
+## Optional host calls
+
+Enable `HypervisorOptions.workerCalls` with explicit admission policy to let a
+workload invoke host handlers through `context.callHost`. Supporting workers
+acknowledge automatically; `WorkerOptions.hostCalls` configures limits. These calls use a
+separate bounded capacity pool and carry host-validated parent/session evidence.
+`worker.callHost` has no parent and is denied unless the host supplies the
+separate `admitUnassigned` policy. Neither route retries automatically;
+application receipts resolve indeterminate effects. See the
+[worker-to-host call guide](worker-host-calls.md).
 
 ## Capacity and reconnect
 

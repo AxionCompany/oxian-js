@@ -17,12 +17,20 @@ await Promise.all(
 
 const sourceFiles: string[] = [];
 await collectTypeScript(SOURCE_ROOT, sourceFiles);
-const unreachable = sourceFiles.filter(
-  (file) =>
-    !file.endsWith(".test.ts") && !visited.has(new URL(file, SOURCE_ROOT).href),
+const productionFiles = sourceFiles.filter(
+  (file) => !file.endsWith(".test.ts"),
+);
+const unreachable = productionFiles.filter(
+  (file) => !visited.has(new URL(file, SOURCE_ROOT).href),
 );
 
 const testAndToolImports = new Set<string>();
+for (const file of sourceFiles.filter((file) => file.endsWith(".test.ts"))) {
+  collectBareImports(
+    await Deno.readTextFile(new URL(file, SOURCE_ROOT)),
+    testAndToolImports,
+  );
+}
 for (const directory of ["tests/", "scripts/"]) {
   const files: string[] = [];
   await collectTypeScript(new URL(directory, PACKAGE_ROOT), files);
@@ -72,7 +80,7 @@ const testOnlyDependencies = [...declared]
   )
   .sort();
 console.log(
-  `Oxian source graph passed (${sourceFiles.length} source modules reachable; production dependencies: ${
+  `Oxian source graph passed (${productionFiles.length} source modules reachable; production dependencies: ${
     productionDependencies.join(", ") || "none"
   }; test/tool-only dependencies: ${
     testOnlyDependencies.join(", ") || "none"

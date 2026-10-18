@@ -15,6 +15,7 @@ import type {
 } from "../../transport/index.ts";
 import type { SocketConnection } from "../../transport/types.ts";
 import type { WorkBody, WorkHandle } from "../../work/types.ts";
+import type { HostCallChannel } from "../../work/host-call-channel.ts";
 import type {
   HypervisorDisconnectPhase,
   HypervisorDisconnectReason,
@@ -36,7 +37,6 @@ export type ConnectionRecord = {
   phase: ConnectionPhase;
   connectedAtMs: number;
   acceptingWork: boolean;
-  openedStreams: number;
   connectionId?: string;
   hello?: HelloFrame;
   exchange?: RegistrationExchange;
@@ -61,6 +61,7 @@ export type ConnectionRecord = {
   abort: AbortController;
   pending: Map<string, PendingWork>;
   cleanup?: Promise<void>;
+  hostCalls?: HostCallChannel;
 };
 
 export type Deferred<T> = Readonly<{

@@ -42,6 +42,7 @@
       "docs/migration-0.21.md",
       "docs/owner-retirement.md",
       "docs/worker-protocol-v1.md",
+      "docs/worker-host-calls.md",
       "LICENSE*",
       "CHANGELOG.md",
       "docs/migration-0.22.md"

@@ -10,6 +10,7 @@ import {
   type InProcessTransportBinding,
 } from "../transport/in-process.ts";
 import { createHypervisorConfig } from "./config.ts";
+import { createWorkerCallAdmission } from "./internal/worker-calls.ts";
 import { createAdmissionController } from "./internal/admission.ts";
 import { createConnectionAdmission } from "./internal/connection.ts";
 import { createConnectionDirectory } from "./internal/directory.ts";
@@ -209,6 +210,13 @@ export function createHypervisor(
     },
     clock,
   });
+  const workerCalls = createWorkerCallAdmission(
+    options.workerCalls,
+    sessions,
+    dispatcher,
+    clock,
+    config,
+  );
   const directory = createConnectionDirectory(createConnectionId);
   const records = directory.records;
   const admission = createAdmissionController(config);
@@ -259,8 +267,29 @@ export function createHypervisor(
     drainRecord,
   });
   workStreamBinding.current = workStreams;
-  const handleWorkControl = workStreams.handleControl;
-  const handleWorkData = workStreams.handleData;
+  const handleWorkControl: typeof workStreams.handleControl = async (
+    record,
+    frame,
+    disposition,
+  ) => {
+    if (record.hostCalls?.control(frame, disposition)) {
+      if (
+        frame.type === "work.open" &&
+        record.transport!.snapshot().remainingRemoteStreams <= 0
+      )
+        void drainRecord(record, "stream_lifetime", "rotate");
+      return true;
+    }
+    return await workStreams.handleControl(record, frame, disposition);
+  };
+  const handleWorkData: typeof workStreams.handleData = async (
+    record,
+    frame,
+    disposition,
+  ) => {
+    if (record.hostCalls?.data(frame, disposition)) return;
+    return await workStreams.handleData(record, frame, disposition);
+  };
   const openPending = workStreams.open;
 
   const sessionProtocol = createSessionProtocolController({
@@ -275,6 +304,7 @@ export function createHypervisor(
     closeRecord,
     drainRecord,
     finishDrain,
+    workerCalls,
     handleWorkControl,
     rejectRecord,
   });

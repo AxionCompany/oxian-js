@@ -40,6 +40,16 @@ for (const subpath of ["host", "owner", "adapters/postgres", "adapters/deno",
 }
 assert.equal("createLocalProcessProvider" in await import("oxianjs/providers"), false);
 
+const workerCalls = { admit: context => {
+  assert.equal(context.parent.workload, "echo");
+  assert.equal(context.fence.identity.workerId, context.definition.workerId);
+  return ({ input }) => input;
+} };
+async function reverseEcho({ input, callHost }) {
+  const call = await callHost({ workload: "host.echo", body: input });
+  await call.started;
+  return { body: call.output };
+}
 async function echo(hypervisor) {
   const bytes = new TextEncoder().encode("installed npm dispatcher and worker");
   const operation = await hypervisor.dispatch({
@@ -58,11 +68,12 @@ const transport = {
   type: "in-process",
   config: { topic: "npm-proof-" + crypto.randomUUID() },
 };
-const local = createHypervisor({ transports: [transport] });
+const local = createHypervisor({ transports: [transport], workerCalls });
 const localWorker = createWorker({
   id: "npm-local-worker",
   transport,
-  workloads: { echo: ({ input }) => ({ body: input }) },
+  hostCalls: {},
+  workloads: { echo: reverseEcho },
 });
 try {
   await localWorker.ready;
@@ -82,6 +93,7 @@ const identity = {
 const registration = { kind: "registration", capability: crypto.randomUUID() };
 const remote = createHypervisor({
   transports: [{ type: "websocket", config: { path: "/workers" } }],
+  workerCalls,
   admit: ({ identity: receivedIdentity, credential }) => {
     assert.deepEqual(receivedIdentity, identity);
     assert.deepEqual(credential, registration);
@@ -120,7 +132,8 @@ try {
     activate: () => identity,
     register: () => ({ credential: registration, expiresAtMs: Date.now() + 60_000 }),
     reconnectDelay: false,
-    workloads: { echo: ({ input }) => ({ body: input }) },
+    hostCalls: {},
+    workloads: { echo: reverseEcho },
   });
   await remoteWorker.ready;
   assert.equal(budget.snapshot().connections, 1);
@@ -132,7 +145,7 @@ try {
   await listener?.shutdown();
   budget.close();
 }
-console.log("Installed npm imports, in-process dispatch, and Node WebSocket dispatch passed");
+console.log("Installed npm imports and worker-to-host round trips over in-process and Node WebSocket passed");
 `;
 
 const sha = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -180,6 +193,19 @@ try {
   assert.deepEqual(Object.keys(installed.exports), ENTRYPOINTS);
   assert.deepEqual(installed.dependencies, { ws: tooling.dependencies.ws });
   assert.ok(existsSync(join(packageDirectory, "docs/owner-retirement.md")));
+  for (const path of [
+    "docs/worker-host-calls.md",
+    "docs/worker-protocol-v1.md",
+    "docs/api/work.md",
+    "docs/api/worker.md",
+    "docs/api/hypervisor.md",
+  ]) {
+    assert.ok(existsSync(join(packageDirectory, path)), path);
+  }
+  assert.equal(
+    existsSync(join(packageDirectory, "docs/v0.21-implementation-plan.md")),
+    false,
+  );
   for (const entrypoint of Object.values(installed.exports)) {
     assert.ok(existsSync(join(packageDirectory, entrypoint.default)));
     assert.ok(existsSync(join(packageDirectory, entrypoint.types)));
@@ -215,11 +241,16 @@ import { createHypervisor } from "oxianjs/hypervisor";
 import { createWorker } from "oxianjs/worker";
 import { createConnectionBudget, serve } from "oxianjs/adapters/node";
 const transport = { type: "in-process", config: { topic: "types" } } as const;
-const hypervisor = createHypervisor({ transports: [transport] });
+const hypervisor = createHypervisor({ transports: [transport], workerCalls: {
+  admit: context => { const worker: string = context.fence.identity.workerId; void worker; return ({ input }) => input; },
+} });
 const dispatcher: Dispatcher = hypervisor;
 const input: WorkInput = { workload: "echo", body: new Uint8Array([1]) };
 void dispatcher.dispatch(input);
-createWorker({ id: "types", transport, workloads: { echo: ({ input }) => input } });
+createWorker({ id: "types", transport, hostCalls: {}, workloads: { echo: async ({ input, callHost }) => {
+  const call = await callHost({ workload: "host.echo", body: input });
+  return call.output;
+} } });
 void serve({ hypervisor, budget: createConnectionBudget(2) });\n`,
   );
   writeFileSync(

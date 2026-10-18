@@ -223,7 +223,6 @@ export function createConnectionAdmission(
       phase: "pending",
       connectedAtMs: options.clock(),
       acceptingWork: false,
-      openedStreams: 0,
       authenticatedSlot: false,
       unauthenticatedSlot: false,
       handshakeExternalOperations: 0,
