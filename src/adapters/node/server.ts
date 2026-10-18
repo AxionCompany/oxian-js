@@ -130,32 +130,62 @@ export async function serve(
   });
 
   const finished = Promise.withResolvers<void>();
+  // Startup can fail before a listener is returned and observed by its caller.
+  void finished.promise.catch(() => undefined);
   server.on("error", (error) => finished.reject(error));
   server.once("close", () => finished.resolve());
-
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, hostname, () => {
-      server.removeListener("error", reject);
-      resolve();
-    });
-  });
-  const address = server.address();
-  if (address === null || typeof address === "string") {
-    throw new TypeError("Hypervisor listener must use a TCP address");
-  }
-  origin = listenerUrl(address.address, address.port);
 
   let closed: Promise<void> | undefined;
   const shutdown = (): Promise<void> => {
     if (closed !== undefined) return closed;
     for (const client of sockets.clients) client.terminate();
     sockets.close();
-    server.close();
-    server.closeAllConnections();
-    closed = finished.promise.catch(() => undefined);
+    closed = new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeAllConnections();
+    });
     return closed;
   };
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const aborted = (): void =>
+        failed(
+          signal?.reason ??
+            new DOMException("Listener startup aborted", "AbortError"),
+        );
+      const cleanup = (): void => {
+        server.removeListener("error", failed);
+        signal?.removeEventListener("abort", aborted);
+      };
+      const failed = (error: unknown): void => {
+        cleanup();
+        reject(error);
+      };
+      server.once("error", failed);
+      signal?.addEventListener("abort", aborted, { once: true });
+      try {
+        signal?.throwIfAborted();
+        server.listen({ port, host: hostname, signal }, () => {
+          cleanup();
+          resolve();
+        });
+      } catch (error) {
+        failed(error);
+      }
+    });
+  } catch (error) {
+    await shutdown();
+    throw error;
+  }
+  const address = server.address();
+  if (address === null || typeof address === "string") {
+    await shutdown();
+    signal?.throwIfAborted();
+    throw new TypeError("Hypervisor listener must use a TCP address");
+  }
+  origin = listenerUrl(address.address, address.port);
+
   const listener: HypervisorListener = Object.freeze({
     hostname: address.address,
     port: address.port,
@@ -163,6 +193,10 @@ export async function serve(
     finished: finished.promise,
     shutdown,
   });
+  if (signal?.aborted) {
+    await shutdown();
+    signal.throwIfAborted();
+  }
   observeListenerSettlement({
     finished: finished.promise,
     signal,
