@@ -29,6 +29,7 @@ async function fixture(
   handler: WorkerWorkHandler,
   configureHostCalls = true,
   maxLifetimeStreams?: number,
+  shutdownTimeoutMs = maxLifetimeStreams === undefined ? 100 : 1000,
 ) {
   const local = {
     type: "in-process" as const,
@@ -48,7 +49,7 @@ async function fixture(
     workerCalls: calls,
     config: {
       ...(maxLifetimeStreams === undefined ? {} : { maxLifetimeStreams }),
-      shutdownTimeoutMs: maxLifetimeStreams === undefined ? 100 : 1000,
+      shutdownTimeoutMs,
       cancellationAckTimeoutMs: 100,
       heartbeatIntervalMs: 20,
       leaseTimeoutMs: 1000,
@@ -423,6 +424,12 @@ for (const kind of ["in-process", "websocket"] as const) {
         await proceed.promise;
         return bytes(await text(await callHost({ workload: "owner" })));
       },
+      true,
+      undefined,
+      // This proves progress while draining, not deadline expiry. Deno's
+      // WebSocket round trip takes ~88ms locally, too near the fixture's 100ms
+      // fault deadline under runner scheduling. Deadline tests retain theirs.
+      1000,
     );
     try {
       const result = invoke(f.h);
