@@ -62,6 +62,21 @@ const hypervisor = createHypervisor(
 functional `admit` / `assign` policy, `AbortSignal`, bounded configuration, and
 an optional Fetch fallback.
 
+## Ready policy and negotiated worker calls
+
+`onReady(context)` receives `context.workerCalls` as an immutable
+`{ version: 1, capacity }` only when the authenticated connection's Ready
+acknowledges the offered reverse-call capability. It is derived from validated
+protocol negotiation, not application metadata. It describes the agreed
+capability before `ReadyAck`; active reverse calls still require the completed
+handshake and host admission.
+
+A host requiring reverse calls can throw from `onReady` when this field is
+absent. The callback is awaited before routability and `ReadyAck`, so rejection
+cannot admit work to an unsupported worker. Ordinary-only peers remain valid
+when host policy does not require reverse calls. Application metadata with a
+similarly named field cannot grant the negotiated capability.
+
 ## Capability
 
 `Hypervisor` exposes:
@@ -210,8 +225,7 @@ connection, a 30-second timeout, and 16 MiB each for aggregate request and
 response body bytes. The negotiated per-connection capacity is enforced even
 when it is smaller than the host offer. Payload excess aborts that call with
 `payload_too_large`; decoded data and retained application resources need their
-own bounds. Limits include unresolved admission and
-handler/source cleanup across connection loss. Excess calls refuse rather than
-joining the forward dispatch queue. See the
-[complete call guide](../worker-host-calls.md) for limits and ambiguity
-recovery.
+own bounds. Limits include unresolved admission and handler/source cleanup
+across connection loss. Excess calls refuse rather than joining the forward
+dispatch queue. See the [complete call guide](../worker-host-calls.md) for
+limits and ambiguity recovery.

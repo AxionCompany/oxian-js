@@ -57,6 +57,8 @@ export type HypervisorScheduler = Readonly<{
 }>;
 
 export type HypervisorReadyContext = Readonly<{
+  /** Protocol-validated agreement, available before routability and ReadyAck. */
+  workerCalls?: Readonly<{ version: 1; capacity: number }>;
   fence: SessionFence;
   definition: WorkerDefinition;
   metadata: JsonObject;
