@@ -123,8 +123,8 @@ occupies capacity. See
 
 ## Host calls
 
-Enable `WorkerOptions.hostCalls` with `{ maxConcurrent?, timeoutMs? }` to
-acknowledge host support. Defaults are 16 reverse calls and 30,000 ms; forward
+Workers automatically acknowledge host support. Use optional
+`WorkerOptions.hostCalls: { maxConcurrent?, timeoutMs? }` to configure limits. Defaults are 16 reverse calls and 30,000 ms; forward
 `capacity` remains independent. The host must also enable `workerCalls`.
 
 `WorkerWorkContext.callHost(input)` is bound to its exact started assignment;

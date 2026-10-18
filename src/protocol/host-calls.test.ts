@@ -100,8 +100,14 @@ function negotiated(
     maxLifetimeStreams: options.maxLifetimeStreams,
   });
   hello(validator);
-  welcome(validator, withHostCallCapacity({}, options.offer ?? 2));
-  ready(validator, withHostCallCapacity({}, options.ack ?? 2));
+  welcome(
+    validator,
+    withHostCallCapacity({}, options.offer ?? 2, options.maxLifetimeStreams),
+  );
+  ready(
+    validator,
+    withHostCallCapacity({}, options.ack ?? 2, options.maxLifetimeStreams),
+  );
   control(
     validator,
     "hypervisor",
@@ -247,6 +253,11 @@ test("host calls: malformed and partial capabilities fail closed", () => {
     { version: 1, capacity: 1_025 },
     { version: 1, capacity: 1.5 },
     { version: 1, capacity: 1, extra: true },
+    ...[0, -1, 1.5, 65_537, "4", null].map((maxLifetimeStreams) => ({
+      version: 1,
+      capacity: 1,
+      maxLifetimeStreams,
+    })),
   ];
   for (const capability of malformed) {
     const metadata = { [HOST_CALL_CAPABILITY_KEY]: capability } as JsonObject;
@@ -750,6 +761,57 @@ test("host calls: draining allows parent-bound reverse calls and waits for both 
     rejectsCode(
       () => open(validator, "worker", FOURTH, FORWARD),
       "invalid_protocol_order",
+    );
+  }
+});
+
+test("host calls: lifetime negotiation bounds both initiators even with crossed Opens", () => {
+  for (const role of ROLES) {
+    const validator = createProtocolOrderValidator({ role });
+    hello(validator);
+    welcome(validator, withHostCallCapacity({}, 2, 4));
+    rejectsCode(
+      () => ready(validator, withHostCallCapacity({}, 2, 5)),
+      "stream_limit_exceeded",
+    );
+    ready(validator, withHostCallCapacity({}, 2, 2));
+    control(
+      validator,
+      "hypervisor",
+      createReadyAckFrame({ connectionId: CONNECTION }),
+    );
+    assert.equal(validator.snapshot().maxLifetimeStreams, 2);
+    assert.equal(validator.snapshot().remainingLocalStreams, 1);
+    assert.equal(validator.snapshot().remainingRemoteStreams, 1);
+    // Each peer can spend its final slot before learning of the other's Open.
+    open(validator, role, FORWARD);
+    rejectsCode(() => open(validator, role, OTHER), "stream_limit_exceeded");
+    open(validator, opposite(role), REVERSE);
+    assert.equal(validator.snapshot().usedStreamCount, 2);
+  }
+});
+
+test("host calls: rejected lifetime acknowledgement cannot alter a later ordinary handshake", () => {
+  for (const role of ROLES) {
+    const validator = createProtocolOrderValidator({ role });
+    hello(validator);
+    welcome(validator, withHostCallCapacity({}, 2, 4));
+    const before = validator.snapshot();
+    rejectsCode(
+      () => ready(validator, withHostCallCapacity({}, 2, 5)),
+      "stream_limit_exceeded",
+    );
+    assert.deepEqual(validator.snapshot(), before);
+    ready(validator, {});
+    control(
+      validator,
+      "hypervisor",
+      createReadyAckFrame({ connectionId: CONNECTION }),
+    );
+    assert.equal(validator.snapshot().hostCallCapacity, undefined);
+    assert.equal(
+      validator.snapshot().maxLifetimeStreams,
+      before.maxLifetimeStreams,
     );
   }
 });

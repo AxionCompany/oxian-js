@@ -116,7 +116,9 @@ completion. Neither promise proves durable application commit. A `HostCallError`
 carries `execution: "not_started" | "indeterminate"`; once Start can have been
 sent, failures are indeterminate, even if sending rejects. `HostCallErrorCode`
 is `unsupported`, `unavailable`, `capacity`, `refused`, `cancelled`,
-`deadline_exceeded`, `connection_lost`, or `handler_failed`.
+`deadline_exceeded`, `connection_lost`, `handler_failed`, or `payload_too_large`.
+Recognized remote codes are preserved; unknown codes map to `refused`.
+Execution ambiguity still depends on whether Start could have been sent.
 `createHostCallError(code, execution, message?)` creates a marked `Error` with
 those immutable fields; `isHostCallError(value)` is its type guard.
 `HostCallError` is a type, not a custom class constructor.

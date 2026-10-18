@@ -102,16 +102,17 @@ and their later frames are ignored.
 
 ## Optional worker-to-host invocation
 
-The extension is opt-in and retains the `oxian.worker.v1` protocol identifier.
+The extension is enabled by host admission policy and retains the `oxian.worker.v1` protocol identifier.
 It uses the reserved transport key `__oxian_worker_calls_v1`, whose value is
-exactly `{ "version": 1, "capacity": N }`, with a positive safe-integer `N` no
-greater than 1,024:
+`{ "version": 1, "capacity": N, "maxLifetimeStreams": L }`, with a positive
+safe-integer `N` no greater than 1,024 and `L` from 1 through 65,536. The lifetime
+field is optional and defaults to 65,536 when omitted:
 
 1. The host offers the capability in `Welcome.bootstrap`.
-2. The worker may acknowledge it in `Ready.metadata`, with capacity no greater
-   than the offer. Absence of an acknowledgement disables reverse invocation.
+2. Supporting workers automatically acknowledge it in `Ready.metadata`, with
+   capacity and lifetime no greater than the offer or local limits. Absence of an acknowledgement disables reverse invocation.
 3. A malformed capability, an acknowledgement without an offer, or a capacity
-   above the offer is a protocol violation. It never falls back to enabling
+   or lifetime above the offer is a protocol violation. It never falls back to enabling
    calls with inferred values.
 4. The negotiated capacity activates only at `ready_ack`.
 
@@ -143,7 +144,13 @@ bidirectional behavior. For a reverse call:
 
 Reverse streams consume their negotiated capacity independently of forward
 Worker capacity. Both directions share one stream-ID namespace, strict no-reuse
-rule, and total 65,536-stream connection lifetime. Existing sequence,
+rule, and negotiated total connection lifetime (at most 65,536). To make
+simultaneous Opens safe, the host owns ceil(L / 2) lifetime slots and the worker
+owns floor(L / 2); neither may borrow unused slots from the other. Local queued
+Opens reserve slots before emission. Either exhausted share triggers host-driven
+rotation, while the other remains available to existing assignments during
+drain. Worker exhaustion refuses locally with `capacity/not_started`.
+Unnegotiated connections keep the full forward budget. Existing sequence,
 byte-credit, response-metadata ordering, terminal, and tombstone rules apply
 unchanged.
 

@@ -209,6 +209,7 @@ export function createSessionProtocolController(
         : withHostCallCapacity(
             applicationBootstrap,
             options.workerCalls.capacity,
+            options.config.maxLifetimeStreams,
           );
     ensureOpen(record);
     await record.transport!.sendControl({

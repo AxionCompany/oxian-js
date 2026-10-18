@@ -272,7 +272,14 @@ export function createHypervisor(
     frame,
     disposition,
   ) => {
-    if (record.hostCalls?.control(frame, disposition)) return true;
+    if (record.hostCalls?.control(frame, disposition)) {
+      if (
+        frame.type === "work.open" &&
+        record.transport!.snapshot().remainingRemoteStreams <= 0
+      )
+        void drainRecord(record, "stream_lifetime", "rotate");
+      return true;
+    }
     return await workStreams.handleControl(record, frame, disposition);
   };
   const handleWorkData: typeof workStreams.handleData = async (

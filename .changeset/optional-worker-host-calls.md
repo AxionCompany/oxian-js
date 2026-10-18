@@ -2,7 +2,7 @@
 "oxianjs": minor
 ---
 
-Add opt-in worker-to-host invocation over the existing in-process and WebSocket
+Add host-enabled worker-to-host invocation over the existing in-process and WebSocket
 worker connection. Negotiate bounded reverse streams through reserved v1
 handshake metadata; retain ordinary-only compatibility for peers that do not
 acknowledge the extension.

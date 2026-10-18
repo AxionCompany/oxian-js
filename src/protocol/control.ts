@@ -268,7 +268,17 @@ export function readHostCallCapacity(metadata: JsonObject): number | undefined {
   if (!Object.hasOwn(record, HOST_CALL_CAPABILITY_KEY)) return undefined;
   const path = `$metadata.${HOST_CALL_CAPABILITY_KEY}`;
   const capability = expectRecord(record[HOST_CALL_CAPABILITY_KEY], path);
-  expectExactKeys(capability, path, ["version", "capacity"]);
+  expectExactKeys(
+    capability,
+    path,
+    ["version", "capacity"],
+    ["maxLifetimeStreams"],
+  );
+  if (capability.maxLifetimeStreams !== undefined)
+    expectInteger(capability.maxLifetimeStreams, `${path}.maxLifetimeStreams`, {
+      min: 1,
+      max: WORKER_PROTOCOL_LIMITS.maxLifetimeStreams,
+    });
   if (capability.version !== 1) {
     fail(`${path}.version`, "expected 1");
   }
@@ -278,10 +288,21 @@ export function readHostCallCapacity(metadata: JsonObject): number | undefined {
   });
 }
 
+/** Total lifetime budget; omitted by early extension peers means the wire default. */
+export function readHostCallLifetime(metadata: JsonObject): number | undefined {
+  if (readHostCallCapacity(metadata) === undefined) return undefined;
+  return (
+    ((metadata[HOST_CALL_CAPABILITY_KEY] as JsonObject).maxLifetimeStreams as
+      | number
+      | undefined) ?? WORKER_PROTOCOL_LIMITS.maxLifetimeStreams
+  );
+}
+
 /** Adds transport-owned metadata without overwriting application data. */
 export function withHostCallCapacity(
   metadata: JsonObject,
   capacity: number,
+  maxLifetimeStreams?: number,
 ): JsonObject {
   const record = expectJsonObject(metadata, "$metadata");
   if (Object.hasOwn(record, HOST_CALL_CAPABILITY_KEY)) {
@@ -294,6 +315,15 @@ export function withHostCallCapacity(
     ...record,
     [HOST_CALL_CAPABILITY_KEY]: {
       version: 1,
+      ...(maxLifetimeStreams === undefined
+        ? {}
+        : {
+            maxLifetimeStreams: expectInteger(
+              maxLifetimeStreams,
+              "$maxLifetimeStreams",
+              { min: 1, max: WORKER_PROTOCOL_LIMITS.maxLifetimeStreams },
+            ),
+          }),
       capacity: expectInteger(capacity, "$capacity", {
         min: 1,
         max: MAX_HOST_CALL_CAPACITY,

@@ -1,5 +1,9 @@
 import { validateWorkDataFrame } from "./binary.ts";
-import { decodeControlFrame, readHostCallCapacity } from "./control.ts";
+import {
+  decodeControlFrame,
+  readHostCallCapacity,
+  readHostCallLifetime,
+} from "./control.ts";
 import { createCreditWindow, type CreditWindow } from "./flow_control.ts";
 import { WORKER_PROTOCOL_LIMITS } from "./limits.ts";
 import type { ControlFrame, WorkDataFrame, WorkerIdentity } from "./types.ts";
@@ -58,6 +62,9 @@ export type ProtocolStateSnapshot = Readonly<{
   activeStreamCount: number;
   usedStreamCount: number;
   maxLifetimeStreams: number;
+  /** Remaining per-initiator lifetime slots (transport also subtracts queued Opens). */
+  remainingLocalStreams: number;
+  remainingRemoteStreams: number;
   streams: readonly WorkStreamSnapshot[];
 }>;
 
@@ -238,7 +245,7 @@ export function createProtocolOrderValidator(
     "maxCapacity",
     WORKER_PROTOCOL_LIMITS.maxWorkerCapacity,
   );
-  const maxLifetimeStreams = expectAdmissionLimit(
+  let maxLifetimeStreams = expectAdmissionLimit(
     options.maxLifetimeStreams ?? WORKER_PROTOCOL_LIMITS.maxLifetimeStreams,
     "maxLifetimeStreams",
     WORKER_PROTOCOL_LIMITS.maxLifetimeStreams,
@@ -264,6 +271,17 @@ export function createProtocolOrderValidator(
   let offeredHostCallCapacity: number | undefined;
   let pendingHostCallCapacity: number | undefined;
   let hostCallCapacity: number | undefined;
+  let offeredLifetime: number | undefined;
+  let pendingLifetime: number | undefined;
+  // Each initiator spends only its share: crossed Opens cannot race for the
+  // same last slot, and the remaining share stays usable during drain.
+  const opened = { hypervisor: 0, worker: 0 };
+  const remaining = (initiator: ProtocolRole): number =>
+    hostCallCapacity === undefined
+      ? maxLifetimeStreams - usedStreamIds.size
+      : (initiator === "hypervisor"
+          ? Math.ceil(maxLifetimeStreams / 2)
+          : Math.floor(maxLifetimeStreams / 2)) - opened[initiator];
   let nextHeartbeatSequence = 0;
   const streams = new Map<string, MutableWorkStream>();
   // Normal End/End streams retain only bounded wire-order state. They no
@@ -468,6 +486,7 @@ export function createProtocolOrderValidator(
       case "welcome": {
         if (phase !== "hello") fail(`welcome is not allowed after ${phase}`);
         offeredHostCallCapacity = readHostCallCapacity(frame.bootstrap);
+        offeredLifetime = readHostCallLifetime(frame.bootstrap);
         connectionId = frame.connectionId;
         phase = "welcomed";
         break;
@@ -496,6 +515,20 @@ export function createProtocolOrderValidator(
             );
           }
         }
+        const acknowledgedLifetime = readHostCallLifetime(frame.metadata);
+        if (acknowledgedLifetime !== undefined) {
+          if (acknowledgedLifetime > offeredLifetime!)
+            fail(
+              "ready lifetime exceeds the welcome offer",
+              "stream_limit_exceeded",
+            );
+          if (acknowledgedLifetime > maxLifetimeStreams)
+            fail(
+              "negotiated lifetime exceeds local limit",
+              "stream_limit_exceeded",
+            );
+        }
+        pendingLifetime = acknowledgedLifetime;
         pendingHostCallCapacity = acknowledgedCapacity;
         phase = "readied";
         break;
@@ -507,6 +540,7 @@ export function createProtocolOrderValidator(
         }
         ensureConnection(frame.connectionId, frame.type);
         hostCallCapacity = pendingHostCallCapacity;
+        if (pendingLifetime !== undefined) maxLifetimeStreams = pendingLifetime;
         phase = "ready";
         break;
       }
@@ -603,7 +637,7 @@ export function createProtocolOrderValidator(
             "duplicate_stream",
           );
         }
-        if (usedStreamIds.size >= maxLifetimeStreams) {
+        if (remaining(initiator) <= 0) {
           fail(
             `connection reached its ${maxLifetimeStreams} stream lifetime; reconnect before opening more work`,
             "stream_limit_exceeded",
@@ -631,6 +665,7 @@ export function createProtocolOrderValidator(
         }
 
         usedStreamIds.add(frame.streamId);
+        opened[initiator]++;
         streams.set(frame.streamId, {
           streamId: frame.streamId,
           initiator,
@@ -920,6 +955,10 @@ export function createProtocolOrderValidator(
       activeStreamCount: streams.size,
       usedStreamCount: usedStreamIds.size,
       maxLifetimeStreams,
+      remainingLocalStreams: remaining(role),
+      remainingRemoteStreams: remaining(
+        role === "worker" ? "hypervisor" : "worker",
+      ),
       streams: streamSnapshots,
     };
   };

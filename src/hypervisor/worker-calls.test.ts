@@ -77,7 +77,7 @@ async function fixture(workerCalls: WorkerCallOptions) {
   url.protocol = "ws:";
   return {
     hypervisor,
-    async connect(workerId = "worker-a") {
+    async connect(workerId = "worker-a", hostCallCapacity = 4) {
       const worker = await connectControlledWorker({
         url,
         identity: { workerId, attemptId: `${workerId}-attempt`, epoch: 7 },
@@ -88,7 +88,7 @@ async function fixture(workerCalls: WorkerCallOptions) {
         handshakeId: crypto.randomUUID(),
         workloads: ["action"],
         capacity: 1,
-        readyMetadata: withHostCallCapacity({}, 4),
+        readyMetadata: withHostCallCapacity({}, hostCallCapacity),
       });
       workers.push(worker);
       return worker;
@@ -429,6 +429,46 @@ test("websocket host calls: parent completion between acceptance and start preve
     await expectNoControlledMessage(worker, 50);
     assert.equal(starts, 0);
   } finally {
+    await f.close();
+  }
+});
+
+test("websocket host calls: negotiated capacity includes cancelled unsettled handlers", {
+  timeout: TEST_TIMEOUT_MS,
+}, async () => {
+  const entered = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  let admissions = 0;
+  const f = await fixture({
+    maxPerConnection: 4,
+    admit: () => {
+      admissions++;
+      return async () => {
+        entered.resolve();
+        await release.promise;
+      };
+    },
+  });
+  try {
+    const worker = await f.connect("worker-a", 1);
+    const parent = await startParent(f.hypervisor, worker);
+    const first = await openCall(worker, parent.streamId);
+    await nextControlledControl(worker, "work.accepted");
+    await worker.transport.sendControl(
+      createWorkStartFrame({ streamId: first }),
+    );
+    await bounded(entered.promise);
+    await worker.transport.sendControl(
+      createWorkCancelFrame({ streamId: first, reason: "test" }),
+    );
+    const ack = await nextNonCredit(worker);
+    assert.equal(ack.type, "work.error");
+    await expectRefused(worker, await openCall(worker, parent.streamId));
+    assert.equal(admissions, 1);
+    release.resolve();
+    await completeParent(worker, parent);
+  } finally {
+    release.resolve();
     await f.close();
   }
 });

@@ -167,7 +167,7 @@ type WorkerBaseOptions = Readonly<{
 export type WorkerOptions = WorkerBaseOptions &
   Readonly<{
     id: string;
-    /** Opt into negotiated reverse work streams; independent of execution capacity. */
+    /** Limits for automatically negotiated reverse calls; independent of execution capacity. */
     hostCalls?: Readonly<{ maxConcurrent?: number; timeoutMs?: number }>;
     transport: WorkerTransport;
     activate?: WorkerActivate;

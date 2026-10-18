@@ -9,6 +9,7 @@ import {
   createWorkCreditFrame,
   createWorkDataFrame,
   createWorkEndFrame,
+  createWorkErrorFrame,
   createWorkMetadataFrame,
   createWorkOpenFrame,
   createWorkStartFrame,
@@ -651,4 +652,61 @@ test("host call channel: an early complete response cancels the request source w
   cleanup.resolve();
   await setImmediate();
   assert.equal(ledger.occupied(), 0);
+});
+
+test("host call channel: remote error codes retain conservative execution ambiguity", async (t) => {
+  for (const started of [false, true]) {
+    for (const code of [
+      "handler_failed",
+      "deadline_exceeded",
+      "cancelled",
+      "refused",
+      "capacity",
+      "unsupported",
+      "unavailable",
+      "connection_lost",
+      "payload_too_large",
+      "future_error",
+    ]) {
+      const wire = fakeTransport();
+      const channel = createHostCallChannel({
+        role: "worker",
+        transport: wire.transport,
+        signal: new AbortController().signal,
+        capacity: 1,
+        timeoutMs: 30_000,
+      });
+      t.after(() => channel.close());
+      const call = await channel.call({ workload: "host.test" });
+      if (started) {
+        channel.control(
+          createWorkAcceptedFrame({ streamId: call.streamId }),
+          "deliver",
+        );
+        await call.started;
+      }
+      channel.control(
+        createWorkErrorFrame({
+          streamId: call.streamId,
+          code,
+          message: "remote failure",
+        }),
+        "deliver",
+      );
+      const expected =
+        code === "future_error" ? "refused" : (code as HostCallError["code"]);
+      await assert.rejects(
+        call.completed,
+        expectCallError(expected, started ? "indeterminate" : "not_started"),
+      );
+      await assert.rejects(
+        call.metadata,
+        expectCallError(expected, started ? "indeterminate" : "not_started"),
+      );
+      await assert.rejects(
+        call.output.getReader().read(),
+        expectCallError(expected, started ? "indeterminate" : "not_started"),
+      );
+    }
+  }
 });

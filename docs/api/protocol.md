@@ -28,7 +28,7 @@ capability negotiation without changing that identifier.
 | Area                 | Exports                                                                                                                                                                                                  |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Constants            | `WORKER_PROTOCOL`, `WORKER_PROTOCOL_LIMITS`, `BINARY_PROTOCOL`                                                                                                                                           |
-| Host-call capability | `HOST_CALL_CAPABILITY_KEY`, `readHostCallCapacity`, `withHostCallCapacity`, `withoutHostCallCapacity`                                                                                                    |
+| Host-call capability | `HOST_CALL_CAPABILITY_KEY`, `readHostCallCapacity`, `readHostCallLifetime`, `withHostCallCapacity`, `withoutHostCallCapacity`                                                                                                    |
 | Control codecs       | `decodeControlFrame`, `parseControlFrame`, `encodeControlFrame`                                                                                                                                          |
 | Identity             | `createWorkerIdentity`                                                                                                                                                                                   |
 | Handshake factories  | `createHelloFrame`, `createWelcomeFrame`, `createReadyFrame`, `createReadyAckFrame`, `createHeartbeatFrame`, `createDrainFrame`, `createShutdownFrame`, `createDrainedFrame`, `createProtocolErrorFrame` |
@@ -63,6 +63,8 @@ type WorkerProtocolLimits = Readonly<{
   maxDataPayloadBytes: number;
   maxOutstandingStreamCreditBytes: number;
   maxLifetimeStreams: number;
+  remainingLocalStreams: number;
+  remainingRemoteStreams: number;
   maxWorkerCapacity: number;
 }>;
 
@@ -444,21 +446,26 @@ function createWorkErrorFrame(
 ```ts
 const HOST_CALL_CAPABILITY_KEY = "__oxian_worker_calls_v1";
 function readHostCallCapacity(metadata: JsonObject): number | undefined;
+function readHostCallLifetime(metadata: JsonObject): number | undefined;
 function withHostCallCapacity(
   metadata: JsonObject,
   capacity: number,
+  maxLifetimeStreams?: number,
 ): JsonObject;
 function withoutHostCallCapacity(metadata: JsonObject): JsonObject;
 ```
 
 `readHostCallCapacity` returns `undefined` for an absent reserved key and throws
-for a malformed capability. Its value must have exactly `version: 1` and a
-positive safe-integer `capacity` no greater than 1,024. `withHostCallCapacity`
+for a malformed capability. Its value must have `version: 1`, a positive
+safe-integer `capacity` no greater than 1,024, and optionally `maxLifetimeStreams`
+from 1 through 65,536. No other fields are accepted. `readHostCallLifetime`
+returns `undefined` when negotiation is absent, or the lifetime (default 65,536)
+when the capability is present. `withHostCallCapacity`
 clones metadata and adds the capability, rejecting an existing reserved key.
 `withoutHostCallCapacity` clones application metadata and strips only that key.
 
-The host offers in Welcome bootstrap; the worker optionally acknowledges an
-equal or lower capacity in Ready metadata. An unsolicited or oversized
+The host offers in Welcome bootstrap; supporting workers automatically acknowledge an
+equal or lower capacity and lifetime in Ready metadata. An unsolicited or oversized
 acknowledgement fails closed. Missing acknowledgement disables reverse calls,
 and activation waits for ReadyAck. Legacy frame directions remain strict on an
 unnegotiated connection. With negotiation, Open/Start are initiator frames and
@@ -759,9 +766,16 @@ type ProtocolStateSnapshot = Readonly<{
   activeStreamCount: number;
   usedStreamCount: number;
   maxLifetimeStreams: number;
+  remainingLocalStreams: number;
+  remainingRemoteStreams: number;
   streams: readonly WorkStreamSnapshot[];
 }>;
 ```
+
+Negotiated lifetime slots are split between initiators: ceil(L / 2) for the host
+and floor(L / 2) for the worker. The remaining-slot snapshot fields count each
+share; transport snapshots additionally subtract queued local Opens. Ordinary
+unnegotiated connections use the full lifetime budget for forward work.
 
 `hostCallCapacity` is absent until a valid offer/acknowledgement becomes active
 at ReadyAck. It remains absent for ordinary-only connections. Forward capacity

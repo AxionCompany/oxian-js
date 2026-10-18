@@ -37,7 +37,6 @@ export type ConnectionRecord = {
   phase: ConnectionPhase;
   connectedAtMs: number;
   acceptingWork: boolean;
-  openedStreams: number;
   connectionId?: string;
   hello?: HelloFrame;
   exchange?: RegistrationExchange;

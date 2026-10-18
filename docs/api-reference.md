@@ -73,12 +73,16 @@ See the [Hypervisor API](api/hypervisor.md#dispatch-waiting) and
 
 ## Optional worker-to-host calls
 
-Enable `HypervisorOptions.workerCalls` and `WorkerOptions.hostCalls` for
+Enable `HypervisorOptions.workerCalls` with explicit admission policy for
 assignment-bound `WorkerWorkContext.callHost`. Parentless `Worker.callHost`
 requires separate default-denied admission. The `/work` subpath provides
 `HostCaller`, streaming handles, and errors with not-started/indeterminate
 execution classification. See the [call guide](worker-host-calls.md) for
 host-derived authority evidence and application-owned receipt recovery.
+
+Supporting workers acknowledge host calls automatically; `WorkerOptions.hostCalls`
+only configures limits. See [owner-side handles](worker-host-calls.md#owner-side-handles-for-long-lived-resources)
+for application-owned resource lifecycle guidance.
 
 ## Shared conventions
 

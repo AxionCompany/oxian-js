@@ -160,6 +160,8 @@ test("protocol order: validates both sides of the handshake", () => {
       activeStreamCount: 0,
       usedStreamCount: 0,
       maxLifetimeStreams: WORKER_PROTOCOL_LIMITS.maxLifetimeStreams,
+      remainingLocalStreams: WORKER_PROTOCOL_LIMITS.maxLifetimeStreams,
+      remainingRemoteStreams: WORKER_PROTOCOL_LIMITS.maxLifetimeStreams,
       streams: [],
     });
   }

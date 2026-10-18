@@ -30,7 +30,8 @@ export type HostCallErrorCode =
   | "cancelled"
   | "deadline_exceeded"
   | "connection_lost"
-  | "handler_failed";
+  | "handler_failed"
+  | "payload_too_large";
 
 const hostCallErrorMarker = Symbol.for("oxian.worker.v1.host-call-error");
 

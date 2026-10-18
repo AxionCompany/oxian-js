@@ -863,7 +863,7 @@ export function createWorkStreamController(
         { identity: record.fence.identity, operationId },
       );
     }
-    if (record.openedStreams >= config.maxLifetimeStreams) {
+    if (record.transport.snapshot().remainingLocalStreams <= 0) {
       record.acceptingWork = false;
       void drainRecord(record, "stream_lifetime", "rotate");
       throw createHypervisorError(
@@ -872,9 +872,8 @@ export function createWorkStreamController(
         { identity: record.fence.identity, operationId },
       );
     }
-    record.openedStreams++;
     const reachedStreamLifetime =
-      record.openedStreams >= config.maxLifetimeStreams;
+      record.transport.snapshot().remainingLocalStreams <= 1;
     if (reachedStreamLifetime) record.acceptingWork = false;
     const started = createDeferred<void>();
     const metadata = createDeferred<JsonObject>();

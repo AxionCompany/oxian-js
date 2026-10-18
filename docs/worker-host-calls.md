@@ -3,7 +3,9 @@
 Workers can invoke application-defined workloads on the Hypervisor that owns
 their current connection. Both in-process and WebSocket transports use the same
 negotiated, credited protocol streams. Enable `workerCalls` on the Hypervisor
-and `hostCalls` on the Worker; both are disabled by default.
+to supply explicit admission policy; supporting workers acknowledge the offer
+automatically. Worker `hostCalls` only configures capacity and timeout. Missing
+negotiation disables calls, with no alternative transport or database path.
 
 This is generic transport and admission, not a durable owner implementation.
 Database transactions, grants, receipts, owner epochs, routing between hosts,
@@ -150,13 +152,35 @@ response does not change this transport completion boundary.
 `not_started` before a start can be sent and `indeterminate` once the worker
 attempts to send `work.start`. A send failure can still follow physical
 delivery, so it remains indeterminate. Inspect `execution`, not just an error
-code such as `refused`, when deciding whether effects could have run.
+code such as `refused`, when deciding whether effects could have run. Recognized
+remote codes are preserved, including `handler_failed`, `deadline_exceeded`,
+`cancelled`, and `payload_too_large`; unknown remote codes map to `refused`.
 
 Oxian never retries or replays these calls automatically, including after
 reconnect. For an indeterminate result, recover the application's durable
 receipt using its stable logical identity before deciding what to do next.
 Application idempotency, transactions, and external-effect reconciliation are
 not supplied by transport completion.
+
+## Owner-side handles for long-lived resources
+
+Copilotz can implement long-lived resources with ordinary `open/use/close` calls.
+The owner keeps the database connection, snapshot, writer, or transaction state
+and returns an opaque handle; the worker holds only that handle. Serialize use
+per resource, bound resource counts, and bind each handle to the authenticated
+owner identity/epoch, execution attempt, parent assignment, and session.
+
+Enforce both idle expiry and an absolute lifetime. Close resources explicitly on
+cancel, parent termination, disconnect, and owner takeover, as well as on normal
+`close`. A completed opening RPC has released its transport reservation and timer;
+these do not bound resources retained between calls. Cancelling that completed
+RPC is deliberately harmless, so resource cleanup needs its own owner lifecycle
+hooks. Reconnect must not revive old handles. Separately authorized receipt reads
+can recover outcomes without restoring old mutation authority.
+
+Copilotz owns this resource registry and cleanup. It must authenticate owner
+bindings and check the current owner epoch inside every mutation transaction;
+Oxian session fencing alone cannot fence a database owner takeover.
 
 ## Bounds, drain, and source ownership
 
@@ -170,10 +194,13 @@ immediately. A local limit produces `capacity`; remote admission may produce
 | ----------------------------------------- | ---------------------: | -----------------: |
 | Hypervisor `workerCalls.maxConcurrent`    |                     32 |           1–65,536 |
 | Hypervisor `workerCalls.maxPerConnection` | min(16, maxConcurrent) |            1–1,024 |
+| Hypervisor `workerCalls.maxRequestBytes` |                 16 MiB | 1–MAX_SAFE_INTEGER |
+| Hypervisor `workerCalls.maxResponseBytes` |                16 MiB | 1–MAX_SAFE_INTEGER |
 | Worker `hostCalls.maxConcurrent`          |                     16 |            1–1,024 |
 | Either side's `timeoutMs`                 |              30,000 ms | 1–2,147,483,647 ms |
 
-The negotiated per-connection limit is the smaller peer offer/acknowledgement.
+The negotiated per-connection limit is the smaller peer offer/acknowledgement,
+including cancelled host handlers whose execution or cleanup has not settled.
 Each side enforces its timeout, and `deadlineAtMs` can shorten the call.
 Deadlines are checked again at admission/start boundaries. Timeout and abort
 signals cannot forcibly terminate arbitrary JavaScript promises: admission,
@@ -191,7 +218,14 @@ completion or cancellation. Do not lock or reuse that stream concurrently. A
 rejected call that never returns a handle leaves source ownership with the
 caller. Each streamed chunk must be at most 1 MiB; a direct `Uint8Array` may be
 larger and is split into wire frames. Metadata and byte-credit bounds are the
-ordinary v1 limits.
+ordinary v1 limits. The host counts cumulative raw body bytes independently in
+each direction; exceeding `maxRequestBytes` or `maxResponseBytes` aborts only that
+call with `payload_too_large`. Limits apply across chunks, including discarded
+request bytes after the handler cancels its input consumer. An over-limit
+response chunk is not sent. Earlier chunks may already have been processed;
+abort does not imply rollback. These limits do not bound decoded/expanded data,
+application allocations, or resources retained between calls: callers and host
+handlers must bound those separately.
 
 The host may cancel its local request-body consumer without cancelling its
 response. A complete early response stops the remaining request upload.
@@ -202,8 +236,11 @@ not released early.
 ## Optional v1 negotiation
 
 The protocol identifier stays `oxian.worker.v1`. The reserved transport key
-`__oxian_worker_calls_v1` carries exactly `{ version: 1, capacity: N }` in
+`__oxian_worker_calls_v1` carries `{ version: 1, capacity: N }` in
 `Welcome.bootstrap` and `Ready.metadata`, with integer `N` from 1 through 1,024.
+The optional `maxLifetimeStreams` field is an integer from 1 through 65,536;
+omission means 65,536. Current runtimes send this field and acknowledge the
+smaller offered/local lifetime limit.
 The worker acknowledges no more than the host offered. Missing acknowledgement
 leaves the connection ordinary-only. A malformed capability, unsolicited
 acknowledgement, or acknowledgement above the offer fails closed. Activation
@@ -213,7 +250,14 @@ Application bootstrap and Ready metadata must not define that reserved key. The
 runtime adds it on wire and strips it before application callbacks. Old peers
 remain usable for ordinary work; an unnegotiated connection cannot carry
 worker-originated opens. Reverse calls share the existing credit/sequence,
-half-close, abort, no-ID-reuse, and total connection lifetime limits.
+half-close, abort, no-ID-reuse, and total connection lifetime limits. On negotiated connections, the host owns
+ceil(lifetime / 2) Opens and the worker owns floor(lifetime / 2). Fixed shares
+prevent crossed Opens from overspending the total budget. Queued local Opens
+reserve slots immediately. Exhausting either share starts host-driven rotation;
+the other share remains usable by existing parent assignments during drain.
+An exhausted worker rejects locally with `capacity/not_started`, before Open.
+A lifetime of one leaves no reverse slots. Unnegotiated connections retain the
+entire ordinary forward budget. Calls are never replayed during rotation.
 
 See the
 [wire contract](worker-protocol-v1.md#optional-worker-to-host-invocation),

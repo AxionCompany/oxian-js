@@ -13,12 +13,29 @@ import { normalizeHandlerResult } from "../worker/internal/work.ts";
 import type { WorkerWorkResult } from "../worker/types.ts";
 import {
   createHostCallError,
+  isHostCallError,
   type HostCallError,
   type HostCallErrorCode,
   type HostCallHandle,
   type HostCallInput,
 } from "./host-call.ts";
 import type { WorkBody } from "./types.ts";
+
+const recognizedCodes = new Set<HostCallErrorCode>([
+  "unsupported",
+  "unavailable",
+  "capacity",
+  "refused",
+  "cancelled",
+  "deadline_exceeded",
+  "connection_lost",
+  "handler_failed",
+  "payload_too_large",
+]);
+const remoteCode = (code: string): HostCallErrorCode =>
+  recognizedCodes.has(code as HostCallErrorCode)
+    ? (code as HostCallErrorCode)
+    : "refused";
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -66,6 +83,8 @@ type Stream = {
   controller: ReadableStreamDefaultController<Uint8Array>;
   inputClosed: boolean;
   receiveCredit: number;
+  receivedBytes: number;
+  sentBytes: number;
   granting: boolean;
   grantStopped: boolean;
   sendCredit: number;
@@ -100,6 +119,8 @@ export function createHostCallChannel(
     cancellationAckTimeoutMs?: number;
     windowBytes?: number;
     maxDataPayloadBytes?: number;
+    maxRequestBytes?: number;
+    maxResponseBytes?: number;
     now?: () => number;
     accept?: (
       open: WorkOpenFrame,
@@ -332,6 +353,8 @@ export function createHostCallChannel(
       controller,
       inputClosed: false,
       receiveCredit: 0,
+      receivedBytes: 0,
+      sentBytes: 0,
       granting: false,
       grantStopped: false,
       sendCredit: 0,
@@ -395,6 +418,15 @@ export function createHostCallChannel(
           item.value.byteLength > WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes
         )
           throw new RangeError("call body chunk exceeds wire bound");
+        const limit = stream.initiator
+          ? options.maxRequestBytes
+          : options.maxResponseBytes;
+        if (
+          limit !== undefined &&
+          item.value.byteLength > limit - stream.sentBytes
+        )
+          throw errorFor(stream, "payload_too_large");
+        stream.sentBytes += item.value.byteLength;
         let offset = 0;
         while (offset < item.value.byteLength) {
           await waitCredit(stream);
@@ -431,7 +463,7 @@ export function createHostCallChannel(
       finish(stream);
     } catch (error) {
       if (stream.local !== "end" || stream.abort.signal.aborted)
-        abort(stream, "handler_failed");
+        abort(stream, isHostCallError(error) ? error.code : "handler_failed");
       await cancelSource(stream, error);
       if (stream.local !== "end" || stream.abort.signal.aborted) throw error;
     } finally {
@@ -547,7 +579,10 @@ export function createHostCallChannel(
   ): Promise<HostCallHandle> => {
     if (options.role !== "worker" || closed || options.signal.aborted)
       throw createHostCallError("unavailable", "not_started");
-    if (streams.size >= options.capacity)
+    if (
+      options.transport.snapshot().remainingLocalStreams <= 0 ||
+      streams.size >= options.capacity
+    )
       throw createHostCallError("capacity", "not_started");
     if (input.signal?.aborted)
       throw createHostCallError("cancelled", "not_started");
@@ -583,7 +618,17 @@ export function createHostCallChannel(
     stream.dispose = () => {
       input.signal?.removeEventListener("abort", cancel);
     };
-    void send(open).catch(failConnection);
+    void send(open).catch((error) => {
+      if (
+        isProtocolViolation(error) &&
+        error.code === "stream_limit_exceeded"
+      ) {
+        // Refused in the ordered queue before emission: no peer stream to abort.
+        stream.local = "abort";
+        stream.remote = "abort";
+        abort(stream, "capacity", false);
+      } else failConnection();
+    });
     return Object.freeze({
       streamId: open.streamId,
       output: stream.input,
@@ -622,7 +667,10 @@ export function createHostCallChannel(
     }
     if (frame.type === "work.error" || frame.type === "work.cancel") {
       stream.remote = "abort";
-      abort(stream, frame.type === "work.cancel" ? "cancelled" : "refused");
+      abort(
+        stream,
+        frame.type === "work.cancel" ? "cancelled" : remoteCode(frame.code),
+      );
       return true;
     }
     if (disposition === "discard") return true;
@@ -699,6 +747,17 @@ export function createHostCallChannel(
     const stream = streams.get(frame.streamId);
     if (!stream || disposition === "discard" || stream.abort.signal.aborted)
       return true;
+    const limit = stream.initiator
+      ? options.maxResponseBytes
+      : options.maxRequestBytes;
+    if (
+      limit !== undefined &&
+      frame.payload.byteLength > limit - stream.receivedBytes
+    ) {
+      abort(stream, "payload_too_large");
+      return true;
+    }
+    stream.receivedBytes += frame.payload.byteLength;
     stream.receiveCredit -= frame.payload.byteLength;
     if (!stream.inputClosed) stream.controller.enqueue(frame.payload);
     grant(stream);

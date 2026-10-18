@@ -5,6 +5,7 @@ import {
   createProtocolErrorFrame,
   createReadyFrame,
   readHostCallCapacity,
+  readHostCallLifetime,
   HOST_CALL_CAPABILITY_KEY,
   withHostCallCapacity,
   withoutHostCallCapacity,
@@ -1569,7 +1570,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
       const wireWelcome = first.value.acceptance.frame;
       const offeredHostCalls = readHostCallCapacity(wireWelcome.bootstrap);
       const negotiatedHostCalls =
-        options.hostCalls && offeredHostCalls !== undefined
+        offeredHostCalls !== undefined
           ? Math.min(hostCallCapacity, offeredHostCalls)
           : undefined;
       const welcome = {
@@ -1640,7 +1641,14 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
           metadata:
             negotiatedHostCalls === undefined
               ? (metadata ?? {})
-              : withHostCallCapacity(metadata ?? {}, negotiatedHostCalls),
+              : withHostCallCapacity(
+                  metadata ?? {},
+                  negotiatedHostCalls,
+                  Math.min(
+                    readHostCallLifetime(wireWelcome.bootstrap)!,
+                    transport.snapshot().maxLifetimeStreams,
+                  ),
+                ),
         });
       } catch (error) {
         try {
@@ -2068,7 +2076,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
     callHost: async (input) => {
       if (!currentHostCaller)
         throw createHostCallError(
-          options.hostCalls ? "unavailable" : "unsupported",
+          state === "ready" ? "unsupported" : "unavailable",
           "not_started",
         );
       return await currentHostCaller(input);

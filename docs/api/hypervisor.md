@@ -183,6 +183,8 @@ type WorkerCallOptions = Readonly<{
   admitUnassigned?: WorkerCallAdmission;
   maxConcurrent?: number;
   maxPerConnection?: number;
+  maxRequestBytes?: number;
+  maxResponseBytes?: number;
   timeoutMs?: number;
 }>;
 ```
@@ -204,7 +206,11 @@ by default. They are available only on ready connections. Assigned calls can
 continue during drain while their authenticated parent remains active.
 
 Host limits default to 32 concurrent calls, min(16, maxConcurrent) per
-connection, and a 30-second timeout. Limits include unresolved admission and
+connection, a 30-second timeout, and 16 MiB each for aggregate request and
+response body bytes. The negotiated per-connection capacity is enforced even
+when it is smaller than the host offer. Payload excess aborts that call with
+`payload_too_large`; decoded data and retained application resources need their
+own bounds. Limits include unresolved admission and
 handler/source cleanup across connection loss. Excess calls refuse rather than
 joining the forward dispatch queue. See the
 [complete call guide](../worker-host-calls.md) for limits and ambiguity

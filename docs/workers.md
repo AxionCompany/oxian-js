@@ -183,8 +183,9 @@ the execution ledger continues to reserve its slot until it settles.
 
 ## Optional host calls
 
-Enable `WorkerOptions.hostCalls` and `HypervisorOptions.workerCalls` to let a
-workload invoke host handlers through `context.callHost`. These calls use a
+Enable `HypervisorOptions.workerCalls` with explicit admission policy to let a
+workload invoke host handlers through `context.callHost`. Supporting workers
+acknowledge automatically; `WorkerOptions.hostCalls` configures limits. These calls use a
 separate bounded capacity pool and carry host-validated parent/session evidence.
 `worker.callHost` has no parent and is denied unless the host supplies the
 separate `admitUnassigned` policy. Neither route retries automatically;

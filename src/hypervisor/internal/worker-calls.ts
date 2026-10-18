@@ -38,6 +38,16 @@ export function createWorkerCallAdmission(
     1024,
   );
   const timeoutMs = positive(options?.timeoutMs, 30_000, 0x7fff_ffff);
+  const maxRequestBytes = positive(
+    options?.maxRequestBytes,
+    16 * 1024 * 1024,
+    Number.MAX_SAFE_INTEGER,
+  );
+  const maxResponseBytes = positive(
+    options?.maxResponseBytes,
+    16 * 1024 * 1024,
+    Number.MAX_SAFE_INTEGER,
+  );
   let occupied = 0;
   const perConnection = new Map<string, number>();
 
@@ -50,6 +60,8 @@ export function createWorkerCallAdmission(
       signal: record.abort.signal,
       capacity: negotiated,
       timeoutMs,
+      maxRequestBytes,
+      maxResponseBytes,
       now,
       windowBytes: Math.min(256 * 1024, config.maxReceiveCreditBytes),
       maxDataPayloadBytes: config.maxDataPayloadBytes,
@@ -97,7 +109,7 @@ export function createWorkerCallAdmission(
           !callback ||
           !current() ||
           occupied >= maximum ||
-          (perConnection.get(fence.connectionId) ?? 0) >= capacity
+          (perConnection.get(fence.connectionId) ?? 0) >= negotiated
         )
           return undefined;
         occupied++;

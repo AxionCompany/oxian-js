@@ -27,7 +27,8 @@ async function fixture(
   kind: "in-process" | "websocket",
   calls: WorkerCallOptions | undefined,
   handler: WorkerWorkHandler,
-  enabled = true,
+  configureHostCalls = true,
+  maxLifetimeStreams?: number,
 ) {
   const local = {
     type: "in-process" as const,
@@ -46,7 +47,8 @@ async function fixture(
         : [{ type: "websocket", config: { path: "/workers" } }],
     workerCalls: calls,
     config: {
-      shutdownTimeoutMs: 100,
+      ...(maxLifetimeStreams === undefined ? {} : { maxLifetimeStreams }),
+      shutdownTimeoutMs: maxLifetimeStreams === undefined ? 100 : 1000,
       cancellationAckTimeoutMs: 100,
       heartbeatIntervalMs: 20,
       leaseTimeoutMs: 1000,
@@ -86,7 +88,9 @@ async function fixture(
       id: identity.workerId,
       transport,
       capacity: 1,
-      hostCalls: enabled ? { maxConcurrent: 4, timeoutMs: 500 } : undefined,
+      hostCalls: configureHostCalls
+        ? { maxConcurrent: 4, timeoutMs: 500 }
+        : undefined,
       activate: () => identity,
       register: () => ({
         credential: { kind: "registration", capability: "registration-test" },
@@ -247,16 +251,19 @@ for (const kind of ["in-process", "websocket"] as const) {
     } finally {
       await legacy.close();
     }
-    const oldWorker = await fixture(
+    const defaultWorker = await fixture(
       kind,
       { admit: () => () => undefined },
-      () => bytes("old-worker"),
+      async ({ callHost }) => {
+        await (await callHost({ workload: "owner" })).completed;
+        return bytes("automatic-ack");
+      },
       false,
     );
     try {
-      assert.equal(await invoke(oldWorker.h), "old-worker");
+      assert.equal(await invoke(defaultWorker.h), "automatic-ack");
     } finally {
-      await oldWorker.close();
+      await defaultWorker.close();
     }
   });
 
@@ -484,6 +491,166 @@ for (const kind of ["in-process", "websocket"] as const) {
       );
     } finally {
       release.resolve();
+      await f.close();
+    }
+  });
+}
+
+for (const kind of ["in-process", "websocket"] as const) {
+  test(`${kind}: reverse lifetime exhaustion refuses locally and rotates without losing the parent`, {
+    timeout: 10_000,
+  }, async () => {
+    const f = await fixture(
+      kind,
+      { admit: () => () => bytes("ok") },
+      async ({ callHost }) => {
+        assert.equal(await text(await callHost({ workload: "owner" })), "ok");
+        assert.equal(await text(await callHost({ workload: "owner" })), "ok");
+        await assert.rejects(
+          callHost({ workload: "owner" }),
+          (error: unknown) => {
+            assert.ok(isHostCallError(error));
+            assert.equal(error.code, "capacity");
+            assert.equal(error.execution, "not_started");
+            return true;
+          },
+        );
+        return bytes("parent survived");
+      },
+      true,
+      4,
+    );
+    try {
+      const previous = f.h.sessions.get("trusted-worker")!.connectionId;
+      assert.equal(await invoke(f.h), "parent survived");
+      const deadline = Date.now() + 2000;
+      while (
+        f.h.sessions.get("trusted-worker")?.connectionId === previous ||
+        f.h.sessions.get("trusted-worker")?.phase !== "ready"
+      ) {
+        assert.ok(Date.now() < deadline, "lifetime rotation reconnects");
+        await sleep(5);
+      }
+      assert.equal(await invoke(f.h), "parent survived");
+    } finally {
+      await f.close();
+    }
+  });
+}
+
+for (const kind of ["in-process", "websocket"] as const) {
+  for (const direction of ["request", "response"] as const) {
+    test(`${kind}: aggregate ${direction} limit spans chunks and preserves other calls`, {
+      timeout: 10_000,
+    }, async () => {
+      const chunked = (size: number) =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (let offset = 0; offset < size; offset += 2)
+              controller.enqueue(new Uint8Array(Math.min(2, size - offset)));
+            controller.close();
+          },
+        });
+      const f = await fixture(
+        kind,
+        {
+          maxRequestBytes: 4,
+          maxResponseBytes: 4,
+          admit:
+            (context) =>
+            async ({ input }) => {
+              const body = new Uint8Array(
+                await new Response(input).arrayBuffer(),
+              );
+              return direction === "request"
+                ? body
+                : chunked(context.metadata.size as number);
+            },
+        },
+        async ({ callHost }) => {
+          for (const size of [4, 5, 4]) {
+            const call = await callHost({
+              workload: "owner",
+              metadata: { size },
+              body: direction === "request" ? chunked(size) : undefined,
+            });
+            const output = new Response(call.output).arrayBuffer();
+            if (size === 5) {
+              const check = (error: unknown) =>
+                isHostCallError(error) &&
+                error.code === "payload_too_large" &&
+                error.execution === "indeterminate";
+              await assert.rejects(output, check);
+              await assert.rejects(call.completed, check);
+            } else {
+              assert.equal((await output).byteLength, 4);
+              await call.completed;
+            }
+          }
+          return bytes("bounded");
+        },
+        false,
+      );
+      try {
+        assert.equal(await invoke(f.h), "bounded");
+      } finally {
+        await f.close();
+      }
+    });
+  }
+}
+
+for (const kind of ["in-process", "websocket"] as const) {
+  test(`${kind}: queued reverse Opens reserve lifetime before concurrent admission`, {
+    timeout: 10_000,
+  }, async () => {
+    const f = await fixture(
+      kind,
+      { admit: () => () => bytes("ok") },
+      async ({ callHost }) => {
+        const calls = await Promise.allSettled(
+          Array.from({ length: 3 }, () => callHost({ workload: "owner" })),
+        );
+        assert.equal(
+          calls.filter((call) => call.status === "fulfilled").length,
+          2,
+        );
+        const refused = calls.find((call) => call.status === "rejected");
+        assert.ok(
+          refused?.status === "rejected" && isHostCallError(refused.reason),
+        );
+        assert.equal(refused.reason.code, "capacity");
+        assert.equal(refused.reason.execution, "not_started");
+        for (const call of calls)
+          if (call.status === "fulfilled")
+            assert.equal(await text(call.value), "ok");
+        return bytes("queued safely");
+      },
+      true,
+      4,
+    );
+    try {
+      assert.equal(await invoke(f.h), "queued safely");
+    } finally {
+      await f.close();
+    }
+  });
+
+  test(`${kind}: forward lifetime rotation leaves reverse slots for the final parent`, {
+    timeout: 10_000,
+  }, async () => {
+    const f = await fixture(
+      kind,
+      { admit: () => () => bytes("ok") },
+      async ({ callHost }) =>
+        bytes(await text(await callHost({ workload: "owner" }))),
+      false,
+      4,
+    );
+    try {
+      assert.equal(await invoke(f.h), "ok");
+      assert.equal(await invoke(f.h), "ok");
+    } finally {
       await f.close();
     }
   });

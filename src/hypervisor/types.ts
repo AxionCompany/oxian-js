@@ -44,6 +44,10 @@ export type WorkerCallOptions = Readonly<{
   admitUnassigned?: WorkerCallAdmission;
   maxConcurrent?: number;
   maxPerConnection?: number;
+  /** Aggregate request bytes per call; defaults to 16 MiB. */
+  maxRequestBytes?: number;
+  /** Aggregate response bytes per call; defaults to 16 MiB. */
+  maxResponseBytes?: number;
   timeoutMs?: number;
 }>;
 
