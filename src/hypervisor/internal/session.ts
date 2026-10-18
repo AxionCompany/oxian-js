@@ -273,6 +273,9 @@ export function createSessionProtocolController(
         }
       }
 
+      // Ready has passed protocol offer/acknowledgement validation. Policy can
+      // reject unsupported workers before routability and ReadyAck.
+      const hostCallCapacity = readHostCallCapacity(frame.metadata);
       if (options.callbacks.onReady !== undefined) {
         await awaitExternal(record, "ready", () =>
           options.callbacks.onReady!(
@@ -285,6 +288,14 @@ export function createSessionProtocolController(
               fence: record.fence!,
               definition: record.definition!,
               metadata: withoutHostCallCapacity(frame.metadata),
+              ...(hostCallCapacity === undefined
+                ? {}
+                : {
+                    workerCalls: Object.freeze({
+                      version: 1 as const,
+                      capacity: hostCallCapacity,
+                    }),
+                  }),
               signal: record.abort.signal,
             }),
           ),
@@ -305,7 +316,6 @@ export function createSessionProtocolController(
       // new work is admitted, so every WorkOpen is ordered after it on wire.
       record.acceptingWork = true;
       await readyAcknowledgement;
-      const hostCallCapacity = readHostCallCapacity(frame.metadata);
       if (hostCallCapacity !== undefined)
         options.workerCalls.attach(record, hostCallCapacity);
       ensureOpen(record);

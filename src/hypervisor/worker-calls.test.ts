@@ -43,41 +43,51 @@ async function bounded<T>(promise: Promise<T>): Promise<T> {
   }
 }
 
-async function fixture(workerCalls: WorkerCallOptions) {
+async function fixture(
+  workerCalls: WorkerCallOptions,
+  callbacks: Parameters<typeof createHypervisor>[1] = {},
+) {
   const workers: ControlledWorker[] = [];
   const generations = new Map<string, number>();
-  const hypervisor = createHypervisor({
-    transports: [{ type: "websocket", config: { path: "/workers" } }],
-    workerCalls: { timeoutMs: 5_000, ...workerCalls },
-    config: { shutdownTimeoutMs: 100, cancellationAckTimeoutMs: 250 },
-    admit: ({ identity, credential }) => {
-      assert.equal(credential.capability, "controlled-test-only");
-      const generation = (generations.get(identity.workerId) ?? 0) + 1;
-      generations.set(identity.workerId, generation);
-      return {
-        definition: {
-          workerId: identity.workerId,
-          providerId: "controlled-test",
-          workloads: ["action"],
-          capacity: 1,
-          providerConfig: {},
-          labels: { owner: identity.workerId },
-        },
-        sessionGeneration: generation,
-        authenticatedWith: credential.kind,
-        resume: {
-          credential: { kind: "resume", capability: "controlled-test-only" },
-          expiresAtMs: Date.now() + 60_000,
-        },
-      };
+  const hypervisor = createHypervisor(
+    {
+      transports: [{ type: "websocket", config: { path: "/workers" } }],
+      workerCalls: { timeoutMs: 5_000, ...workerCalls },
+      config: { shutdownTimeoutMs: 100, cancellationAckTimeoutMs: 250 },
+      admit: ({ identity, credential }) => {
+        assert.equal(credential.capability, "controlled-test-only");
+        const generation = (generations.get(identity.workerId) ?? 0) + 1;
+        generations.set(identity.workerId, generation);
+        return {
+          definition: {
+            workerId: identity.workerId,
+            providerId: "controlled-test",
+            workloads: ["action"],
+            capacity: 1,
+            providerConfig: {},
+            labels: { owner: identity.workerId },
+          },
+          sessionGeneration: generation,
+          authenticatedWith: credential.kind,
+          resume: {
+            credential: { kind: "resume", capability: "controlled-test-only" },
+            expiresAtMs: Date.now() + 60_000,
+          },
+        };
+      },
     },
-  });
+    callbacks,
+  );
   const listener = await serve({ hypervisor });
   const url = new URL("/workers", listener.url);
   url.protocol = "ws:";
   return {
     hypervisor,
-    async connect(workerId = "worker-a", hostCallCapacity = 4) {
+    async connect(
+      workerId = "worker-a",
+      hostCallCapacity: number | null = 4,
+      metadata: JsonObject = {},
+    ) {
       const worker = await connectControlledWorker({
         url,
         identity: { workerId, attemptId: `${workerId}-attempt`, epoch: 7 },
@@ -88,7 +98,10 @@ async function fixture(workerCalls: WorkerCallOptions) {
         handshakeId: crypto.randomUUID(),
         workloads: ["action"],
         capacity: 1,
-        readyMetadata: withHostCallCapacity({}, hostCallCapacity),
+        readyMetadata:
+          hostCallCapacity === null
+            ? metadata
+            : withHostCallCapacity(metadata, hostCallCapacity),
       });
       workers.push(worker);
       return worker;
@@ -469,6 +482,79 @@ test("websocket host calls: negotiated capacity includes cancelled unsettled han
     await completeParent(worker, parent);
   } finally {
     release.resolve();
+    await f.close();
+  }
+});
+
+test("ready policy sees immutable negotiated worker calls separate from peer metadata", async () => {
+  let observed = false;
+  const f = await fixture(
+    { maxPerConnection: 4, admit: () => () => undefined },
+    {
+      onReady(context) {
+        observed = true;
+        assert.deepEqual(context.workerCalls, { version: 1, capacity: 1 });
+        assert.equal(Object.isFrozen(context.workerCalls), true);
+        assert.equal(Object.isFrozen(context), true);
+        assert.deepEqual(context.metadata.workerCalls, {
+          version: 1,
+          capacity: 999,
+        });
+      },
+    },
+  );
+  try {
+    const worker = await f.connect("worker-a", 1, {
+      workerCalls: { version: 1, capacity: 999 },
+    });
+    assert.equal(observed, true);
+    const parent = await startParent(f.hypervisor, worker);
+    await completeParent(worker, parent);
+  } finally {
+    await f.close();
+  }
+});
+
+test("ready policy refuses missing worker calls before acknowledgement or routability", async () => {
+  let observed = false;
+  const f = await fixture(
+    { admit: () => () => undefined },
+    {
+      onReady(context) {
+        observed = true;
+        assert.equal(context.workerCalls, undefined);
+        assert.equal(Object.hasOwn(context, "workerCalls"), false);
+        throw new Error("worker calls required");
+      },
+    },
+  );
+  try {
+    await assert.rejects(
+      f.connect("legacy-worker", null, {
+        workerCalls: { version: 1, capacity: 4 },
+      }),
+    );
+    assert.equal(observed, true);
+    assert.equal(f.hypervisor.snapshot().sessions, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("ready policy can retain ordinary-only workers without claiming reverse capability", async () => {
+  const f = await fixture(
+    { admit: () => () => undefined },
+    {
+      onReady(context) {
+        assert.equal(context.workerCalls, undefined);
+      },
+    },
+  );
+  try {
+    const worker = await f.connect("worker-a", null);
+    const parent = await startParent(f.hypervisor, worker);
+    await completeParent(worker, parent);
+  } finally {
     await f.close();
   }
 });
