@@ -290,3 +290,72 @@ Test crash points before dispatch, after acceptance ACK, during the durable
 acceptance callback, after Start, and after idempotent output but before
 external settlement. Run the same behavioral suite through in-process and WSS
 transports.
+
+## Local sibling development with the npm artifact
+
+From an Oxian checkout with its development dependencies installed, use Node 24
+and npm to package unpublished changes:
+
+```sh
+node scripts/pack-sibling.mjs
+# Or get the tarball path, version, Git revision and npm integrity as JSON:
+node scripts/pack-sibling.mjs --json
+```
+
+The script can also be called by absolute or sibling path from another directory.
+It uses the existing npm builder and public export map, then runs `npm pack` with
+lifecycle scripts disabled. It only rebuilds Oxian's ignored `build/npm` and
+writes a tarball under ignored `build/siblings`. It never installs into a
+consumer, edits dependency pins or lockfiles, creates global npm links, runs a
+consumer's scripts, or publishes. Build progress goes to stderr; stdout is the
+absolute tarball path (or JSON). The filename includes a content digest, so two
+uncommitted builds at the same Git revision cannot reuse a stale tarball path.
+Rebuild after changing Oxian; existing tarballs are snapshots, not live links.
+
+### Explicit, temporary install in a standalone npm consumer
+
+Use a disposable consumer checkout with a valid, unchanged `package-lock.json`.
+The following commands are run in that consumer, with Oxian at `../oxian-js`:
+
+```sh
+set -e
+# This step builds Oxian only and prints the artifact path.
+tarball="$(node ../oxian-js/scripts/pack-sibling.mjs)"
+# This separate opt-in step changes the consumer's node_modules only.
+npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund "$tarball"
+# Run the consumer's chosen tests explicitly, then restore the locked packages:
+npm ci --ignore-scripts --no-audit --no-fund
+# Neither operation should have changed these tracked files:
+git diff --exit-code -- package.json package-lock.json
+```
+
+Install may download the artifact's declared dependencies. Both install and
+restore suppress lifecycle scripts; if the consumer requires a build step, run
+only the specific step you intend. `npm ci` replaces `node_modules` and removes
+other local links or unsaved installs too, which is why a disposable checkout is
+recommended. If a test fails, run the restore command separately before returning
+to normal development. A later ordinary npm install can also replace the local
+artifact. Never commit tarballs, local file paths or temporary dependency links.
+CI continues to resolve the committed published dependency pins.
+
+This supported flow currently covers standalone npm consumers. Do not assume
+that adding `--workspace` replaces the package selected by a nested workspace:
+that behavior did not hold in the workspace fixture. The full cross-repository
+npm workspace/path-override rollout remains separate work. A Copilotz checkout
+that has no npm manifest must continue to use its documented source-test launcher;
+those source tests do not prove installed-package compatibility. This helper does
+not create or migrate a Copilotz manifest.
+
+### Verify the local package flow
+
+```sh
+node --test scripts/pack-sibling.test.ts
+npm run prove:npm
+```
+
+The script tests cover cwd independence, paths with spaces, disabled lifecycle
+scripts, unchanged consumer manifests/lockfiles, content-addressed dirty builds,
+and restoration to locked packages. `prove:npm` uses the same pack helper, installs
+into an isolated temporary consumer, checks public JS and declaration exports,
+and exercises in-process and Node WebSocket worker-to-host calls. It makes no
+registry write and removes the temporary consumer afterward.
