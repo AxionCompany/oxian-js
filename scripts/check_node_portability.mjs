@@ -14,6 +14,11 @@ for (const name of [
   "createWorkerHost",
   "createWorkerClient",
   "createFileRouter",
+  "defineConfig",
+  "loadConfig",
+  "defineApplicationFactory",
+  "loadApplicationFactory",
+  "createConfiguredApplication",
   "createLocalProcessProvider",
   "createLocalRuntime",
 ]) {

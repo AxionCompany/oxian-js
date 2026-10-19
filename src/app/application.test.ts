@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assertRejects, assertThrows } from "../support/assert.ts";
-import { createApplication } from "../../src/app/application.ts";
-import { defineApplicationFactory } from "../../src/app/factory.ts";
+import { assertRejects, assertThrows } from "../../tests/support/assert.ts";
+import { createApplication } from "./application.ts";
+import { defineApplicationFactory } from "./factory.ts";
 import type {
   CompiledRoute,
   FileRouter,
   RouteMiddleware,
-} from "../../src/router/types.ts";
+} from "../router/types.ts";
 
 function createTestRouter<State>(
   methods: CompiledRoute<State>["methods"],

@@ -1,4 +1,9 @@
-import { dirname, fromFileUrl, resolve, toFileUrl } from "@std/path";
+import {
+  dirname,
+  fromFileUrl,
+  resolve,
+  toFileUrl,
+} from "../adapters/node/config-path.ts";
 import type {
   LoadConfigSource,
   OxianConfig,

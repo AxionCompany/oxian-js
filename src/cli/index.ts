@@ -3,7 +3,7 @@ import { loadConfig } from "../config/config.ts";
 import { createLocalRuntime } from "../local/runtime.ts";
 import { loadWorkerManifest } from "../local/worker_manifest.ts";
 import { createManifestWorkerRuntime } from "../local/worker_runtime.ts";
-import { createFileRouter } from "../router/file_router.ts";
+import { createFileRouter } from "../router/file-router.ts";
 import {
   runCheckCommand,
   runInitCommand,

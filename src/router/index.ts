@@ -1,4 +1,4 @@
-export { createFileRouter } from "./file_router.ts";
+export { createFileRouter } from "./file-router.ts";
 
 export {
   type CatchallRouteSegment,
