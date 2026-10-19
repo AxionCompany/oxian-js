@@ -7,7 +7,9 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -108,7 +110,9 @@ test("sibling pack is cwd-independent, skips lifecycle scripts and names dirty b
     assert.equal(result.version, "0.22.0-next.abcdef0");
     assert.match(result.revision, /^[0-9a-f]{40}$/);
     assert.match(result.integrity, /^sha512-/);
-    assert.ok(result.tarball.startsWith(join(f.root, "build/siblings/")));
+    assert.ok(
+      result.tarball.startsWith(join(realpathSync(f.root), "build/siblings/")),
+    );
     assert.ok(existsSync(result.tarball));
     const second = f.run([], consumer);
     assert.equal(second.status, 0, second.stderr);
@@ -228,6 +232,25 @@ test("opt-in tarball override leaves pins and lock unchanged and npm ci restores
       paths.map((path) => readFileSync(path, "utf8")),
       before,
     );
+  } finally {
+    f.close();
+  }
+});
+
+// Node resolves the module URL to its real path, but argv retains symlinks.
+test("sibling CLI runs through a symlinked checkout path", () => {
+  const f = fixture();
+  try {
+    const alias = join(f.directory, "checkout-alias");
+    symlinkSync(f.root, alias, "dir");
+    const result = spawnSync(
+      "node",
+      [join(alias, "scripts/pack-sibling.mjs"), "--help"],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /pack-sibling\.mjs/);
+    assert.equal(existsSync(join(f.root, "build")), false);
   } finally {
     f.close();
   }
