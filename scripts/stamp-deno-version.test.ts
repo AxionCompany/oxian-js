@@ -109,12 +109,8 @@ test("stable releases publish from the trusted workflow only after tag validatio
   const step = (text: string) => release.indexOf(text);
   const publish = step("npm publish --provenance --access public\n");
   assert.ok(publish > 0);
-  for (
-    const before of [
-      "validate_publish_release.ts",
-      "actions/workflows/verify.yml/runs",
-    ]
-  ) {
+  const gates = ["validate_publish_release.ts", "verify.yml/runs"];
+  for (const before of gates) {
     assert.ok(step(before) > 0 && step(before) < publish, before);
   }
   // One publishing path: npm trusts a single workflow file for this package.
