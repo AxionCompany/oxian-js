@@ -51,6 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
       id-token: write
     steps:
       - uses: actions/checkout@v6
@@ -67,10 +68,15 @@ jobs:
           "${{ github.ref_name }}" "${{ github.ref }}"
       - name: Install Node toolchain
         run: npm ci
-      - name: Verify package
-        run: deno task verify
-      - name: Verify Node package
-        run: npm run check && npm test && npm run prove:npm
+      # main's Verify already ran the Deno, Node and installed-package proofs on
+      # this exact commit; publish only that verified revision, without rerunning.
+      - name: Require a successful Verify for this exact main revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/verify.yml/runs?head_sha=${GITHUB_SHA}&event=push&per_page=100" \
+            | jq --exit-status --arg sha "$GITHUB_SHA" \
+              'any(.workflow_runs[]; .head_sha == $sha and .head_branch == "main" and .status == "completed" and .conclusion == "success")'
       - name: Build the npm package
         run: node scripts/build_npm.mjs
       - name: Publish package

@@ -90,7 +90,7 @@ test("privileged prerelease workflow only accepts successful same-repository mai
   assert.match(workflow, /npm publish --provenance --access public --tag next/);
 });
 
-test("stable releases publish from the trusted workflow only after tag validation and verification", () => {
+test("stable releases publish from the trusted workflow only after tag validation and a verified main revision", () => {
   const workflow = readFileSync(
     new URL("../.github/workflows/prerelease.yml", import.meta.url),
     "utf8",
@@ -109,7 +109,12 @@ test("stable releases publish from the trusted workflow only after tag validatio
   const step = (text: string) => release.indexOf(text);
   const publish = step("npm publish --provenance --access public\n");
   assert.ok(publish > 0);
-  for (const before of ["validate_publish_release.ts", "deno task verify"]) {
+  for (
+    const before of [
+      "validate_publish_release.ts",
+      "actions/workflows/verify.yml/runs",
+    ]
+  ) {
     assert.ok(step(before) > 0 && step(before) < publish, before);
   }
   // One publishing path: npm trusts a single workflow file for this package.
