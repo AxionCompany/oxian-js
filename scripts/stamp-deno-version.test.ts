@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
-  mkdtempSync,
+  existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -77,6 +78,7 @@ test("privileged prerelease workflow only accepts successful same-repository mai
   assert.deepEqual(
     guard.split("&&").map((part) => part.trim()),
     [
+      "github.event_name == 'workflow_run'",
       "github.event.workflow_run.conclusion == 'success'",
       "github.event.workflow_run.event == 'push'",
       "github.event.workflow_run.head_repository.full_name == github.repository",
@@ -86,4 +88,33 @@ test("privileged prerelease workflow only accepts successful same-repository mai
   );
   assert.match(workflow, /ref: \$\{\{ github.event.workflow_run.head_sha \}\}/);
   assert.match(workflow, /npm publish --provenance --access public --tag next/);
+});
+
+test("stable releases publish from the trusted workflow only after tag validation and verification", () => {
+  const workflow = readFileSync(
+    new URL("../.github/workflows/prerelease.yml", import.meta.url),
+    "utf8",
+  );
+  const release = workflow.split("\n  release:\n")[1];
+  assert.ok(release, "release job lives in the trusted workflow file");
+  const guard = release.match(/if: >-\n([\s\S]*?)\n {4}#/)?.[1];
+  assert.ok(guard);
+  assert.deepEqual(
+    guard.split("&&").map((part) => part.trim()),
+    [
+      "github.event_name != 'workflow_run'",
+      "github.repository == 'AxionCompany/oxian-js'",
+    ],
+  );
+  const step = (text: string) => release.indexOf(text);
+  const publish = step("npm publish --provenance --access public\n");
+  assert.ok(publish > 0);
+  for (const before of ["validate_publish_release.ts", "deno task verify"]) {
+    assert.ok(step(before) > 0 && step(before) < publish, before);
+  }
+  // One publishing path: npm trusts a single workflow file for this package.
+  assert.equal(
+    existsSync(new URL("../.github/workflows/publish.yml", import.meta.url)),
+    false,
+  );
 });
