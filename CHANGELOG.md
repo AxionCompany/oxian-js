@@ -1,6 +1,6 @@
 # oxianjs
 
-## 0.23.0 (unreleased)
+## 0.23.0
 
 - Fix CLI shutdown after abrupt WebSocket disconnection or use of the WebSocket
   worker transport. Disable Deno's retained native idle timers on listener-owned

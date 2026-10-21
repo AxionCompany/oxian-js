@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.22.0/hypervisor`
+# `jsr:@oxian/oxian-js@0.23.0/hypervisor`
 
 The Hypervisor hosts declared Worker transports, admits fenced sessions, assigns
 work, and owns process-local drain/shutdown. It does not own a network listener
@@ -28,7 +28,7 @@ import {
   createHypervisor,
   type Hypervisor,
   type HypervisorOptions,
-} from "jsr:@oxian/oxian-js@0.22.0/hypervisor";
+} from "jsr:@oxian/oxian-js@0.23.0/hypervisor";
 
 const local = {
   type: "in-process",
