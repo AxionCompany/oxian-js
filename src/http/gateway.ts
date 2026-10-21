@@ -145,6 +145,7 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
       : encodeHttpRequestMetadata(request, createRequestId());
     const pending = upgrading ? upgradeWebSocket(request) : undefined;
     const tunnel = pending ? acceptedWebSocket(pending.response)! : undefined;
+    if (tunnel) tunnel.nativeRole = "tunnel";
     const deadlineAtMs = validateDeadline(options.deadlineAtMs?.(request));
     const body =
       tunnel?.output ??

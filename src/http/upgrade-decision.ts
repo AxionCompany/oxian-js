@@ -17,7 +17,7 @@ export async function resolveRouteDecision(
   return {
     kind: "upgrade",
     protocol: socket.protocol,
-    attach: (connection) => socket.attach(connection),
+    attach: (connection) => socket.attach(connection, socket.nativeRole),
     cancel: () => socket.fail(),
   };
 }

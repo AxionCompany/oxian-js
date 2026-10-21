@@ -14,6 +14,7 @@ import type { Duplex } from "node:stream";
 import { Readable } from "node:stream";
 import { finished, pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
+// @deno-types="npm:@types/ws@8.18.2"
 import { WebSocketServer } from "ws";
 import {
   createConnectionBudget,

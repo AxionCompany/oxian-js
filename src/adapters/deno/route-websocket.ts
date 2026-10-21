@@ -1,3 +1,4 @@
+// @deno-types="npm:@types/ws@8.18.2"
 import { WebSocket as NativeClient } from "ws";
 import type { HttpFetchHandler } from "../../http/types.ts";
 import { adaptWebSocket } from "../../transport/socket.ts";

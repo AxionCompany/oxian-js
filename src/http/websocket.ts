@@ -62,7 +62,9 @@ type RouteWebSocketSession = RouteWebSocket & {
   activate(): void;
   fail(code?: number, reason?: string): void;
   receive(input: ReadableStream<Uint8Array>): Promise<void>;
-  attach(connection: SocketConnection): void;
+  /** Listener acceptances are either a local endpoint or a worker tunnel. */
+  nativeRole: "endpoint" | "tunnel";
+  attach(connection: SocketConnection, role?: "endpoint" | "tunnel"): void;
 };
 
 export function createRouteWebSocket(
@@ -276,7 +278,20 @@ export function createRouteWebSocket(
   }
 
   /** Connect the route endpoint to a native listener or native worker socket. */
-  function attach(connection: SocketConnection): void {
+  function attach(
+    connection: SocketConnection,
+    role: "endpoint" | "tunnel" = "tunnel",
+  ): void {
+    if (role === "endpoint") {
+      // The native peer faces the other end of a local route. Reuse the bounded
+      // duplex codec rather than wiring native input back into route output.
+      const peer = createRouteWebSocket(request, selectedProtocol);
+      peer.addEventListener("open", activate, { once: true });
+      void receive(peer.output);
+      void peer.receive(output);
+      peer.attach(connection);
+      return;
+    }
     let pendingClose: { code: number; reason: string } | undefined =
       readyState >= 2
         ? { code: 1011, reason: "Route socket cancelled" }
@@ -307,7 +322,7 @@ export function createRouteWebSocket(
       },
       error: () => fail(),
     });
-    const message = (event: Event) => {
+    const message: Parameters<typeof events.addEventListener>[1] = (event) => {
       const data = (event as MessageEvent).data as string | ArrayBuffer;
       if (
         typeof data === "string" &&
@@ -377,6 +392,7 @@ export function createRouteWebSocket(
     fail,
     receive,
     attach,
+    nativeRole: "endpoint",
   };
   const abort = () => fail();
   request.signal.addEventListener("abort", abort, { once: true });
