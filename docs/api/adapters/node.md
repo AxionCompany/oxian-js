@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.23.0/adapters/node`
+# `jsr:@oxian/oxian-js@0.23.1/adapters/node`
 
 This explicit runtime adapter owns a Node `node:http` listener and its WebSocket
 upgrades (through `ws`). It never creates or shuts down an injected Hypervisor.
@@ -9,8 +9,8 @@ Exports: `serve`, `NodeServeOptions`, `CONNECTION_BUDGET`,
 ## Own a listener
 
 ```ts
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.0/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.23.0/adapters/node";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.1/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.23.1/adapters/node";
 
 const hypervisor = createHypervisor({
   transports: [{

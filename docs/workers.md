@@ -23,7 +23,7 @@ use `stop()` for explicit ownership cleanup.
 Use one visible declaration for both roles:
 
 ```ts
-import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.23.0";
+import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.23.1";
 
 const transport = {
   type: "in-process",
@@ -97,7 +97,7 @@ drain, and shutdown remain authoritative.
 Only the physical transport and lifecycle integrations change:
 
 ```ts
-import { createWorker } from "jsr:@oxian/oxian-js@0.23.0/worker";
+import { createWorker } from "jsr:@oxian/oxian-js@0.23.1/worker";
 
 const worker = createWorker(
   {
@@ -221,7 +221,7 @@ buffered amount, and protocol admission. A `WorkerWebSocketFactory` and
 `WorkerWebSocketFactoryContext` may create an authenticated native socket:
 
 ```ts
-import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.23.0/transport";
+import type { WorkerWebSocketFactory } from "jsr:@oxian/oxian-js@0.23.1/transport";
 
 const socket: WorkerWebSocketFactory = async ({ url, protocol, signal }) => {
   const token = await identityToken(url, signal);

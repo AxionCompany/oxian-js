@@ -135,6 +135,82 @@ export function routeWebSocketCases(
       };
     };
 
+    for (const trigger of ["message", "HTTP"] as const) {
+      test(`${adapter}/${transport}: ${trigger} route close preserves concurrent HTTP response and worker`, async () => {
+        let closeRoute: () => void;
+        let output: ReadableStreamDefaultController<Uint8Array>;
+        const h = await harness((request) => {
+          if (request.headers.get("upgrade") === "websocket") {
+            const { socket, response } = upgrade(request);
+            closeRoute = () => {
+              socket.send(JSON.stringify({ t: "session", state: "revoked" }));
+              socket.close(4401, "Session revoked");
+            };
+            socket.onmessage = closeRoute;
+            return response;
+          }
+          if (new URL(request.url).pathname === "/logout") {
+            closeRoute();
+            return new Response("logged out");
+          }
+          if (new URL(request.url).pathname === "/observe") {
+            return new Response(
+              new ReadableStream<Uint8Array>({
+                start(controller) {
+                  output = controller;
+                  controller.enqueue(new TextEncoder().encode("completed"));
+                },
+              }),
+            );
+          }
+          return new Response("healthy");
+        });
+        let client: WebSocket | undefined;
+        try {
+          for (let iteration = 0; iteration < 3; iteration++) {
+            const response = await deadline(
+              fetch(new URL("/observe", h.listener.url)),
+            );
+            const body = response.text();
+            void body.catch(() => {});
+            const url = new URL("/socket", h.listener.url);
+            url.protocol = "ws:";
+            client = new WebSocket(url);
+            client.on("error", () => {});
+            await deadline(
+              new Promise<void>((resolve, reject) => {
+                client!.once("open", resolve);
+                client!.once("error", reject);
+              }),
+            );
+            const closed = new Promise<number>((resolve) =>
+              client!.once("close", resolve),
+            );
+            if (trigger === "HTTP") {
+              assert.equal(
+                await (
+                  await deadline(fetch(new URL("/logout", h.listener.url)))
+                ).text(),
+                "logged out",
+              );
+            } else client.send("logout");
+            assert.equal(await deadline(closed), 4401);
+            // Allow terminal frames and crossing credit to reach the worker.
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            assert.equal(
+              await (await deadline(fetch(h.listener.url))).text(),
+              "healthy",
+            );
+            output!.close();
+            assert.equal(await deadline(body), "completed");
+          }
+        } finally {
+          client?.terminate();
+          await h.close();
+        }
+      });
+    }
+
     test(`${adapter}/${transport}: route accepts only after admission; original request, text, binary, close and HTTP`, async () => {
       let requestSeen: Request | undefined;
       let address: string | undefined;

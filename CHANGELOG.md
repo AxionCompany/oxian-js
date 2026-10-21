@@ -1,5 +1,14 @@
 # oxianjs
 
+## 0.23.1
+
+- Fix unrelated HTTP work aborting after a route WebSocket closes. A late
+  flow-control credit already validated as discard or deliver no longer
+  disconnects the worker with `invalid_state`, and a queued send cancelled by
+  its own stream's end rejects only that send instead of failing the shared
+  worker transport. Unknown-stream and post-terminal protocol rejection are
+  unchanged.
+
 ## 0.23.0
 
 - Fix CLI shutdown after abrupt WebSocket disconnection or use of the WebSocket
