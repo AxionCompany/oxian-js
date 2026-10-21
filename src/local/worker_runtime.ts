@@ -1,3 +1,4 @@
+import { hostWebSocket } from "../adapters/deno/route-websocket.ts";
 import { createConfiguredApplication } from "../app/configured.ts";
 import type { Application } from "../app/types.ts";
 import { loadConfig } from "../config/config.ts";
@@ -147,7 +148,10 @@ export function createManifestWorkerRuntime(
           lifecycleAbort.signal.throwIfAborted();
         }
         application = configuredApplication;
-        const workload = createHttpWorkload({ fetch: application.fetch });
+        const workload = createHttpWorkload({
+          fetch: application.fetch,
+          hostWebSocket,
+        });
 
         let credential = manifest.credential;
         let handshakeId = manifest.handshakeId;

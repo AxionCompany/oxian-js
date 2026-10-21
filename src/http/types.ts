@@ -45,4 +45,9 @@ export type HttpFetchHandler = (
 
 export type HttpWorkloadOptions = Readonly<{
   fetch: HttpFetchHandler;
+  /** Runtime adapter host for native upgrades; portable routes need no hook. */
+  hostWebSocket?: (
+    request: Request,
+    fetch: HttpFetchHandler,
+  ) => Promise<Response>;
 }>;

@@ -3,9 +3,9 @@
 The Node 24+ npm package exposes the same API at `oxianjs/config`. Local path
 operations use an internal Node adapter that also works in Deno. `loadConfig`
 still accepts only `.ts` modules: use erasable TypeScript and ESM imports, keep
-these modules outside `node_modules`, and set `"type": "module"` in the containing
-`package.json`. Config validation and module-relative path resolution are
-unchanged. Config loading is not exported from the portable root.
+these modules outside `node_modules`, and set `"type": "module"` in the
+containing `package.json`. Config validation and module-relative path resolution
+are unchanged. Config loading is not exported from the portable root.
 
 [Back to the API reference](../api-reference.md)
 
@@ -451,3 +451,24 @@ environment substitution, or merge occurs.
 Invalid source selection, export shape, or configuration rejects with
 `TypeError`. Filesystem, dynamic-import, parse, and module-evaluation failures
 reject unchanged.
+
+## Route WebSockets (unreleased)
+
+There is no upgrade enablement flag. Both `gateway.workerTransport` values
+(`"in-process"` and `"websocket"`) support accepted route upgrades. Each live
+route socket reserves one `gateway.workerCapacity` slot. Size capacity for
+long-lived sockets as well as ordinary HTTP requests. An upgrade refusal
+releases the execution normally; worker loss closes accepted sockets with an
+error.
+
+The listener connection budget counts pending and accepted WebSocket upgrades,
+including internal worker sockets. `serve({ hypervisor, budget })` on either
+adapter accepts a shared `ConnectionBudget` from `/http` (also exported by the
+Node adapter). The default and hard maximum are 1,000; closed/refused sockets
+release their leases. HTTP requests do not consume this WebSocket budget.
+
+`ROUTE_WEBSOCKET_LIMITS` from `/http` fixes message size at 256 KiB, pending
+output at 1 MiB and 64 messages, and native pending sends at 1 MiB. Transport
+credit windows remain governed by the existing hypervisor/worker limits. Node
+checks fragmented message size before delivery; Deno checks complete native
+messages and cannot bound native reassembly through its public WebSocket API.

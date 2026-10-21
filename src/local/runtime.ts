@@ -1,3 +1,4 @@
+import { hostWebSocket } from "../adapters/deno/route-websocket.ts";
 import { createConfiguredApplication } from "../app/configured.ts";
 import type { Application } from "../app/types.ts";
 import { createHttpGateway } from "../http/gateway.ts";
@@ -215,7 +216,10 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntime {
           lifecycleAbort.signal.throwIfAborted();
         }
         resources.application = application;
-        const workload = createHttpWorkload({ fetch: application.fetch });
+        const workload = createHttpWorkload({
+          fetch: application.fetch,
+          hostWebSocket,
+        });
 
         const workerLifecycle = createEphemeralWorkerLifecycle();
         const dispatchReference: { current?: HttpDispatch } = {};

@@ -1,3 +1,9 @@
+import {
+  decodeUpgradeRequest,
+  UPGRADE_REQUEST_SCHEMA,
+  UPGRADE_RESPONSE_SCHEMA,
+} from "./upgrade-metadata.ts";
+import { acceptedWebSocket, setClientAddress } from "./websocket.ts";
 import type { WorkerWorkHandler } from "../worker/types.ts";
 import { rechunkHttpBody } from "./body.ts";
 import {
@@ -21,7 +27,10 @@ export function createHttpWorkload(
   const workload: WorkerWorkHandler = async (context) => {
     let metadata: HttpRequestMetadata;
     try {
-      metadata = decodeHttpRequestMetadata(context.metadata);
+      metadata =
+        context.metadata.schema === UPGRADE_REQUEST_SCHEMA
+          ? decodeUpgradeRequest(context.metadata).request
+          : decodeHttpRequestMetadata(context.metadata);
     } catch (error) {
       await context.input.cancel(error).catch(() => undefined);
       throw error;
@@ -42,7 +51,36 @@ export function createHttpWorkload(
       throw error;
     }
 
-    const response = await options.fetch(request);
+    if (context.metadata.schema === UPGRADE_REQUEST_SCHEMA) {
+      const address = decodeUpgradeRequest(context.metadata).clientAddress;
+      if (typeof address === "string") setClientAddress(request, address);
+    }
+    const response =
+      context.metadata.schema === UPGRADE_REQUEST_SCHEMA &&
+      options.hostWebSocket
+        ? await options.hostWebSocket(request, options.fetch)
+        : await options.fetch(request);
+    const socket = acceptedWebSocket(response);
+    if (socket) {
+      if (
+        context.metadata.schema !== UPGRADE_REQUEST_SCHEMA ||
+        (!options.hostWebSocket && socket.request !== request)
+      ) {
+        socket.fail();
+        throw new TypeError(
+          "WebSocket acceptance does not belong to this request",
+        );
+      }
+      socket.activate();
+      void socket.receive(context.input);
+      return {
+        metadata: {
+          schema: UPGRADE_RESPONSE_SCHEMA,
+          protocol: socket.protocol,
+        },
+        body: socket.output,
+      };
+    }
     if (!(response instanceof Response)) {
       throw new TypeError("HTTP workload fetch must return a Response");
     }

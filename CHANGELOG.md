@@ -1,5 +1,17 @@
 # oxianjs
 
+## 0.23.0 (unreleased)
+
+- Add portable route WebSocket acceptance and peer-address access, with delayed
+  client handshakes, refusal statuses, text/binary messages, close propagation,
+  bounded work-stream envelopes, and worker-lifetime cancellation.
+- Support both worker transports and both listener adapters. Share connection
+  budgets across pending upgrades, route sockets and worker sockets.
+- Host native Deno upgrade routes in local and manifest runtimes. Ordinary HTTP
+  metadata remains strict; status 101 is only an upgrade acceptance.
+- Node enforces inbound fragmented-message bounds. Deno native delivery is
+  bounded after reassembly; its public API cannot cap native reassembly memory.
+
 ## 0.22.0
 
 ### Minor Changes

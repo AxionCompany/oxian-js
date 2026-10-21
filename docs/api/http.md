@@ -338,3 +338,38 @@ Invalid request metadata cancels the unread operation input before the error is
 re-thrown. Invalid response metadata similarly cancels the response body. The
 workload does not buffer either direction and does not interpret application
 payloads.
+
+## Route upgrades (unreleased)
+
+`upgradeWebSocket` accepts `(request, { protocol? })` returns
+`{ socket, response }`. Return the opaque response unchanged after admission.
+`RouteWebSocket` is the socket contract: `onopen`, `onmessage`, `onclose`,
+`onerror`, EventTarget listeners, `readyState`, `bufferedAmount`, `protocol`,
+`binaryType`, `send`, and `close`. Text and ArrayBuffer/typed-array sends are
+supported; Blob sends are rejected. See
+[WebSocket routes](../application.md#websocket-routes-unreleased).
+
+`getClientAddress` called with a request returns the trusted peer IP supplied by
+the listener, or undefined when no listener supplied it. It never trusts
+forwarding headers. `ROUTE_WEBSOCKET_LIMITS` exposes message (256 KiB), queued
+byte (1 MiB), and queued message (64) bounds. Native send buffers have the same
+byte bound.
+
+`createHttpGateway` and `createHttpWorkload` automatically exchange a distinct
+upgrade envelope for GET WebSocket requests. Acceptance has a separate schema;
+ordinary HTTP metadata continues to require status 200–599. Refusals retain
+their HTTP status. Transport chunks carry bounded text, binary and close
+envelopes; worker credit and cancellation continue to apply for the entire
+socket lifetime.
+
+`HttpWorkloadOptions.hostWebSocket(request, fetch)` is the optional
+runtime-native hosting boundary. The Deno adapter supplies it for handlers using
+the native upgrade API. Portable handlers do not require it. Hosts are trusted
+to invoke Fetch with the original public request fields and return either its
+refusal or an acceptance capability.
+
+`CONNECTION_BUDGET` is 1,000. `createConnectionBudget` called with an optional
+maximum creates a shared `ConnectionBudget`; `connect()` returns an idempotently
+releasable `ConnectionLease`. `snapshot()` reports connections and capacity;
+`close()` refuses new leases. Both adapters accept this budget in their serve
+options.

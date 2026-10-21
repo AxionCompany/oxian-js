@@ -74,6 +74,10 @@ function withHeaders(
   response: Response,
   update: (headers: Headers) => void,
 ): Response {
+  if (response.status === 101) {
+    update(response.headers);
+    return response;
+  }
   const headers = copyHeaders(response.headers);
   update(headers);
   return new Response(response.body, {
