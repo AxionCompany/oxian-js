@@ -132,6 +132,28 @@ function createCallbackWireConnection(): Readonly<{
   });
 }
 
+test("cancelling an unsent control frame preserves the shared transport", async () => {
+  const wire = createCallbackWireConnection();
+  const transport = await createTestTransport({
+    socket: wire.connection,
+    role: "worker",
+  });
+  const abort = new AbortController();
+  abort.abort("operation_cancelled");
+  try {
+    await assert.rejects(
+      transport.sendControl(HELLO, { signal: abort.signal }),
+      (error: unknown) => error === "operation_cancelled",
+    );
+    assert.equal(wire.connection.state, "open");
+    assert.equal(wire.sent.length, 0);
+    await transport.sendControl(HELLO);
+    assert.equal(wire.sent.length, 1);
+  } finally {
+    await transport.close();
+  }
+});
+
 test("transport accepts a callback-based runtime wire connection", async () => {
   const wire = createCallbackWireConnection();
   const transport = await createTestTransport({

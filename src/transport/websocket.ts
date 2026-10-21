@@ -583,7 +583,15 @@ export function createProtocolTransport(
           },
         });
       } catch (error) {
-        if (!isProtocolViolation(error)) failTransport(error);
+        // Cancelling a queued, unsent frame cancels only that operation.
+        // No protocol state or wire bytes have changed before beforeSend.
+        const cancelledBeforeSend =
+          acceptance === undefined &&
+          sendOptions.signal?.aborted &&
+          error === sendOptions.signal.reason;
+        if (!cancelledBeforeSend && !isProtocolViolation(error)) {
+          failTransport(error);
+        }
         throw error;
       }
       return acceptance!;
@@ -627,7 +635,15 @@ export function createProtocolTransport(
           },
         });
       } catch (error) {
-        if (!isProtocolViolation(error)) failTransport(error);
+        // Cancelling a queued, unsent frame cancels only that operation.
+        // No protocol state or wire bytes have changed before beforeSend.
+        const cancelledBeforeSend =
+          acceptance === undefined &&
+          sendOptions.signal?.aborted &&
+          error === sendOptions.signal.reason;
+        if (!cancelledBeforeSend && !isProtocolViolation(error)) {
+          failTransport(error);
+        }
         throw error;
       }
       return acceptance!;

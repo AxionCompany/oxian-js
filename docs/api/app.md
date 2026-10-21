@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.23.0/app`
+# `jsr:@oxian/oxian-js@0.23.1/app`
 
 The Node 24+ npm package exposes this complete API at `oxianjs/app`, including
 factory loading and configured-application composition. Its host path operations
@@ -21,7 +21,7 @@ import {
   createApplication,
   createServerSentEvents,
   defineApplicationFactory,
-} from "jsr:@oxian/oxian-js@0.23.0/app";
+} from "jsr:@oxian/oxian-js@0.23.1/app";
 ```
 
 ## Export summary
@@ -69,8 +69,8 @@ supplied `FileRouter` is already a startup snapshot: route modules are not
 loaded by this function or during requests.
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.23.0/app";
-import { createFileRouter } from "jsr:@oxian/oxian-js@0.23.0/router";
+import { createApplication } from "jsr:@oxian/oxian-js@0.23.1/app";
+import { createFileRouter } from "jsr:@oxian/oxian-js@0.23.1/router";
 
 const router = await createFileRouter<{ startedAt: number }>({
   root: "./routes",
@@ -319,7 +319,7 @@ Cleanup failure never replaces the boundary validation error.
 import {
   createApplication,
   defineApplicationFactory,
-} from "jsr:@oxian/oxian-js@0.23.0/app";
+} from "jsr:@oxian/oxian-js@0.23.1/app";
 
 export default defineApplicationFactory(
   ({ router, basePath }) =>
@@ -446,7 +446,7 @@ Writes are serialized and honor stream backpressure:
 `options.retry` queues an initial retry field before later writes.
 
 ```ts
-import { createServerSentEvents } from "jsr:@oxian/oxian-js@0.23.0/app";
+import { createServerSentEvents } from "jsr:@oxian/oxian-js@0.23.1/app";
 
 const events = createServerSentEvents({
   signal: request.signal,

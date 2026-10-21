@@ -580,6 +580,12 @@ export function createWorkStreamController(
     }
     const pending = record.pending.get(frame.streamId);
     if (pending === undefined) {
+      // Only protocol-validated frames reach this handler. Credit can cross
+      // End/End, or be queued as deliver before completion deletes pending.
+      // Either way, completed work has no input left to grant credit to.
+      if (frame.type === "work.credit") {
+        return true;
+      }
       if (
         disposition === "discard" &&
         (frame.type === "work.cancel" || frame.type === "work.error")
