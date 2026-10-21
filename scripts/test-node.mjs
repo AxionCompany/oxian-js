@@ -16,7 +16,10 @@ const DENO_ONLY = new Set([
   "tests/edge/static_test.ts",
   "tests/exports/public_exports_test.ts",
   "tests/http/wss_tls_integration_test.ts",
+  "tests/http/direct_route_websocket_test.ts",
+  "tests/http/shutdown_process_test.ts",
   "tests/local/edge_test.ts",
+  "tests/local/route_websocket_test.ts",
   "tests/providers/local_process_test.ts",
   "tests/release/publish_contract_test.ts",
 ]);

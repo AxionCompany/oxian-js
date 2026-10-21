@@ -1,3 +1,4 @@
+import type { ConnectionBudget } from "../../http/connection-budget.ts";
 import type {
   Hypervisor,
   HypervisorListenOptions,
@@ -5,5 +6,6 @@ import type {
 
 export type DenoServeOptions = Readonly<{
   hypervisor: Hypervisor;
+  budget?: ConnectionBudget;
 }> &
   HypervisorListenOptions;

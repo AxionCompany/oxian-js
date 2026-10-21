@@ -1,5 +1,25 @@
 # oxianjs
 
+## 0.23.0
+
+- Fix CLI shutdown after abrupt WebSocket disconnection or use of the WebSocket
+  worker transport. Disable Deno's retained native idle timers on listener-owned
+  upgrades; worker heartbeat/lease checks remain active. Both listeners allow a
+  250 ms close handshake before forcing remaining connections closed. Native
+  Deno route hosts close their private peers gracefully with the same bound.
+  Shutdown awaits resource cleanup and app disposal without forcing process
+  exit.
+
+- Add portable route WebSocket acceptance and peer-address access, with delayed
+  client handshakes, refusal statuses, text/binary messages, close propagation,
+  bounded work-stream envelopes, and worker-lifetime cancellation.
+- Support both worker transports and both listener adapters. Share connection
+  budgets across pending upgrades, route sockets and worker sockets.
+- Host native Deno upgrade routes in local and manifest runtimes. Ordinary HTTP
+  metadata remains strict; status 101 is only an upgrade acceptance.
+- Node enforces inbound fragmented-message bounds. Deno native delivery is
+  bounded after reassembly; its public API cannot cap native reassembly memory.
+
 ## 0.22.0
 
 ### Minor Changes

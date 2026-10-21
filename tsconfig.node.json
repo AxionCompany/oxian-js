@@ -18,6 +18,7 @@
     "tests/edge/**",
     "tests/exports/**",
     "tests/http/wss_tls_integration_test.ts",
+    "tests/http/direct_route_websocket_test.ts",
     "tests/local/**",
     "tests/providers/fixtures/**",
     "tests/providers/local_process_test.ts",

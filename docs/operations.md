@@ -8,9 +8,9 @@ results, and cross-replica routing.
 ## Production composition
 
 ```ts
-import { createHttpGateway } from "jsr:@oxian/oxian-js@0.22.0/http";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.22.0/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.22.0/adapters/deno";
+import { createHttpGateway } from "jsr:@oxian/oxian-js@0.23.0/http";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.0/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.23.0/adapters/deno";
 
 const hypervisor = createHypervisor(
   {
@@ -265,6 +265,21 @@ closure is the liveness signal for that topology.
 Injected listeners, dispatchers, providers, or Hypervisors remain app-owned. A
 component must close only resources it created.
 
+`oxian start` and `oxian dev` handle SIGINT/SIGTERM by stopping the local
+listener and worker, settling the hypervisor, and disposing the application.
+Both listener adapters send WebSocket close frames and allow 250 ms for peers to
+acknowledge them. At that deadline Deno aborts its native server and Node
+destroys remaining TCP connections, including upgrades still awaiting a route
+response. This bound is for physical listener resources, separate from worker
+execution drain and application disposal. No forced process exit skips cleanup.
+The native Deno route host uses the same bounded close for its private peer.
+
+Deno listener upgrades disable native automatic idle pings: the runtime can
+retain their system timers after an abnormal disconnect. WebSocket workers still
+use Oxian heartbeats and leases. Route applications should implement
+application-level liveness when needed. A directly supplied native Deno route
+controls its own `Deno.upgradeWebSocket` idle timeout.
+
 ## Observability
 
 Record at least:
@@ -282,8 +297,8 @@ Do not treat peer-provided close text as trusted lifecycle policy.
 ## Verification commands
 
 ```sh
-deno run -A jsr:@oxian/oxian-js@0.22.0/bin check --config oxian.config.ts
-deno run -A jsr:@oxian/oxian-js@0.22.0/bin routes --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.23.0/bin check --config oxian.config.ts
+deno run -A jsr:@oxian/oxian-js@0.23.0/bin routes --config oxian.config.ts
 ```
 
 Test crash points before dispatch, after acceptance ACK, during the durable

@@ -1,3 +1,13 @@
+import {
+  decodeUpgradeAcceptance,
+  UPGRADE_RESPONSE_SCHEMA,
+  upgradeRequestMetadata,
+} from "./upgrade-metadata.ts";
+import {
+  acceptedWebSocket,
+  isWebSocketRequest,
+  upgradeWebSocket,
+} from "./websocket.ts";
 import type { JsonObject } from "../protocol/types.ts";
 import { rechunkHttpBody } from "./body.ts";
 import {
@@ -129,10 +139,17 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
       throw new TypeError("HTTP gateway expects a Request");
     }
     request.signal.throwIfAborted();
-    const metadata = encodeHttpRequestMetadata(request, createRequestId());
+    const upgrading = isWebSocketRequest(request);
+    const metadata = upgrading
+      ? upgradeRequestMetadata(request, createRequestId())
+      : encodeHttpRequestMetadata(request, createRequestId());
+    const pending = upgrading ? upgradeWebSocket(request) : undefined;
+    const tunnel = pending ? acceptedWebSocket(pending.response)! : undefined;
+    if (tunnel) tunnel.nativeRole = "tunnel";
     const deadlineAtMs = validateDeadline(options.deadlineAtMs?.(request));
     const body =
-      request.body === null ? undefined : rechunkHttpBody(request.body);
+      tunnel?.output ??
+      (request.body === null ? undefined : rechunkHttpBody(request.body));
     let handle;
     try {
       handle = await options.dispatch({
@@ -155,6 +172,32 @@ export function createHttpGateway(options: HttpGatewayOptions): HttpGateway {
       request.signal,
       cancel,
     );
+    if (rawResponseMetadata.schema === UPGRADE_RESPONSE_SCHEMA) {
+      try {
+        if (!tunnel) throw new TypeError("Unexpected WebSocket acceptance");
+        const protocol = decodeUpgradeAcceptance(rawResponseMetadata);
+        tunnel.selectProtocol(protocol);
+        tunnel.addEventListener(
+          "open",
+          () => {
+            void tunnel.receive(handle.output);
+          },
+          { once: true },
+        );
+        void handle.completed.then(
+          (result) => {
+            if (result.status !== "completed") tunnel.fail();
+          },
+          () => tunnel.fail(),
+        );
+        return pending!.response;
+      } catch (error) {
+        cancel("invalid_websocket_acceptance");
+        tunnel?.fail();
+        throw error;
+      }
+    }
+    tunnel?.close();
     let responseMetadata: HttpResponseMetadata;
     try {
       responseMetadata = decodeHttpResponseMetadata(rawResponseMetadata);

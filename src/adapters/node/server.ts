@@ -1,3 +1,9 @@
+import { resolveRouteDecision } from "../../http/upgrade-decision.ts";
+import {
+  acceptedWebSocket,
+  ROUTE_WEBSOCKET_LIMITS,
+  setClientAddress,
+} from "../../http/websocket.ts";
 import {
   createServer,
   type IncomingMessage,
@@ -8,6 +14,7 @@ import type { Duplex } from "node:stream";
 import { Readable } from "node:stream";
 import { finished, pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
+// @deno-types="npm:@types/ws@8.18.2"
 import { WebSocketServer } from "ws";
 import {
   createConnectionBudget,
@@ -50,6 +57,16 @@ export async function serve(
     },
   });
 
+  const routeSockets = new WebSocketServer({
+    noServer: true,
+    perMessageDeflate: false,
+    maxPayload: ROUTE_WEBSOCKET_LIMITS.messageBytes,
+    handleProtocols: (offered, request) => {
+      const protocol = selected.get(request);
+      return protocol !== undefined && offered.has(protocol) ? protocol : false;
+    },
+  });
+
   // Node does not include upgraded sockets in closeAllConnections(), even
   // before ws accepts them or while an application rejection is still pending.
   const upgraded = new Set<Duplex>();
@@ -77,6 +94,14 @@ export async function serve(
         return;
       }
       const result = await decision.response;
+      if (result.status === 101) {
+        acceptedWebSocket(result)?.fail();
+        await send(
+          response,
+          new Response("WebSocket upgrade required", { status: 400 }),
+        );
+        return;
+      }
       if (lifetime.signal.aborted) {
         await result.body?.cancel(lifetime.signal.reason);
         return;
@@ -123,16 +148,22 @@ export async function serve(
     socket.on("error", failed);
     socket.once("close", failed);
     try {
-      const decision = hypervisor.prepare(
+      const prepared = hypervisor.prepare(
         toRequest(request, origin, false, abort.signal),
       );
+      const decision = await resolveRouteDecision(prepared);
       if (decision.kind === "response") {
         await reject(socket, await decision.response);
         return;
       }
+      if (socket.destroyed || stopping) {
+        decision.cancel("upgrade_closed");
+        return;
+      }
       cancel = decision.cancel;
       selected.set(request, decision.protocol);
-      sockets.handleUpgrade(request, socket, head, (connection) => {
+      const native = prepared.kind === "upgrade" ? sockets : routeSockets;
+      native.handleUpgrade(request, socket, head, (connection) => {
         socket.removeListener("error", failed);
         socket.removeListener("close", failed);
         cancel = undefined;
@@ -154,11 +185,13 @@ export async function serve(
     }
   }
 
-  sockets.on("wsClientError", (_error, socket) => {
+  const badUpgrade = (_error: Error, socket: Duplex) => {
     socket.end(
       "HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",
     );
-  });
+  };
+  sockets.on("wsClientError", badUpgrade);
+  routeSockets.on("wsClientError", badUpgrade);
 
   const finished = Promise.withResolvers<void>();
   // Startup can fail before a listener is returned and observed by its caller.
@@ -174,16 +207,22 @@ export async function serve(
       (socket) =>
         new Promise<void>((resolve) => socket.once("close", () => resolve())),
     );
-    for (const client of sockets.clients) client.terminate();
+    for (const client of sockets.clients)
+      client.close(1000, "Listener shutdown");
     sockets.close();
+    for (const client of routeSockets.clients)
+      client.close(1011, "Listener shutdown");
+    routeSockets.close();
     const serverClosed = new Promise<void>((resolve) => {
       server.close(() => resolve());
-      server.closeAllConnections();
     });
-    for (const socket of upgraded) socket.destroy();
-    closed = Promise.all([serverClosed, ...upgradeClosures]).then(
-      () => undefined,
-    );
+    const timer = setTimeout(() => {
+      server.closeAllConnections();
+      for (const socket of upgraded) socket.destroy();
+    }, 250);
+    closed = Promise.all([serverClosed, ...upgradeClosures])
+      .then(() => undefined)
+      .finally(() => clearTimeout(timer));
     return closed;
   };
 
@@ -315,7 +354,13 @@ function toRequest(
   }
   const hasBody =
     withBody && request.method !== "GET" && request.method !== "HEAD";
-  return new Request(new URL(request.url ?? "/", origin), {
+  const host = headers.get("host");
+  const url = new URL(request.url ?? "/", origin);
+  if (host) {
+    url.port = "";
+    url.host = host;
+  }
+  const result = new Request(url, {
     method: request.method,
     headers,
     signal,
@@ -326,6 +371,9 @@ function toRequest(
         }
       : {}),
   });
+  if (request.socket.remoteAddress)
+    setClientAddress(result, request.socket.remoteAddress);
+  return result;
 }
 
 async function send(target: ServerResponse, response: Response): Promise<void> {
