@@ -75,11 +75,20 @@ function createHandler(
       return decision.response;
     }
 
+    if (controller.signal.aborted) {
+      detach();
+      lease?.release();
+      decision.cancel("upgrade_closed");
+      return new Response("Listener shutdown", { status: 503 });
+    }
     detach();
     let upgraded: ReturnType<typeof Deno.upgradeWebSocket>;
     try {
       upgraded = Deno.upgradeWebSocket(nativeRequest, {
         protocol: decision.protocol,
+        // Native idle timers survive abnormal disconnects in Deno 2.9.2.
+        // Worker liveness is owned by protocol heartbeats and leases.
+        idleTimeout: 0,
       });
     } catch {
       detach();
@@ -135,8 +144,9 @@ export function serve(options: DenoServeOptions): HypervisorListener {
     sockets,
     pending,
   );
+  const serverAbort = new AbortController();
   const server = Deno.serve(
-    { hostname, port, onListen() {} },
+    { hostname, port, signal: serverAbort.signal, onListen() {} },
     (request, info) => {
       if (stopping) return new Response("Listener shutdown", { status: 503 });
       setClientAddress(request, info.remoteAddr.hostname);
@@ -152,28 +162,34 @@ export function serve(options: DenoServeOptions): HypervisorListener {
     stopping = true;
     for (const controller of pending) controller.abort("Listener shutdown");
     closed = (async () => {
-      const closures = [...sockets].map(
-        (socket) =>
-          new Promise<void>((resolve) => {
-            socket.addEventListener("close", () => resolve(), { once: true });
-            try {
-              socket.close(1011, "Listener shutdown");
-            } catch {
-              resolve();
-            }
-          }),
-      );
-      // Allow the selected error close frame to reach peers before Deno's
-      // server shutdown sends its own going-away frame. Bound unresponsive peers.
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([
-        Promise.all(closures),
-        new Promise<void>((resolve) => {
-          timer = setTimeout(resolve, 250);
-        }),
-      ]);
-      clearTimeout(timer);
-      await server.shutdown().catch(() => undefined);
+      let force!: () => void;
+      const forced = new Promise<void>((resolve) => {
+        force = resolve;
+      });
+      // The deadline covers both the close handshake and HTTP server drain.
+      // Aborting the server owns the native resources, including pending upgrades.
+      const timer = setTimeout(() => {
+        serverAbort.abort("Listener close deadline");
+        force();
+      }, 250);
+      try {
+        const closures = [...sockets].map(
+          (socket) =>
+            new Promise<void>((resolve) => {
+              socket.addEventListener("close", () => resolve(), { once: true });
+              try {
+                socket.close(1011, "Listener shutdown");
+              } catch {
+                resolve();
+              }
+            }),
+        );
+        await Promise.race([Promise.all(closures), forced]);
+        await server.shutdown().catch(() => undefined);
+        await server.finished.catch(() => undefined);
+      } finally {
+        clearTimeout(timer);
+      }
     })();
     return closed;
   };

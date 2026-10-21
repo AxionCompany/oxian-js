@@ -6,15 +6,18 @@ import { serve as nodeServe } from "../../src/adapters/node/server.ts";
 import { serve as denoServe } from "../../src/adapters/deno/server.ts";
 import { upgradeWebSocket } from "../../src/http/websocket.ts";
 
-for (
-  const [name, serve] of [["Node", nodeServe], ["Deno", denoServe]] as const
-) {
+for (const [name, serve] of [
+  ["Node", nodeServe],
+  ["Deno", denoServe],
+] as const) {
   test(`${name}: a direct portable fallback endpoint exchanges messages and closes`, async () => {
     const hypervisor = createHypervisor({
-      transports: [{
-        type: "in-process",
-        config: { topic: crypto.randomUUID() },
-      }],
+      transports: [
+        {
+          type: "in-process",
+          config: { topic: crypto.randomUUID() },
+        },
+      ],
       fallback(request) {
         const { socket, response } = upgradeWebSocket(request);
         socket.onopen = () => socket.send("ready");
@@ -45,7 +48,7 @@ for (
           client.send(new Uint8Array([0, 255, 12]));
         } else {
           assert.equal(binary, true);
-          assert.deepEqual([...data as Buffer], [0, 255, 12]);
+          assert.deepEqual([...(data as Buffer)], [0, 255, 12]);
           client.close(4002, "finished");
         }
       } catch (error) {

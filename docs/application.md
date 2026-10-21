@@ -170,3 +170,10 @@ required.
 `dev` currently loads routes at startup; it does not implement file hot reload.
 Stop the runtime before replacing it. Runtime shutdown closes route sockets; a
 process crash is observed as an abnormal socket close.
+
+On shutdown, listeners allow peers 250 ms to acknowledge a close frame, then
+force-close remaining connections. The CLI awaits application disposal before
+returning. Deno listener-owned upgrades have no automatic native idle ping
+timer; worker liveness still uses protocol heartbeats. Implement any
+application-level route heartbeat in the app and clear it when the socket
+closes.

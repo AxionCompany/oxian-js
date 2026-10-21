@@ -207,19 +207,22 @@ export async function serve(
       (socket) =>
         new Promise<void>((resolve) => socket.once("close", () => resolve())),
     );
-    for (const client of sockets.clients) client.terminate();
+    for (const client of sockets.clients)
+      client.close(1000, "Listener shutdown");
     sockets.close();
     for (const client of routeSockets.clients)
       client.close(1011, "Listener shutdown");
     routeSockets.close();
     const serverClosed = new Promise<void>((resolve) => {
       server.close(() => resolve());
-      server.closeAllConnections();
     });
-    for (const socket of upgraded) socket.destroy();
-    closed = Promise.all([serverClosed, ...upgradeClosures]).then(
-      () => undefined,
-    );
+    const timer = setTimeout(() => {
+      server.closeAllConnections();
+      for (const socket of upgraded) socket.destroy();
+    }, 250);
+    closed = Promise.all([serverClosed, ...upgradeClosures])
+      .then(() => undefined)
+      .finally(() => clearTimeout(timer));
     return closed;
   };
 

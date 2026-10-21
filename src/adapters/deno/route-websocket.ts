@@ -89,14 +89,25 @@ export async function hostWebSocket(
       maxPayload: ROUTE_WEBSOCKET_LIMITS.messageBytes,
     },
   );
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  const stopped = Promise.withResolvers<void>();
   const stop = () => {
-    client.terminate();
-    abort.abort();
+    if (client.readyState === NativeClient.CLOSED || closeTimer !== undefined)
+      return;
+    // A graceful private close also releases native server idle timers. Never
+    // strand a live TCP connection if the route does not answer the handshake.
+    closeTimer = setTimeout(() => {
+      client.terminate();
+      abort.abort();
+    }, 250);
+    client.close(1000, "Workload ended");
   };
   request.signal.addEventListener("abort", stop, { once: true });
   const cleanup = () => {
     request.signal.removeEventListener("abort", stop);
-    void server.shutdown().catch(() => undefined);
+    clearTimeout(closeTimer);
+    abort.abort();
+    void server.finished.then(stopped.resolve, stopped.resolve);
   };
   client.once("open", () => {
     if (accepted) result.resolve(accepted.response);
@@ -124,13 +135,17 @@ export async function hostWebSocket(
   try {
     const response = await result.promise;
     request.signal.throwIfAborted();
-    if (!accepted) stop();
+    if (!accepted) {
+      stop();
+      await stopped.promise;
+    }
     return response;
   } catch (error) {
     if (accepted) acceptedWebSocket(accepted.response)!.fail();
     stop();
     // Cancelling the private handshake cannot release a worker execution while
     // an application handler that ignores cancellation is still running.
+    await stopped.promise;
     await fetchTask?.catch(() => undefined);
     throw error;
   }

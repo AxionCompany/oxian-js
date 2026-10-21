@@ -472,3 +472,10 @@ output at 1 MiB and 64 messages, and native pending sends at 1 MiB. Transport
 credit windows remain governed by the existing hypervisor/worker limits. Node
 checks fragmented message size before delivery; Deno checks complete native
 messages and cannot bound native reassembly through its public WebSocket API.
+
+Listener shutdown allows a fixed 250 ms WebSocket close handshake before
+force-closing remaining native connections, including pending upgrades. This is
+independent of `gateway.hypervisor.shutdownTimeoutMs`, which governs worker
+drain. The Deno listener disables native idle ping timers; WebSocket worker
+heartbeat and lease configuration remains effective. Applications own route
+liveness policies. See [shutdown](../operations.md#drain-and-shutdown).

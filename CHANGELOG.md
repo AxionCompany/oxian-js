@@ -2,6 +2,14 @@
 
 ## 0.23.0 (unreleased)
 
+- Fix CLI shutdown after abrupt WebSocket disconnection or use of the WebSocket
+  worker transport. Disable Deno's retained native idle timers on listener-owned
+  upgrades; worker heartbeat/lease checks remain active. Both listeners allow a
+  250 ms close handshake before forcing remaining connections closed. Native
+  Deno route hosts close their private peers gracefully with the same bound.
+  Shutdown awaits resource cleanup and app disposal without forcing process
+  exit.
+
 - Add portable route WebSocket acceptance and peer-address access, with delayed
   client handshakes, refusal statuses, text/binary messages, close propagation,
   bounded work-stream envelopes, and worker-lifetime cancellation.
