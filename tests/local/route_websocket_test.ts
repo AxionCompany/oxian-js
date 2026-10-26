@@ -18,10 +18,9 @@ routeWebSocketCases(
 );
 
 test("route-hosted Hypervisor upgrades preserve the public URL and headers", async () => {
+  const path = "/api/shard-owner";
   const hypervisor = createHypervisor({
-    transports: [
-      { type: "websocket", config: { path: "/api/shard-owner" } },
-    ],
+    transports: [{ type: "websocket", config: { path } }],
     admit: () => {
       throw new Error("This test only performs the WebSocket handshake");
     },
@@ -55,10 +54,8 @@ test("route-hosted Hypervisor upgrades preserve the public URL and headers", asy
       }),
     );
     assert.equal(response.status, 101);
-    assert.equal(
-      acceptedWebSocket(response)?.protocol,
-      "oxian.worker.v1",
-    );
+    const protocol = acceptedWebSocket(response)?.protocol;
+    assert.equal(protocol, "oxian.worker.v1");
     assert.equal(prepared?.url, request.url);
     assert.equal(prepared?.method, request.method);
     assert.deepEqual([...prepared!.headers], [...request.headers]);

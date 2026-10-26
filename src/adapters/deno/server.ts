@@ -41,13 +41,9 @@ function createHandler(
     };
     const upgrading = isWebSocketRequest(nativeRequest);
     // Route hosts override public fields; cloning the native Request loses them.
-    const request = upgrading
-      ? new Request(nativeRequest.url, {
-        method: nativeRequest.method,
-        headers: nativeRequest.headers,
-        signal: controller.signal,
-      })
-      : nativeRequest;
+    const { url, method, headers } = nativeRequest;
+    const init = { method, headers, signal: controller.signal };
+    const request = upgrading ? new Request(url, init) : nativeRequest;
     const address = getClientAddress(nativeRequest);
     if (address) setClientAddress(request, address);
     if (upgrading) {
