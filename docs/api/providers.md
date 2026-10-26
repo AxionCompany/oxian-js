@@ -13,7 +13,7 @@ import {
   createLocalProcessProvider,
   runProviderConformance,
   type WorkerProvider,
-} from "jsr:@oxian/oxian-js@0.23.1/providers";
+} from "jsr:@oxian/oxian-js@0.23.2/providers";
 ```
 
 A provider creates, observes, and terminates compute. It never authenticates

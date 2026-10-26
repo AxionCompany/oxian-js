@@ -1,7 +1,7 @@
 import {
-  createConnectionBudget,
   type ConnectionBudget,
   type ConnectionLease,
+  createConnectionBudget,
 } from "../../http/connection-budget.ts";
 import { resolveRouteDecision } from "../../http/upgrade-decision.ts";
 import {
@@ -40,13 +40,15 @@ function createHandler(
       controller.abort(nativeRequest.signal.reason);
     };
     const upgrading = isWebSocketRequest(nativeRequest);
-    const request = upgrading
-      ? new Request(nativeRequest, { signal: controller.signal })
-      : nativeRequest;
+    // Route hosts override public fields; cloning the native Request loses them.
+    const { url, method, headers } = nativeRequest;
+    const init = { method, headers, signal: controller.signal };
+    const request = upgrading ? new Request(url, init) : nativeRequest;
     const address = getClientAddress(nativeRequest);
     if (address) setClientAddress(request, address);
-    if (upgrading)
+    if (upgrading) {
       nativeRequest.signal.addEventListener("abort", abort, { once: true });
+    }
     if (upgrading) pending.add(controller);
     const detach = () => {
       pending.delete(controller);

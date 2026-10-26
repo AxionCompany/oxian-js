@@ -14,17 +14,17 @@ import {
   createApplication,
   createHypervisor,
   createWorker,
-} from "jsr:@oxian/oxian-js@0.23.1";
+} from "jsr:@oxian/oxian-js@0.23.2";
 ```
 
 Explicit subpaths make ownership clearer and keep the executable boundary out of
 application code:
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.23.1/app";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.1/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.23.1/adapters/deno";
-import { createWorker } from "jsr:@oxian/oxian-js@0.23.1/worker";
+import { createApplication } from "jsr:@oxian/oxian-js@0.23.2/app";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.2/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.23.2/adapters/deno";
+import { createWorker } from "jsr:@oxian/oxian-js@0.23.2/worker";
 ```
 
 The root excludes filesystem discovery, static files, local processes, local

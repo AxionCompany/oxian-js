@@ -5,7 +5,7 @@
   "engines": {
     "node": ">=24"
   },
-  "version": "0.23.1",
+  "version": "0.23.2",
   "scripts": {
     "check": "npm run check:types && npm run check:biome && npm run check:node",
     "check:types": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
