@@ -1,5 +1,11 @@
 # oxianjs
 
+## 0.23.2
+
+- Preserve the public URL and headers when a Deno Hypervisor handles a
+  route-hosted WebSocket upgrade, so worker transport paths match instead of
+  returning 404.
+
 ## 0.23.1
 
 - Fix unrelated HTTP work aborting after a route WebSocket closes. A late
