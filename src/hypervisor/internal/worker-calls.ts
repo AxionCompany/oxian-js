@@ -5,7 +5,17 @@ import type {
   SessionRegistry,
 } from "../../supervisor/index.ts";
 import type { WorkerCallOptions, WorkerCallContext } from "../types.ts";
-import type { ConnectionRecord } from "./model.ts";
+import type { ConnectionRecord, PendingWork } from "./model.ts";
+
+const sameIdentity = (
+  left: ConnectionRecord["fence"],
+  right: ConnectionRecord["fence"],
+): boolean =>
+  left !== undefined &&
+  right !== undefined &&
+  left.identity.workerId === right.identity.workerId &&
+  left.identity.attemptId === right.identity.attemptId &&
+  left.identity.epoch === right.identity.epoch;
 
 export function createWorkerCallAdmission(
   options: WorkerCallOptions | undefined,
@@ -13,6 +23,8 @@ export function createWorkerCallAdmission(
   dispatcher: WorkDispatcher,
   now: () => number,
   config: HypervisorConfig,
+  /** The worker's other live connections; a predecessor finishes its work. */
+  lineage: (workerId: string) => readonly ConnectionRecord[] = () => [],
 ) {
   const positive = (
     value: number | undefined,
@@ -68,10 +80,22 @@ export function createWorkerCallAdmission(
       cancellationAckTimeoutMs: config.cancellationAckTimeoutMs,
       accept(open, signal) {
         const fence = record.fence!;
+        // After a handoff, a parent still running on a retired connection of
+        // this same worker keeps calling over the successor.
+        const find = (streamId: string): PendingWork | undefined => {
+          const local = record.pending.get(streamId);
+          if (local !== undefined) return local;
+          for (const other of lineage(fence.identity.workerId)) {
+            if (other === record || !sameIdentity(other.fence, fence)) continue;
+            const pending = other.pending.get(streamId);
+            if (pending !== undefined) return pending;
+          }
+          return undefined;
+        };
         const pending =
           open.parentStreamId === undefined
             ? undefined
-            : record.pending.get(open.parentStreamId);
+            : find(open.parentStreamId);
         const parent =
           pending === undefined
             ? undefined
@@ -86,20 +110,27 @@ export function createWorkerCallAdmission(
             const session = sessions.assertCurrent(fence);
             if (session.phase !== "ready" && session.phase !== "draining")
               return false;
-            if (open.parentStreamId === undefined)
-              return session.phase === "ready" && record.acceptingWork;
+            // A parentless call the worker opened before it saw a drain (or a
+            // handoff) still runs: once the worker knows, it opens no more.
+            if (open.parentStreamId === undefined) return true;
             const latest =
               pending === undefined
                 ? undefined
                 : dispatcher.get(pending.operationId);
+            const owner = pending?.record;
             return (
               pending !== undefined &&
-              record.pending.get(open.parentStreamId) === pending &&
+              owner !== undefined &&
+              owner.pending.get(open.parentStreamId) === pending &&
+              !owner.abort.signal.aborted &&
+              sameIdentity(owner.fence, fence) &&
+              // The call's own session was asserted above.
+              (owner === record || sessions.isCurrent(owner.fence!)) &&
               pending.startedValue &&
               !pending.inputAbort.signal.aborted &&
               latest?.status === "committed" &&
               latest.assignment?.streamId === open.parentStreamId &&
-              latest.assignment.fence.connectionId === fence.connectionId
+              latest.assignment.fence.connectionId === owner.fence!.connectionId
             );
           } catch {
             return false;
@@ -120,7 +151,9 @@ export function createWorkerCallAdmission(
         const bindingSignal = AbortSignal.any([
           signal,
           record.abort.signal,
-          ...(pending ? [pending.inputAbort.signal] : []),
+          ...(pending
+            ? [pending.inputAbort.signal, pending.record.abort.signal]
+            : []),
         ]);
         const context: WorkerCallContext = Object.freeze({
           fence,

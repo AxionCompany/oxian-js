@@ -1,5 +1,30 @@
 # oxianjs
 
+## Unreleased
+
+- Fix long-lived workers failing a call with `capacity` after a connection's
+  stream lifetime (32,768 worker-to-host calls) runs out. Workers and hosts now
+  negotiate make-before-break connection handoff (`__oxian_handoff_v1`): when
+  either side's share of the lifetime falls to a quarter, the worker connects a
+  successor while the old connection keeps working. New work and calls go over
+  the successor, including calls for a parent that started on the old
+  connection; the old connection drains with no deadline of its own and closes
+  once its streams finish. A call that finds no connection with streams left
+  waits for the successor within its own deadline. Each call is still sent
+  once, on one connection. Against a host without handoff, rotation is
+  unchanged.
+- Retiring sessions stay valid in the session registry while they finish, are
+  never routable, and share their worker's capacity with the successor. A
+  registry advertises support with `handoff: true`. A successor that names a
+  connection being shut down is refused, so shutdown still ends the worker.
+- When a connection of a worker with handoff runs out anyway (its successor
+  was late), it drains with no deadline instead of cutting its streams off.
+- Fix three races that could fail a connection with completed work on it:
+  a parentless worker-to-host call that crosses `drain` now runs instead of
+  being a protocol violation; credit or a late abort that crosses `drained`
+  settles on its stream's tombstone; and work a host opens right after Ready
+  counts against its own share of the lifetime, not the whole of it.
+
 ## 0.23.2
 
 - Preserve the public URL and headers when a Deno Hypervisor handles a

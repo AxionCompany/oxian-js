@@ -207,7 +207,12 @@ export function createDispatchQueue(
     }
   };
   const unsubscribe = options.sessions.subscribe?.((session) => {
-    if (session.phase === "draining" || session.phase === "drained") {
+    // A handed-off predecessor drains while its successor serves the worker.
+    if (
+      (session.phase === "draining" || session.phase === "drained") &&
+      options.sessions.get(session.identity.workerId)?.connectionId ===
+        session.connectionId
+    ) {
       drainWorker(session.identity.workerId);
     }
     wake();

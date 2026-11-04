@@ -1,9 +1,13 @@
 import {
   type ControlFrame,
   createReadyAckFrame,
+  HANDOFF_CAPABILITY_KEY,
+  readHandoff,
   readHostCallCapacity,
   HOST_CALL_CAPABILITY_KEY,
+  withHandoff,
   withHostCallCapacity,
+  withoutHandoff,
   withoutHostCallCapacity,
   type HelloFrame,
   type ReadyFrame,
@@ -201,9 +205,12 @@ export function createSessionProtocolController(
     );
     ensureOpen(record);
     const applicationBootstrap = copyBootstrap(admitted.bootstrap ?? {});
-    if (Object.hasOwn(applicationBootstrap, HOST_CALL_CAPABILITY_KEY))
+    if (
+      Object.hasOwn(applicationBootstrap, HOST_CALL_CAPABILITY_KEY) ||
+      Object.hasOwn(applicationBootstrap, HANDOFF_CAPABILITY_KEY)
+    )
       throw new TypeError("application bootstrap uses reserved transport key");
-    const bootstrap =
+    const transportBootstrap =
       options.workerCalls.capacity === undefined
         ? applicationBootstrap
         : withHostCallCapacity(
@@ -211,6 +218,12 @@ export function createSessionProtocolController(
             options.workerCalls.capacity,
             options.config.maxLifetimeStreams,
           );
+    // A worker offered handoff opens a successor before this connection's
+    // stream lifetime runs out; the registry must keep this one open for it.
+    const bootstrap =
+      options.sessions.handoff === true
+        ? withHandoff(transportBootstrap)
+        : transportBootstrap;
     ensureOpen(record);
     await record.transport!.sendControl({
       protocol: WORKER_PROTOCOL,
@@ -248,6 +261,24 @@ export function createSessionProtocolController(
 
     try {
       ensureOpen(record);
+      // A successor names the live connection it replaces.
+      const handoff = readHandoff(frame.metadata);
+      record.handoff = handoff !== undefined;
+      // A worker being shut down takes no successor.
+      const named =
+        handoff?.from === undefined
+          ? undefined
+          : options.directory.get(handoff.from);
+      if (
+        named?.drainMode === "shutdown" &&
+        named.fence?.identity.workerId === record.hello.identity.workerId
+      ) {
+        throw createHypervisorError(
+          "shutting_down",
+          "the connection this one replaces is shutting down",
+          { identity: record.hello.identity },
+        );
+      }
       const attachment = options.sessions.attach({
         identity: record.hello.identity,
         connectionId: record.fence.connectionId,
@@ -256,13 +287,15 @@ export function createSessionProtocolController(
         workloads: record.hello.workloads,
         capacity: record.hello.capacity,
         leaseTimeoutMs: options.config.leaseTimeoutMs,
+        ...(handoff?.from === undefined ? {} : { retire: handoff.from }),
       });
       record.sessionPhase = "connected";
 
-      if (attachment.replaced !== undefined) {
-        const replaced = options.directory.get(
-          attachment.replaced.connectionId,
-        );
+      for (const displaced of [
+        ...(attachment.replaced === undefined ? [] : [attachment.replaced]),
+        ...(attachment.superseded ?? []),
+      ]) {
+        const replaced = options.directory.get(displaced.connectionId);
         if (replaced !== undefined && replaced !== record) {
           void options.closeRecord(
             replaced,
@@ -287,7 +320,7 @@ export function createSessionProtocolController(
               callbackAttempt: 1,
               fence: record.fence!,
               definition: record.definition!,
-              metadata: withoutHostCallCapacity(frame.metadata),
+              metadata: withoutHandoff(withoutHostCallCapacity(frame.metadata)),
               ...(hostCallCapacity === undefined
                 ? {}
                 : {
@@ -321,6 +354,22 @@ export function createSessionProtocolController(
       ensureOpen(record);
       options.sessions.assertCurrent(record.fence);
       cancelConnectionTimer(options.scheduler, record, "readyTimer");
+      // The successor now takes all new work. Its predecessor stops taking any
+      // and drains with no deadline of its own: its streams end as they would
+      // have, and only then does it close.
+      const predecessor =
+        attachment.retired === undefined
+          ? undefined
+          : options.directory.get(attachment.retired.connectionId);
+      if (predecessor !== undefined && predecessor !== record) {
+        predecessor.acceptingWork = false;
+        void options.drainRecord(
+          predecessor,
+          "handoff",
+          "rotate",
+          MAX_TIMER_MS,
+        );
+      }
       // Connection-age rotation protects physical WebSocket infrastructure.
       // An in-process event-fabric connection has no intermediary lifetime and
       // may intentionally host a durable stream (for example a database

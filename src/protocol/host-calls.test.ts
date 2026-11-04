@@ -21,14 +21,18 @@ import {
   createWorkStartFrame,
   decodeControlFrame,
   encodeControlFrame,
+  HANDOFF_CAPABILITY_KEY,
   HOST_CALL_CAPABILITY_KEY,
   isProtocolViolation,
   type JsonObject,
   parseControlFrame,
   type ProtocolOrderValidator,
   type ProtocolRole,
+  readHandoff,
   readHostCallCapacity,
+  withHandoff,
   withHostCallCapacity,
+  withoutHandoff,
   withoutHostCallCapacity,
 } from "./index.ts";
 
@@ -37,6 +41,7 @@ const FORWARD = "00000000-0000-4000-8000-000000000001";
 const REVERSE = "00000000-0000-4000-8000-000000000002";
 const OTHER = "00000000-0000-4000-8000-000000000003";
 const FOURTH = "00000000-0000-4000-8000-000000000004";
+const CROSSED = "00000000-0000-4000-8000-000000000005";
 const ROLES = ["worker", "hypervisor"] as const;
 
 function opposite(role: ProtocolRole): ProtocolRole {
@@ -723,10 +728,20 @@ test("host calls: draining allows parent-bound reverse calls and waits for both 
       () => open(validator, "hypervisor", OTHER),
       "invalid_protocol_order",
     );
-    rejectsCode(
-      () => open(validator, "worker", REVERSE),
-      "invalid_protocol_order",
-    );
+    if (role === "worker") {
+      rejectsCode(
+        () => open(validator, "worker", REVERSE),
+        "invalid_protocol_order",
+      );
+    } else {
+      // The host cannot tell a crossed parentless Open from a late one: the
+      // worker sent it before Drain arrived, so it is valid and must finish.
+      open(validator, "worker", CROSSED);
+      start(validator, "worker", CROSSED);
+      responseMetadata(validator, "worker", CROSSED);
+      end(validator, "worker", CROSSED);
+      end(validator, "hypervisor", CROSSED);
+    }
     open(validator, "worker", REVERSE, FORWARD);
     start(validator, "worker", REVERSE);
     responseMetadata(validator, "worker", REVERSE);
@@ -814,4 +829,106 @@ test("host calls: rejected lifetime acknowledgement cannot alter a later ordinar
       before.maxLifetimeStreams,
     );
   }
+});
+
+test("handoff: the reserved key is exact, optional and isolated", () => {
+  const application = { nested: { keep: true } };
+  const offer = withHandoff(application);
+  assert.deepEqual(offer[HANDOFF_CAPABILITY_KEY], { version: 1 });
+  assert.deepEqual(readHandoff(offer), {});
+  assert.deepEqual(readHandoff(withHandoff({}, "connection-1")), {
+    from: "connection-1",
+  });
+  assert.equal(readHandoff(application), undefined);
+  assert.deepEqual(withoutHandoff(offer), application);
+  assert.notEqual(withoutHandoff(offer).nested, application.nested);
+  rejectsCode(() => withHandoff(offer), "invalid_control_frame");
+  rejectsCode(() => withHandoff({}, "not an id"), "invalid_control_frame");
+  for (const value of [
+    true,
+    {},
+    { version: 2 },
+    { version: 1, from: "" },
+    { version: 1, from: 7 },
+    { version: 1, extra: true },
+  ]) {
+    rejectsCode(
+      () => readHandoff({ [HANDOFF_CAPABILITY_KEY]: value } as JsonObject),
+      "invalid_control_frame",
+    );
+  }
+});
+
+test("host calls: credit and late aborts that cross Drained still settle on tombstones", () => {
+  for (const role of ROLES) {
+    const validator = negotiated(role);
+    open(validator, "hypervisor", FORWARD);
+    start(validator, "hypervisor", FORWARD);
+    responseMetadata(validator, "hypervisor", FORWARD);
+    control(
+      validator,
+      "hypervisor",
+      createDrainFrame({
+        connectionId: CONNECTION,
+        reason: "test drain",
+        deadlineAtMs: 100_000,
+      }),
+    );
+    end(validator, "hypervisor", FORWARD);
+    end(validator, "worker", FORWARD);
+    control(
+      validator,
+      "worker",
+      createDrainedFrame({ connectionId: CONNECTION }),
+    );
+    assert.equal(validator.snapshot().phase, "drained");
+    // The host granted output credit before it saw the worker's End.
+    const credit = createWorkCreditFrame({ streamId: FORWARD, bytes: 1 });
+    if (role === "worker") {
+      assert.equal(
+        control(validator, "hypervisor", credit).disposition,
+        "discard",
+      );
+    } else {
+      // A late local grant is refused as post-terminal, never as an order
+      // violation that would fail the connection.
+      rejectsCode(
+        () => control(validator, "hypervisor", credit),
+        "post_terminal_frame",
+      );
+    }
+    // A late abort still settles exactly once per direction.
+    control(
+      validator,
+      "hypervisor",
+      createWorkCancelFrame({ streamId: FORWARD, reason: "late" }),
+    );
+    control(
+      validator,
+      "worker",
+      createWorkCancelFrame({ streamId: FORWARD, reason: "late_abort_ack" }),
+    );
+    rejectsCode(
+      () => open(validator, "hypervisor", OTHER),
+      "invalid_protocol_order",
+    );
+  }
+});
+
+test("host calls: the negotiated split counts from Ready, before ReadyAck is sent", () => {
+  // A host queues work behind its ack, so its budget is its own share already.
+  const validator = createProtocolOrderValidator({ role: "hypervisor" });
+  hello(validator);
+  welcome(validator, withHostCallCapacity({}, 2, 8));
+  ready(validator, withHostCallCapacity({}, 2, 8));
+  assert.equal(validator.snapshot().phase, "readied");
+  assert.equal(validator.snapshot().remainingLocalStreams, 4);
+  assert.equal(validator.snapshot().remainingRemoteStreams, 4);
+  control(
+    validator,
+    "hypervisor",
+    createReadyAckFrame({ connectionId: CONNECTION }),
+  );
+  assert.equal(validator.snapshot().remainingLocalStreams, 4);
+  assert.equal(validator.snapshot().maxLifetimeStreams, 8);
 });

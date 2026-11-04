@@ -250,6 +250,14 @@ in-process Worker shares the Hypervisor's event loop, so an elapsed-time sweep
 cannot distinguish a suspended process from a lost local Worker; event-fabric
 closure is the liveness signal for that topology.
 
+Both transports rotate by stream lifetime. With
+[connection handoff](worker-protocol-v1.md#connection-handoff), a worker
+connects its successor while a quarter of either side's lifetime remains; the
+old connection takes no new work, drains with no deadline of its own, and
+closes once its streams finish. A worker briefly holds two connections, so size
+connection limits for that. A custom session registry must honor `retire` and
+set `handoff: true` before the Hypervisor offers handoff.
+
 ## Drain and shutdown
 
 - `hypervisor.drain(workerId)` stops new assignment, waits for active streams,

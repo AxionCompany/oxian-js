@@ -29,6 +29,7 @@ capability negotiation without changing that identifier.
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Constants            | `WORKER_PROTOCOL`, `WORKER_PROTOCOL_LIMITS`, `BINARY_PROTOCOL`                                                                                                                                           |
 | Host-call capability | `HOST_CALL_CAPABILITY_KEY`, `readHostCallCapacity`, `readHostCallLifetime`, `withHostCallCapacity`, `withoutHostCallCapacity`                                                                                                    |
+| Connection handoff   | `HANDOFF_CAPABILITY_KEY`, `readHandoff`, `withHandoff`, `withoutHandoff`                                                                                                                                 |
 | Control codecs       | `decodeControlFrame`, `parseControlFrame`, `encodeControlFrame`                                                                                                                                          |
 | Identity             | `createWorkerIdentity`                                                                                                                                                                                   |
 | Handshake factories  | `createHelloFrame`, `createWelcomeFrame`, `createReadyFrame`, `createReadyAckFrame`, `createHeartbeatFrame`, `createDrainFrame`, `createShutdownFrame`, `createDrainedFrame`, `createProtocolErrorFrame` |
@@ -476,6 +477,26 @@ namespace and total lifetime bound. During drain, only parent-bound reverse
 opens may be added; application host authentication of that parent is separate
 from wire validation. See the
 [wire contract](../worker-protocol-v1.md#optional-worker-to-host-invocation).
+
+## Connection handoff helpers
+
+```ts
+const HANDOFF_CAPABILITY_KEY = "__oxian_handoff_v1";
+function readHandoff(
+  metadata: JsonObject,
+): Readonly<{ from?: string }> | undefined;
+function withHandoff(metadata: JsonObject, from?: string): JsonObject;
+function withoutHandoff(metadata: JsonObject): JsonObject;
+```
+
+`readHandoff` returns `undefined` for an absent reserved key and throws for a
+malformed value. Its value must have `version: 1` and may name `from`, the
+connection ID a successor replaces. No other fields are accepted.
+`withHandoff` clones metadata and adds the key, rejecting an existing one;
+`withoutHandoff` clones application metadata and strips only that key. A host
+offers handoff in Welcome bootstrap; a supporting worker acknowledges it in
+Ready metadata and names the live connection it replaces. See the
+[wire contract](../worker-protocol-v1.md#connection-handoff).
 
 ## Binary work data
 

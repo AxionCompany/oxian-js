@@ -20,6 +20,14 @@ export const NORMAL_CLOSE_CODE = 1000;
 export const OUTPUT_WINDOW_BYTES = 64 * 1024;
 export const MAX_TIMER_MS = 0x7fff_ffff;
 
+/**
+ * Drain deadline when a connection's stream lifetime runs out. A worker with
+ * handoff is already moving to a successor, so its streams keep running.
+ */
+export function lifetimeDrainMs(record: ConnectionRecord): number | undefined {
+  return record.handoff === true ? MAX_TIMER_MS : undefined;
+}
+
 export function cancelConnectionTimer(
   scheduler: HypervisorScheduler,
   record: ConnectionRecord,

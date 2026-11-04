@@ -7,6 +7,11 @@ export type ConnectionDirectory = Readonly<{
   get(connectionId: string): ConnectionRecord | undefined;
   reserveId(record: ConnectionRecord): string;
   publish(record: ConnectionRecord): void;
+  /**
+   * The worker's published connections. More than one is live only during a
+   * handoff, while a predecessor finishes its own streams.
+   */
+  lineage(workerId: string): readonly ConnectionRecord[];
 }>;
 
 /**
@@ -21,6 +26,7 @@ export function createConnectionDirectory(
   const records = new Set<ConnectionRecord>();
   const byConnectionId = new Map<string, ConnectionRecord>();
   const reservedConnectionIds = new Set<string>();
+  const byWorker = new Map<string, Set<ConnectionRecord>>();
 
   const add = (record: ConnectionRecord): void => {
     records.add(record);
@@ -28,6 +34,11 @@ export function createConnectionDirectory(
 
   const remove = (record: ConnectionRecord): void => {
     records.delete(record);
+    const workerId = record.fence?.identity.workerId;
+    const lineage = workerId === undefined ? undefined : byWorker.get(workerId);
+    if (lineage?.delete(record) && lineage.size === 0) {
+      byWorker.delete(workerId!);
+    }
     if (record.connectionId === undefined) return;
     reservedConnectionIds.delete(record.connectionId);
     if (byConnectionId.get(record.connectionId) === record) {
@@ -61,7 +72,16 @@ export function createConnectionDirectory(
     }
     reservedConnectionIds.delete(record.connectionId);
     byConnectionId.set(record.connectionId, record);
+    const workerId = record.fence?.identity.workerId;
+    if (workerId === undefined) return;
+    let lineage = byWorker.get(workerId);
+    if (lineage === undefined) byWorker.set(workerId, (lineage = new Set()));
+    lineage.add(record);
   };
+
+  const lineage = (workerId: string): readonly ConnectionRecord[] => [
+    ...(byWorker.get(workerId) ?? []),
+  ];
 
   return Object.freeze({
     records,
@@ -70,5 +90,6 @@ export function createConnectionDirectory(
     get,
     reserveId,
     publish,
+    lineage,
   });
 }

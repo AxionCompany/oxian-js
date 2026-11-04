@@ -210,14 +210,15 @@ export function createHypervisor(
     },
     clock,
   });
+  const directory = createConnectionDirectory(createConnectionId);
   const workerCalls = createWorkerCallAdmission(
     options.workerCalls,
     sessions,
     dispatcher,
     clock,
     config,
+    directory.lineage,
   );
-  const directory = createConnectionDirectory(createConnectionId);
   const records = directory.records;
   const admission = createAdmissionController(config);
   let acceptingConnections = true;
@@ -273,8 +274,10 @@ export function createHypervisor(
     disposition,
   ) => {
     if (record.hostCalls?.control(frame, disposition)) {
+      // A worker with handoff routes its calls to a successor by itself.
       if (
         frame.type === "work.open" &&
+        record.handoff !== true &&
         record.transport!.snapshot().remainingRemoteStreams <= 0
       )
         void drainRecord(record, "stream_lifetime", "rotate");
@@ -393,6 +396,17 @@ export function createHypervisor(
             : { deadlineAtMs: input.deadlineAtMs }),
         }),
         input.signal,
+      );
+    },
+    // A connection that stopped taking work to rotate (its lifetime ran out,
+    // or a successor took over) never received this offer.
+    rotated(offered) {
+      const record = directory.get(offered.assignment!.fence.connectionId);
+      return (
+        record !== undefined &&
+        record.phase === "ready" &&
+        !record.acceptingWork &&
+        record.drainMode === "rotate"
       );
     },
   });

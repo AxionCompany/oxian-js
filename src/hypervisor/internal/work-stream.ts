@@ -31,6 +31,7 @@ import {
   createHypervisorError,
   errorCode,
   INTERNAL_CLOSE_CODE,
+  lifetimeDrainMs,
   MAX_TIMER_MS,
   OUTPUT_WINDOW_BYTES,
 } from "./primitives.ts";
@@ -871,7 +872,12 @@ export function createWorkStreamController(
     }
     if (record.transport.snapshot().remainingLocalStreams <= 0) {
       record.acceptingWork = false;
-      void drainRecord(record, "stream_lifetime", "rotate");
+      void drainRecord(
+        record,
+        "stream_lifetime",
+        "rotate",
+        lifetimeDrainMs(record),
+      );
       throw createHypervisorError(
         "worker_unavailable",
         "worker connection reached its stream lifetime",
@@ -985,7 +991,12 @@ export function createWorkStreamController(
       }
       bindCallerCancellation(handle, signal);
       if (reachedStreamLifetime) {
-        void drainRecord(record, "stream_lifetime", "rotate");
+        void drainRecord(
+          record,
+          "stream_lifetime",
+          "rotate",
+          lifetimeDrainMs(record),
+        );
       }
     } catch {
       failAfterOpen("work_open_setup_failed");
