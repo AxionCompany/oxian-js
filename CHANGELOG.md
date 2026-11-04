@@ -1,6 +1,6 @@
 # oxianjs
 
-## Unreleased
+## 0.23.3
 
 - Fix a connection, and all work in flight on it, being lost under ordinary
   concurrency: about 35 concurrent calls (64 queued frames) failed every job on
@@ -21,7 +21,6 @@
   the input credit it granted only after the grant was sent, so data spending
   it could arrive first; a Hypervisor marked work started only after its Start
   was sent, so a call made under it over a successor connection was refused.
-
 - Fix long-lived workers failing a call with `capacity` after a connection's
   stream lifetime (32,768 worker-to-host calls) runs out. Workers and hosts now
   negotiate make-before-break connection handoff (`__oxian_handoff_v1`): when
