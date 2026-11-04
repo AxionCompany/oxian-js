@@ -253,11 +253,25 @@ worker-originated opens. Reverse calls share the existing credit/sequence,
 half-close, abort, no-ID-reuse, and total connection lifetime limits. On negotiated connections, the host owns
 ceil(lifetime / 2) Opens and the worker owns floor(lifetime / 2). Fixed shares
 prevent crossed Opens from overspending the total budget. Queued local Opens
-reserve slots immediately. Exhausting either share starts host-driven rotation;
-the other share remains usable by existing parent assignments during drain.
-An exhausted worker rejects locally with `capacity/not_started`, before Open.
-A lifetime of one leaves no reverse slots. Unnegotiated connections retain the
-entire ordinary forward budget. Calls are never replayed during rotation.
+reserve slots immediately. A lifetime of one leaves no reverse slots.
+Unnegotiated connections retain the entire ordinary forward budget. Calls are
+never replayed during rotation.
+
+With [connection handoff](worker-protocol-v1.md#connection-handoff), which
+current hosts offer and current workers accept, a long-lived worker never runs
+a connection out. When either share falls to a quarter, the worker connects a
+successor while the old connection keeps working. Each new call then goes over
+the newest ready connection, including calls for a parent that started on the
+old one; the host resolves that parent on any live connection of the same
+worker. A call that finds no connection with streams left waits for the
+successor within its own deadline. The old connection takes no new work, lets
+its streams finish, and closes. Each call is still sent once, on one
+connection, so ordering within a parent and the no-replay rule hold.
+
+Against a host that offers no handoff, exhausting either share starts
+host-driven rotation; the other share remains usable by existing parent
+assignments during drain, and an exhausted worker rejects locally with
+`capacity/not_started`, before Open.
 
 See the
 [wire contract](worker-protocol-v1.md#optional-worker-to-host-invocation),

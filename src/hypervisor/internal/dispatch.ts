@@ -34,6 +34,11 @@ export function createDispatch(
     clock: () => number;
     signal: AbortSignal;
     open(dispatch: WorkDispatch, input: WorkInput): WorkHandle;
+    /**
+     * True when the assigned connection stopped taking work to rotate. The
+     * offer was never delivered, so it can be made again.
+     */
+    rotated?(dispatch: WorkDispatch): boolean;
   }>,
 ) {
   const queue = createDispatchQueue(options);
@@ -76,210 +81,227 @@ export function createDispatch(
         options.onWorkAssigned !== undefined,
     );
     return await scope.run(async () => {
-      let offered: WorkDispatch;
-      try {
-        const operationId = crypto.randomUUID();
-        const offer = (
-          attempt?: QueueAttempt,
-        ): WorkDispatch | undefined | Promise<WorkDispatch | undefined> => {
-          let target = input.target;
-          const reserve = (): WorkDispatch | undefined => {
-            scope.assertActive();
-            attempt?.assertActive();
-            try {
-              const offered = options.dispatcher.offer({
-                operationId,
-                workload: input.workload,
-                ...(target === undefined ? {} : { target }),
-                metadata: input.metadata,
-                ...(input.deadlineAtMs === undefined
-                  ? {}
-                  : { deadlineAtMs: input.deadlineAtMs }),
-              });
-              // Leave the queue in the same turn that reserves capacity. An abort
-              // between an async assign continuation and its promise settlement
-              // must never strand an offered reservation.
-              attempt?.offered(offered);
-              return offered;
-            } catch (error) {
-              if (
-                waiting &&
-                error instanceof Error &&
-                "code" in error &&
-                error.code === "capacity_exhausted"
-              )
-                return undefined;
-              throw error;
-            }
-          };
-          if (options.assign !== undefined) {
-            const available = options.sessions
-              .list()
-              .filter(
-                (session) =>
-                  session.phase === "ready" &&
-                  session.workloads.includes(input.workload) &&
-                  session.reserved < session.capacity &&
-                  (input.target === undefined ||
-                    input.target.workerId === session.identity.workerId),
-              )
-              .map(fenceForSession);
-            const selection = scope.hook(() =>
-              options.assign!(
-                Object.freeze({
-                  stage: "assign" as const,
-                  stageId: `assign:${operationId}`,
-                  callbackAttempt: attempt?.callbackAttempt ?? 1,
-                  signal: scope.signal,
+      // A rotation can retire the assigned connection between offer and open;
+      // the work then goes to its successor instead.
+      for (;;) {
+        let offered: WorkDispatch;
+        try {
+          const operationId = crypto.randomUUID();
+          const offer = (
+            attempt?: QueueAttempt,
+          ): WorkDispatch | undefined | Promise<WorkDispatch | undefined> => {
+            let target = input.target;
+            const reserve = (): WorkDispatch | undefined => {
+              scope.assertActive();
+              attempt?.assertActive();
+              try {
+                const offered = options.dispatcher.offer({
                   operationId,
                   workload: input.workload,
-                  metadata: input.metadata ?? {},
-                  ...(input.target === undefined
+                  ...(target === undefined ? {} : { target }),
+                  metadata: input.metadata,
+                  ...(input.deadlineAtMs === undefined
                     ? {}
-                    : { target: input.target }),
-                  available: Object.freeze(available),
+                    : { deadlineAtMs: input.deadlineAtMs }),
+                });
+                // Leave the queue in the same turn that reserves capacity. An abort
+                // between an async assign continuation and its promise settlement
+                // must never strand an offered reservation.
+                attempt?.offered(offered);
+                return offered;
+              } catch (error) {
+                if (
+                  waiting &&
+                  error instanceof Error &&
+                  "code" in error &&
+                  error.code === "capacity_exhausted"
+                )
+                  return undefined;
+                throw error;
+              }
+            };
+            if (options.assign !== undefined) {
+              const available = options.sessions
+                .list()
+                .filter(
+                  (session) =>
+                    session.phase === "ready" &&
+                    session.workloads.includes(input.workload) &&
+                    session.reserved < session.capacity &&
+                    (input.target === undefined ||
+                      input.target.workerId === session.identity.workerId),
+                )
+                .map(fenceForSession);
+              const selection = scope.hook(() =>
+                options.assign!(
+                  Object.freeze({
+                    stage: "assign" as const,
+                    stageId: `assign:${operationId}`,
+                    callbackAttempt: attempt?.callbackAttempt ?? 1,
+                    signal: scope.signal,
+                    operationId,
+                    workload: input.workload,
+                    metadata: input.metadata ?? {},
+                    ...(input.target === undefined
+                      ? {}
+                      : { target: input.target }),
+                    available: Object.freeze(available),
+                  }),
+                ),
+              );
+              const selectedOffer = (
+                selected: Awaited<ReturnType<HypervisorAssign>>,
+              ): WorkDispatch | undefined => {
+                scope.assertActive();
+                attempt?.assertActive();
+                if (selected !== undefined) {
+                  const candidate = available.find(
+                    (fence) =>
+                      fence.connectionId === selected.connectionId &&
+                      fence.sessionGeneration === selected.sessionGeneration &&
+                      fence.identity.workerId === selected.identity.workerId &&
+                      fence.identity.attemptId ===
+                        selected.identity.attemptId &&
+                      fence.identity.epoch === selected.identity.epoch,
+                  );
+                  if (candidate === undefined) {
+                    throw new TypeError(
+                      "assign must return one of the available current session fences",
+                    );
+                  }
+                  if (!options.sessions.isCurrent(candidate)) {
+                    if (waiting) return undefined;
+                    throw createHypervisorError(
+                      "worker_unavailable",
+                      "the selected Worker session is no longer current",
+                      { identity: candidate.identity },
+                    );
+                  }
+                  target = Object.freeze({
+                    workerId: candidate.identity.workerId,
+                  });
+                }
+                return reserve();
+              };
+              return Promise.resolve(selection).then(selectedOffer);
+            }
+            return reserve();
+          };
+          offered = waiting
+            ? await queue.enqueue(
+                {
+                  ...input,
+                  signal: scope.signal,
+                  deadlineAtMs: scope.expiresAtMs,
+                },
+                offer,
+              )
+            : options.assign === undefined
+              ? (offer() as WorkDispatch)
+              : (await offer())!;
+        } catch (cause) {
+          if (
+            cause instanceof Error &&
+            "code" in cause &&
+            cause.code === "capacity_exhausted"
+          ) {
+            throw createHypervisorError(
+              "worker_unavailable",
+              "no ready Worker has capacity for this workload",
+              { cause },
+            );
+          }
+          throw cause;
+        }
+        const assignment = offered.assignment!;
+        try {
+          scope.assigned(assignment.fence);
+          if (options.onWorkAssigned !== undefined)
+            await scope.hook(() =>
+              options.onWorkAssigned!(
+                Object.freeze({
+                  stage: "work_assigned" as const,
+                  stageId: `work_assigned:${offered.operationId}:${assignment.streamId}`,
+                  callbackAttempt: 1,
+                  signal: scope.signal,
+                  operationId: offered.operationId,
+                  workload: offered.workload,
+                  ...(offered.target === undefined
+                    ? {}
+                    : { target: offered.target }),
+                  metadata: offered.metadata,
+                  ...(offered.deadlineAtMs === undefined
+                    ? {}
+                    : { deadlineAtMs: offered.deadlineAtMs }),
+                  deliveryCount: offered.deliveryCount,
+                  assignment,
+                  assignedAtMs: options.clock(),
                 }),
               ),
             );
-            const selectedOffer = (
-              selected: Awaited<ReturnType<HypervisorAssign>>,
-            ): WorkDispatch | undefined => {
-              scope.assertActive();
-              attempt?.assertActive();
-              if (selected !== undefined) {
-                const candidate = available.find(
-                  (fence) =>
-                    fence.connectionId === selected.connectionId &&
-                    fence.sessionGeneration === selected.sessionGeneration &&
-                    fence.identity.workerId === selected.identity.workerId &&
-                    fence.identity.attemptId === selected.identity.attemptId &&
-                    fence.identity.epoch === selected.identity.epoch,
-                );
-                if (candidate === undefined) {
-                  throw new TypeError(
-                    "assign must return one of the available current session fences",
-                  );
-                }
-                if (!options.sessions.isCurrent(candidate)) {
-                  if (waiting) return undefined;
-                  throw createHypervisorError(
-                    "worker_unavailable",
-                    "the selected Worker session is no longer current",
-                    { identity: candidate.identity },
-                  );
-                }
-                target = Object.freeze({
-                  workerId: candidate.identity.workerId,
-                });
-              }
-              return reserve();
-            };
-            return Promise.resolve(selection).then(selectedOffer);
-          }
-          return reserve();
-        };
-        offered = waiting
-          ? await queue.enqueue(
+          scope.assertActive();
+        } catch (cause) {
+          if (options.dispatcher.get(offered.operationId)?.status === "offered")
+            options.dispatcher.withdrawOffer(
+              offered.operationId,
+              assignment.fence,
+              assignment.streamId,
               {
-                ...input,
-                signal: scope.signal,
-                deadlineAtMs: scope.expiresAtMs,
+                code: "work_assignment_rejected",
+                message:
+                  cause instanceof Error
+                    ? cause.message
+                    : "work assignment callback failed",
               },
-              offer,
-            )
-          : options.assign === undefined
-            ? (offer() as WorkDispatch)
-            : (await offer())!;
-      } catch (cause) {
-        if (
-          cause instanceof Error &&
-          "code" in cause &&
-          cause.code === "capacity_exhausted"
-        ) {
+            );
+          else if (
+            options.dispatcher.get(offered.operationId)?.status ===
+            "reschedulable"
+          )
+            options.dispatcher.discard(offered.operationId);
+          throw cause;
+        }
+        if (options.rotated?.(offered) === true) {
+          options.dispatcher.withdrawOffer(
+            offered.operationId,
+            assignment.fence,
+            assignment.streamId,
+            {
+              code: "connection_rotated",
+              message: "worker connection rotated before WorkOpen delivery",
+            },
+          );
+          continue;
+        }
+        try {
+          scope.opened();
+          return options.open(offered, input);
+        } catch (cause) {
+          const current = options.dispatcher.get(offered.operationId);
+          if (current?.status === "offered") {
+            options.dispatcher.withdrawOffer(
+              offered.operationId,
+              assignment.fence,
+              assignment.streamId,
+              {
+                code: "connection_route_failed",
+                message: "worker connection failed before WorkOpen delivery",
+              },
+            );
+          } else if (current?.status === "reschedulable") {
+            options.dispatcher.discard(current.operationId);
+          }
+          if (input.signal?.aborted) throw input.signal.reason;
           throw createHypervisorError(
             "worker_unavailable",
-            "no ready Worker has capacity for this workload",
-            { cause },
-          );
-        }
-        throw cause;
-      }
-      const assignment = offered.assignment!;
-      try {
-        scope.assigned(assignment.fence);
-        if (options.onWorkAssigned !== undefined)
-          await scope.hook(() =>
-            options.onWorkAssigned!(
-              Object.freeze({
-                stage: "work_assigned" as const,
-                stageId: `work_assigned:${offered.operationId}:${assignment.streamId}`,
-                callbackAttempt: 1,
-                signal: scope.signal,
-                operationId: offered.operationId,
-                workload: offered.workload,
-                ...(offered.target === undefined
-                  ? {}
-                  : { target: offered.target }),
-                metadata: offered.metadata,
-                ...(offered.deadlineAtMs === undefined
-                  ? {}
-                  : { deadlineAtMs: offered.deadlineAtMs }),
-                deliveryCount: offered.deliveryCount,
-                assignment,
-                assignedAtMs: options.clock(),
-              }),
-            ),
-          );
-        scope.assertActive();
-      } catch (cause) {
-        if (options.dispatcher.get(offered.operationId)?.status === "offered")
-          options.dispatcher.withdrawOffer(
-            offered.operationId,
-            assignment.fence,
-            assignment.streamId,
+            "could not route work to the assigned worker connection",
             {
-              code: "work_assignment_rejected",
-              message:
-                cause instanceof Error
-                  ? cause.message
-                  : "work assignment callback failed",
+              identity: assignment.fence.identity,
+              operationId: offered.operationId,
+              cause,
             },
           );
-        else if (
-          options.dispatcher.get(offered.operationId)?.status ===
-          "reschedulable"
-        )
-          options.dispatcher.discard(offered.operationId);
-        throw cause;
-      }
-      try {
-        scope.opened();
-        return options.open(offered, input);
-      } catch (cause) {
-        const current = options.dispatcher.get(offered.operationId);
-        if (current?.status === "offered") {
-          options.dispatcher.withdrawOffer(
-            offered.operationId,
-            assignment.fence,
-            assignment.streamId,
-            {
-              code: "connection_route_failed",
-              message: "worker connection failed before WorkOpen delivery",
-            },
-          );
-        } else if (current?.status === "reschedulable") {
-          options.dispatcher.discard(current.operationId);
         }
-        if (input.signal?.aborted) throw input.signal.reason;
-        throw createHypervisorError(
-          "worker_unavailable",
-          "could not route work to the assigned worker connection",
-          {
-            identity: assignment.fence.identity,
-            operationId: offered.operationId,
-            cause,
-          },
-        );
       }
     });
   };

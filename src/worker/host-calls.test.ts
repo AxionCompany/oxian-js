@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHypervisor } from "../hypervisor/hypervisor.ts";
+import { createSessionRegistry } from "../supervisor/index.ts";
 import type { WorkerCallOptions, Hypervisor } from "../hypervisor/types.ts";
 import { serve } from "../adapters/node/server.ts";
 import { createWorker } from "./worker.ts";
@@ -30,6 +31,9 @@ async function fixture(
   configureHostCalls = true,
   maxLifetimeStreams?: number,
   shutdownTimeoutMs = maxLifetimeStreams === undefined ? 100 : 1000,
+  // A registry without handoff support makes this host behave like one that
+  // predates make-before-break rotation.
+  handoff = true,
 ) {
   const local = {
     type: "in-process" as const,
@@ -47,6 +51,9 @@ async function fixture(
         ? [local]
         : [{ type: "websocket", config: { path: "/workers" } }],
     workerCalls: calls,
+    ...(handoff
+      ? {}
+      : { sessions: { ...createSessionRegistry(), handoff: false } }),
     config: {
       ...(maxLifetimeStreams === undefined ? {} : { maxLifetimeStreams }),
       shutdownTimeoutMs,
@@ -504,7 +511,7 @@ for (const kind of ["in-process", "websocket"] as const) {
 }
 
 for (const kind of ["in-process", "websocket"] as const) {
-  test(`${kind}: reverse lifetime exhaustion refuses locally and rotates without losing the parent`, {
+  test(`${kind}: legacy host: reverse lifetime exhaustion refuses locally and rotates without losing the parent`, {
     timeout: 10_000,
   }, async () => {
     const f = await fixture(
@@ -526,6 +533,8 @@ for (const kind of ["in-process", "websocket"] as const) {
       },
       true,
       4,
+      undefined,
+      false,
     );
     try {
       const previous = f.h.sessions.get("trusted-worker")!.connectionId;
@@ -608,7 +617,7 @@ for (const kind of ["in-process", "websocket"] as const) {
 }
 
 for (const kind of ["in-process", "websocket"] as const) {
-  test(`${kind}: queued reverse Opens reserve lifetime before concurrent admission`, {
+  test(`${kind}: legacy host: queued reverse Opens reserve lifetime before concurrent admission`, {
     timeout: 10_000,
   }, async () => {
     const f = await fixture(
@@ -635,6 +644,8 @@ for (const kind of ["in-process", "websocket"] as const) {
       },
       true,
       4,
+      undefined,
+      false,
     );
     try {
       assert.equal(await invoke(f.h), "queued safely");

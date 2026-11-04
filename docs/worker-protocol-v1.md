@@ -28,7 +28,9 @@ The v1 hard limits are:
 
 An implementation may admit less than a hard limit, but it must never emit or
 accept a value above the v1 maximum. Reaching the lifetime stream limit requires
-a fresh connection; used stream IDs are never reused on one connection.
+a fresh connection; used stream IDs are never reused on one connection. A host
+and worker that negotiate [connection handoff](#connection-handoff) open that
+fresh connection before the old one runs out, so no call waits on the limit.
 
 ## Connection handshake
 
@@ -98,7 +100,43 @@ the wire state machine do not replace registry fencing: before processing every
 inbound frame, the gateway must synchronously confirm that its socket still owns
 the current authority-issued session generation and
 `(workerId, attemptId, epoch, connectionId)` record. Replaced sockets are closed
-and their later frames are ignored.
+and their later frames are ignored. The one exception is a connection retired by
+[handoff](#connection-handoff): it keeps its fenced record, so its own streams
+finish, but it is no longer routable.
+
+## Connection handoff
+
+Handoff is make-before-break rotation, like HTTP/2 `GOAWAY`. It retains the
+`oxian.worker.v1` identifier and uses the reserved transport key
+`__oxian_handoff_v1`:
+
+1. A host whose session registry can retire sessions offers
+   `{ "version": 1 }` in `Welcome.bootstrap`.
+2. A supporting worker acknowledges it in `Ready.metadata`. When the
+   connection replaces a live one, the acknowledgement names it:
+   `{ "version": 1, "from": "<connectionId>" }`.
+3. A worker asks for a successor once either side's share of the stream
+   lifetime falls to a quarter: it connects again with its current resume
+   credential while the old connection keeps working.
+4. When a successor's Ready names a live connection of the same
+   `(workerId, attemptId, epoch)`, the host retires that connection instead of
+   closing it: the successor takes all new work as soon as it is ready, and the
+   predecessor receives `drain` with no deadline of its own (one already
+   draining keeps its deadline). Its streams end as they would have; it then
+   sends `drained` and closes.
+5. The worker sends every new call over its newest ready connection. A parent
+   still running on a predecessor calls over the successor with the same
+   `parentStreamId`; the host resolves the parent on any live connection of the
+   same identity. A call that finds no connection with streams left waits for
+   the successor within its own deadline instead of failing.
+
+A host refuses a successor that names a connection being shut down, so a
+shutdown still ends the worker. If a handoff worker's connection runs out before
+its successor is ready, the host drains it with no deadline; calls wait for the
+successor. A malformed key fails closed. An old host sends no offer, so a worker rotates
+as before: the host drains the exhausted connection and the worker reconnects
+once it is drained. An old worker never names a predecessor, so a new host
+replaces sessions as before. Applications must not use the reserved key.
 
 ## Optional worker-to-host invocation
 
@@ -146,10 +184,13 @@ Reverse streams consume their negotiated capacity independently of forward
 Worker capacity. Both directions share one stream-ID namespace, strict no-reuse
 rule, and negotiated total connection lifetime (at most 65,536). To make
 simultaneous Opens safe, the host owns ceil(L / 2) lifetime slots and the worker
-owns floor(L / 2); neither may borrow unused slots from the other. Local queued
-Opens reserve slots before emission. Either exhausted share triggers host-driven
+owns floor(L / 2); neither may borrow unused slots from the other. The split
+counts from Ready, so work the host queues behind ReadyAck spends its own share.
+Local queued Opens reserve slots before emission. With
+[handoff](#connection-handoff), a worker moves to a successor before either
+share runs out. Without it, either exhausted share triggers host-driven
 rotation, while the other remains available to existing assignments during
-drain. Worker exhaustion refuses locally with `capacity/not_started`.
+drain, and worker exhaustion refuses locally with `capacity/not_started`.
 Unnegotiated connections keep the full forward budget. Existing sequence,
 byte-credit, response-metadata ordering, terminal, and tombstone rules apply
 unchanged.
@@ -157,7 +198,9 @@ unchanged.
 During drain, new forward opens and parentless reverse opens are rejected.
 Parent-bound reverse calls may continue while their authenticated parent is
 active, so draining an execution does not prevent its dependent host calls.
-Drained remains invalid while streams in either direction are active.
+A parentless reverse Open the host receives while draining was sent before the
+worker saw `drain`; the two crossed on the wire, so the host accepts and runs
+it. Drained remains invalid while streams in either direction are active.
 Application admission, handler, and source-cleanup limits survive session
 replacement until those activities actually settle; a timeout signal cannot
 force an arbitrary promise to stop.
@@ -284,7 +327,9 @@ half; no credit may follow cancel/error. Credit granted before observing the
 opposite End may cross that End and arrive after the receiver has reached
 End/End; the receiver validates and discards that inbound credit from its
 terminal tombstone. Locally sending new credit after observing End/End remains a
-protocol violation.
+protocol violation. The same holds after `drained`: credit or a late
+Cancel/Error that crossed a stream's End is settled from its tombstone, and a
+local grant is refused as `post_terminal_frame`.
 
 ## Disconnect settlement
 

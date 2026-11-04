@@ -17,8 +17,12 @@ import {
   createWorkerIdentity,
   createWorkErrorFrame,
   createWorkMetadataFrame,
+  HANDOFF_CAPABILITY_KEY,
   isProtocolViolation,
   type JsonObject,
+  readHandoff,
+  withHandoff,
+  withoutHandoff,
   type WelcomeFrame,
   WORKER_PROTOCOL_LIMITS,
   type WorkOpenFrame,
@@ -30,7 +34,7 @@ import {
   type ProtocolTransport,
   type ProtocolTransportMessage,
 } from "../transport/index.ts";
-import { createHostCallError, type HostCaller } from "../work/host-call.ts";
+import { createHostCallError } from "../work/host-call.ts";
 import {
   createHostCallChannel,
   type HostCallChannel,
@@ -53,8 +57,10 @@ import {
 } from "./internal/errors.ts";
 import {
   createExecutionLedger,
+  type ExecutionLedger,
   type ExecutionReservation,
 } from "./internal/execution_ledger.ts";
+import { createHostLanes, type HostLane } from "./internal/lanes.ts";
 import {
   createLatestAsyncObserver,
   createOneShotAsyncObserver,
@@ -219,8 +225,18 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
     30_000,
     0x7fff_ffff,
   );
-  let currentHostCaller: HostCaller | undefined;
   const hostCallLedger = createExecutionLedger(hostCallCapacity);
+  // Ready connections that carry worker-to-host calls, newest last.
+  const lanes = createHostLanes();
+  // A live connection asked for a successor before its stream lifetime runs
+  // out; calls wait for that successor instead of failing.
+  let handoff: Readonly<{ from: string }> | undefined;
+  // The current connection was shut down: the Worker ends, with no successor.
+  let shutdownSeen = false;
+  const shutdownNotice = createDeferred<void>();
+  // Draining sessions recheck when a successor takes over: from then on they
+  // wait only for their own work.
+  const drainChecks = new Set<() => void>();
   const createHandshakeId =
     options.createHandshakeId ?? (() => crypto.randomUUID());
   const initialHandshakeId = options.handshakeId ?? createHandshakeId();
@@ -413,7 +429,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
   const stopFromExternalSignal = (): void => {
     stopReason = "external_abort";
     const reason = options.signal?.reason ?? createAbortError("Worker stopped");
-    sessionFence.abortCurrent(reason);
+    sessionFence.abortAll(reason);
     if (!stopController.signal.aborted) {
       stopController.abort(reason);
     }
@@ -426,7 +442,36 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
     });
   }
 
-  const runSession = async (): Promise<SessionResult> => {
+  /**
+   * During a handoff, a call that finds no connection with streams left waits
+   * for the successor, within its own deadline. Otherwise it returns nothing.
+   */
+  const waitForLane = async (
+    own: HostLane | undefined,
+    signal: AbortSignal,
+    deadlineAtMs: number | undefined,
+  ): Promise<HostLane | undefined> => {
+    if (handoff === undefined) return undefined;
+    const deadline = Math.min(
+      deadlineAtMs ?? now() + hostCallTimeout,
+      now() + hostCallTimeout,
+    );
+    try {
+      return await lanes.wait(
+        own,
+        () => handoff !== undefined && !stopController.signal.aborted,
+        AbortSignal.any([signal, stopController.signal]),
+        deadline,
+        now,
+      );
+    } catch (error) {
+      if (stopController.signal.aborted)
+        throw createHostCallError("unavailable", "not_started");
+      throw error;
+    }
+  };
+
+  const runSession = async (onHandoff: () => void): Promise<SessionResult> => {
     const credentialAtConnect = credentials.current();
     const credentialAtHello = credentialAtConnect.credential;
     const handshakeAtHello = credentialAtConnect.handshakeId;
@@ -449,10 +494,44 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
     let heartbeatRunning = false;
     let heartbeatSequence = 0;
     let drainCompletion: Promise<void> | undefined;
+    let lane: HostLane | undefined;
+    let handoffAsked = false;
+    let handoffOffered = false;
+    // Opens left before the lifetime check could first trip; it runs per open.
+    let checkAfter = 0;
     const streams = new Map<string, MutableStream>();
-    const sessionLease = sessionFence.attach((reason) => abortSession(reason));
+    // While another session is current, this one is its successor: it stays
+    // quiet until it is ready and takes over.
+    const successor = sessionFence.hasCurrent();
+    const sessionLease = sessionFence.attach(
+      (reason) => abortSession(reason),
+      successor,
+    );
 
+    // Publishes Worker-wide state; only one session at a time.
     const isCurrentSession = (): boolean => sessionLease.isCurrent();
+    // Still running, even after a successor took over.
+    const isLiveSession = (): boolean => sessionLease.isLive();
+
+    // Executions and outgoing calls this connection started. A handed-off
+    // session drains on its own work, not on its successor's.
+    const ownExecutions = new Set<ExecutionReservation>();
+    const ownHostCalls = new Set<ExecutionReservation>();
+    const own = (
+      ledger: ExecutionLedger,
+      owned: Set<ExecutionReservation>,
+    ): ExecutionReservation | undefined => {
+      const reservation = ledger.reserve();
+      if (reservation === undefined) return undefined;
+      const tracked: ExecutionReservation = Object.freeze({
+        release: () => {
+          owned.delete(tracked);
+          reservation.release();
+        },
+      });
+      owned.add(tracked);
+      return tracked;
+    };
 
     const syncActiveStreams = (): void => {
       if (isCurrentSession()) activeStreams = streams.size;
@@ -463,7 +542,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
     };
 
     const failSession = (error: unknown): void => {
-      if (!isCurrentSession() || fatalError !== undefined) return;
+      if (!isLiveSession() || fatalError !== undefined) return;
       fatalError = error;
       abortSession(error);
       void transport
@@ -512,7 +591,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
       wakeCreditWaiters(stream);
       closeInput(stream);
       releasePreStartReservation(stream);
-      hostCalls?.cancelParent(stream.open.streamId);
+      lanes.cancelParent(stream.open.streamId);
       streams.delete(stream.open.streamId);
       syncActiveStreams();
       if (draining) void completeDrainIfIdle();
@@ -576,7 +655,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
     };
 
     const abortWork = (stream: MutableStream, reason: unknown): void => {
-      hostCalls?.cancelParent(stream.open.streamId);
+      lanes.cancelParent(stream.open.streamId);
       if (!stream.abortController.signal.aborted) {
         stream.abortController.abort(reason);
       }
@@ -600,11 +679,15 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
       for (const stream of streams.values()) abortWork(stream, reason);
     };
     const unsubscribeHostCallLedger = hostCallLedger.subscribe(() => {
-      if (isCurrentSession() && draining) void completeDrainIfIdle();
+      if (isLiveSession() && draining) void completeDrainIfIdle();
     });
     const unsubscribeExecutionLedger = executionLedger.subscribe(() => {
-      if (isCurrentSession() && draining) void completeDrainIfIdle();
+      if (isLiveSession() && draining) void completeDrainIfIdle();
     });
+    const drainCheck = (): void => {
+      if (isLiveSession() && draining) void completeDrainIfIdle();
+    };
+    drainChecks.add(drainCheck);
 
     const sendLocalTerminal = (
       stream: MutableStream,
@@ -891,24 +974,30 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
       stream.executionSettlement = executionSettlement;
       const context: WorkerWorkContext = Object.freeze({
         callHost: async (input) => {
-          if (!hostCalls)
+          if (!hostCalls || lane === undefined)
             throw createHostCallError("unsupported", "not_started");
           if (
-            !isCurrentSession() ||
+            !isLiveSession() ||
             !streams.has(stream.open.streamId) ||
             stream.abortController.signal.aborted
           )
             throw createHostCallError("unavailable", "not_started");
-          return await hostCalls.call(
-            {
-              ...input,
-              signal: AbortSignal.any([
-                stream.abortController.signal,
-                ...(input.signal ? [input.signal] : []),
-              ]),
-            },
+          const signal = AbortSignal.any([
+            stream.abortController.signal,
+            ...(input.signal ? [input.signal] : []),
+          ]);
+          // The newest connection carries the call; after a handoff that may
+          // be a successor of the one this parent runs on.
+          const route =
+            lanes.pick(lane) ??
+            (await waitForLane(lane, signal, input.deadlineAtMs)) ??
+            lane;
+          const call = route.channel.call(
+            { ...input, signal },
             stream.open.streamId,
           );
+          route.opened();
+          return await call;
         },
         streamId: stream.open.streamId,
         workload: stream.open.workload,
@@ -1062,7 +1151,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
                 failSession(sendError);
               }
             }
-            if (isCurrentSession() && draining) {
+            if (isLiveSession() && draining) {
               void completeDrainIfIdle();
             }
           }
@@ -1127,14 +1216,51 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
       return created;
     };
 
-    function completeDrainIfIdle(): Promise<void> {
+    /**
+     * Asks for a successor connection while this one still has a quarter of
+     * either side's stream lifetime left, so new work moves before it runs out.
+     */
+    function maybeHandoff(): void {
       if (
-        !isCurrentSession() ||
+        !handoffOffered ||
+        handoffAsked ||
+        draining ||
+        shutdown ||
+        !isLiveSession() ||
+        transport === undefined ||
+        sessionConnectionId === undefined
+      )
+        return;
+      // Each call follows at most one Open, so nothing can trip before then.
+      if (--checkAfter > 0) return;
+      const state = transport.snapshot();
+      if (state.phase !== "ready") return;
+      const total = state.maxLifetimeStreams;
+      const hostShare = hostCalls === undefined ? total : Math.ceil(total / 2);
+      const workerShare =
+        hostCalls === undefined ? total : Math.floor(total / 2);
+      checkAfter = Math.min(
+        state.remainingRemoteStreams - Math.floor(hostShare / 4),
+        state.remainingLocalStreams - Math.floor(workerShare / 4),
+      );
+      if (checkAfter > 0) return;
+      handoffAsked = true;
+      handoff = Object.freeze({ from: sessionConnectionId });
+      onHandoff();
+    }
+
+    function completeDrainIfIdle(): Promise<void> {
+      // The current session drains the whole process, as it always has. One
+      // that handed off waits only for what it started itself.
+      const busy = isCurrentSession()
+        ? hostCallLedger.occupied() > 0 || executionLedger.occupied() > 0
+        : ownHostCalls.size > 0 || ownExecutions.size > 0;
+      if (
+        !isLiveSession() ||
         !draining ||
         streams.size > 0 ||
         (hostCalls?.active() ?? 0) > 0 ||
-        hostCallLedger.occupied() > 0 ||
-        executionLedger.occupied() > 0 ||
+        busy ||
         sessionConnectionId === undefined ||
         transport === undefined
       ) {
@@ -1183,6 +1309,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
           const stream = createStream(frame);
           streams.set(frame.streamId, stream);
           syncActiveStreams();
+          maybeHandoff();
           if (draining) {
             cancelForDeadline(stream, "worker_draining");
             return;
@@ -1198,7 +1325,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
               () => cancelForDeadline(stream),
             );
           }
-          const reservation = executionLedger.reserve();
+          const reservation = own(executionLedger, ownExecutions);
           if (reservation === undefined) {
             cancelForDeadline(stream, "worker_capacity");
             return;
@@ -1355,6 +1482,17 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
           streams.clear();
           syncActiveStreams();
           await transport?.close({ code: 1000, reason: "worker_shutdown" });
+          // A shutdown of the current connection ends the Worker: no
+          // successor follows, though handed-off ones finish their streams.
+          if (isCurrentSession()) {
+            shutdownSeen = true;
+            shutdownNotice.resolve(undefined);
+            sessionFence.abortSuccessors(
+              createAbortError(
+                "Worker shutdown before its successor was ready",
+              ),
+            );
+          }
           break;
         }
 
@@ -1420,7 +1558,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
         drained ||
         shutdown ||
         sessionAbortController.signal.aborted ||
-        !isCurrentSession() ||
+        !isLiveSession() ||
         transport === undefined
       ) {
         return;
@@ -1435,7 +1573,20 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
           ? 0
           : Math.max(0, capacity - effectiveInflight);
         let metadata: JsonObject | void = {};
-        if (options.createHeartbeatMetadata !== undefined) {
+        // Only the current connection describes the Worker; a handed-off one
+        // heartbeats just to keep its lease. The callback never runs twice at
+        // once, so a successor first lets its predecessor's call settle.
+        if (
+          options.createHeartbeatMetadata !== undefined &&
+          isCurrentSession()
+        ) {
+          const previous = pendingHeartbeatMetadata;
+          if (previous !== undefined) {
+            await waitForTaskOrStop(
+              previous.task,
+              sessionAbortController.signal,
+            ).catch(() => undefined);
+          }
           const context: WorkerHeartbeatContext = Object.freeze({
             identity,
             connectionId: welcome.connectionId,
@@ -1473,7 +1624,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
           drained ||
           shutdown ||
           sessionAbortController.signal.aborted ||
-          !isCurrentSession() ||
+          !isLiveSession() ||
           transport === undefined
         ) {
           return;
@@ -1504,11 +1655,18 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
 
     try {
       setSessionState("connecting");
-      frameConnection = await connection.connect(stopController.signal);
+      // A successor's attempt also ends when the Worker gives it up.
+      const attemptSignal = successor
+        ? AbortSignal.any([
+            stopController.signal,
+            sessionAbortController.signal,
+          ])
+        : stopController.signal;
+      frameConnection = await connection.connect(attemptSignal);
       transport = await createProtocolTransport({
         connection: frameConnection,
         role: "worker",
-        signal: stopController.signal,
+        signal: attemptSignal,
         maxInboundMessages: connection.limits?.maxInboundMessages,
         maxInboundBytes: connection.limits?.maxInboundBytes,
         maxPendingSendMessages: connection.limits?.maxPendingSendMessages,
@@ -1538,7 +1696,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
       const first = await takeWithTimeout(
         iterator,
         handshakeTimeoutMs,
-        stopController.signal,
+        attemptSignal,
       );
       if (
         !first.done &&
@@ -1573,9 +1731,19 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
         offeredHostCalls !== undefined
           ? Math.min(hostCallCapacity, offeredHostCalls)
           : undefined;
+      // A host that offers handoff keeps this connection open, once a
+      // successor names it, until its streams finish.
+      const offeredHandoff = readHandoff(wireWelcome.bootstrap);
+      if (offeredHandoff?.from !== undefined)
+        throw createWorkerError(
+          "handshake_failed",
+          "Hypervisor offered handoff from a connection",
+        );
       const welcome = {
         ...wireWelcome,
-        bootstrap: withoutHostCallCapacity(wireWelcome.bootstrap),
+        bootstrap: withoutHandoff(
+          withoutHostCallCapacity(wireWelcome.bootstrap),
+        ),
       };
       welcomed = true;
       if (welcome.resumeExpiresAtMs <= now()) {
@@ -1631,24 +1799,32 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
             () => task,
           );
         }
-        if (Object.hasOwn(metadata ?? {}, HOST_CALL_CAPABILITY_KEY))
+        if (
+          Object.hasOwn(metadata ?? {}, HOST_CALL_CAPABILITY_KEY) ||
+          Object.hasOwn(metadata ?? {}, HANDOFF_CAPABILITY_KEY)
+        )
           throw new TypeError(
             "application Ready metadata uses reserved transport key",
           );
+        const transportMetadata =
+          negotiatedHostCalls === undefined
+            ? (metadata ?? {})
+            : withHostCallCapacity(
+                metadata ?? {},
+                negotiatedHostCalls,
+                Math.min(
+                  readHostCallLifetime(wireWelcome.bootstrap)!,
+                  transport.snapshot().maxLifetimeStreams,
+                ),
+              );
+        // Acknowledge handoff, and name the live connection this one replaces.
+        handoffOffered = offeredHandoff !== undefined;
         readyFrame = createReadyFrame({
           connectionId: welcome.connectionId,
           capacity,
-          metadata:
-            negotiatedHostCalls === undefined
-              ? (metadata ?? {})
-              : withHostCallCapacity(
-                  metadata ?? {},
-                  negotiatedHostCalls,
-                  Math.min(
-                    readHostCallLifetime(wireWelcome.bootstrap)!,
-                    transport.snapshot().maxLifetimeStreams,
-                  ),
-                ),
+          metadata: handoffOffered
+            ? withHandoff(transportMetadata, handoff?.from)
+            : transportMetadata,
         });
       } catch (error) {
         try {
@@ -1718,7 +1894,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
           transport,
           signal: sessionAbortController.signal,
           capacity: negotiatedHostCalls,
-          reserveOutgoing: () => hostCallLedger.reserve(),
+          reserveOutgoing: () => own(hostCallLedger, ownHostCalls),
           timeoutMs: hostCallTimeout,
           windowBytes: Math.min(
             inputBufferBytes,
@@ -1731,12 +1907,30 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
             if (draining) void completeDrainIfIdle();
           },
         });
-        currentHostCaller = async (input) => {
-          if (!isCurrentSession() || draining || shutdown)
-            throw createHostCallError("unavailable", "not_started");
-          return await hostCalls!.call(input);
-        };
+        const channel = hostCalls;
+        const lifetime = transport;
+        lane = Object.freeze({
+          channel,
+          open: () =>
+            isLiveSession() &&
+            !draining &&
+            !shutdown &&
+            !sessionAbortController.signal.aborted,
+          // Well above a quarter of its share until it asks for a successor.
+          remaining: () =>
+            handoffAsked
+              ? lifetime.snapshot().remainingLocalStreams
+              : Number.POSITIVE_INFINITY,
+          opened: maybeHandoff,
+        });
       }
+      // Ready: a successor takes over the Worker's state and new calls now.
+      sessionLease.promote();
+      connectionId = welcome.connectionId;
+      syncActiveStreams();
+      if (lane !== undefined) lanes.add(lane);
+      else lanes.touch();
+      for (const check of [...drainChecks]) check();
       setSessionState("ready");
       reconnectAttempt = 0;
       const readySnapshot = snapshot();
@@ -1850,10 +2044,16 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
       );
       unsubscribeExecutionLedger();
       unsubscribeHostCallLedger();
+      drainChecks.delete(drainCheck);
       if (isCurrentSession()) {
         activeStreams = 0;
         connectionId = undefined;
-        currentHostCaller = undefined;
+      }
+      if (lane !== undefined) lanes.remove(lane);
+      // Its successor, if one never came, is no longer awaited.
+      if (handoff !== undefined && handoff.from === sessionConnectionId) {
+        handoff = undefined;
+        lanes.touch();
       }
       sessionLease.release();
       if (transport !== undefined) {
@@ -1893,8 +2093,14 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
       "connection_lost",
       "Worker has not connected",
     );
+    // Sessions that handed off and still finish their own streams.
+    const retiring = new Set<Promise<void>>();
+    // The latest of them, while no successor has become ready.
+    let predecessor: Promise<SessionResult> | undefined;
+    let ended: WorkerResult["reason"] | undefined;
     try {
       while (!stopController.signal.aborted) {
+        if (shutdownSeen) return { reason: "shutdown" };
         await settleSerializedWorkBeforeConnect();
         const credentialState = credentials.current();
         if (
@@ -1910,11 +2116,38 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
           return { reason: "reenrollment_required", error };
         }
 
-        const result = await runSession();
-        if (result.reason === "shutdown") {
+        const asked = createDeferred<void>();
+        const session = runSession(() => asked.resolve(undefined));
+        let result = await Promise.race([
+          session,
+          asked.promise.then(() => undefined),
+        ]);
+        if (result === undefined) {
+          // Make before break: the successor connects now, with no reconnect
+          // delay, while this session keeps finishing its own streams.
+          const finished = session.then(
+            () => undefined,
+            () => undefined,
+          );
+          retiring.add(finished);
+          void finished.then(() => retiring.delete(finished));
+          predecessor = session;
+          continue;
+        }
+        if (result.reason === "shutdown" || shutdownSeen) {
           return { reason: "shutdown" };
         }
-        setState("reconnecting");
+        // A successor that failed before ready leaves its predecessor serving.
+        // Without reconnects, that predecessor's own end decides what follows.
+        if (
+          sessionFence.hasCurrent() &&
+          predecessor !== undefined &&
+          reconnectDelay === false
+        ) {
+          result = await predecessor;
+          if (result.reason === "shutdown") return { reason: "shutdown" };
+        }
+        if (!sessionFence.hasCurrent()) setState("reconnecting");
         await settleSerializedWorkBeforeConnect();
         if (result.reason === "drained") {
           continue;
@@ -1933,9 +2166,11 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
             lastError.code === "credential_rejected")
         ) {
           notifyReenrollment(lastError);
+          ended = "reenrollment_required";
           return { reason: "reenrollment_required", error: lastError };
         }
         if (reconnectDelay === false) {
+          ended = "reconnect_exhausted";
           return { reason: "reconnect_exhausted", error: lastError };
         }
         reconnectAttempt++;
@@ -1951,6 +2186,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
               }),
         });
         if (delay === null) {
+          ended = "reconnect_exhausted";
           return { reason: "reconnect_exhausted", error: lastError };
         }
         if (
@@ -1971,13 +2207,24 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
                 delay,
                 Math.max(0, delayCredentialState.resumeExpiresAtMs - now()),
               );
-        await waitForDelay(safeDelay, stopController.signal);
+        await Promise.race([
+          waitForDelay(safeDelay, stopController.signal),
+          shutdownNotice.promise,
+        ]);
       }
       return { reason: "stopped" };
     } catch (error) {
       if (!stopController.signal.aborted) throw error;
       return { reason: "stopped" };
     } finally {
+      // A Worker that can no longer reconnect stops what still runs; otherwise
+      // handed-off sessions finish their own streams first.
+      if (ended !== undefined) {
+        sessionFence.abortAll(
+          createWorkerError("worker_stopped", `Worker ended: ${ended}`),
+        );
+      }
+      await Promise.all(retiring);
       await outputCancellationSettlements.settle();
       runFinished = true;
       setState("stopped");
@@ -2005,7 +2252,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
   const stop = async (reason = "worker_stopped"): Promise<void> => {
     stopReason = reason;
     const error = createAbortError(reason);
-    sessionFence.abortCurrent(error);
+    sessionFence.abortAll(error);
     if (!stopController.signal.aborted) {
       stopController.abort(error);
     }
@@ -2074,12 +2321,30 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
     stop,
     snapshot,
     callHost: async (input) => {
-      if (!currentHostCaller)
-        throw createHostCallError(
-          state === "ready" ? "unsupported" : "unavailable",
-          "not_started",
-        );
-      return await currentHostCaller(input);
+      const lane =
+        lanes.pick() ??
+        (await waitForLane(
+          undefined,
+          input.signal ?? stopController.signal,
+          input.deadlineAtMs,
+        ));
+      if (lane === undefined) {
+        // No handoff under way: fail as a lone connection always has.
+        const newest = lanes.newest();
+        if (newest === undefined)
+          throw createHostCallError(
+            state === "ready" ? "unsupported" : "unavailable",
+            "not_started",
+          );
+        if (!newest.open())
+          throw createHostCallError("unavailable", "not_started");
+        const call = newest.channel.call(input);
+        newest.opened();
+        return await call;
+      }
+      const call = lane.channel.call(input);
+      lane.opened();
+      return await call;
     },
   });
 }

@@ -22,6 +22,13 @@ import type {
 export type SessionAttachment = Readonly<{
   session: WorkerSession;
   replaced?: WorkerSession;
+  /**
+   * The predecessor named by `retire`. It is no longer routable but stays
+   * valid for its own frames until its streams finish (make-before-break).
+   */
+  retired?: WorkerSession;
+  /** Retiring sessions closed because a newer attempt or epoch attached. */
+  superseded?: readonly WorkerSession[];
 }>;
 
 export type SessionLease = Readonly<{
@@ -37,6 +44,11 @@ export type SessionReservationInput = Readonly<{
 }>;
 
 export type SessionRegistry = Readonly<{
+  /**
+   * True when `attach` honors `retire`. Only then does the Hypervisor offer
+   * workers make-before-break handoff.
+   */
+  handoff?: boolean;
   /** Synchronous change observer; must not mutate the registry. Errors are ignored. */
   subscribe?(listener: (session: WorkerSession) => void): () => void;
   attach(
@@ -48,6 +60,11 @@ export type SessionRegistry = Readonly<{
       workloads: readonly string[];
       capacity: number;
       leaseTimeoutMs: number;
+      /**
+       * Connection ID of the current session this one hands off from. When it
+       * matches the same identity, that session retires instead of closing.
+       */
+      retire?: string;
     }>,
   ): SessionAttachment;
   markReady(fence: SessionFence): WorkerSession;
@@ -103,7 +120,11 @@ export function createSessionRegistry(
   }> = {},
 ): SessionRegistry {
   const clock = options.clock ?? Date.now;
+  // The routable session of each worker.
   const sessions = new Map<string, WorkerSession>();
+  // Handed-off predecessors, by connection ID. They stay valid for their own
+  // frames, so their streams finish, but never take new work once draining.
+  const retiring = new Map<string, WorkerSession>();
   const listeners = new Set<(session: WorkerSession) => void>();
   const notify = (session: WorkerSession): void => {
     for (const listener of listeners) {
@@ -126,12 +147,74 @@ export function createSessionRegistry(
 
   const now = (): number => expectFiniteTimestamp(clock(), "clock()");
 
+  // Sessions of one worker that share its execution capacity.
+  const siblings = (workerId: string): WorkerSession[] => {
+    const found: WorkerSession[] = [];
+    if (retiring.size === 0) return found;
+    for (const session of retiring.values()) {
+      if (session.identity.workerId === workerId) found.push(session);
+    }
+    return found;
+  };
+
+  // A current session as callers see it: its retiring predecessors' work still
+  // occupies the same worker, so it counts against this session's capacity.
+  const view = (session: WorkerSession): WorkerSession => {
+    if (retiring.size === 0) return session;
+    let reserved = session.reserved;
+    for (const sibling of siblings(session.identity.workerId)) {
+      reserved += sibling.reserved;
+    }
+    return reserved === session.reserved
+      ? session
+      : withSession(session, { reserved });
+  };
+
+  const load = (workerId: string): number => {
+    const current = sessions.get(workerId);
+    return (
+      (current?.reserved ?? 0) +
+      siblings(workerId).reduce((sum, session) => sum + session.reserved, 0)
+    );
+  };
+
+  const store = (session: WorkerSession): void => {
+    if (retiring.has(session.connectionId)) {
+      retiring.set(session.connectionId, session);
+    } else {
+      sessions.set(session.identity.workerId, session);
+    }
+  };
+
+  // If a successor goes before it is ready, its still-ready predecessor is
+  // routable again: it never stopped taking work.
+  const restore = (workerId: string): void => {
+    if (sessions.has(workerId)) return;
+    let candidate: WorkerSession | undefined;
+    for (const session of siblings(workerId)) {
+      if (
+        session.phase === "ready" &&
+        (candidate === undefined ||
+          session.sessionGeneration > candidate.sessionGeneration)
+      ) {
+        candidate = session;
+      }
+    }
+    if (candidate === undefined) return;
+    retiring.delete(candidate.connectionId);
+    sessions.set(workerId, candidate);
+    notify(candidate);
+  };
+
   const remove = (
     session: WorkerSession,
     phase: "closed" | "expired",
   ): WorkerSession => {
     if (sessions.get(session.identity.workerId) === session) {
       sessions.delete(session.identity.workerId);
+    }
+    if (retiring.get(session.connectionId) === session) {
+      retiring.delete(session.connectionId);
     }
     if (
       connectionOwners.get(session.connectionId) === session.identity.workerId
@@ -146,6 +229,7 @@ export function createSessionRegistry(
   const expireOne = (
     session: WorkerSession,
     currentTime: number,
+    restoreAfter = true,
   ): WorkerSession | undefined => {
     // A connected session is authenticated and fenced but deliberately not
     // routable yet. Its Ready handshake timer, owned by the Hypervisor, is the
@@ -158,14 +242,16 @@ export function createSessionRegistry(
     // authoritative instead. WebSocket Workers remain heartbeat-leased.
     if (session.transportType === "in-process") return undefined;
     if (currentTime < session.leaseExpiresAtMs) return undefined;
+    const wasCurrent = sessions.get(session.identity.workerId) === session;
     const expired = remove(session, "expired");
     expiredEvents.push(expired);
+    if (wasCurrent && restoreAfter) restore(session.identity.workerId);
     return expired;
   };
 
   const scanExpired = (): void => {
     const currentTime = now();
-    for (const session of [...sessions.values()]) {
+    for (const session of [...sessions.values(), ...retiring.values()]) {
       expireOne(session, currentTime);
     }
   };
@@ -182,9 +268,17 @@ export function createSessionRegistry(
     );
   };
 
+  // The live session a fence names: the worker's current one or a retiring one.
+  const located = (fence: SessionFence): WorkerSession | undefined => {
+    const current = sessions.get(fence.identity.workerId);
+    if (isFence(current, fence)) return current;
+    const retired = retiring.get(fence.connectionId);
+    return isFence(retired, fence) ? retired : undefined;
+  };
+
   const assertCurrent = (fenceInput: SessionFence): WorkerSession => {
     const fence = createSessionFence(fenceInput);
-    const session = sessions.get(fence.identity.workerId);
+    const session = located(fence);
     if (!isFence(session, fence)) {
       return fail(
         "stale_session",
@@ -256,7 +350,7 @@ export function createSessionRegistry(
     let existing = sessions.get(incoming.identity.workerId);
     let expiredExisting: WorkerSession | undefined;
     if (existing !== undefined) {
-      expiredExisting = expireOne(existing, now());
+      expiredExisting = expireOne(existing, now(), false);
       if (expiredExisting !== undefined) existing = undefined;
     }
 
@@ -287,8 +381,28 @@ export function createSessionRegistry(
       }
     }
 
-    const replaced =
-      existing === undefined ? expiredExisting : remove(existing, "closed");
+    // A handoff names the live connection it replaces. That session keeps its
+    // streams; anything else is displaced exactly as before.
+    const retires =
+      existing !== undefined &&
+      input.retire !== undefined &&
+      input.retire === existing.connectionId &&
+      sameIdentity(existing.identity, incoming.identity) &&
+      (existing.phase === "ready" || existing.phase === "draining");
+    let replaced: WorkerSession | undefined;
+    let retired: WorkerSession | undefined;
+    if (retires) {
+      sessions.delete(existing!.identity.workerId);
+      retiring.set(existing!.connectionId, existing!);
+      retired = existing;
+    } else {
+      replaced =
+        existing === undefined ? expiredExisting : remove(existing, "closed");
+    }
+    // A newer attempt or epoch fences every older session of this worker.
+    const superseded = siblings(incoming.identity.workerId)
+      .filter((session) => !sameIdentity(session.identity, incoming.identity))
+      .map((session) => remove(session, "closed"));
     sessions.set(incoming.identity.workerId, incoming);
     connectionOwners.set(incoming.connectionId, incoming.identity.workerId);
     highWatermarks.set(
@@ -302,6 +416,8 @@ export function createSessionRegistry(
     return freeze({
       session: incoming,
       ...(replaced === undefined ? {} : { replaced }),
+      ...(retired === undefined ? {} : { retired }),
+      ...(superseded.length === 0 ? {} : { superseded: freeze(superseded) }),
     });
   };
 
@@ -311,7 +427,7 @@ export function createSessionRegistry(
   ): WorkerSession => {
     const previous = assertCurrent(fence);
     const next = update(previous);
-    sessions.set(previous.identity.workerId, next);
+    store(next);
     notify(next);
     return next;
   };
@@ -402,9 +518,12 @@ export function createSessionRegistry(
   };
 
   const detach = (fence: SessionFence): WorkerSession | undefined => {
-    const session = sessions.get(fence.identity.workerId);
-    if (!isFence(session, fence)) return undefined;
-    return remove(session, "closed");
+    const session = located(fence);
+    if (session === undefined) return undefined;
+    const wasCurrent = sessions.get(session.identity.workerId) === session;
+    const removed = remove(session, "closed");
+    if (wasCurrent) restore(session.identity.workerId);
+    return removed;
   };
 
   const expireLeases = (): readonly WorkerSession[] => {
@@ -417,14 +536,15 @@ export function createSessionRegistry(
     const workerId = expectIdentifier(workerIdInput, "workerId");
     const session = sessions.get(workerId);
     if (session === undefined) return undefined;
-    return expireOne(session, now()) === undefined ? session : undefined;
+    if (expireOne(session, now()) !== undefined) return undefined;
+    return view(session);
   };
 
   const list = (): readonly WorkerSession[] => {
     // Read views remove expired sessions from admission immediately but do not
     // consume the lifecycle events awaited by the Hypervisor lease sweep.
     scanExpired();
-    return Object.freeze(Array.from(sessions.values()));
+    return Object.freeze(Array.from(sessions.values(), view));
   };
 
   const lease = (fenceInput: SessionFence): SessionLease => {
@@ -459,24 +579,23 @@ export function createSessionRegistry(
         ? undefined
         : createWorkDispatchTarget(input.target);
     scanExpired();
-    const candidates =
+    // A retiring session still in `ready` keeps taking work until its
+    // successor is ready, so a handoff never leaves a worker unroutable.
+    const pool =
       target === undefined
-        ? Array.from(sessions.values()).filter(
-            (session) =>
-              session.phase === "ready" &&
-              session.workloads.includes(workload) &&
-              session.reserved < session.capacity,
-          )
-        : [sessions.get(target.workerId)].filter(
-            (session): session is WorkerSession =>
-              session !== undefined &&
-              session.phase === "ready" &&
-              session.workloads.includes(workload) &&
-              session.reserved < session.capacity,
-          );
+        ? [...sessions.values(), ...retiring.values()]
+        : [sessions.get(target.workerId), ...siblings(target.workerId)];
+    const candidates = pool.filter(
+      (session): session is WorkerSession =>
+        session !== undefined &&
+        session.phase === "ready" &&
+        session.workloads.includes(workload) &&
+        load(session.identity.workerId) < session.capacity,
+    );
     candidates.sort(
       (left, right) =>
-        left.reserved / left.capacity - right.reserved / right.capacity ||
+        load(left.identity.workerId) / left.capacity -
+          load(right.identity.workerId) / right.capacity ||
         left.connectedAtMs - right.connectedAtMs ||
         left.identity.workerId.localeCompare(right.identity.workerId),
     );
@@ -490,7 +609,7 @@ export function createSessionRegistry(
       );
     }
     const next = withSession(selected, { reserved: selected.reserved + 1 });
-    sessions.set(selected.identity.workerId, next);
+    store(next);
     notify(next);
     return next;
   };
@@ -512,6 +631,7 @@ export function createSessionRegistry(
   };
 
   return Object.freeze({
+    handoff: true,
     subscribe(listener: (session: WorkerSession) => void) {
       listeners.add(listener);
       return () => {

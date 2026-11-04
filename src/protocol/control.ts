@@ -41,6 +41,13 @@ const textEncoder = new TextEncoder();
 /** Reserved transport metadata, offered in Welcome and acknowledged in Ready. */
 export const HOST_CALL_CAPABILITY_KEY = "__oxian_worker_calls_v1" as const;
 
+/**
+ * Reserved transport metadata for make-before-break connection handoff: a
+ * worker opens a successor before its stream lifetime runs out, and the host
+ * keeps the old connection open until its streams finish.
+ */
+export const HANDOFF_CAPABILITY_KEY = "__oxian_handoff_v1" as const;
+
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const WORKLOAD_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
 const ERROR_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
@@ -335,6 +342,50 @@ export function withHostCallCapacity(
 /** Removes only transport-owned extension data before application delivery. */
 export function withoutHostCallCapacity(metadata: JsonObject): JsonObject {
   const { [HOST_CALL_CAPABILITY_KEY]: _capability, ...applicationMetadata } =
+    expectJsonObject(metadata, "$metadata");
+  return applicationMetadata;
+}
+
+/**
+ * Connection handoff, read from Welcome bootstrap (the host offers it) or
+ * Ready metadata (the worker supports it; `from` names the connection this
+ * one replaces). Absent means a legacy peer; a malformed value fails closed.
+ */
+export function readHandoff(
+  metadata: JsonObject,
+): Readonly<{ from?: string }> | undefined {
+  const record = expectRecord(metadata, "$metadata");
+  if (!Object.hasOwn(record, HANDOFF_CAPABILITY_KEY)) return undefined;
+  const path = `$metadata.${HANDOFF_CAPABILITY_KEY}`;
+  const handoff = expectRecord(record[HANDOFF_CAPABILITY_KEY], path);
+  expectExactKeys(handoff, path, ["version"], ["from"]);
+  if (handoff.version !== 1) fail(`${path}.version`, "expected 1");
+  return handoff.from === undefined
+    ? {}
+    : { from: expectIdentifier(handoff.from, `${path}.from`) };
+}
+
+/** Adds the handoff key without overwriting application data. */
+export function withHandoff(metadata: JsonObject, from?: string): JsonObject {
+  const record = expectJsonObject(metadata, "$metadata");
+  if (Object.hasOwn(record, HANDOFF_CAPABILITY_KEY)) {
+    fail(
+      `$metadata.${HANDOFF_CAPABILITY_KEY}`,
+      "reserved transport key already exists",
+    );
+  }
+  return {
+    ...record,
+    [HANDOFF_CAPABILITY_KEY]: {
+      version: 1,
+      ...(from === undefined ? {} : { from: expectIdentifier(from, "$from") }),
+    },
+  };
+}
+
+/** Removes only the handoff key before application delivery. */
+export function withoutHandoff(metadata: JsonObject): JsonObject {
+  const { [HANDOFF_CAPABILITY_KEY]: _handoff, ...applicationMetadata } =
     expectJsonObject(metadata, "$metadata");
   return applicationMetadata;
 }

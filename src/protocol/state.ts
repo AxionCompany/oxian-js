@@ -276,12 +276,22 @@ export function createProtocolOrderValidator(
   // Each initiator spends only its share: crossed Opens cannot race for the
   // same last slot, and the remaining share stays usable during drain.
   const opened = { hypervisor: 0, worker: 0 };
-  const remaining = (initiator: ProtocolRole): number =>
-    hostCallCapacity === undefined
-      ? maxLifetimeStreams - usedStreamIds.size
+  // Ready fixes the split that ReadyAck activates. Work a host queues behind
+  // its ack already counts against its own share, not the whole lifetime.
+  const remaining = (initiator: ProtocolRole): number => {
+    const readied = phase === "readied" && hostCallCapacity === undefined;
+    const split =
+      hostCallCapacity ?? (readied ? pendingHostCallCapacity : undefined);
+    const lifetime =
+      readied && pendingLifetime !== undefined
+        ? pendingLifetime
+        : maxLifetimeStreams;
+    return split === undefined
+      ? lifetime - usedStreamIds.size
       : (initiator === "hypervisor"
-          ? Math.ceil(maxLifetimeStreams / 2)
-          : Math.floor(maxLifetimeStreams / 2)) - opened[initiator];
+          ? Math.ceil(lifetime / 2)
+          : Math.floor(lifetime / 2)) - opened[initiator];
+  };
   let nextHeartbeatSequence = 0;
   const streams = new Map<string, MutableWorkStream>();
   // Normal End/End streams retain only bounded wire-order state. They no
@@ -344,7 +354,11 @@ export function createProtocolOrderValidator(
     }
   };
 
-  const requireWorkingPhase = (frameType: string): void => {
+  const requireWorkingPhase = (frameType: string, crossing = false): void => {
+    // Every stream has ended by Drained, but credit or a late abort sent
+    // before the peer saw a stream's End can still cross it. The stream's
+    // tombstone decides, exactly as before Drained.
+    if (phase === "drained" && crossing) return;
     if (phase !== "ready" && phase !== "draining") {
       fail(`${frameType} is not allowed while connection is ${phase}`);
     }
@@ -621,12 +635,15 @@ export function createProtocolOrderValidator(
             "invalid_direction",
           );
         }
+        // While draining, a worker opens only calls for existing work. A
+        // parentless one the host receives was sent before Drain arrived: the
+        // two crossed on the wire, and the worker's side refuses any after.
         if (
           phase !== "ready" &&
           !(
             phase === "draining" &&
             reverse &&
-            frame.parentStreamId !== undefined
+            (frame.parentStreamId !== undefined || direction === "received")
           )
         ) {
           fail(`work.open is not allowed while connection is ${phase}`);
@@ -742,7 +759,7 @@ export function createProtocolOrderValidator(
       }
 
       case "work.credit": {
-        requireWorkingPhase(frame.type);
+        requireWorkingPhase(frame.type, true);
         const tombstone = normalTerminalTombstones.get(frame.streamId);
         if (tombstone !== undefined) {
           if (direction === "received") {
@@ -812,7 +829,7 @@ export function createProtocolOrderValidator(
 
       case "work.cancel":
       case "work.error": {
-        requireWorkingPhase(frame.type);
+        requireWorkingPhase(frame.type, true);
         const tombstone = normalTerminalTombstones.get(frame.streamId);
         if (tombstone !== undefined) {
           const alreadyAborted =

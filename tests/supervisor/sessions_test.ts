@@ -369,3 +369,104 @@ test("lower epochs and conflicting attempts cannot replace a session", () => {
   ) as SupervisorError;
   assert.deepStrictEqual(conflict.code, "stale_session");
 });
+
+function handOff(
+  registry: ReturnType<typeof createSessionRegistry>,
+  from: string,
+  connectionId: string,
+  sessionGeneration: number,
+  identity: { workerId: string; attemptId: string; epoch: number } = IDENTITY,
+) {
+  return registry.attach({
+    identity,
+    connectionId,
+    sessionGeneration,
+    workloads: ["sandbox.command"],
+    capacity: 2,
+    leaseTimeoutMs: 100,
+    retire: from,
+  });
+}
+
+test("handoff retires the named session: valid for its frames, not routable", () => {
+  const registry = createSessionRegistry({ clock: () => 10 });
+  assert.equal(registry.handoff, true);
+  const first = registry.markReady(fenceForSession(attach(registry)));
+  const old = fenceForSession(first);
+  registry.reserve({ workload: "sandbox.command" });
+
+  const attachment = handOff(registry, "connection-1", "connection-2", 2);
+  assert.equal(attachment.replaced, undefined);
+  assert.equal(attachment.retired?.connectionId, "connection-1");
+  const successor = fenceForSession(attachment.session);
+
+  // Its streams still finish: every fenced operation accepts it.
+  assert.equal(registry.isCurrent(old), true);
+  registry.heartbeat(old, { sequence: 0 });
+  // Routing sees only the successor, which shares the predecessor's capacity.
+  assert.equal(registry.get("worker-1")?.connectionId, "connection-2");
+  registry.markReady(successor);
+  assert.equal(registry.get("worker-1")?.reserved, 1);
+  assert.equal(registry.list().length, 1);
+  assert.equal(
+    registry.reserve({ workload: "sandbox.command" }).connectionId,
+    "connection-2",
+  );
+  assertThrows(() => registry.reserve({ workload: "sandbox.command" }));
+
+  registry.startDrain(old);
+  registry.release(old);
+  assert.equal(registry.get("worker-1")?.reserved, 1);
+  registry.markDrained(old);
+  assert.ok(registry.detach(old));
+  assert.equal(registry.isCurrent(old), false);
+  assert.equal(registry.get("worker-1")?.connectionId, "connection-2");
+});
+
+test("a still-ready predecessor takes work until its successor is ready", () => {
+  const registry = createSessionRegistry({ clock: () => 10 });
+  registry.markReady(fenceForSession(attach(registry)));
+  const attachment = handOff(registry, "connection-1", "connection-2", 2);
+  // The successor is only connected: the retiring session keeps routing.
+  assert.equal(
+    registry.reserve({ workload: "sandbox.command" }).connectionId,
+    "connection-1",
+  );
+  assert.equal(
+    registry.reserve({
+      workload: "sandbox.command",
+      target: { workerId: "worker-1" },
+    }).connectionId,
+    "connection-1",
+  );
+  // A successor that goes before ready gives the routing back.
+  registry.detach(fenceForSession(attachment.session));
+  assert.equal(registry.get("worker-1")?.connectionId, "connection-1");
+  assert.equal(registry.get("worker-1")?.reserved, 2);
+});
+
+test("handoff only retires the current session of the same identity", () => {
+  const registry = createSessionRegistry({ clock: () => 10 });
+  registry.markReady(fenceForSession(attach(registry)));
+  // Naming any other connection is an ordinary replacement.
+  const stale = handOff(registry, "connection-9", "connection-2", 2);
+  assert.equal(stale.retired, undefined);
+  assert.equal(stale.replaced?.connectionId, "connection-1");
+  registry.markReady(fenceForSession(stale.session));
+  const retired = handOff(registry, "connection-2", "connection-3", 3);
+  assert.equal(retired.retired?.connectionId, "connection-2");
+
+  // A newer attempt fences every retiring session of the worker.
+  const next = handOff(registry, "connection-3", "connection-4", 1, {
+    workerId: "worker-1",
+    attemptId: "attempt-2",
+    epoch: 2,
+  });
+  assert.equal(next.retired, undefined);
+  assert.equal(next.replaced?.connectionId, "connection-3");
+  assert.deepEqual(
+    next.superseded?.map((session) => session.connectionId),
+    ["connection-2"],
+  );
+  assert.equal(registry.isCurrent(fenceForSession(retired.retired!)), false);
+});

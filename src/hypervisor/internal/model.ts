@@ -62,6 +62,8 @@ export type ConnectionRecord = {
   pending: Map<string, PendingWork>;
   cleanup?: Promise<void>;
   hostCalls?: HostCallChannel;
+  /** The worker accepted handoff: it moves to a successor before running out. */
+  handoff?: boolean;
 };
 
 export type Deferred<T> = Readonly<{
