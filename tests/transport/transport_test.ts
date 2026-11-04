@@ -452,7 +452,7 @@ test("transport drains a received terminal frame before peer close", async () =>
   });
 });
 
-test("socket error settles closed and pending sends are bounded", async () => {
+test("socket error settles closed and a full send queue holds later sends", async () => {
   const abortController = new AbortController();
   const fake = createFakeSocket({ bufferedAmount: 2 * 1024 * 1024 });
   const transport = await createTestTransport({
@@ -464,14 +464,18 @@ test("socket error settles closed and pending sends are bounded", async () => {
   });
 
   const first = transport.sendControl(HELLO);
-  await assertRejects(
-    () => transport.sendControl(HELLO),
-    RangeError,
-    "send queue",
-  );
+  // A full queue makes the next send wait its turn instead of failing.
+  let secondSettled = false;
+  const second = transport.sendControl(HELLO).finally(() => {
+    secondSettled = true;
+  });
+  void second.catch(() => undefined);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepStrictEqual(secondSettled, false);
   assert.deepStrictEqual(fake.sent().length, 0);
   abortController.abort(new DOMException("test abort", "AbortError"));
   await assertRejects(() => first, DOMException);
+  await assertRejects(() => second, TypeError, "closed");
   await transport.closed;
 
   const errored = createFakeSocket();
@@ -523,5 +527,97 @@ test("transport enforces admission, buffer relation, and close wire bounds", asy
       }),
     TypeError,
     "maximum-sized binary frame",
+  );
+});
+
+function createPausableWire(pausable: boolean) {
+  const observers = new Set<SocketObserver>();
+  const sent: (string | Uint8Array)[] = [];
+  const calls: string[] = [];
+  let state: SocketConnection["state"] = "open";
+  const connection: SocketConnection = Object.freeze({
+    protocol: WORKER_PROTOCOL,
+    get state() {
+      return state;
+    },
+    bufferedAmount: 0,
+    send(data) {
+      sent.push(data);
+    },
+    close(code = 1000, reason = "") {
+      if (state === "closed") return;
+      state = "closed";
+      for (const observer of observers) {
+        observer.close?.({ code, reason, wasClean: true });
+      }
+    },
+    subscribe(observer) {
+      observers.add(observer);
+      return () => observers.delete(observer);
+    },
+    ...(pausable
+      ? {
+          pause: () => void calls.push("pause"),
+          resume: () => void calls.push("resume"),
+        }
+      : {}),
+  });
+  return {
+    connection,
+    sent,
+    calls,
+    deliver(data: string) {
+      for (const observer of observers) observer.message?.(data);
+    },
+    get state() {
+      return state;
+    },
+  };
+}
+
+test("a full send queue holds later frames and keeps wire order", async () => {
+  const wire = createPausableWire(false);
+  const connection = await createFrameConnection(wire.connection, {
+    negotiatedProtocol: WORKER_PROTOCOL,
+    maxPendingSendFrames: 1,
+  });
+  const frames = Array.from({ length: 50 }, (_, index) => `frame-${index}`);
+  await Promise.all(frames.map((frame) => connection.send(frame)));
+  assert.deepStrictEqual(wire.sent, frames);
+  assert.deepStrictEqual(wire.state, "open");
+});
+
+test("a full inbound queue pauses a pausable socket instead of closing", async () => {
+  const wire = createPausableWire(true);
+  const connection = await createFrameConnection(wire.connection, {
+    negotiatedProtocol: WORKER_PROTOCOL,
+    maxInboundFrames: 4,
+  });
+  const frames = Array.from({ length: 6 }, (_, index) => `in-${index}`);
+  for (const frame of frames) wire.deliver(frame);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepStrictEqual(wire.calls, ["pause"]);
+  assert.deepStrictEqual(wire.state, "open");
+  const reader = connection.incoming.getReader();
+  const read: unknown[] = [];
+  for (let index = 0; index < frames.length; index++) {
+    read.push((await reader.read()).value);
+  }
+  assert.deepStrictEqual(read, frames);
+  assert.deepStrictEqual(wire.calls, ["pause", "resume"]);
+  reader.releaseLock();
+  connection.close();
+});
+
+test("a socket that cannot pause still closes past its inbound bound", async () => {
+  const wire = createPausableWire(false);
+  const connection = await createFrameConnection(wire.connection, {
+    negotiatedProtocol: WORKER_PROTOCOL,
+    maxInboundFrames: 2,
+  });
+  for (let index = 0; index < 4; index++) wire.deliver(`in-${index}`);
+  assert.deepStrictEqual(
+    (await withTimeout(connection.closed)).reason,
+    "inbound_overflow",
   );
 });

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Fix a connection, and all work in flight on it, being lost under ordinary
+  concurrency: about 35 concurrent calls (64 queued frames) failed every job on
+  an executor with `executor_lost`. Full queues now apply backpressure instead
+  of failing the connection. A send into a full queue waits its turn, first
+  come first served, so wire order stays call order. A full inbound queue
+  stops reading and pauses a socket that can pause (the in-process fabric,
+  Node `ws`), which holds the peer back through its own send queue. A
+  cancelled send that is still waiting drops alone.
+- `SocketConnection` may offer `pause()` and `resume()`. A socket without them
+  (Deno's and browsers' native WebSocket) still closes past its inbound bound.
+  The default inbound bounds are raised from 64 frames (256 for a Hypervisor)
+  to 4,096; byte bounds are unchanged.
+- Acceptance commits beyond `maxPendingAcceptanceCommits` or its per-Worker
+  bound now wait their turn instead of refusing accepted work as
+  `reschedulable`.
+- Fix two races that failed a session or a call under load: a Worker counted
+  the input credit it granted only after the grant was sent, so data spending
+  it could arrive first; a Hypervisor marked work started only after its Start
+  was sent, so a call made under it over a successor connection was refused.
+
 - Fix long-lived workers failing a call with `capacity` after a connection's
   stream lifetime (32,768 worker-to-host calls) runs out. Workers and hosts now
   negotiate make-before-break connection handoff (`__oxian_handoff_v1`): when

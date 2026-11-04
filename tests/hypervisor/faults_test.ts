@@ -501,7 +501,7 @@ test("caller cancellation before Accepted tolerates crossed Accepted without Sta
   }
 });
 
-test("acceptance persistence admission cap reschedules one stream without disturbing the admitted commit", async () => {
+test("acceptance persistence admission cap queues a stream until the admitted commit finishes", async () => {
   const persistEntered = createDeferred<void>();
   const releasePersistence = createDeferred<void>();
   let persistenceCalls = 0;
@@ -516,6 +516,19 @@ test("acceptance persistence admission cap reschedules one stream without distur
       maxPendingAcceptanceCommitsPerWorker: 1,
     },
   });
+
+  const finish = async (handle: { streamId: string }, name: string) => {
+    await receiveRequestEnd(harness.worker, handle.streamId);
+    await harness.worker.transport.sendControl(
+      createWorkMetadataFrame({
+        streamId: handle.streamId,
+        metadata: { name },
+      }),
+    );
+    await harness.worker.transport.sendControl(
+      createWorkEndFrame({ streamId: handle.streamId }),
+    );
+  };
 
   try {
     const admitted = await withTimeout(
@@ -533,68 +546,55 @@ test("acceptance persistence admission cap reschedules one stream without distur
       1,
     );
 
-    const rejected = await withTimeout(
+    // Over the cap, the accepted stream waits for a commit slot: it is not
+    // refused, and its persistence does not start yet.
+    const queued = await withTimeout(
       harness.hypervisor.dispatch({
         workload: "sandbox.command",
       }),
     );
     await nextControlledControl(harness.worker, "work.open");
     await harness.worker.transport.sendControl(
-      createWorkAcceptedFrame({ streamId: rejected.streamId }),
+      createWorkAcceptedFrame({ streamId: queued.streamId }),
     );
-    const capacityCancel = await nextControlledControl(
-      harness.worker,
-      "work.cancel",
-    );
-    assert.deepStrictEqual(capacityCancel.streamId, rejected.streamId);
-    assert.deepStrictEqual(capacityCancel.reason, "acceptance_commit_capacity");
-    const rejectionCompletion = observeSettlement(rejected.completed);
+    const queuedStart = observeSettlement(queued.started);
     await new Promise((resolve) => setTimeout(resolve, 30));
-    assert.deepStrictEqual(rejectionCompletion.settled(), false);
+    assert.deepStrictEqual(queuedStart.settled(), false);
     assert.deepStrictEqual(persistenceCalls, 1);
-
-    await harness.worker.transport.sendControl(
-      createWorkCancelFrame({
-        streamId: rejected.streamId,
-        reason: "acceptance_commit_capacity_ack",
-      }),
-    );
-    assert.deepStrictEqual(
-      (await withTimeout(rejected.completed)).status,
-      "reschedulable",
-    );
-    await expectRejectedHandle(rejected);
     assert.deepStrictEqual(
       harness.hypervisor.snapshot().pendingAcceptanceCommits,
       1,
     );
-    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
 
     releasePersistence.resolve();
-    await nextControlledControl(harness.worker, "work.start");
-    await receiveRequestEnd(harness.worker, admitted.streamId);
-    await harness.worker.transport.sendControl(
-      createWorkMetadataFrame({
-        streamId: admitted.streamId,
-        metadata: { admitted: true },
-      }),
+    const admittedStart = await nextControlledControl(
+      harness.worker,
+      "work.start",
     );
-    await harness.worker.transport.sendControl(
-      createWorkEndFrame({
-        streamId: admitted.streamId,
-      }),
+    assert.deepStrictEqual(admittedStart.streamId, admitted.streamId);
+    await finish(admitted, "admitted");
+    const queuedStartFrame = await nextControlledControl(
+      harness.worker,
+      "work.start",
     );
-    assert.deepStrictEqual(await withTimeout(admitted.metadata), {
-      admitted: true,
-    });
-    assert.deepStrictEqual(
-      (await withTimeout(admitted.completed)).status,
-      "completed",
-    );
+    assert.deepStrictEqual(queuedStartFrame.streamId, queued.streamId);
+    assert.deepStrictEqual(persistenceCalls, 2);
+    await finish(queued, "queued");
+    for (const [handle, name] of [
+      [admitted, "admitted"],
+      [queued, "queued"],
+    ] as const) {
+      assert.deepStrictEqual(await withTimeout(handle.metadata), { name });
+      assert.deepStrictEqual(
+        (await withTimeout(handle.completed)).status,
+        "completed",
+      );
+    }
     assert.deepStrictEqual(
       harness.hypervisor.snapshot().pendingAcceptanceCommits,
       0,
     );
+    assert.deepStrictEqual(harness.hypervisor.snapshot().connections, 1);
     assert.deepStrictEqual(
       harness.hypervisor.sessions.get(harness.identity.workerId)?.reserved,
       0,

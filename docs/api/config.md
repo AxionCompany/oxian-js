@@ -387,13 +387,18 @@ Its normalized Hypervisor fields are:
 | `maxAuthenticatedConnections`          | `10_000`     |
 | `maxPendingAcceptanceCommits`          | `1_024`      |
 | `maxPendingAcceptanceCommitsPerWorker` | `64`         |
-| `maxInboundMessages`                   | `256`        |
+| `maxInboundMessages`                   | `4_096`      |
 | `maxInboundBytes`                      | `16_777_216` |
 | `maxBufferedAmountBytes`               | `4_194_304`  |
 | `maxWorkerCapacity`                    | `1_024`      |
 | `maxLifetimeStreams`                   | `65_536`     |
 | `maxDataPayloadBytes`                  | `1_048_576`  |
 | `maxReceiveCreditBytes`                | `16_777_216` |
+
+Commits beyond `maxPendingAcceptanceCommits` or its per-Worker bound wait their
+turn, in order per Worker, within the work's deadline. `maxInboundMessages`
+bounds each connection's inbound queue; a full queue holds the peer back rather
+than closing the connection, except on a socket that cannot pause.
 
 `maxConnectionAgeMs` and `proactiveDrainMarginMs` apply to WebSocket
 connections. In-process event-fabric connections remain open until explicit

@@ -114,13 +114,21 @@ test("the local fabric enforces its physical frame and byte bounds", () => {
   });
   const worker = connectInProcessFabric({
     topic,
-    maxQueuedFrames: 1,
+    maxQueuedFrames: 2,
     maxQueuedBytes: 4,
   });
 
   try {
-    accepted!.send("1234");
-    assert.deepStrictEqual(accepted!.bufferedAmount, 4);
+    accepted!.send("12");
+    assert.deepStrictEqual(accepted!.bufferedAmount, 2);
+    assertThrows(
+      () => accepted!.send("345"),
+      RangeError,
+      "queue exceeded its bound",
+    );
+    accepted!.send("34");
+    // At its frame bound it reports itself full, so a frame sender waits.
+    assert.deepStrictEqual(accepted!.bufferedAmount, Number.MAX_SAFE_INTEGER);
     assertThrows(
       () => accepted!.send("x"),
       RangeError,

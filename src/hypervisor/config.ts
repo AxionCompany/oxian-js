@@ -55,7 +55,7 @@ export const DEFAULT_HYPERVISOR_CONFIG: HypervisorConfig = Object.freeze({
   maxAuthenticatedConnections: 10_000,
   maxPendingAcceptanceCommits: 1_024,
   maxPendingAcceptanceCommitsPerWorker: 64,
-  maxInboundMessages: 256,
+  maxInboundMessages: 4_096,
   maxInboundBytes: 16 * 1_024 * 1_024,
   maxBufferedAmountBytes: 4 * 1_024 * 1_024,
   maxWorkerCapacity: WORKER_PROTOCOL_LIMITS.maxWorkerCapacity,

@@ -66,6 +66,13 @@ export type SocketConnection = Readonly<{
   send(data: string | Uint8Array): void;
   close(code?: number, reason?: string): void;
   subscribe(observer: SocketObserver): () => void;
+  /**
+   * Optional: stops delivering messages until `resume`, so a full inbound
+   * queue holds the peer back instead of closing the connection. A few
+   * messages already read may still arrive.
+   */
+  pause?(): void;
+  resume?(): void;
 }>;
 
 export type ProtocolTransportOptions = Readonly<{

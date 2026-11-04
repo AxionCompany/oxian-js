@@ -42,7 +42,10 @@ import {
 ```
 
 `adaptWebSocket(socket)` handles a standards-compatible native WebSocket.
-`adaptSocketConnection(value)` preserves an already adapted value.
+`adaptSocketConnection(value)` preserves an already adapted value. A
+`SocketConnection` may also offer `pause()` and `resume()`, which stop and
+restart message delivery; the in-process fabric and Node `ws` sockets do, while
+Deno's and browsers' native WebSocket cannot.
 `isSocketConnection` and `expectSocketConnection` validate custom runtime
 adapters.
 
@@ -56,6 +59,14 @@ string | Uint8Array`; `closed` resolves a `ConnectionClose`.
 `FrameConnectionOptions` bounds inbound frames/bytes, pending sends, native
 buffered amount, and polling. `FrameSendOptions` provides cancellation and the
 internal emission-boundary protocol gate.
+
+The bounds apply backpressure; reaching one never fails the connection. A
+sender facing a full send queue waits its turn, first come first served, so
+wire order stays call order; an aborted signal drops only that unsent frame.
+When the inbound queue is full, the connection pauses a socket that can pause,
+and resumes it once half is read, so the peer is held back. A socket that
+cannot pause still closes past its inbound bound. The protocol transport stops
+reading while its own inbound queue is full.
 
 This is the physical normalization boundary used by both WebSocket and the
 addressed in-process event fabric. The package does not promise zero-copy
