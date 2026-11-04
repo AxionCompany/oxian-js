@@ -277,7 +277,8 @@ A receiver grants byte credit with `work.credit`; a sender must consume that
 credit before emitting data. Credit applies to the opposite data direction.
 Outstanding credit may not exceed the fixed v1 window. Web Streams adapters must
 stop pulling producers when credit is exhausted so the wire window provides
-end-to-end backpressure.
+end-to-end backpressure. Frame queues never fail a connection for being full:
+a sender waits for room, and a receiver stops reading until it catches up.
 
 `work.open.metadata` is the initiator's request metadata. After start, the
 responder sends exactly one `work.metadata` response frame before its first data

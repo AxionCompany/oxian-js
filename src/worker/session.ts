@@ -795,13 +795,15 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
               desired - stream.outstandingInputCredit,
             );
             if (grant <= 0) break;
-            await transport?.sendControl(
+            const sent = transport?.sendControl(
               createWorkCreditFrame({
                 streamId: stream.open.streamId,
                 bytes: grant,
               }),
             );
+            // Counted once queued: the peer may spend it before this resumes.
             stream.outstandingInputCredit += grant;
+            await sent;
           }
         } catch (error) {
           if (
@@ -1219,12 +1221,13 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
     /**
      * Asks for a successor connection while this one still has a quarter of
      * either side's stream lifetime left, so new work moves before it runs out.
+     * A burst can spend it all first and the host then drains this connection;
+     * that drain is a rotation too, so it still hands off.
      */
     function maybeHandoff(): void {
       if (
         !handoffOffered ||
         handoffAsked ||
-        draining ||
         shutdown ||
         !isLiveSession() ||
         transport === undefined ||
@@ -1234,7 +1237,7 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
       // Each call follows at most one Open, so nothing can trip before then.
       if (--checkAfter > 0) return;
       const state = transport.snapshot();
-      if (state.phase !== "ready") return;
+      if (state.phase !== "ready" && state.phase !== "draining") return;
       const total = state.maxLifetimeStreams;
       const hostShare = hostCalls === undefined ? total : Math.ceil(total / 2);
       const workerShare =
@@ -1446,6 +1449,9 @@ export function createWorkerSession(options: WorkerSessionOptions): Worker {
         case "drain": {
           draining = true;
           drainRequestedByPeer = true;
+          // A drain for the stream lifetime hands off rather than waits.
+          checkAfter = 0;
+          maybeHandoff();
           setSessionState("draining");
           if (heartbeatTimer !== undefined) {
             // Heartbeats remain legal while draining, so keep it until drained.

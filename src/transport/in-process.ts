@@ -169,7 +169,11 @@ function createFabricQueue(
     readable,
     publish,
     close,
-    bufferedBytes: () => bytes + controllerBytes,
+    // At its frame bound the queue counts as full, so senders wait.
+    bufferedBytes: () =>
+      events.length + (controllerBytes > 0 ? 1 : 0) >= limits.maxQueuedFrames
+        ? Number.MAX_SAFE_INTEGER
+        : bytes + controllerBytes,
   });
 }
 
@@ -193,10 +197,13 @@ function createConnectionPair(
   const workerObservers = new Set<SocketObserver>();
   let state: SocketConnectionState = "open";
   let closeValue: SocketClose | undefined;
+  // Paused pumps, woken on resume or close.
+  const parked = new Set<() => void>();
 
   const close = (reason = "in_process_connection_closed"): void => {
     if (state === "closed" || state === "closing") return;
     state = "closing";
+    for (const wake of [...parked]) wake();
     const event = Object.freeze({ code: 1000, reason, wasClean: true });
     closeValue = event;
     hypervisorQueue.close();
@@ -217,6 +224,15 @@ function createConnectionPair(
     const direction: InProcessFabricDirection =
       side === "hypervisor" ? "hypervisor-to-worker" : "worker-to-hypervisor";
     let pumping = false;
+    let paused = false;
+    let wake: (() => void) | undefined;
+    const unpark = (): void => {
+      if (wake === undefined) return;
+      parked.delete(wake);
+      const resolve = wake;
+      wake = undefined;
+      resolve();
+    };
 
     const pump = (): void => {
       if (pumping) return;
@@ -225,6 +241,14 @@ function createConnectionPair(
       void (async () => {
         try {
           while (state === "open") {
+            // Paused, frames stay in the fabric and its sender waits.
+            while (paused && state === "open") {
+              await new Promise<void>((resolve) => {
+                wake = resolve;
+                parked.add(resolve);
+              });
+            }
+            if (state !== "open") break;
             const next = await reader.read();
             if (next.done) break;
             for (const observer of observers) {
@@ -265,6 +289,13 @@ function createConnectionPair(
       },
       close(_code, reason) {
         close(reason);
+      },
+      pause() {
+        paused = true;
+      },
+      resume() {
+        paused = false;
+        unpark();
       },
       subscribe(observer) {
         if (observer === null || typeof observer !== "object") {

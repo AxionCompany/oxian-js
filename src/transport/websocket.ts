@@ -1,3 +1,4 @@
+import { createSendAdmission } from "./admission.ts";
 import {
   createProtocolErrorFrame,
   createProtocolOrderValidator,
@@ -22,7 +23,7 @@ import type {
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_CLOSE_TIMEOUT_MS = 5_000;
-const DEFAULT_MAX_INBOUND_MESSAGES = 64;
+const DEFAULT_MAX_INBOUND_MESSAGES = 4_096;
 const DEFAULT_MAX_INBOUND_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_PENDING_SEND_MESSAGES = 64;
 const DEFAULT_MAX_PENDING_SEND_BYTES = 32 * 1024 * 1024;
@@ -382,8 +383,12 @@ export function createProtocolTransport(
   let messagesClaimed = false;
   let terminal = false;
   let sendTail = Promise.resolve();
-  let pendingSendMessages = 0;
-  let pendingSendBytes = 0;
+  // A full send queue makes senders wait their turn; it never fails the
+  // connection. Its order is the order sends were made.
+  const admission = createSendAdmission({
+    frames: maxPendingSendMessages,
+    bytes: maxPendingSendBytes,
+  });
   let resolveClosed: ((close: ConnectionClose) => void) | undefined;
   const closed = new Promise<ConnectionClose>((resolve) => {
     resolveClosed = resolve;
@@ -397,6 +402,7 @@ export function createProtocolTransport(
     if (terminal) return;
     terminal = true;
     options.signal?.removeEventListener("abort", abortTransport);
+    admission.close(new TypeError("protocol transport is closed"));
     queue.close(error, { discard: discardInbound });
     resolveClosed?.(close);
     resolveClosed = undefined;
@@ -494,6 +500,10 @@ export function createProtocolTransport(
       while (!terminal) {
         const next = await reader.read();
         if (next.done) break;
+        // A full inbound queue stops reading instead of failing, so the
+        // backpressure reaches the connection and, through it, the peer.
+        const full = queue.room(encodedBytes(next.value));
+        if (full !== undefined) await full;
         processMessage(next.value);
       }
       if (!terminal) finish(await connection.closed);
@@ -514,24 +524,6 @@ export function createProtocolTransport(
     return result;
   };
 
-  const reserveSend = (wireBytes: number): (() => void) => {
-    if (
-      pendingSendMessages >= maxPendingSendMessages ||
-      wireBytes > maxPendingSendBytes - pendingSendBytes
-    ) {
-      throw new RangeError("pending protocol send queue exceeded its bound");
-    }
-    pendingSendMessages++;
-    pendingSendBytes += wireBytes;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      pendingSendMessages--;
-      pendingSendBytes -= wireBytes;
-    };
-  };
-
   let pendingOpens = 0;
   const sendControl: ProtocolTransport["sendControl"] = (
     frame,
@@ -542,7 +534,6 @@ export function createProtocolTransport(
     }
     let encoded: string;
     let validatedFrame: typeof frame;
-    let release: () => void;
     let pendingOpen = false;
     const releaseOpen = (): void => {
       if (!pendingOpen) return;
@@ -552,6 +543,7 @@ export function createProtocolTransport(
     try {
       encoded = encodeControlFrame(frame);
       validatedFrame = parseControlFrame(encoded);
+      // A waiting Open already holds its lifetime slot.
       if (
         frame.type === "work.open" &&
         validator.snapshot().remainingLocalStreams <= pendingOpens
@@ -560,51 +552,46 @@ export function createProtocolTransport(
           "stream_limit_exceeded",
           "connection lifetime admission exhausted",
         );
-      const releaseSend = reserveSend(textEncoder.encode(encoded).byteLength);
       if (frame.type === "work.open") {
         pendingOpen = true;
         pendingOpens++;
       }
-      release = () => {
-        releaseOpen();
-        releaseSend();
-      };
     } catch (error) {
       return Promise.reject(error);
     }
-    const operation = serializeSend(async () => {
-      let acceptance: ReturnType<typeof validator.acceptControl> | undefined;
-      try {
-        await connection.send(encoded, {
-          signal: sendOptions.signal,
-          beforeSend() {
-            acceptance = validator.acceptControl("sent", validatedFrame);
-            releaseOpen();
-          },
-        });
-      } catch (error) {
-        // Cancelling a queued, unsent frame cancels only that operation.
-        // No protocol state or wire bytes have changed before beforeSend.
-        const cancelledBeforeSend =
-          acceptance === undefined &&
-          sendOptions.signal?.aborted &&
-          error === sendOptions.signal.reason;
-        if (!cancelledBeforeSend && !isProtocolViolation(error)) {
-          failTransport(error);
+    const send = (release: () => void) =>
+      serializeSend(async () => {
+        let acceptance: ReturnType<typeof validator.acceptControl> | undefined;
+        try {
+          await connection.send(encoded, {
+            signal: sendOptions.signal,
+            beforeSend() {
+              acceptance = validator.acceptControl("sent", validatedFrame);
+              releaseOpen();
+            },
+          });
+        } catch (error) {
+          releaseOpen();
+          // Cancelling a queued, unsent frame cancels only that operation.
+          // No protocol state or wire bytes have changed before beforeSend.
+          const cancelledBeforeSend =
+            acceptance === undefined &&
+            sendOptions.signal?.aborted &&
+            error === sendOptions.signal.reason;
+          if (!cancelledBeforeSend && !isProtocolViolation(error)) {
+            failTransport(error);
+          }
+          throw error;
+        } finally {
+          release();
         }
-        throw error;
-      }
-      return acceptance!;
-    });
-    return operation.then(
-      (acceptance) => {
-        release();
-        return acceptance;
-      },
-      (error) => {
-        release();
-        throw error;
-      },
+        return acceptance!;
+      });
+    return admission.admit(
+      textEncoder.encode(encoded).byteLength,
+      sendOptions.signal,
+      send,
+      releaseOpen,
     );
   };
 
@@ -617,47 +604,39 @@ export function createProtocolTransport(
     }
     let encoded: Uint8Array;
     let validatedFrame: typeof frame;
-    let release: () => void;
     try {
       encoded = encodeBinaryFrame(frame);
       validatedFrame = decodeBinaryFrame(encoded);
-      release = reserveSend(encoded.byteLength);
     } catch (error) {
       return Promise.reject(error);
     }
-    const operation = serializeSend(async () => {
-      let acceptance: ReturnType<typeof validator.acceptBinary> | undefined;
-      try {
-        await connection.send(encoded, {
-          signal: sendOptions.signal,
-          beforeSend() {
-            acceptance = validator.acceptBinary("sent", validatedFrame);
-          },
-        });
-      } catch (error) {
-        // Cancelling a queued, unsent frame cancels only that operation.
-        // No protocol state or wire bytes have changed before beforeSend.
-        const cancelledBeforeSend =
-          acceptance === undefined &&
-          sendOptions.signal?.aborted &&
-          error === sendOptions.signal.reason;
-        if (!cancelledBeforeSend && !isProtocolViolation(error)) {
-          failTransport(error);
+    const send = (release: () => void) =>
+      serializeSend(async () => {
+        let acceptance: ReturnType<typeof validator.acceptBinary> | undefined;
+        try {
+          await connection.send(encoded, {
+            signal: sendOptions.signal,
+            beforeSend() {
+              acceptance = validator.acceptBinary("sent", validatedFrame);
+            },
+          });
+        } catch (error) {
+          // Cancelling a queued, unsent frame cancels only that operation.
+          // No protocol state or wire bytes have changed before beforeSend.
+          const cancelledBeforeSend =
+            acceptance === undefined &&
+            sendOptions.signal?.aborted &&
+            error === sendOptions.signal.reason;
+          if (!cancelledBeforeSend && !isProtocolViolation(error)) {
+            failTransport(error);
+          }
+          throw error;
+        } finally {
+          release();
         }
-        throw error;
-      }
-      return acceptance!;
-    });
-    return operation.then(
-      (acceptance) => {
-        release();
-        return acceptance;
-      },
-      (error) => {
-        release();
-        throw error;
-      },
-    );
+        return acceptance!;
+      });
+    return admission.admit(encoded.byteLength, sendOptions.signal, send);
   };
 
   const messages = (): AsyncIterable<ProtocolTransportMessage> => {

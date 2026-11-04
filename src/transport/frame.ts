@@ -1,6 +1,7 @@
+import { createSendAdmission } from "./admission.ts";
 import type { SocketClose, SocketConnection, SocketMessage } from "./types.ts";
 
-const DEFAULT_MAX_INBOUND_FRAMES = 64;
+const DEFAULT_MAX_INBOUND_FRAMES = 4_096;
 const DEFAULT_MAX_INBOUND_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_PENDING_SEND_FRAMES = 64;
 const DEFAULT_MAX_PENDING_SEND_BYTES = 32 * 1024 * 1024;
@@ -56,6 +57,8 @@ export type FrameConnectionOptions = Readonly<{
 
 type BoundedFrameQueue = Readonly<{
   readable: ReadableStream<Frame>;
+  /** Counts a frame the socket delivered, before it is normalized and pushed. */
+  arrive(): void;
   push(frame: Frame): boolean;
   close(error?: unknown): void;
 }>;
@@ -112,12 +115,38 @@ function delay(ms: number, signal?: AbortSignal): Promise<void> {
 function createBoundedFrameQueue(
   limits: Readonly<{ frames: number; bytes: number }>,
   cancel: (reason: unknown) => void,
+  // A socket that can stop reading: the queue pauses it at its bound and
+  // resumes it at half, leaving room for messages already read.
+  socket?: Readonly<{ pause(): void; resume(): void }>,
 ): BoundedFrameQueue {
   const pending: Frame[] = [];
   let pendingBytes = 0;
   let controller: ReadableStreamDefaultController<Frame> | undefined;
   let closed = false;
   let ending = false;
+  let paused = false;
+  // Delivered but not yet pushed: normalizing runs behind the socket.
+  let arriving = 0;
+  const hard =
+    socket === undefined
+      ? limits
+      : { frames: limits.frames * 2, bytes: limits.bytes * 2 };
+
+  const steer = (): void => {
+    if (socket === undefined || closed) return;
+    const frames = pending.length + arriving;
+    if (!paused && (frames >= limits.frames || pendingBytes >= limits.bytes)) {
+      paused = true;
+      socket.pause();
+    } else if (
+      paused &&
+      frames <= limits.frames / 2 &&
+      pendingBytes <= limits.bytes / 2
+    ) {
+      paused = false;
+      socket.resume();
+    }
+  };
 
   const finishEnd = (): void => {
     if (!ending || closed || pending.length > 0 || controller === undefined) {
@@ -143,6 +172,7 @@ function createBoundedFrameQueue(
       pendingBytes -= frameBytes(frame);
       controller.enqueue(frame);
     }
+    steer();
     finishEnd();
   };
 
@@ -167,14 +197,20 @@ function createBoundedFrameQueue(
     new CountQueuingStrategy({ highWaterMark: 1 }),
   );
 
+  const arrive = (): void => {
+    arriving++;
+    steer();
+  };
+
   const push = (frame: Frame): boolean => {
+    if (arriving > 0) arriving--;
     if (closed || ending) return false;
     const bytes = frameBytes(frame);
     if (bytes < 1) return false;
     const controllerFrame = (controller?.desiredSize ?? 1) <= 0 ? 1 : 0;
     if (
-      pending.length + controllerFrame >= limits.frames ||
-      bytes > limits.bytes - pendingBytes
+      pending.length + controllerFrame >= hard.frames ||
+      bytes > hard.bytes - pendingBytes
     ) {
       return false;
     }
@@ -205,7 +241,7 @@ function createBoundedFrameQueue(
     controller = undefined;
   };
 
-  return Object.freeze({ readable, push, close });
+  return Object.freeze({ readable, arrive, push, close });
 }
 
 function closeWire(
@@ -289,6 +325,11 @@ export async function createFrameConnection(
   const closed = new Promise<ConnectionClose>((resolve) => {
     closedResolve = resolve;
   });
+  // Senders wait for room in order; a full queue never fails the connection.
+  const admission = createSendAdmission({
+    frames: maxPendingSendFrames,
+    bytes: maxPendingSendBytes,
+  });
   const queue = createBoundedFrameQueue(
     { frames: maxInboundFrames, bytes: maxInboundBytes },
     (reason) =>
@@ -297,6 +338,12 @@ export async function createFrameConnection(
         NORMAL_CLOSE_CODE,
         typeof reason === "string" ? reason : "incoming_cancelled",
       ),
+    connection.pause !== undefined && connection.resume !== undefined
+      ? {
+          pause: () => connection.pause!(),
+          resume: () => connection.resume!(),
+        }
+      : undefined,
   );
   let inboundTail = Promise.resolve();
   let unsubscribe = (): void => undefined;
@@ -306,6 +353,7 @@ export async function createFrameConnection(
     if (terminal) return;
     terminal = true;
     options.signal?.removeEventListener("abort", abort);
+    admission.close(new TypeError("connection is closed"));
     unsubscribe();
     if (!opened) {
       openReject(
@@ -327,6 +375,7 @@ export async function createFrameConnection(
 
   const receive = (value: SocketMessage): void => {
     if (terminal) return;
+    queue.arrive();
     inboundTail = inboundTail.then(async () => {
       if (terminal) return;
       try {
@@ -416,8 +465,6 @@ export async function createFrameConnection(
   }
 
   let sendTail = Promise.resolve();
-  let pendingSendFrames = 0;
-  let pendingSendBytes = 0;
 
   const send = (
     frame: Frame,
@@ -427,45 +474,50 @@ export async function createFrameConnection(
     if (bytes < 1) {
       return Promise.reject(new TypeError("frame must not be empty"));
     }
-    if (
-      pendingSendFrames >= maxPendingSendFrames ||
-      bytes > maxPendingSendBytes - pendingSendBytes
-    ) {
-      return Promise.reject(
-        new RangeError("connection send queue exceeded its bound"),
-      );
-    }
-    pendingSendFrames++;
-    pendingSendBytes += bytes;
+    return admission.admit(bytes, sendOptions.signal, (release) =>
+      write(frame, bytes, sendOptions, release),
+    );
+  };
+
+  const write = (
+    frame: Frame,
+    bytes: number,
+    sendOptions: FrameSendOptions,
+    release: () => void,
+  ): Promise<void> => {
     const operation = sendTail.then(async () => {
-      let throttled = false;
-      while (true) {
-        if (terminal || connection.state !== "open") {
-          throw new TypeError("connection is closed");
-        }
-        sendOptions.signal?.throwIfAborted();
-        options.signal?.throwIfAborted();
-        const room = maxBufferedAmountBytes - bytes;
-        if (room < 0) {
-          throw new RangeError(
-            "frame exceeds the connection buffered-amount limit",
+      try {
+        let throttled = false;
+        while (true) {
+          if (terminal || connection.state !== "open") {
+            throw new TypeError("connection is closed");
+          }
+          sendOptions.signal?.throwIfAborted();
+          options.signal?.throwIfAborted();
+          const room = maxBufferedAmountBytes - bytes;
+          if (room < 0) {
+            throw new RangeError(
+              "frame exceeds the connection buffered-amount limit",
+            );
+          }
+          const threshold = throttled
+            ? Math.min(bufferedAmountLowWaterBytes, room)
+            : room;
+          if (connection.bufferedAmount <= threshold) break;
+          throttled = true;
+          await delay(
+            bufferedAmountPollMs,
+            sendOptions.signal ?? options.signal,
           );
         }
-        const threshold = throttled
-          ? Math.min(bufferedAmountLowWaterBytes, room)
-          : room;
-        if (connection.bufferedAmount <= threshold) break;
-        throttled = true;
-        await delay(bufferedAmountPollMs, sendOptions.signal ?? options.signal);
+        sendOptions.beforeSend?.();
+        connection.send(frame);
+      } finally {
+        release();
       }
-      sendOptions.beforeSend?.();
-      connection.send(frame);
     });
     sendTail = operation.catch(() => undefined);
-    return operation.finally(() => {
-      pendingSendFrames--;
-      pendingSendBytes -= bytes;
-    });
+    return operation;
   };
 
   return Object.freeze({

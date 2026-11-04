@@ -4,6 +4,8 @@ import type {
   SocketObserver,
 } from "./types.ts";
 
+type Pausable = Readonly<{ pause(): void; resume(): void }>;
+
 function stateOf(socket: WebSocket): SocketConnectionState {
   switch (socket.readyState) {
     case WebSocket.CONNECTING:
@@ -56,6 +58,14 @@ export function adaptWebSocket(socket: WebSocket): SocketConnection {
     close(code, reason) {
       socket.close(code, reason);
     },
+    // Node's ws sockets can stop reading, which holds the peer back over TCP.
+    ...(typeof (socket as Partial<Pausable>).pause === "function" &&
+    typeof (socket as Partial<Pausable>).resume === "function"
+      ? {
+          pause: () => (socket as unknown as Pausable).pause(),
+          resume: () => (socket as unknown as Pausable).resume(),
+        }
+      : {}),
     subscribe(observer: SocketObserver): () => void {
       if (observer === null || typeof observer !== "object") {
         throw new TypeError("wire observer must be an object");

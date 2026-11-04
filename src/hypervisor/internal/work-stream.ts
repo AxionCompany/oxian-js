@@ -407,33 +407,87 @@ export function createWorkStreamController(
     }
   };
 
+  // Acceptance commits beyond the bounds wait their turn, in order per
+  // worker, instead of refusing work the worker already accepted.
+  const commitWaiters: Array<{ workerId: string; grant(): void }> = [];
+  const commitRoom = (workerId: string): boolean =>
+    acceptanceAdmission.pending < config.maxPendingAcceptanceCommits &&
+    (acceptanceAdmission.byWorker.get(workerId) ?? 0) <
+      config.maxPendingAcceptanceCommitsPerWorker;
+  const takeCommit = (workerId: string): void => {
+    acceptanceAdmission.pending++;
+    acceptanceAdmission.byWorker.set(
+      workerId,
+      (acceptanceAdmission.byWorker.get(workerId) ?? 0) + 1,
+    );
+  };
+  const wakeCommits = (): void => {
+    for (let index = 0; index < commitWaiters.length; ) {
+      const waiter = commitWaiters[index]!;
+      if (commitRoom(waiter.workerId)) {
+        commitWaiters.splice(index, 1);
+        waiter.grant();
+      } else index++;
+    }
+  };
+  const releaseCommit = (workerId: string): void => {
+    acceptanceAdmission.pending--;
+    const workerPending = (acceptanceAdmission.byWorker.get(workerId) ?? 1) - 1;
+    if (workerPending < 1) acceptanceAdmission.byWorker.delete(workerId);
+    else acceptanceAdmission.byWorker.set(workerId, workerPending);
+    wakeCommits();
+  };
+  /** True once a slot is held; false if the work or connection ended first. */
+  const acquireCommit = (
+    workerId: string,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    if (
+      commitRoom(workerId) &&
+      !commitWaiters.some((waiter) => waiter.workerId === workerId)
+    ) {
+      takeCommit(workerId);
+      return Promise.resolve(true);
+    }
+    if (signal.aborted) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      const waiter = {
+        workerId,
+        grant: () => {
+          signal.removeEventListener("abort", drop);
+          takeCommit(workerId);
+          resolve(true);
+        },
+      };
+      const drop = (): void => {
+        const index = commitWaiters.indexOf(waiter);
+        if (index >= 0) commitWaiters.splice(index, 1);
+        resolve(false);
+        wakeCommits();
+      };
+      signal.addEventListener("abort", drop, { once: true });
+      commitWaiters.push(waiter);
+    });
+  };
+
   const commitAndStart = async (pending: PendingWork): Promise<void> => {
     let acceptanceCommitAdmitted = false;
     try {
       const workerId = pending.fence.identity.workerId;
-      const workerPending = acceptanceAdmission.byWorker.get(workerId) ?? 0;
+      // A cancelled stream or a lost connection settles through its own
+      // terminal path; one that ends while waiting never commits.
       if (
-        acceptanceAdmission.pending >= config.maxPendingAcceptanceCommits ||
-        workerPending >= config.maxPendingAcceptanceCommitsPerWorker
+        !(await acquireCommit(
+          workerId,
+          AbortSignal.any([
+            pending.record.abort.signal,
+            pending.inputAbort.signal,
+          ]),
+        ))
       ) {
-        const rejected = workError(
-          pending,
-          "reschedulable",
-          "acceptance persistence admission is temporarily exhausted",
-        );
-        pending.started.reject(rejected);
-        abortPendingOutput(pending, rejected);
-        armCancellationTimeout(
-          pending,
-          "acceptance_capacity_cancellation_timeout",
-        );
-        await sendLocalCancel(pending, "acceptance_commit_capacity");
         return;
       }
-
       acceptanceCommitAdmitted = true;
-      acceptanceAdmission.pending++;
-      acceptanceAdmission.byWorker.set(workerId, workerPending + 1);
       const committed = await dispatcher.commitAcceptance(
         pending.operationId,
         pending.fence,
@@ -497,7 +551,7 @@ export function createWorkStreamController(
           fence: pending.fence,
         }),
       );
-      await pending.record.transport!.sendControl(
+      const start = pending.record.transport!.sendControl(
         {
           protocol: WORKER_PROTOCOL,
           type: "work.start",
@@ -505,7 +559,10 @@ export function createWorkStreamController(
         },
         { signal: pending.record.abort.signal },
       );
+      // Started once queued: every later frame follows it on the wire, and a
+      // worker that received it may already call over another connection.
       pending.startedValue = true;
+      await start;
       pending.started.resolve();
       void grantOutputCredit(pending);
       if (pending.body === undefined) {
@@ -551,15 +608,7 @@ export function createWorkStreamController(
       }
     } finally {
       if (acceptanceCommitAdmitted) {
-        acceptanceAdmission.pending--;
-        const workerId = pending.fence.identity.workerId;
-        const workerPending =
-          (acceptanceAdmission.byWorker.get(workerId) ?? 1) - 1;
-        if (workerPending < 1) {
-          acceptanceAdmission.byWorker.delete(workerId);
-        } else {
-          acceptanceAdmission.byWorker.set(workerId, workerPending);
-        }
+        releaseCommit(pending.fence.identity.workerId);
       }
     }
   };

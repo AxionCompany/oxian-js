@@ -12,6 +12,12 @@ export type BoundedAsyncQueueSnapshot = Readonly<{
 
 export type BoundedAsyncQueue<T> = Readonly<{
   push(value: T): boolean;
+  /**
+   * Undefined when an item of `weight` fits now; otherwise resolves once it
+   * would, or the queue closed. A single producer awaits it before each push,
+   * so a full queue holds it back.
+   */
+  room(weight: number): Promise<void> | undefined;
   close(error?: unknown, options?: Readonly<{ discard?: boolean }>): void;
   snapshot(): BoundedAsyncQueueSnapshot;
   iterable: AsyncIterable<T>;
@@ -39,6 +45,29 @@ export function createBoundedAsyncQueue<T>(
   let weight = 0;
   let closed = false;
   let closeError: unknown;
+  let roomWaiter: { weight: number; resolve(): void } | undefined;
+
+  const fits = (itemWeight: number): boolean =>
+    values.length < maxItems && itemWeight <= maxWeight - weight;
+
+  const wakeProducer = (): void => {
+    if (roomWaiter === undefined || (!closed && !fits(roomWaiter.weight))) {
+      return;
+    }
+    const waiter = roomWaiter;
+    roomWaiter = undefined;
+    waiter.resolve();
+  };
+
+  const room = (itemWeight: number): Promise<void> | undefined => {
+    // One larger than the whole bound can never fit; its push will refuse it.
+    if (closed || fits(itemWeight) || itemWeight > maxWeight) {
+      return undefined;
+    }
+    return new Promise<void>((resolve) => {
+      roomWaiter = { weight: itemWeight, resolve };
+    });
+  };
 
   const push = (value: T): boolean => {
     if (closed) return false;
@@ -71,6 +100,7 @@ export function createBoundedAsyncQueue<T>(
       values.length = 0;
       weight = 0;
     }
+    wakeProducer();
     while (waiters.length > 0) {
       const waiter = waiters.shift();
       if (waiter === undefined) break;
@@ -86,6 +116,7 @@ export function createBoundedAsyncQueue<T>(
     const entry = values.shift();
     if (entry !== undefined) {
       weight -= entry.weight;
+      wakeProducer();
       return Promise.resolve({ done: false, value: entry.value });
     }
     if (closed) {
@@ -104,6 +135,7 @@ export function createBoundedAsyncQueue<T>(
 
   return Object.freeze({
     push,
+    room,
     close,
     snapshot: () => ({
       items: values.length,

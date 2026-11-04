@@ -242,6 +242,13 @@ subprotocol. Bound unauthenticated connections, authenticated connections,
 frame/message bytes, pending sends, native buffered amount, lifetime streams,
 capacity, acceptance commits, and connection age.
 
+Queue bounds apply backpressure: a full send queue makes senders wait in order,
+and a full inbound queue pauses the socket, so bursts beyond them slow down
+instead of disconnecting. Deno's and browsers' native WebSocket cannot pause,
+so a Worker on one buffers what arrives up to its inbound bounds; size
+`maxInboundBytes` to the data it lets in flight (concurrent streams times their
+credit window).
+
 Automatic connection-age rotation applies only to WebSocket connections.
 In-process event-fabric connections have no intermediary lifetime and remain
 available for durable application streams until explicitly drained or stopped.
