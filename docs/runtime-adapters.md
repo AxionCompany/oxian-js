@@ -51,7 +51,7 @@ supplied Hypervisor.
 
 A server adapter follows the same sequence:
 
-1. Call `hypervisor.prepare(request)`.
+1. Call `hypervisor.prepare(request)` (a host's may return a Promise; await it).
 2. Return a normal response when `kind === "response"`.
 3. For `kind === "upgrade"`, negotiate `decision.protocol`.
 4. Adapt the native connection to `SocketConnection`.

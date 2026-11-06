@@ -14,20 +14,23 @@ import {
   createHypervisorError,
   listenerUrl,
 } from "../../hypervisor/internal/primitives.ts";
-import type { Hypervisor, HypervisorListener } from "../../hypervisor/types.ts";
+import type {
+  HypervisorHost,
+  HypervisorListener,
+} from "../../hypervisor/types.ts";
 import { adaptWebSocket } from "../../transport/socket.ts";
 import type { DenoServeOptions } from "./types.ts";
 
 /** Adapts a portable Hypervisor to Deno's Fetch/WebSocket upgrade boundary. */
 export function handler(
-  hypervisor: Hypervisor,
+  hypervisor: HypervisorHost,
   budget: ConnectionBudget = createConnectionBudget(),
 ): (request: Request) => Response | Promise<Response> {
   return createHandler(hypervisor, budget, new Set(), new Set());
 }
 
 function createHandler(
-  hypervisor: Hypervisor,
+  hypervisor: HypervisorHost,
   budget: ConnectionBudget,
   sockets: Set<WebSocket>,
   pending: Set<AbortController>,

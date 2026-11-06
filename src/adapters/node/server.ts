@@ -82,7 +82,8 @@ export async function serve(
   ): Promise<void> {
     const lifetime = requestLifetime(request, response);
     try {
-      const decision = hypervisor.prepare(
+      // prepare may be asynchronous; the request lifetime keeps running.
+      const decision = await hypervisor.prepare(
         toRequest(request, origin, true, lifetime.signal),
       );
       if (decision.kind === "upgrade") {
@@ -148,7 +149,9 @@ export async function serve(
     socket.on("error", failed);
     socket.once("close", failed);
     try {
-      const prepared = hypervisor.prepare(
+      // prepare may be asynchronous. The socket can close meanwhile; the
+      // destroyed check below cancels a decision that arrives too late.
+      const prepared = await hypervisor.prepare(
         toRequest(request, origin, false, abort.signal),
       );
       const decision = await resolveRouteDecision(prepared);

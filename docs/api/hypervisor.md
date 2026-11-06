@@ -95,6 +95,16 @@ A `HypervisorRequestDecision` is either a normal response or a one-shot upgrade
 capability with `attach()` and `cancel()`. Runtime adapters attach a
 `SocketConnection` only after negotiating the exact protocol.
 
+Server adapters (`serve()` and the Deno `handler()`) accept a `HypervisorHost`:
+a Hypervisor whose `prepare(request)` may return a
+`HypervisorRequestDecisionResult`, a decision or a `Promise` of one. A front
+that serves several Hypervisors behind one listener can open or look up the
+right runtime asynchronously before deciding. Adapters await it for plain
+requests and upgrades alike. If the upgrading socket closes meanwhile, the
+decision is cancelled with `decision.cancel("upgrade_closed")` and never
+attached; the connection budget is released on every path. A real `Hypervisor`
+is a `HypervisorHost` and keeps working unchanged.
+
 ## Dispatch waiting
 
 `dispatch(input)` returns a `Promise<WorkHandle>`. Enable bounded pre-offer
