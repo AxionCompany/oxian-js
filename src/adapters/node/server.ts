@@ -17,8 +17,8 @@ import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 // @deno-types="npm:@types/ws@8.18.2"
 import { WebSocketServer } from "ws";
 import {
-  type ConnectionLease,
   createConnectionBudget,
+  type ConnectionLease,
 } from "./connection-budget.ts";
 import { observeListenerSettlement } from "../../hypervisor/internal/listener.ts";
 import {
@@ -48,7 +48,8 @@ export async function serve(
   const sockets = new WebSocketServer({
     noServer: true,
     perMessageDeflate: false,
-    maxPayload: WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes +
+    maxPayload:
+      WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes +
       WORKER_PROTOCOL_LIMITS.maxControlFrameBytes,
     handleProtocols: (offered, request) => {
       const protocol = selected.get(request);
@@ -209,13 +210,11 @@ export async function serve(
       (socket) =>
         new Promise<void>((resolve) => socket.once("close", () => resolve())),
     );
-    for (const client of sockets.clients) {
+    for (const client of sockets.clients)
       client.close(1000, "Listener shutdown");
-    }
     sockets.close();
-    for (const client of routeSockets.clients) {
+    for (const client of routeSockets.clients)
       client.close(1011, "Listener shutdown");
-    }
     routeSockets.close();
     const serverClosed = new Promise<void>((resolve) => {
       server.close(() => resolve());
@@ -362,8 +361,8 @@ function toRequest(
   for (let index = 0; index < request.rawHeaders.length; index += 2) {
     headers.append(request.rawHeaders[index]!, request.rawHeaders[index + 1]!);
   }
-  const hasBody = withBody && request.method !== "GET" &&
-    request.method !== "HEAD";
+  const hasBody =
+    withBody && request.method !== "GET" && request.method !== "HEAD";
   const host = headers.get("host");
   const url = new URL(request.url ?? "/", origin);
   if (host) {
@@ -376,14 +375,13 @@ function toRequest(
     signal,
     ...(hasBody
       ? {
-        body: Readable.toWeb(request) as ReadableStream<Uint8Array>,
-        duplex: "half",
-      }
+          body: Readable.toWeb(request) as ReadableStream<Uint8Array>,
+          duplex: "half",
+        }
       : {}),
   });
-  if (request.socket.remoteAddress) {
+  if (request.socket.remoteAddress)
     setClientAddress(result, request.socket.remoteAddress);
-  }
   return result;
 }
 
