@@ -17,8 +17,8 @@ import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 // @deno-types="npm:@types/ws@8.18.2"
 import { WebSocketServer } from "ws";
 import {
-  createConnectionBudget,
   type ConnectionLease,
+  createConnectionBudget,
 } from "./connection-budget.ts";
 import { observeListenerSettlement } from "../../hypervisor/internal/listener.ts";
 import {
@@ -48,8 +48,7 @@ export async function serve(
   const sockets = new WebSocketServer({
     noServer: true,
     perMessageDeflate: false,
-    maxPayload:
-      WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes +
+    maxPayload: WORKER_PROTOCOL_LIMITS.maxDataPayloadBytes +
       WORKER_PROTOCOL_LIMITS.maxControlFrameBytes,
     handleProtocols: (offered, request) => {
       const protocol = selected.get(request);
@@ -210,11 +209,13 @@ export async function serve(
       (socket) =>
         new Promise<void>((resolve) => socket.once("close", () => resolve())),
     );
-    for (const client of sockets.clients)
+    for (const client of sockets.clients) {
       client.close(1000, "Listener shutdown");
+    }
     sockets.close();
-    for (const client of routeSockets.clients)
+    for (const client of routeSockets.clients) {
       client.close(1011, "Listener shutdown");
+    }
     routeSockets.close();
     const serverClosed = new Promise<void>((resolve) => {
       server.close(() => resolve());
@@ -317,6 +318,12 @@ function requestLifetime(
   dispose(): void;
 }> {
   const controller = new AbortController();
+  // An emitter with no "error" listener throws. The listeners below go once
+  // the exchange settles, and a client that leaves mid-response can still
+  // error the request or response after that (Bun emits "aborted"): one
+  // listener stays for their whole life, so it never reaches the process.
+  request.on("error", ignoreError);
+  response.on("error", ignoreError);
   const dispose = (): void => {
     request.removeListener("close", requestClosed);
     request.removeListener("error", abort);
@@ -355,8 +362,8 @@ function toRequest(
   for (let index = 0; index < request.rawHeaders.length; index += 2) {
     headers.append(request.rawHeaders[index]!, request.rawHeaders[index + 1]!);
   }
-  const hasBody =
-    withBody && request.method !== "GET" && request.method !== "HEAD";
+  const hasBody = withBody && request.method !== "GET" &&
+    request.method !== "HEAD";
   const host = headers.get("host");
   const url = new URL(request.url ?? "/", origin);
   if (host) {
@@ -369,13 +376,14 @@ function toRequest(
     signal,
     ...(hasBody
       ? {
-          body: Readable.toWeb(request) as ReadableStream<Uint8Array>,
-          duplex: "half",
-        }
+        body: Readable.toWeb(request) as ReadableStream<Uint8Array>,
+        duplex: "half",
+      }
       : {}),
   });
-  if (request.socket.remoteAddress)
+  if (request.socket.remoteAddress) {
     setClientAddress(result, request.socket.remoteAddress);
+  }
   return result;
 }
 
@@ -429,3 +437,6 @@ async function reject(socket: Duplex, response: Response): Promise<void> {
   );
   socket.end(body);
 }
+
+/** Errors after an exchange settled have nobody left to tell: the lifetime already aborted. */
+function ignoreError(): void {}
