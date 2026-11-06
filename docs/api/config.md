@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.23.4/config`
+# `jsr:@oxian/oxian-js@0.23.5/config`
 
 The Node 24+ npm package exposes the same API at `oxianjs/config`. Local path
 operations use an internal Node adapter that also works in Deno. `loadConfig`
@@ -18,7 +18,7 @@ import {
   DEFAULT_OXIAN_CONFIG,
   defineConfig,
   loadConfig,
-} from "jsr:@oxian/oxian-js@0.23.4/config";
+} from "jsr:@oxian/oxian-js@0.23.5/config";
 ```
 
 Worker manifests, credentials, provider launch specifications, secrets, logging
@@ -60,7 +60,7 @@ function defineConfig(input: OxianConfigInput): OxianConfig;
 objects and arrays are new and recursively frozen.
 
 ```ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.23.4/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.23.5/config";
 
 export default defineConfig({
   application: {
@@ -424,7 +424,7 @@ The module must have exactly one runtime export:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.23.4/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.23.5/config";
 
 export default defineConfig({
   application: { routesRoot: "./routes" },
@@ -435,7 +435,7 @@ The named form is equivalent:
 
 ```ts
 // oxian.config.ts
-import { defineConfig } from "jsr:@oxian/oxian-js@0.23.4/config";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.23.5/config";
 
 export const config = defineConfig({
   application: { routesRoot: "./routes" },

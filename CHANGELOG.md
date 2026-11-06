@@ -1,5 +1,14 @@
 # oxianjs
 
+## 0.23.5
+
+- Fix the Node adapter letting an error a request or response emits after its
+  exchange settled reach the process as an unhandled "error" event. Under Bun, a
+  client that leaves mid-response (a server-sent stream it stops) makes the
+  response emit "aborted" then, which crashed the test process; on a server it
+  would crash the process. One listener now stays for each request's and
+  response's whole life.
+
 ## 0.23.4
 
 - `serve()` and the Deno `handler()` now accept a `HypervisorHost` whose
@@ -17,22 +26,22 @@
 - Fix a connection, and all work in flight on it, being lost under ordinary
   concurrency: about 35 concurrent calls (64 queued frames) failed every job on
   an executor with `executor_lost`. Full queues now apply backpressure instead
-  of failing the connection. A send into a full queue waits its turn, first
-  come first served, so wire order stays call order. A full inbound queue
-  stops reading and pauses a socket that can pause (the in-process fabric,
-  Node `ws`), which holds the peer back through its own send queue. A
-  cancelled send that is still waiting drops alone.
+  of failing the connection. A send into a full queue waits its turn, first come
+  first served, so wire order stays call order. A full inbound queue stops
+  reading and pauses a socket that can pause (the in-process fabric, Node `ws`),
+  which holds the peer back through its own send queue. A cancelled send that is
+  still waiting drops alone.
 - `SocketConnection` may offer `pause()` and `resume()`. A socket without them
   (Deno's and browsers' native WebSocket) still closes past its inbound bound.
-  The default inbound bounds are raised from 64 frames (256 for a Hypervisor)
-  to 4,096; byte bounds are unchanged.
+  The default inbound bounds are raised from 64 frames (256 for a Hypervisor) to
+  4,096; byte bounds are unchanged.
 - Acceptance commits beyond `maxPendingAcceptanceCommits` or its per-Worker
   bound now wait their turn instead of refusing accepted work as
   `reschedulable`.
-- Fix two races that failed a session or a call under load: a Worker counted
-  the input credit it granted only after the grant was sent, so data spending
-  it could arrive first; a Hypervisor marked work started only after its Start
-  was sent, so a call made under it over a successor connection was refused.
+- Fix two races that failed a session or a call under load: a Worker counted the
+  input credit it granted only after the grant was sent, so data spending it
+  could arrive first; a Hypervisor marked work started only after its Start was
+  sent, so a call made under it over a successor connection was refused.
 - Fix long-lived workers failing a call with `capacity` after a connection's
   stream lifetime (32,768 worker-to-host calls) runs out. Workers and hosts now
   negotiate make-before-break connection handoff (`__oxian_handoff_v1`): when
@@ -41,20 +50,19 @@
   the successor, including calls for a parent that started on the old
   connection; the old connection drains with no deadline of its own and closes
   once its streams finish. A call that finds no connection with streams left
-  waits for the successor within its own deadline. Each call is still sent
-  once, on one connection. Against a host without handoff, rotation is
-  unchanged.
+  waits for the successor within its own deadline. Each call is still sent once,
+  on one connection. Against a host without handoff, rotation is unchanged.
 - Retiring sessions stay valid in the session registry while they finish, are
   never routable, and share their worker's capacity with the successor. A
   registry advertises support with `handoff: true`. A successor that names a
   connection being shut down is refused, so shutdown still ends the worker.
-- When a connection of a worker with handoff runs out anyway (its successor
-  was late), it drains with no deadline instead of cutting its streams off.
-- Fix three races that could fail a connection with completed work on it:
-  a parentless worker-to-host call that crosses `drain` now runs instead of
-  being a protocol violation; credit or a late abort that crosses `drained`
-  settles on its stream's tombstone; and work a host opens right after Ready
-  counts against its own share of the lifetime, not the whole of it.
+- When a connection of a worker with handoff runs out anyway (its successor was
+  late), it drains with no deadline instead of cutting its streams off.
+- Fix three races that could fail a connection with completed work on it: a
+  parentless worker-to-host call that crosses `drain` now runs instead of being
+  a protocol violation; credit or a late abort that crosses `drained` settles on
+  its stream's tombstone; and work a host opens right after Ready counts against
+  its own share of the lifetime, not the whole of it.
 
 ## 0.23.2
 

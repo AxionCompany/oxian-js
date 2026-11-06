@@ -14,8 +14,8 @@ functions over your own stores.
 Hypervisor side:
 
 ```ts
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.4/hypervisor";
-import { serve } from "jsr:@oxian/oxian-js@0.23.4/adapters/deno";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.5/hypervisor";
+import { serve } from "jsr:@oxian/oxian-js@0.23.5/adapters/deno";
 
 const hypervisor = createHypervisor(
   {
@@ -39,7 +39,7 @@ const listener = serve({ hypervisor, port: 8080 });
 Worker side:
 
 ```ts
-import { createWorker } from "jsr:@oxian/oxian-js@0.23.4/worker";
+import { createWorker } from "jsr:@oxian/oxian-js@0.23.5/worker";
 
 const worker = createWorker({
   id: "logwash-worker",

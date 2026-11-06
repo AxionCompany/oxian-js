@@ -12,7 +12,7 @@ Keep the workload payload visible and put one declarative transport between a
 Hypervisor and Worker. Start locally so there is no network setup:
 
 ```ts
-import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.23.4";
+import { createHypervisor, createWorker } from "jsr:@oxian/oxian-js@0.23.5";
 
 const transport = {
   type: "in-process",
