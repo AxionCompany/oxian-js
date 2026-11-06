@@ -1,10 +1,14 @@
-import type { HypervisorRequestDecision } from "../hypervisor/types.ts";
+import type {
+  HypervisorRequestDecision,
+  HypervisorRequestDecisionResult,
+} from "../hypervisor/types.ts";
 import { acceptedWebSocket } from "./websocket.ts";
 
-/** Await route admission before any native handshake is committed. */
+/** Await the decision and route admission before any native handshake is committed. */
 export async function resolveRouteDecision(
-  decision: HypervisorRequestDecision,
+  prepared: HypervisorRequestDecisionResult,
 ): Promise<HypervisorRequestDecision> {
+  const decision = await prepared;
   if (decision.kind === "upgrade") return decision;
   const response = await decision.response;
   const socket = acceptedWebSocket(response);

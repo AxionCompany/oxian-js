@@ -1,5 +1,17 @@
 # oxianjs
 
+## 0.23.4
+
+- `serve()` and the Deno `handler()` now accept a `HypervisorHost` whose
+  `prepare(request)` may return a decision or a Promise of one, so a front that
+  serves several Hypervisors behind one listener can open or look up the right
+  runtime asynchronously. The Node adapter awaits it for plain requests and
+  upgrades (it called `prepare` synchronously before). A socket that closes
+  while `prepare` is pending gets its decision cancelled, never attached, and
+  its connection budget released; the upgrade `head` is preserved. A real
+  `Hypervisor` is unchanged. New types: `HypervisorHost`,
+  `HypervisorRequestDecisionResult`.
+
 ## 0.23.3
 
 - Fix a connection, and all work in flight on it, being lost under ordinary

@@ -198,6 +198,29 @@ export type HypervisorRequestDecision =
       cancel(reason?: string): void;
     }>;
 
+/**
+ * A decision now or after asynchronous work, such as opening or looking up the
+ * runtime that owns the request. Adapters await it before any handshake.
+ */
+export type HypervisorRequestDecisionResult =
+  | HypervisorRequestDecision
+  | Promise<HypervisorRequestDecision>;
+
+/**
+ * What a server adapter needs from a Hypervisor. Its `prepare` may be
+ * asynchronous, so a front that serves several Hypervisors behind one
+ * listener can pick one first. A real {@link Hypervisor} is a host.
+ */
+export type HypervisorHost = Readonly<
+  Omit<Hypervisor, "prepare"> & {
+    /**
+     * Like {@link Hypervisor.prepare}, but may resolve later. The adapter
+     * cancels an upgrade decision that resolves after its socket closed.
+     */
+    prepare(request: Request): HypervisorRequestDecisionResult;
+  }
+>;
+
 export type Hypervisor = Readonly<{
   /**
    * Produces a runtime-neutral HTTP response or one-shot WebSocket upgrade

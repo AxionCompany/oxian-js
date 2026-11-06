@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.23.3/work`
+# `jsr:@oxian/oxian-js@0.23.4/work`
 
 The `/work` subpath is the minimal, runtime-neutral contract between callers and
 an Oxian Hypervisor. Embedding libraries can depend on these types without
@@ -10,7 +10,7 @@ import type {
   WorkBody,
   WorkHandle,
   WorkInput,
-} from "jsr:@oxian/oxian-js@0.23.3/work";
+} from "jsr:@oxian/oxian-js@0.23.4/work";
 ```
 
 ## Exports

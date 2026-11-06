@@ -1,11 +1,12 @@
 import type { ConnectionBudget } from "./connection-budget.ts";
 import type {
-  Hypervisor,
+  HypervisorHost,
   HypervisorListenOptions,
 } from "../../hypervisor/types.ts";
 
 export type NodeServeOptions = Readonly<{
-  hypervisor: Hypervisor;
+  /** A Hypervisor, or a front whose `prepare` may resolve asynchronously. */
+  hypervisor: HypervisorHost;
   /** Each accepted upgrade takes one connection from this shared budget. */
   budget?: ConnectionBudget;
 }> &

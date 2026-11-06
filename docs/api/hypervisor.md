@@ -1,4 +1,4 @@
-# `jsr:@oxian/oxian-js@0.23.3/hypervisor`
+# `jsr:@oxian/oxian-js@0.23.4/hypervisor`
 
 The Hypervisor hosts declared Worker transports, admits fenced sessions, assigns
 work, and owns process-local drain/shutdown. It does not own a network listener
@@ -28,7 +28,7 @@ import {
   createHypervisor,
   type Hypervisor,
   type HypervisorOptions,
-} from "jsr:@oxian/oxian-js@0.23.3/hypervisor";
+} from "jsr:@oxian/oxian-js@0.23.4/hypervisor";
 
 const local = {
   type: "in-process",
@@ -94,6 +94,16 @@ similarly named field cannot grant the negotiated capability.
 A `HypervisorRequestDecision` is either a normal response or a one-shot upgrade
 capability with `attach()` and `cancel()`. Runtime adapters attach a
 `SocketConnection` only after negotiating the exact protocol.
+
+Server adapters (`serve()` and the Deno `handler()`) accept a `HypervisorHost`:
+a Hypervisor whose `prepare(request)` may return a
+`HypervisorRequestDecisionResult`, a decision or a `Promise` of one. A front
+that serves several Hypervisors behind one listener can open or look up the
+right runtime asynchronously before deciding. Adapters await it for plain
+requests and upgrades alike. If the upgrading socket closes meanwhile, the
+decision is cancelled with `decision.cancel("upgrade_closed")` and never
+attached; the connection budget is released on every path. A real `Hypervisor`
+is a `HypervisorHost` and keeps working unchanged.
 
 ## Dispatch waiting
 

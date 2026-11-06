@@ -24,8 +24,8 @@ implement Worker lifecycle transitions.
 ## Deno
 
 ```ts
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.3";
-import { handler, serve } from "jsr:@oxian/oxian-js@0.23.3/adapters/deno";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.4";
+import { handler, serve } from "jsr:@oxian/oxian-js@0.23.4/adapters/deno";
 
 const hypervisor = createHypervisor({
   transports: [{
@@ -51,7 +51,7 @@ supplied Hypervisor.
 
 A server adapter follows the same sequence:
 
-1. Call `hypervisor.prepare(request)`.
+1. Call `hypervisor.prepare(request)` (a host's may return a Promise; await it).
 2. Return a normal response when `kind === "response"`.
 3. For `kind === "upgrade"`, negotiate `decision.protocol`.
 4. Adapt the native connection to `SocketConnection`.
