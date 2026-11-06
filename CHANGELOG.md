@@ -1,6 +1,6 @@
 # oxianjs
 
-## Unreleased
+## 0.23.4
 
 - `serve()` and the Deno `handler()` now accept a `HypervisorHost` whose
   `prepare(request)` may return a decision or a Promise of one, so a front that

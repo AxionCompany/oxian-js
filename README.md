@@ -14,8 +14,8 @@ substitute the exact published next version. See the
 [0.22 migration notes](docs/migration-0.22.md) before upgrading.
 
 ```bash
-deno run -A jsr:@oxian/oxian-js@0.23.3/bin init
-deno run -A jsr:@oxian/oxian-js@0.23.3/bin dev
+deno run -A jsr:@oxian/oxian-js@0.23.4/bin init
+deno run -A jsr:@oxian/oxian-js@0.23.4/bin dev
 ```
 
 `init` creates `oxian.config.ts` and `routes/index.ts`. `dev` starts a local
@@ -61,15 +61,15 @@ local processes, listeners, and executable lifecycle require explicit
 runtime/capability subpaths:
 
 ```ts
-import { createApplication } from "jsr:@oxian/oxian-js@0.23.3/app";
-import { defineConfig } from "jsr:@oxian/oxian-js@0.23.3/config";
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.3/hypervisor";
-import { createWorker } from "jsr:@oxian/oxian-js@0.23.3/worker";
-import { serve } from "jsr:@oxian/oxian-js@0.23.3/adapters/deno";
+import { createApplication } from "jsr:@oxian/oxian-js@0.23.4/app";
+import { defineConfig } from "jsr:@oxian/oxian-js@0.23.4/config";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.4/hypervisor";
+import { createWorker } from "jsr:@oxian/oxian-js@0.23.4/worker";
+import { serve } from "jsr:@oxian/oxian-js@0.23.4/adapters/deno";
 ```
 
-The executable is `jsr:@oxian/oxian-js@0.23.3/bin`; the embeddable CLI API is
-`jsr:@oxian/oxian-js@0.23.3/cli`.
+The executable is `jsr:@oxian/oxian-js@0.23.4/bin`; the embeddable CLI API is
+`jsr:@oxian/oxian-js@0.23.4/cli`.
 
 ### Node package (0.22 prerelease)
 
