@@ -99,6 +99,8 @@ export type ProtocolOrderValidatorOptions = Readonly<{
 
 type MutableWorkStream = {
   streamId: string;
+  /** Its key among finished streams, once it finishes (see `streamKey`). */
+  key: string;
   initiator: ProtocolRole;
   accepted: boolean;
   started: boolean;
@@ -112,13 +114,47 @@ type MutableWorkStream = {
   receiveCredit: CreditWindow;
 };
 
-type NormalTerminalTombstone = {
-  streamId: string;
-  sentAborted: boolean;
-  receivedAborted: boolean;
-};
+// What a finished stream may still receive. It ended End/End (a tombstone):
+// a frame the peer sent before it saw our End can still arrive, and one late
+// abort per half is accepted. Or it is closed: nothing more may arrive.
+const CLOSED = 0;
+const TOMBSTONE = 1;
+const SENT_ABORTED = 2;
+const RECEIVED_ABORTED = 4;
 
 const UINT32_MAX = 0xffff_ffff;
+
+const hexValue = (code: number): number => (code < 97 ? code - 48 : code - 87);
+
+/**
+ * A stream ID as 16 one-byte characters: its UUID's bytes. Every ID the
+ * validator sees is a decoded, lowercase UUID, so this is exact. A connection
+ * keeps one per finished stream for its whole life, so its size matters: about
+ * 70 bytes each this way, against about 170 for the ID and a tombstone object.
+ */
+function streamKey(streamId: string): string {
+  const byte = (at: number): number =>
+    (hexValue(streamId.charCodeAt(at)) << 4) |
+    hexValue(streamId.charCodeAt(at + 1));
+  return String.fromCharCode(
+    byte(0),
+    byte(2),
+    byte(4),
+    byte(6),
+    byte(9),
+    byte(11),
+    byte(14),
+    byte(16),
+    byte(19),
+    byte(21),
+    byte(24),
+    byte(26),
+    byte(28),
+    byte(30),
+    byte(32),
+    byte(34),
+  );
+}
 
 const WORKER_ONLY = new Set<ControlFrame["type"]>([
   "hello",
@@ -287,18 +323,27 @@ export function createProtocolOrderValidator(
         ? pendingLifetime
         : maxLifetimeStreams;
     return split === undefined
-      ? lifetime - usedStreamIds.size
+      ? lifetime - usedStreamCount()
       : (initiator === "hypervisor"
           ? Math.ceil(lifetime / 2)
           : Math.floor(lifetime / 2)) - opened[initiator];
   };
   let nextHeartbeatSequence = 0;
   const streams = new Map<string, MutableWorkStream>();
-  // Normal End/End streams retain only bounded wire-order state. They no
-  // longer consume capacity or block Drained, but either side may still have
-  // sent an End→Abort upgrade before observing the peer's End.
-  const normalTerminalTombstones = new Map<string, NormalTerminalTombstone>();
-  const usedStreamIds = new Set<string>();
+  // Every stream that has left `streams`, by `streamKey`, with what it may
+  // still receive. IDs are never reused on a connection, and a normal End/End
+  // stream keeps a tombstone: it no longer consumes capacity or blocks
+  // Drained, but either side may still have sent an End→Abort upgrade or
+  // credit before observing the peer's End. Bounded by the lifetime limit.
+  const finished = new Map<string, number>();
+  const usedStreamCount = (): number => opened.hypervisor + opened.worker;
+  // The key of a finished stream that keeps a tombstone, if this is one.
+  const tombstoneKey = (streamId: string): string | undefined => {
+    if (streams.has(streamId)) return undefined;
+    const key = streamKey(streamId);
+    const record = finished.get(key);
+    return record !== undefined && (record & TOMBSTONE) !== 0 ? key : undefined;
+  };
 
   const ensureDirection = (
     direction: ProtocolDirection,
@@ -370,7 +415,7 @@ export function createProtocolOrderValidator(
   ): MutableWorkStream => {
     const stream = streams.get(streamId);
     if (stream !== undefined) return stream;
-    if (usedStreamIds.has(streamId)) {
+    if (finished.has(streamKey(streamId))) {
       return fail(
         `${frameType} follows terminal stream ${streamId}`,
         "post_terminal_frame",
@@ -443,11 +488,7 @@ export function createProtocolOrderValidator(
       received === "end"
     ) {
       streams.delete(stream.streamId);
-      normalTerminalTombstones.set(stream.streamId, {
-        streamId: stream.streamId,
-        sentAborted: false,
-        receivedAborted: false,
-      });
+      finished.set(stream.key, TOMBSTONE);
       return;
     }
     if (
@@ -457,7 +498,7 @@ export function createProtocolOrderValidator(
       isAbortTerminal(received)
     ) {
       streams.delete(stream.streamId);
-      normalTerminalTombstones.delete(stream.streamId);
+      finished.set(stream.key, CLOSED);
     }
   };
 
@@ -648,7 +689,8 @@ export function createProtocolOrderValidator(
         ) {
           fail(`work.open is not allowed while connection is ${phase}`);
         }
-        if (usedStreamIds.has(frame.streamId)) {
+        const key = streamKey(frame.streamId);
+        if (streams.has(frame.streamId) || finished.has(key)) {
           fail(
             `stream ${frame.streamId} has already been opened`,
             "duplicate_stream",
@@ -681,10 +723,10 @@ export function createProtocolOrderValidator(
           );
         }
 
-        usedStreamIds.add(frame.streamId);
         opened[initiator]++;
         streams.set(frame.streamId, {
           streamId: frame.streamId,
+          key,
           initiator,
           accepted: false,
           started: false,
@@ -760,8 +802,7 @@ export function createProtocolOrderValidator(
 
       case "work.credit": {
         requireWorkingPhase(frame.type, true);
-        const tombstone = normalTerminalTombstones.get(frame.streamId);
-        if (tombstone !== undefined) {
+        if (tombstoneKey(frame.streamId) !== undefined) {
           if (direction === "received") {
             // The peer may have granted credit before observing our End. Since
             // WebSocket ordering is only directional, that already-sent credit
@@ -830,26 +871,23 @@ export function createProtocolOrderValidator(
       case "work.cancel":
       case "work.error": {
         requireWorkingPhase(frame.type, true);
-        const tombstone = normalTerminalTombstones.get(frame.streamId);
-        if (tombstone !== undefined) {
-          const alreadyAborted =
-            direction === "sent"
-              ? tombstone.sentAborted
-              : tombstone.receivedAborted;
-          if (alreadyAborted) {
+        const key = tombstoneKey(frame.streamId);
+        if (key !== undefined) {
+          const record = finished.get(key) as number;
+          const aborted =
+            direction === "sent" ? SENT_ABORTED : RECEIVED_ABORTED;
+          if ((record & aborted) !== 0) {
             fail(
-              `${frame.type} follows a terminal frame on the same stream half ${tombstone.streamId}`,
+              `${frame.type} follows a terminal frame on the same stream half ${frame.streamId}`,
               "post_terminal_frame",
             );
           }
-          if (direction === "sent") {
-            tombstone.sentAborted = true;
-          } else {
-            tombstone.receivedAborted = true;
-          }
-          if (tombstone.sentAborted && tombstone.receivedAborted) {
-            normalTerminalTombstones.delete(tombstone.streamId);
-          }
+          // Abort/Abort retires the tombstone.
+          const both = SENT_ABORTED | RECEIVED_ABORTED;
+          finished.set(
+            key,
+            ((record | aborted) & both) === both ? CLOSED : record | aborted,
+          );
           disposition = "discard";
           break;
         }
@@ -970,7 +1008,7 @@ export function createProtocolOrderValidator(
       ...(hostCallCapacity === undefined ? {} : { hostCallCapacity }),
       nextHeartbeatSequence,
       activeStreamCount: streams.size,
-      usedStreamCount: usedStreamIds.size,
+      usedStreamCount: usedStreamCount(),
       maxLifetimeStreams,
       remainingLocalStreams: remaining(role),
       remainingRemoteStreams: remaining(
