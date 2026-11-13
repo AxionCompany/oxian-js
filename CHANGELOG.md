@@ -1,5 +1,15 @@
 # oxianjs
 
+## 0.23.6
+
+- A long-lived worker connection keeps less memory per finished stream: about
+  70 bytes on each end instead of about 170. Each end remembers every stream ID
+  it has used, so it can refuse a reused one, and keeps a tombstone for a stream
+  that ended normally, so a late credit or abort that crossed its End is still
+  told apart from a violation. Both now live in one record per stream, keyed by
+  the ID's 16 bytes. Over a connection's full 65,536-stream lifetime that is
+  about 4.4 MiB per end instead of 10.6. The protocol's behavior is unchanged.
+
 ## 0.23.5
 
 - Fix the Node adapter letting an error a request or response emits after its

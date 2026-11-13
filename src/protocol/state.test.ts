@@ -974,6 +974,50 @@ test("protocol order: End/End tombstones discard crossed inbound credit", () => 
   }
 });
 
+test("protocol order: finished streams are told apart by every byte of their ID", () => {
+  // Finished streams are remembered by their UUID's 16 bytes, not its text.
+  const zero = "00000000-0000-0000-0000-000000000000";
+  const ids = [zero, "ffffffff-ffff-ffff-ffff-ffffffffffff"];
+  for (let at = 0; at < zero.length; at++) {
+    if (zero[at] === "-") continue;
+    for (const digit of ["9", "a", "f"]) {
+      ids.push(zero.slice(0, at) + digit + zero.slice(at + 1));
+    }
+  }
+  for (const role of ["worker", "hypervisor"] as const) {
+    const validator = createReadyValidator(role);
+    for (const streamId of ids) {
+      openAcceptStart(validator, role, streamId);
+      closeNormally(validator, role, streamId);
+    }
+    assert.deepStrictEqual(validator.snapshot().usedStreamCount, ids.length);
+    for (const streamId of ids) {
+      const crossed = validator.acceptControl(
+        "received",
+        createWorkCreditFrame({ streamId, bytes: 1 }),
+      );
+      assert.deepStrictEqual(crossed.disposition, "discard");
+      const reused = assertThrows(
+        () =>
+          validator.acceptControl(
+            direction(role, "hypervisor"),
+            createWorkOpenFrame({
+              streamId,
+              workload: "oxian.http.v1",
+              metadata: {},
+            }),
+          ),
+        TypeError,
+        "already been opened",
+      );
+      assert.deepStrictEqual(
+        (reused as ProtocolViolation).code,
+        "duplicate_stream",
+      );
+    }
+  }
+});
+
 test("protocol order: worker metadata is single-shot and precedes output", () => {
   const validator = createReadyValidator();
   openAcceptStart(validator, "worker", STREAM_ID, false);
