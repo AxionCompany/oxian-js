@@ -24,8 +24,8 @@ implement Worker lifecycle transitions.
 ## Deno
 
 ```ts
-import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.5";
-import { handler, serve } from "jsr:@oxian/oxian-js@0.23.5/adapters/deno";
+import { createHypervisor } from "jsr:@oxian/oxian-js@0.23.6";
+import { handler, serve } from "jsr:@oxian/oxian-js@0.23.6/adapters/deno";
 
 const hypervisor = createHypervisor({
   transports: [{

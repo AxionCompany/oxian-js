@@ -1,6 +1,6 @@
 # oxianjs
 
-## Unreleased
+## 0.23.6
 
 - A long-lived worker connection keeps less memory per finished stream: about
   70 bytes on each end instead of about 170. Each end remembers every stream ID
