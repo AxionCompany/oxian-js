@@ -1,5 +1,13 @@
 # oxianjs
 
+## 0.23.7
+
+- A worker socket may use `ws:` to any `*.localhost` host (`shop.localhost`),
+  not only `localhost`, `127.0.0.1` and `::1`. Browsers resolve every
+  `*.localhost` name to the machine itself (RFC 6761), so a page served there
+  loaded and then stayed blank because its socket was refused as insecure. The
+  worker manifest's `gatewayUrl` check agrees.
+
 ## 0.23.6
 
 - A long-lived worker connection keeps less memory per finished stream: about
