@@ -1,5 +1,6 @@
 import { dirname, fromFileUrl, resolve, toFileUrl } from "@std/path";
 import { HTTP_WORKLOAD } from "../http/types.ts";
+import { isLoopbackHostname } from "../transport/loopback.ts";
 import { createHelloFrame } from "../protocol/control.ts";
 import type { WorkerCredential, WorkerIdentity } from "../protocol/types.ts";
 import type { LoadWorkerManifestSource, WorkerManifest } from "./types.ts";
@@ -149,16 +150,6 @@ function gatewayUrl(value: unknown): string {
     );
   }
   return url.href;
-}
-
-function isLoopbackHostname(hostname: string): boolean {
-  const normalized = hostname.toLowerCase();
-  return (
-    normalized === "localhost" ||
-    normalized === "127.0.0.1" ||
-    normalized === "::1" ||
-    normalized === "[::1]"
-  );
 }
 
 function normalizeManifest(

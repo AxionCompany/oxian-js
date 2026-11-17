@@ -10,6 +10,7 @@ import {
   parseControlFrame,
   WORKER_PROTOCOL,
 } from "../protocol/index.ts";
+import { isLoopbackHostname } from "./loopback.ts";
 import { createBoundedAsyncQueue } from "./queue.ts";
 import type { ConnectionClose, Frame } from "./frame.ts";
 import type {
@@ -50,16 +51,6 @@ function expectPositiveInteger(
     throw new TypeError(`${name} must be a positive safe integer`);
   }
   return resolved;
-}
-
-function isLoopbackHostname(hostname: string): boolean {
-  const normalized = hostname.toLowerCase();
-  return (
-    normalized === "localhost" ||
-    normalized === "127.0.0.1" ||
-    normalized === "::1" ||
-    normalized === "[::1]"
-  );
 }
 
 function closeSocket(socket: WebSocket, code: number, reason: string): void {
